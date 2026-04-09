@@ -38,9 +38,10 @@ WORKDIR /app
 # Install Python dependencies (cache layer)
 COPY pyproject.toml .
 COPY hivemem/__init__.py hivemem/
-# Install CPU-only torch (--find-links for CPU wheels, PyPI for dependencies)
+# Install CPU-only torch (CPU index primary, PyPI for deps only)
 RUN pip install --no-cache-dir --break-system-packages "torch>=2.6" \
-    --find-links https://download.pytorch.org/whl/cpu
+    --index-url https://download.pytorch.org/whl/cpu \
+    --extra-index-url https://pypi.org/simple/
 RUN pip install --no-cache-dir --break-system-packages .
 
 # Copy application code
