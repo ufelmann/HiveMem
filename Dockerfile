@@ -1,21 +1,65 @@
-FROM python:3.11-slim-bookworm
+FROM postgres:17-bookworm AS builder
+
+RUN apt-get update && apt-get install -y \
+    build-essential git \
+    postgresql-server-dev-17 \
+    libreadline-dev zlib1g-dev flex bison \
+    && rm -rf /var/lib/apt/lists/*
+
+# Build pgvector
+RUN cd /tmp \
+    && git clone --branch v0.8.2 https://github.com/pgvector/pgvector.git \
+    && cd pgvector \
+    && make PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config \
+    && make install PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config
+
+# Build Apache AGE (PG17 branch)
+RUN cd /tmp \
+    && git clone --branch release/PG17/1.7.0 https://github.com/apache/age.git \
+    && cd age \
+    && make PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config \
+    && make install PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config
+
+FROM postgres:17-bookworm
+
+# Copy extensions from builder
+COPY --from=builder /usr/lib/postgresql/17/lib/vector.so /usr/lib/postgresql/17/lib/
+COPY --from=builder /usr/share/postgresql/17/extension/vector* /usr/share/postgresql/17/extension/
+COPY --from=builder /usr/lib/postgresql/17/lib/age.so /usr/lib/postgresql/17/lib/
+COPY --from=builder /usr/share/postgresql/17/extension/age* /usr/share/postgresql/17/extension/
+
+# Install Python
+RUN apt-get update && apt-get install -y \
+    python3 python3-pip python3-venv libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# System deps
-RUN apt-get update && apt-get install -y libpq-dev && rm -rf /var/lib/apt/lists/*
-
-# Install dependencies first (cache layer)
+# Install Python dependencies (cache layer)
 COPY pyproject.toml .
 COPY hivemem/__init__.py hivemem/
-# Install CPU-only torch first to avoid pulling 2GB+ CUDA deps
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir ".[dev]" 2>/dev/null || pip install --no-cache-dir .
+RUN pip install --no-cache-dir --break-system-packages torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir --break-system-packages .
 
-# Copy actual code
+# Copy application code
 COPY hivemem/ hivemem/
 COPY scripts/ scripts/
+COPY entrypoint.sh .
+
+# Install backup command
+RUN cp scripts/hivemem-backup /usr/local/bin/hivemem-backup \
+    && chmod +x /usr/local/bin/hivemem-backup
+
+# Environment defaults
+ENV PGDATA=/data/pgdata \
+    HF_HOME=/data/models \
+    HIVEMEM_PORT=8421 \
+    HIVEMEM_DB_URL="postgresql://hivemem@/hivemem?host=/var/run/postgresql"
+
+RUN mkdir -p /var/run/postgresql && chown postgres:postgres /var/run/postgresql \
+    && mkdir -p /data && chown postgres:postgres /data
 
 EXPOSE 8421
 
-CMD ["python", "-m", "hivemem.server"]
+USER postgres
+ENTRYPOINT ["/app/entrypoint.sh"]
