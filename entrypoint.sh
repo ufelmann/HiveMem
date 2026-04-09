@@ -14,7 +14,7 @@ fi
 
 # Start PostgreSQL in background
 echo "Starting PostgreSQL..."
-pg_ctl start -D "$PGDATA" -l /var/log/postgresql.log -o "-k /var/run/postgresql"
+pg_ctl start -D "$PGDATA" -l /data/postgresql.log -o "-k /var/run/postgresql"
 
 # Wait for PostgreSQL to be ready
 echo "Waiting for PostgreSQL..."
@@ -24,7 +24,7 @@ for i in $(seq 1 30); do
     fi
     if [ "$i" -eq 30 ]; then
         echo "PostgreSQL failed to start"
-        cat /var/log/postgresql.log
+        cat /data/postgresql.log
         exit 1
     fi
     sleep 1
