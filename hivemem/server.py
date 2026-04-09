@@ -32,7 +32,7 @@ from hivemem.tools.write import (
 
 DB_URL = os.environ.get(
     "HIVEMEM_DB_URL",
-    "postgresql://hivemem:hivemem_local_only@db:5432/hivemem",
+    "postgresql://hivemem@/hivemem?host=/var/run/postgresql",
 )
 
 MCP_PORT = int(os.environ.get("HIVEMEM_PORT", "8421"))
