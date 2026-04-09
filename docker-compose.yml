@@ -1,38 +1,11 @@
 services:
-  db:
-    build:
-      context: .
-      dockerfile: Dockerfile.db
-    environment:
-      POSTGRES_DB: hivemem
-      POSTGRES_USER: hivemem
-      POSTGRES_PASSWORD: ${HIVEMEM_DB_PASSWORD:-hivemem_local_only}
-    volumes:
-      - hivemem_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hivemem"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    restart: unless-stopped
-
-  mcp:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    environment:
-      HIVEMEM_DB_URL: postgresql://hivemem:${HIVEMEM_DB_PASSWORD:-hivemem_local_only}@db:5432/hivemem
+  hivemem:
+    build: .
     ports:
       - "8421:8421"
-    depends_on:
-      db:
-        condition: service_healthy
     volumes:
-      - hivemem_models:/root/.cache
+      - hivemem_data:/data
     restart: unless-stopped
 
 volumes:
   hivemem_data:
-  hivemem_models:
