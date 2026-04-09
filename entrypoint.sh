@@ -19,7 +19,7 @@ pg_ctl start -D "$PGDATA" -l /data/postgresql.log -o "-k /var/run/postgresql"
 # Wait for PostgreSQL to be ready
 echo "Waiting for PostgreSQL..."
 for i in $(seq 1 30); do
-    if pg_isready -U hivemem -h /var/run/postgresql -q; then
+    if pg_isready -h /var/run/postgresql -q; then
         break
     fi
     if [ "$i" -eq 30 ]; then
@@ -29,10 +29,11 @@ for i in $(seq 1 30); do
     fi
     sleep 1
 done
+echo "PostgreSQL ready."
 
-# Create database if it doesn't exist
-psql -U hivemem -h /var/run/postgresql -tc "SELECT 1 FROM pg_database WHERE datname = 'hivemem'" | grep -q 1 || \
-    psql -U hivemem -h /var/run/postgresql -c "CREATE DATABASE hivemem"
+# Create database if it doesn't exist (connect to default 'postgres' db first)
+psql -U hivemem -h /var/run/postgresql -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'hivemem'" | grep -q 1 || \
+    psql -U hivemem -h /var/run/postgresql -d postgres -c "CREATE DATABASE hivemem"
 
 # Apply extensions and schema
 psql -U hivemem -h /var/run/postgresql -d hivemem -c "CREATE EXTENSION IF NOT EXISTS vector"
