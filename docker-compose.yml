@@ -25,7 +25,7 @@ services:
     environment:
       HIVEMEM_DB_URL: postgresql://hivemem:${HIVEMEM_DB_PASSWORD:-hivemem_local_only}@db:5432/hivemem
     ports:
-      - "127.0.0.1:8420:8420"
+      - "8421:8421"
     depends_on:
       db:
         condition: service_healthy
@@ -33,18 +33,6 @@ services:
       - hivemem_models:/root/.cache
     restart: unless-stopped
 
-  caddy:
-    image: caddy:2-alpine
-    ports:
-      - "8421:8421"
-    volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-    depends_on:
-      - mcp
-    restart: unless-stopped
-
 volumes:
   hivemem_data:
   hivemem_models:
-  caddy_data:

@@ -1,4 +1,4 @@
-"""HiveMem MCP Server — Streamable HTTP on port 8420."""
+"""HiveMem MCP Server — Streamable HTTP on port 8421."""
 
 from __future__ import annotations
 
@@ -35,11 +35,13 @@ DB_URL = os.environ.get(
     "postgresql://hivemem:hivemem_local_only@db:5432/hivemem",
 )
 
+MCP_PORT = int(os.environ.get("HIVEMEM_PORT", "8421"))
+
 mcp = FastMCP(
     "HiveMem",
     instructions="Personal knowledge system with semantic search and temporal knowledge graph",
     host="0.0.0.0",
-    port=8420,
+    port=MCP_PORT,
     json_response=True,
     stateless_http=True,
 )
@@ -233,10 +235,28 @@ async def hivemem_health() -> dict:
     return await _health(pool)
 
 
+class _AcceptMiddleware:
+    """ASGI middleware: ensure Accept header includes both MCP-required types."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            headers = [(k, v) for k, v in scope["headers"] if k != b"accept"]
+            headers.append((b"accept", b"application/json, text/event-stream"))
+            scope = dict(scope, headers=headers)
+        await self.app(scope, receive, send)
+
+
 if __name__ == "__main__":
+    import uvicorn
+
     from hivemem.embeddings import get_model
 
     print("Loading BGE-M3 embedding model...")
     get_model()
     print("Model ready.")
-    mcp.run(transport="streamable-http")
+
+    app = _AcceptMiddleware(mcp.streamable_http_app())
+    uvicorn.run(app, host="0.0.0.0", port=MCP_PORT)
