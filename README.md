@@ -10,59 +10,51 @@ MCP server backed by PostgreSQL 17 (pgvector + Apache AGE) with BGE-M3 embedding
 - Semantic search with BGE-M3 (1024 dims, 100+ languages, <1s queries)
 - Temporal knowledge graph (valid_from/valid_until, historical queries)
 - Multi-hop graph traversal (recursive CTEs / Apache AGE)
-- Docker Compose deployment (one command: `docker compose up`)
-- Daily pg_dump backups
+- Single container deployment (one command: `docker run`)
+- Built-in backup command
 
 ## Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) (v2+)
-- ~4 GB free disk space (BGE-M3 model ~2.2 GB + Docker images ~1.5 GB)
+- [Docker](https://docs.docker.com/get-docker/) (v20+)
+- ~4 GB free disk space (BGE-M3 model ~2.2 GB + Docker image ~3.5 GB)
 - ~3 GB free RAM (BGE-M3 embedding model runs on CPU)
 
 ## Installation
 
-### 1. Clone and configure
+### 1. Clone and build
 
 ```bash
 git clone https://github.com/ufelmann/HiveMem.git
 cd HiveMem
-cp .env.example .env
+docker build -t hivemem .
 ```
 
-Edit `.env` to set your database password (optional — defaults to `hivemem_local_only` for local development):
+### 2. Run
 
-```
-HIVEMEM_DB_PASSWORD=your_secure_password
+```bash
+docker run -d --name hivemem \
+  -p 8421:8421 \
+  -v hivemem_data:/data \
+  --restart unless-stopped \
+  hivemem
 ```
 
-### 2. Build and start
+First start takes a few minutes — the container initializes PostgreSQL and downloads the BGE-M3 embedding model (~2.2 GB). Check progress:
+
+```bash
+docker logs -f hivemem
+```
+
+Alternatively, use Docker Compose:
 
 ```bash
 docker compose up -d
 ```
 
-This builds two containers:
-
-| Container | What it does |
-|---|---|
-| **db** | PostgreSQL 17 with pgvector + Apache AGE (built from source) |
-| **mcp** | FastMCP server on port 8421 (Streamable HTTP) |
-
-First start takes a few minutes — the MCP container downloads the BGE-M3 embedding model (~2.2 GB). Progress is visible in the logs:
-
-```bash
-docker compose logs mcp -f
-```
-
 ### 3. Verify
 
 ```bash
-# Check all containers are healthy
-docker compose ps
-
-# Test the MCP endpoint
 curl -s http://localhost:8421/mcp \
-  -H "Accept: application/json, text/event-stream" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | head -c 200
 ```
@@ -89,61 +81,61 @@ All 16 `hivemem_*` tools should now be available.
 Customize `scripts/seed-identity.py` with your own profile, then:
 
 ```bash
-# With the stack running:
-docker compose exec mcp python scripts/seed-identity.py
+docker exec hivemem python3 scripts/seed-identity.py
 ```
-
-This populates the wake-up layers (`l0_identity`, `l1_critical`) used by the `hivemem_wake_up` tool.
 
 ## Backups
 
-Daily backups with `pg_dump`:
-
 ```bash
-./scripts/backup.sh
+docker exec hivemem hivemem-backup
 ```
 
-Dumps are saved to `backups/` (gzipped, last 7 days kept). For automated daily backups, add a cron job:
+Dumps are saved to `/data/backups/` inside the volume (gzipped, last 7 days kept). For automated daily backups, add a cron job on the host:
 
 ```bash
-0 3 * * * /path/to/HiveMem/scripts/backup.sh
+0 3 * * * docker exec hivemem hivemem-backup
 ```
 
-## Local development
-
-Run tests against the database (requires the `db` container to be running):
+## Debugging
 
 ```bash
-# Install dev dependencies
-pip install -e ".[dev]"
+# PostgreSQL shell
+docker exec -it hivemem psql -U hivemem
 
-# Run tests
-pytest tests/ -v
+# Container logs
+docker logs hivemem --tail 50
+
+# Health check
+curl -s http://localhost:8421/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"hivemem_health","arguments":{}}}'
 ```
 
 ## Architecture
 
 ```mermaid
 graph TB
-    Client["🧠 Claude / MCP Client"]
+    Client["Claude / MCP Client"]
 
-    subgraph Docker Compose
+    subgraph Container["Docker Container"]
         MCP["FastMCP Server<br/>:8421<br/><i>Streamable HTTP</i>"]
         BGE["BGE-M3<br/><i>1024d embeddings</i>"]
 
-        subgraph PostgreSQL 17
+        subgraph PG["PostgreSQL 17"]
             pgvector["pgvector<br/><i>semantic search</i>"]
             AGE["Apache AGE<br/><i>graph traversal</i>"]
             Tables["drawers · facts · edges · identity"]
         end
     end
 
+    Volume["/data volume<br/><i>pgdata + models + backups</i>"]
+
     Client -->|"MCP over HTTP"| MCP
     MCP --> BGE
-    MCP --> pgvector
-    MCP --> AGE
+    MCP -->|"Unix socket"| PG
     pgvector --> Tables
     AGE --> Tables
+    PG --- Volume
 ```
 
 ### Tools (16)
