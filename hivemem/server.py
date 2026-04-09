@@ -234,4 +234,9 @@ async def hivemem_health() -> dict:
 
 
 if __name__ == "__main__":
+    from hivemem.embeddings import get_model
+
+    print("Loading BGE-M3 embedding model...")
+    get_model()
+    print("Model ready.")
     mcp.run(transport="streamable-http")
