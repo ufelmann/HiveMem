@@ -13,17 +13,64 @@ MCP server backed by PostgreSQL 17 (pgvector + Apache AGE) with BGE-M3 embedding
 - Docker Compose deployment (one command: `docker compose up`)
 - Daily pg_dump backups
 
-## Quick Start
+## Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) (v2+)
+- ~4 GB free disk space (BGE-M3 model ~2.2 GB + Docker images ~1.5 GB)
+- ~3 GB free RAM (BGE-M3 embedding model runs on CPU)
+
+## Installation
+
+### 1. Clone and configure
 
 ```bash
 git clone https://github.com/ufelmann/HiveMem.git
 cd HiveMem
 cp .env.example .env
-docker compose up -d
-# First start downloads BGE-M3 model (~2.2GB)
 ```
 
-## MCP Integration
+Edit `.env` to set your database password (optional — defaults to `hivemem_local_only` for local development):
+
+```
+HIVEMEM_DB_PASSWORD=your_secure_password
+```
+
+### 2. Build and start
+
+```bash
+docker compose up -d
+```
+
+This builds three containers:
+
+| Container | What it does |
+|---|---|
+| **db** | PostgreSQL 17 with pgvector + Apache AGE (built from source) |
+| **mcp** | FastMCP server on port 8420 (internal) |
+| **caddy** | Reverse proxy on port 8421 (exposed) |
+
+First start takes a few minutes — the MCP container downloads the BGE-M3 embedding model (~2.2 GB). Progress is visible in the logs:
+
+```bash
+docker compose logs mcp -f
+```
+
+### 3. Verify
+
+```bash
+# Check all containers are healthy
+docker compose ps
+
+# Test the MCP endpoint
+curl -s http://localhost:8421/mcp \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | head -c 200
+```
+
+### 4. Connect to Claude
+
+Add to your MCP client config (Claude Desktop `claude_desktop_config.json` or Claude Code `.mcp.json`):
 
 ```json
 {
@@ -34,6 +81,45 @@ docker compose up -d
     }
   }
 }
+```
+
+All 16 `hivemem_*` tools should now be available.
+
+### 5. Seed identity (optional)
+
+Customize `scripts/seed-identity.py` with your own profile, then:
+
+```bash
+# With the stack running:
+docker compose exec mcp python scripts/seed-identity.py
+```
+
+This populates the wake-up layers (`l0_identity`, `l1_critical`) used by the `hivemem_wake_up` tool.
+
+## Backups
+
+Daily backups with `pg_dump`:
+
+```bash
+./scripts/backup.sh
+```
+
+Dumps are saved to `backups/` (gzipped, last 7 days kept). For automated daily backups, add a cron job:
+
+```bash
+0 3 * * * /path/to/HiveMem/scripts/backup.sh
+```
+
+## Local development
+
+Run tests against the database (requires the `db` container to be running):
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest tests/ -v
 ```
 
 ## Architecture
