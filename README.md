@@ -41,13 +41,12 @@ HIVEMEM_DB_PASSWORD=your_secure_password
 docker compose up -d
 ```
 
-This builds three containers:
+This builds two containers:
 
 | Container | What it does |
 |---|---|
 | **db** | PostgreSQL 17 with pgvector + Apache AGE (built from source) |
-| **mcp** | FastMCP server on port 8420 (internal) |
-| **caddy** | Reverse proxy on port 8421 (exposed) |
+| **mcp** | FastMCP server on port 8421 (Streamable HTTP) |
 
 First start takes a few minutes — the MCP container downloads the BGE-M3 embedding model (~2.2 GB). Progress is visible in the logs:
 
@@ -129,8 +128,7 @@ graph TB
     Client["🧠 Claude / MCP Client"]
 
     subgraph Docker Compose
-        Caddy["Caddy<br/>:8421 → :8420<br/><i>reverse proxy</i>"]
-        MCP["FastMCP Server<br/>:8420<br/><i>Streamable HTTP</i>"]
+        MCP["FastMCP Server<br/>:8421<br/><i>Streamable HTTP</i>"]
         BGE["BGE-M3<br/><i>1024d embeddings</i>"]
 
         subgraph PostgreSQL 17
@@ -140,8 +138,7 @@ graph TB
         end
     end
 
-    Client -->|"MCP over HTTP"| Caddy
-    Caddy --> MCP
+    Client -->|"MCP over HTTP"| MCP
     MCP --> BGE
     MCP --> pgvector
     MCP --> AGE

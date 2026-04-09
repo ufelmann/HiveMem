@@ -16,6 +16,6 @@ RUN pip install --no-cache-dir ".[dev]" 2>/dev/null || pip install --no-cache-di
 COPY hivemem/ hivemem/
 COPY scripts/ scripts/
 
-EXPOSE 8420
+EXPOSE 8421
 
 CMD ["python", "-m", "hivemem.server"]
