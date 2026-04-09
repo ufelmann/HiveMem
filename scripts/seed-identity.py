@@ -14,7 +14,7 @@ from hivemem.tools.write import hivemem_update_identity
 
 DB_URL = os.environ.get(
     "HIVEMEM_DB_URL",
-    "postgresql://hivemem:hivemem_local_only@localhost:5432/hivemem",
+    "postgresql://hivemem@/hivemem?host=/var/run/postgresql",
 )
 
 # ── CUSTOMIZE THESE WITH YOUR OWN IDENTITY ──────────────────────────────

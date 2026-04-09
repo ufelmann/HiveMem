@@ -7,7 +7,7 @@ import pytest
 
 TEST_DB_URL = os.environ.get(
     "HIVEMEM_TEST_DB_URL",
-    "postgresql://hivemem:hivemem_local_only@localhost:5432/hivemem_test",
+    "postgresql://hivemem@/hivemem_test?host=/var/run/postgresql",
 )
 
 

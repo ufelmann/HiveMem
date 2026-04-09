@@ -12,7 +12,7 @@ async def get_pool(db_url: str) -> AsyncConnectionPool:
         pool = AsyncConnectionPool(
             db_url,
             min_size=2,
-            max_size=10,
+            max_size=20,
             open=False,
             kwargs={"row_factory": dict_row},
         )
