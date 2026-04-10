@@ -4,9 +4,17 @@ set -euo pipefail
 PGDATA="${PGDATA:-/data/pgdata}"
 export PGDATA
 
-# Generate secrets (API token + DB password) on first start
+# Generate DB password on first start (tokens are managed via CLI)
 echo "Checking secrets..."
-python3 -c "from hivemem.security import ensure_secrets; ensure_secrets()"
+python3 -c "
+from hivemem.security import load_secrets, save_secrets
+import secrets
+data = load_secrets()
+if 'db_password' not in data:
+    data['db_password'] = secrets.token_urlsafe(24)
+    save_secrets(data)
+    print('DB password generated.')
+"
 
 # Read DB password from secrets for PG setup
 DB_PASSWORD=$(python3 -c "from hivemem.security import load_secrets; print(load_secrets()['db_password'])")
@@ -49,6 +57,17 @@ psql -U hivemem -h /var/run/postgresql -d postgres -tc "SELECT 1 FROM pg_databas
 psql -U hivemem -h /var/run/postgresql -d hivemem -c "CREATE EXTENSION IF NOT EXISTS vector"
 psql -U hivemem -h /var/run/postgresql -d hivemem -c "CREATE EXTENSION IF NOT EXISTS age"
 psql -U hivemem -h /var/run/postgresql -d hivemem -f /app/hivemem/schema.sql 2>/dev/null || true
+
+# Check if any API tokens exist
+TOKEN_COUNT=$(psql -U hivemem -h /var/run/postgresql -d hivemem -tAc "SELECT count(*) FROM api_tokens" 2>/dev/null || echo "0")
+if [ "$TOKEN_COUNT" = "0" ]; then
+    echo ""
+    echo "================================================================"
+    echo "  WARNING: No API tokens configured."
+    echo "  Create one: docker exec hivemem hivemem-token create admin --role admin"
+    echo "================================================================"
+    echo ""
+fi
 
 # Create backup directory
 mkdir -p /data/backups
