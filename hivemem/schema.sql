@@ -245,3 +245,135 @@ BEGIN
     SELECT * FROM chain ORDER BY valid_from ASC;
 END;
 $$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- RANKED SEARCH INFRASTRUCTURE
+-- ============================================================
+
+-- Full-text search vector (generated column)
+ALTER TABLE drawers ADD COLUMN IF NOT EXISTS tsv tsvector
+    GENERATED ALWAYS AS (
+        setweight(to_tsvector('english', coalesce(summary, '')), 'A') ||
+        setweight(to_tsvector('english', coalesce(content, '')), 'B')
+    ) STORED;
+
+CREATE INDEX IF NOT EXISTS idx_drawers_tsv ON drawers USING GIN (tsv);
+
+-- HNSW vector index (works well at any scale, better recall than ivfflat)
+CREATE INDEX IF NOT EXISTS idx_drawers_embedding ON drawers USING hnsw (embedding vector_cosine_ops);
+
+-- Access tracking (popularity signal)
+CREATE TABLE IF NOT EXISTS access_log (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    drawer_id   UUID REFERENCES drawers(id),
+    fact_id     UUID REFERENCES facts(id),
+    accessed_by TEXT,
+    accessed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_access_drawer ON access_log (drawer_id, accessed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_access_fact ON access_log (fact_id, accessed_at DESC);
+
+-- Materialized view: access counts per drawer (refresh periodically)
+CREATE MATERIALIZED VIEW IF NOT EXISTS drawer_popularity AS
+SELECT
+    drawer_id,
+    COUNT(*) AS access_count,
+    MAX(accessed_at) AS last_accessed,
+    COUNT(*) FILTER (WHERE accessed_at > now() - interval '30 days') AS recent_access_count
+FROM access_log
+WHERE drawer_id IS NOT NULL
+GROUP BY drawer_id;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_drawer_popularity_id ON drawer_popularity (drawer_id);
+
+-- Ranked search: 5 signals with configurable weights
+CREATE OR REPLACE FUNCTION ranked_search(
+    query_embedding vector(1024),
+    query_text TEXT,
+    p_wing TEXT DEFAULT NULL,
+    p_room TEXT DEFAULT NULL,
+    p_hall TEXT DEFAULT NULL,
+    p_limit INTEGER DEFAULT 10,
+    p_weight_semantic REAL DEFAULT 0.35,
+    p_weight_keyword REAL DEFAULT 0.15,
+    p_weight_recency REAL DEFAULT 0.20,
+    p_weight_importance REAL DEFAULT 0.15,
+    p_weight_popularity REAL DEFAULT 0.15
+)
+RETURNS TABLE (
+    id UUID,
+    content TEXT,
+    summary TEXT,
+    wing TEXT,
+    room TEXT,
+    hall TEXT,
+    tags TEXT[],
+    importance SMALLINT,
+    created_at TIMESTAMPTZ,
+    valid_from TIMESTAMPTZ,
+    score_semantic REAL,
+    score_keyword REAL,
+    score_recency REAL,
+    score_importance REAL,
+    score_popularity REAL,
+    score_total REAL
+) AS $$
+BEGIN
+    RETURN QUERY
+    WITH scored AS (
+        SELECT
+            d.id, d.content, d.summary, d.wing, d.room, d.hall,
+            d.tags, d.importance, d.created_at, d.valid_from,
+
+            -- 1. Semantic similarity (0-1)
+            CASE WHEN d.embedding IS NOT NULL
+                 THEN 1 - (d.embedding <=> query_embedding)::REAL
+                 ELSE 0 END
+            AS sem,
+
+            -- 2. Keyword match (0-1, BM25-like)
+            CASE WHEN query_text IS NOT NULL AND query_text != ''
+                 THEN LEAST(ts_rank_cd(d.tsv, plainto_tsquery('english', query_text)), 1.0)
+                 ELSE 0 END
+            AS kw,
+
+            -- 3. Recency (0-1, exponential decay, half-life 90 days)
+            EXP(-0.693 * EXTRACT(EPOCH FROM (now() - d.created_at)) / (90 * 86400))::REAL
+            AS rec,
+
+            -- 4. Importance (0-1, 1=critical scores highest)
+            (CASE d.importance
+                WHEN 1 THEN 1.0 WHEN 2 THEN 0.8 WHEN 3 THEN 0.6
+                WHEN 4 THEN 0.4 WHEN 5 THEN 0.2 ELSE 0.6 END)::REAL
+            AS imp,
+
+            -- 5. Popularity (0-1, normalized by max)
+            COALESCE(
+                dp.recent_access_count::REAL /
+                GREATEST((SELECT MAX(recent_access_count) FROM drawer_popularity), 1),
+                0
+            )::REAL
+            AS pop
+
+        FROM active_drawers d
+        LEFT JOIN drawer_popularity dp ON dp.drawer_id = d.id
+        WHERE (p_wing IS NULL OR d.wing = p_wing)
+          AND (p_room IS NULL OR d.room = p_room)
+          AND (p_hall IS NULL OR d.hall = p_hall)
+    )
+    SELECT
+        s.id, s.content, s.summary, s.wing, s.room, s.hall,
+        s.tags, s.importance, s.created_at, s.valid_from,
+        s.sem, s.kw, s.rec, s.imp, s.pop,
+        (s.sem * p_weight_semantic +
+         s.kw * p_weight_keyword +
+         s.rec * p_weight_recency +
+         s.imp * p_weight_importance +
+         s.pop * p_weight_popularity)::REAL AS score_total
+    FROM scored s
+    WHERE s.sem > 0.3 OR s.kw > 0
+    ORDER BY score_total DESC
+    LIMIT p_limit;
+END;
+$$ LANGUAGE plpgsql;
