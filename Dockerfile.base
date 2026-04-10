@@ -48,7 +48,7 @@ RUN pip install --no-cache-dir --break-system-packages .
 ENV PGDATA=/data/pgdata \
     HF_HOME=/data/models \
     HIVEMEM_PORT=8421 \
-    HIVEMEM_DB_URL="postgresql://hivemem@/hivemem?host=/var/run/postgresql"
+    PYTHONPATH=/app
 
 RUN mkdir -p /var/run/postgresql && chown postgres:postgres /var/run/postgresql \
     && mkdir -p /data && chown postgres:postgres /data
