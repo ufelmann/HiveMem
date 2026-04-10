@@ -143,6 +143,22 @@ ROLE_TOOLS: dict[str, set[str]] = {
 }
 
 
+def check_tool_permission(role: str, tool_name: str) -> str | None:
+    """Check if a role can call a tool. Returns error message or None."""
+    allowed = ROLE_TOOLS.get(role)
+    if allowed is None:
+        return f"Unknown role '{role}'"
+    if tool_name not in allowed:
+        return f"Tool '{tool_name}' not permitted for role '{role}'"
+    return None
+
+
+def filter_tools_for_role(role: str, tools: list[dict]) -> list[dict]:
+    """Filter a tools/list response to only include tools allowed for the role."""
+    allowed = ROLE_TOOLS.get(role, set())
+    return [t for t in tools if t["name"] in allowed]
+
+
 async def create_token(
     pool, name: str, role: str, expires_in_days: int | None = None
 ) -> str:

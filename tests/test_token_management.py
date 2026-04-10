@@ -260,3 +260,103 @@ async def test_middleware_revoked_token(pool):
 
     await mw(scope, lambda: {}, mock_send)
     assert sent[0]["status"] == 401
+
+
+from hivemem.security import ROLE_TOOLS, READ_TOOLS, WRITE_TOOLS, ADMIN_TOOLS
+
+
+def test_reader_tool_set_count():
+    """Reader sees exactly READ_TOOLS."""
+    assert len(ROLE_TOOLS["reader"]) == len(READ_TOOLS)
+
+
+def test_writer_tool_set_count():
+    """Writer sees READ + WRITE but not ADMIN."""
+    assert len(ROLE_TOOLS["writer"]) == len(READ_TOOLS | WRITE_TOOLS)
+
+
+def test_admin_tool_set_count():
+    """Admin sees everything."""
+    assert len(ROLE_TOOLS["admin"]) == len(READ_TOOLS | WRITE_TOOLS | ADMIN_TOOLS)
+
+
+async def test_tool_call_denied_for_reader(pool):
+    """Reader calling a write tool gets error via check_tool_permission."""
+    from hivemem.security import check_tool_permission
+
+    err = check_tool_permission("reader", "hivemem_add_drawer")
+    assert err is not None
+    assert "not permitted" in err.lower()
+
+
+async def test_tool_call_allowed_for_admin(pool):
+    """Admin calling approve_pending is allowed."""
+    from hivemem.security import check_tool_permission
+
+    err = check_tool_permission("admin", "hivemem_approve_pending")
+    assert err is None
+
+
+async def test_tool_call_denied_writer_approve(pool):
+    """Writer calling approve_pending gets error."""
+    from hivemem.security import check_tool_permission
+
+    err = check_tool_permission("writer", "hivemem_approve_pending")
+    assert err is not None
+
+
+async def test_tool_call_denied_agent_approve(pool):
+    """Agent calling approve_pending gets error."""
+    from hivemem.security import check_tool_permission
+
+    err = check_tool_permission("agent", "hivemem_approve_pending")
+    assert err is not None
+
+
+def test_filter_tools_for_reader():
+    """filter_tools_for_role removes non-read tools."""
+    from hivemem.security import filter_tools_for_role
+
+    all_tool_defs = [
+        {"name": "hivemem_search", "description": "search"},
+        {"name": "hivemem_add_drawer", "description": "add"},
+        {"name": "hivemem_approve_pending", "description": "approve"},
+        {"name": "hivemem_health", "description": "health"},
+    ]
+    filtered = filter_tools_for_role("reader", all_tool_defs)
+    names = [t["name"] for t in filtered]
+    assert "hivemem_search" in names
+    assert "hivemem_add_drawer" not in names
+    assert "hivemem_approve_pending" not in names
+    assert "hivemem_health" not in names
+
+
+def test_filter_tools_for_admin():
+    """Admin keeps all tools."""
+    from hivemem.security import filter_tools_for_role
+
+    all_tool_defs = [
+        {"name": "hivemem_search", "description": "search"},
+        {"name": "hivemem_add_drawer", "description": "add"},
+        {"name": "hivemem_approve_pending", "description": "approve"},
+    ]
+    filtered = filter_tools_for_role("admin", all_tool_defs)
+    assert len(filtered) == 3
+
+
+def test_filter_tools_for_writer():
+    """Writer sees read+write but not admin tools."""
+    from hivemem.security import filter_tools_for_role
+
+    all_tool_defs = [
+        {"name": "hivemem_search", "description": "search"},
+        {"name": "hivemem_add_drawer", "description": "add"},
+        {"name": "hivemem_approve_pending", "description": "approve"},
+        {"name": "hivemem_health", "description": "health"},
+    ]
+    filtered = filter_tools_for_role("writer", all_tool_defs)
+    names = [t["name"] for t in filtered]
+    assert "hivemem_search" in names
+    assert "hivemem_add_drawer" in names
+    assert "hivemem_approve_pending" not in names
+    assert "hivemem_health" not in names
