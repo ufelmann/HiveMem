@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import logging
 import secrets
 import time
+from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -72,6 +74,123 @@ def get_db_url() -> str:
     data = load_secrets()
     password = data.get("db_password", "")
     return f"postgresql://hivemem:{password}@/hivemem?host=/var/run/postgresql"
+
+
+# ── Token Management (DB-backed) ─────────────────────────────────────
+
+
+def _hash_token(plaintext: str) -> str:
+    """SHA-256 hash of a token."""
+    return hashlib.sha256(plaintext.encode()).hexdigest()
+
+
+VALID_ROLES = {"admin", "writer", "reader", "agent"}
+
+
+async def create_token(
+    pool, name: str, role: str, expires_in_days: int | None = None
+) -> str:
+    """Create a new API token. Returns plaintext (shown once, never stored)."""
+    if role not in VALID_ROLES:
+        raise ValueError(f"Invalid role '{role}'. Must be one of: {', '.join(sorted(VALID_ROLES))}")
+
+    from hivemem.db import fetch_one
+
+    existing = await fetch_one(pool, "SELECT 1 FROM api_tokens WHERE name = %s", (name,))
+    if existing:
+        raise ValueError(f"Token '{name}' already exists")
+
+    plaintext = secrets.token_urlsafe(32)
+    token_hash = _hash_token(plaintext)
+
+    expires_at = None
+    if expires_in_days is not None:
+        expires_at = datetime.now(timezone.utc) + timedelta(days=expires_in_days)
+
+    from hivemem.db import execute
+
+    await execute(
+        pool,
+        "INSERT INTO api_tokens (token_hash, name, role, expires_at) VALUES (%s, %s, %s, %s)",
+        (token_hash, name, role, expires_at),
+    )
+    return plaintext
+
+
+async def validate_token(pool, plaintext: str) -> dict | None:
+    """Validate a plaintext token. Returns {name, role} or None."""
+    token_hash = _hash_token(plaintext)
+
+    from hivemem.db import fetch_one
+
+    row = await fetch_one(
+        pool,
+        "SELECT name, role FROM api_tokens "
+        "WHERE token_hash = %s AND revoked_at IS NULL "
+        "AND (expires_at IS NULL OR expires_at > now())",
+        (token_hash,),
+    )
+    if row is None:
+        return None
+    return {"name": row["name"], "role": row["role"]}
+
+
+async def list_tokens(pool) -> list[dict]:
+    """List all tokens (no hashes, no plaintext)."""
+    from hivemem.db import fetch_all
+
+    rows = await fetch_all(
+        pool,
+        "SELECT name, role, created_at, expires_at, revoked_at FROM api_tokens ORDER BY created_at",
+    )
+    return [
+        {
+            "name": r["name"],
+            "role": r["role"],
+            "created_at": r["created_at"].isoformat(),
+            "expires_at": r["expires_at"].isoformat() if r["expires_at"] else None,
+            "revoked_at": r["revoked_at"].isoformat() if r["revoked_at"] else None,
+            "status": "revoked" if r["revoked_at"] else (
+                "expired" if r["expires_at"] and r["expires_at"] < datetime.now(timezone.utc) else "active"
+            ),
+        }
+        for r in rows
+    ]
+
+
+async def revoke_token(pool, name: str) -> None:
+    """Revoke a token by name."""
+    from hivemem.db import fetch_one, execute
+
+    existing = await fetch_one(pool, "SELECT 1 FROM api_tokens WHERE name = %s", (name,))
+    if not existing:
+        raise ValueError(f"Token '{name}' not found")
+
+    await execute(
+        pool,
+        "UPDATE api_tokens SET revoked_at = now() WHERE name = %s AND revoked_at IS NULL",
+        (name,),
+    )
+
+
+async def get_token_info(pool, name: str) -> dict | None:
+    """Get token metadata by name (no hash)."""
+    from hivemem.db import fetch_one
+
+    row = await fetch_one(
+        pool,
+        "SELECT name, role, created_at, expires_at, revoked_at FROM api_tokens WHERE name = %s",
+        (name,),
+    )
+    if row is None:
+        return None
+    return {
+        "name": row["name"],
+        "role": row["role"],
+        "created_at": row["created_at"],
+        "expires_at": row["expires_at"],
+        "revoked_at": row["revoked_at"],
+    }
 
 
 # ── Rate Limiting ──────────────────────────────────────────────────────
