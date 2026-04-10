@@ -98,7 +98,7 @@ async def hivemem_search(
     weight_importance: float = 0.15,
     weight_popularity: float = 0.15,
 ) -> list[dict]:
-    """5-signal ranked search: semantic + keyword + recency + importance + popularity. Adjust weights to change ranking."""
+    """5-signal ranked search. RULE: If the user asks about past decisions, people, or projects — ALWAYS search first, never guess. Returns results ranked by semantic similarity, keyword match, recency, importance, and popularity. Adjust weights to change ranking."""
     pool = await get_db_pool()
     return await _search(pool, query, limit=limit, wing=wing, room=room, hall=hall,
                          weight_semantic=weight_semantic, weight_keyword=weight_keyword,
@@ -168,7 +168,7 @@ async def hivemem_time_machine(subject: str, as_of: str | None = None) -> list[d
 
 @mcp.tool()
 async def hivemem_wake_up() -> dict:
-    """Load l0_identity and l1_critical from identity table."""
+    """Load identity context at session start. MANDATORY: call this BEFORE responding to the user's first message. Returns L0 identity (who the user is) and L1 critical facts."""
     pool = await get_db_pool()
     return await _wake_up(pool)
 
@@ -193,7 +193,7 @@ async def hivemem_add_drawer(
     created_by: str | None = None,
     valid_from: str | None = None,
 ) -> dict:
-    """Encode content and store as a drawer with optional metadata."""
+    """Store knowledge with progressive summarization. RULE: Always call hivemem_check_duplicate BEFORE adding. Include all layers: content (L0), summary (L1), key_points (L2), insight (L3). One drawer per topic."""
     from datetime import datetime, timezone
 
     pool = await get_db_pool()
@@ -211,7 +211,7 @@ async def hivemem_add_drawer(
 
 @mcp.tool()
 async def hivemem_check_duplicate(content: str, threshold: float = 0.95) -> list[dict]:
-    """Check if similar content already exists before adding a drawer."""
+    """MANDATORY: Call BEFORE every hivemem_add_drawer. Returns drawers with similarity > threshold. If match found, skip or update existing instead."""
     pool = await get_db_pool()
     return await _check_duplicate(pool, content, threshold=threshold)
 
@@ -227,7 +227,7 @@ async def hivemem_kg_add(
     created_by: str | None = None,
     valid_from: str | None = None,
 ) -> dict:
-    """Add a fact to the knowledge graph."""
+    """Add a fact triple to the knowledge graph. RULE: Always call hivemem_check_contradiction FIRST. Keep facts atomic — one triple per relationship. Always include valid_from date."""
     from datetime import datetime, timezone
 
     pool = await get_db_pool()
@@ -316,7 +316,7 @@ async def hivemem_check_contradiction(
     predicate: str,
     new_object: str,
 ) -> list[dict]:
-    """Check if a new fact contradicts existing active facts."""
+    """MANDATORY: Call BEFORE every hivemem_kg_add. Returns active facts with same subject+predicate but different object. If found, invalidate old fact first."""
     pool = await get_db_pool()
     return await _check_contradiction(pool, subject, predicate, new_object)
 
