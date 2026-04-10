@@ -49,7 +49,7 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 - **Maps of Content** -- curated narrative overviews per wing, append-only versioned
 - **References & reading list** -- track sources, link to drawers, filter by type/status
 - **Single container deployment** -- PostgreSQL + MCP server in one `docker run`
-- **164 tests** with testcontainers -- unit, integration, HTTP end-to-end, performance
+- **195 tests** with testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
 
 ## Prerequisites
 
@@ -330,6 +330,8 @@ All commands run inside the container: `docker exec hivemem hivemem-token ...`
 - **Audit log** -- every request logged to `/data/audit.log` (rotating, 10 MB max)
 - **PostgreSQL auth** -- scram-sha-256, auto-generated password in `/data/secrets.json`
 - **Timing-safe** -- token comparison uses SHA-256 hash lookup, not string comparison
+- **Path traversal protection** -- file import restricted to `/data/imports` and `/tmp`
+- **Tool call enforcement** -- `tools/call` checked against role permissions, not just `tools/list` filtering
 
 ## Backups
 
@@ -355,7 +357,7 @@ pytest tests/ -v
 ```
 
 ```
-164 passed in 22s
+195 passed in 38s
 ```
 
 ### Test structure
@@ -364,6 +366,8 @@ pytest tests/ -v
 |---|---|---|
 | `test_token_management.py` | 43 | Token CRUD, middleware auth, role mapping, tool filtering, E2E flows, SQL robustness |
 | `test_http_integration.py` | 15 | Full HTTP stack: request to auth to MCP to PostgreSQL |
+| `test_security.py` | 20 | Path traversal, tool enforcement, decision validation, XFF, safe defaults |
+| `test_concurrency.py` | 11 | Parallel writes, same-row revise, cache stampede, pool init, advisory locks |
 | `test_token_performance.py` | 7 | Cache latency (0.002ms), DB lookup (0.65ms), HTTP throughput (218 req/s) |
 | `test_sql_robustness.py` | 6 | Batch approve, query limits, atomic transactions, cycle-safe traversal |
 | `test_ranked_search.py` | 6 | 5-signal search, weight tuning, filters |
