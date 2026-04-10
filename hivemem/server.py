@@ -33,6 +33,7 @@ from hivemem.tools.write import (
     hivemem_add_drawer as _add_drawer,
     hivemem_approve_pending as _approve_pending,
     hivemem_check_contradiction as _check_contradiction,
+    hivemem_check_duplicate as _check_duplicate,
     hivemem_kg_add as _kg_add,
     hivemem_kg_invalidate as _kg_invalidate,
     hivemem_revise_drawer as _revise_drawer,
@@ -168,6 +169,9 @@ async def hivemem_add_drawer(
     tags: list[str] | None = None,
     importance: int | None = None,
     summary: str | None = None,
+    key_points: list[str] | None = None,
+    insight: str | None = None,
+    actionability: str | None = None,
     status: str = "committed",
     created_by: str | None = None,
     valid_from: str | None = None,
@@ -183,9 +187,16 @@ async def hivemem_add_drawer(
             dt = dt.replace(tzinfo=timezone.utc)
     return await _add_drawer(
         pool, content, wing=wing, room=room, hall=hall, source=source, tags=tags,
-        importance=importance, summary=summary, status=status, created_by=created_by,
-        valid_from=dt,
+        importance=importance, summary=summary, key_points=key_points, insight=insight,
+        actionability=actionability, status=status, created_by=created_by, valid_from=dt,
     )
+
+
+@mcp.tool()
+async def hivemem_check_duplicate(content: str, threshold: float = 0.95) -> list[dict]:
+    """Check if similar content already exists before adding a drawer."""
+    pool = await get_db_pool()
+    return await _check_duplicate(pool, content, threshold=threshold)
 
 
 @mcp.tool()
