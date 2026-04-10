@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 
 from psycopg_pool import AsyncConnectionPool
@@ -28,7 +29,7 @@ async def hivemem_add_drawer(
     valid_from: datetime | None = None,
 ) -> dict:
     """Encode content, insert into drawers, return {id, wing, room, hall, status}."""
-    vector = encode(content)
+    vector = await asyncio.to_thread(encode, content)
     vector_str = str(vector)
     tags_val = tags or []
     key_points_val = key_points or []
@@ -61,7 +62,7 @@ async def hivemem_check_duplicate(
     threshold: float = 0.95,
 ) -> list[dict]:
     """Check if similar content already exists."""
-    vector = encode(content)
+    vector = await asyncio.to_thread(encode, content)
     vector_str = str(vector)
     rows = await fetch_all(
         pool,
