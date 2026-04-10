@@ -343,7 +343,10 @@ RETURNS TABLE (
 ) AS $$
 BEGIN
     RETURN QUERY
-    WITH scored AS (
+    WITH max_pop AS (
+        SELECT GREATEST(MAX(recent_access_count), 1)::REAL AS val FROM drawer_popularity
+    ),
+    scored AS (
         SELECT
             d.id, d.content, d.summary, d.wing, d.room, d.hall,
             d.tags, d.importance, d.created_at, d.valid_from,
@@ -370,17 +373,15 @@ BEGIN
                 WHEN 4 THEN 0.4 WHEN 5 THEN 0.2 ELSE 0.6 END)::REAL
             AS imp,
 
-            -- 5. Popularity (0-1, normalized by max)
-            COALESCE(
-                dp.recent_access_count::REAL /
-                GREATEST((SELECT MAX(recent_access_count) FROM drawer_popularity), 1),
-                0
-            )::REAL
+            -- 5. Popularity (0-1, normalized by max, computed once)
+            COALESCE(dp.recent_access_count::REAL / (SELECT val FROM max_pop), 0)::REAL
             AS pop
 
-        FROM active_drawers d
+        FROM drawers d
         LEFT JOIN drawer_popularity dp ON dp.drawer_id = d.id
-        WHERE (p_wing IS NULL OR d.wing = p_wing)
+        WHERE (d.valid_until IS NULL OR d.valid_until > now())
+          AND d.status = 'committed'
+          AND (p_wing IS NULL OR d.wing = p_wing)
           AND (p_room IS NULL OR d.room = p_room)
           AND (p_hall IS NULL OR d.hall = p_hall)
     )
