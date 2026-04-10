@@ -114,3 +114,42 @@ async def test_create_token_with_expiry(pool):
 
     info = await get_token_info(pool, "expiry-test")
     assert info["expires_at"] is not None
+
+
+from hivemem.security import ROLE_TOOLS, ALL_TOOLS
+
+
+def test_admin_sees_all_tools():
+    """Admin role has access to every registered tool."""
+    assert ROLE_TOOLS["admin"] == ALL_TOOLS
+
+
+def test_reader_sees_only_read_tools():
+    """Reader cannot see any write or admin tool."""
+    reader_tools = ROLE_TOOLS["reader"]
+    assert "hivemem_search" in reader_tools
+    assert "hivemem_wake_up" in reader_tools
+    assert "hivemem_add_drawer" not in reader_tools
+    assert "hivemem_approve_pending" not in reader_tools
+    assert "hivemem_health" not in reader_tools
+
+
+def test_writer_cannot_approve():
+    """Writer has write tools but not approve_pending."""
+    writer_tools = ROLE_TOOLS["writer"]
+    assert "hivemem_add_drawer" in writer_tools
+    assert "hivemem_kg_add" in writer_tools
+    assert "hivemem_approve_pending" not in writer_tools
+    assert "hivemem_health" not in writer_tools
+
+
+def test_agent_matches_writer():
+    """Agent sees the same tools as writer."""
+    assert ROLE_TOOLS["agent"] == ROLE_TOOLS["writer"]
+
+
+def test_no_unknown_tools_in_roles():
+    """Every tool in a role set must exist in ALL_TOOLS."""
+    for role, tools in ROLE_TOOLS.items():
+        unknown = tools - ALL_TOOLS
+        assert not unknown, f"Role '{role}' has unknown tools: {unknown}"
