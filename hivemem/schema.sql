@@ -134,9 +134,11 @@ DECLARE
 BEGIN
     UPDATE drawers SET valid_until = now() WHERE id = p_old_id AND valid_until IS NULL;
     SELECT * INTO v_old FROM drawers WHERE id = p_old_id;
-    INSERT INTO drawers (parent_id, content, wing, room, hall, source, tags, importance, summary, status, created_by)
+    INSERT INTO drawers (parent_id, content, wing, room, hall, source, tags, importance, summary,
+                         key_points, insight, actionability, status, created_by)
     VALUES (p_old_id, p_new_content, v_old.wing, v_old.room, v_old.hall, v_old.source, v_old.tags,
-            v_old.importance, COALESCE(p_new_summary, v_old.summary), 'committed', p_created_by)
+            v_old.importance, COALESCE(p_new_summary, v_old.summary),
+            v_old.key_points, v_old.insight, v_old.actionability, 'committed', p_created_by)
     RETURNING id INTO v_new_id;
     RETURN v_new_id;
 END;
