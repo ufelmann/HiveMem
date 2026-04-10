@@ -198,6 +198,96 @@ async def hivemem_approve_pending(
     return {"decision": decision, "count": count}
 
 
+async def hivemem_add_reference(
+    pool: AsyncConnectionPool,
+    title: str,
+    url: str | None = None,
+    author: str | None = None,
+    ref_type: str | None = None,
+    status: str = "read",
+    notes: str | None = None,
+    tags: list[str] | None = None,
+    importance: int | None = None,
+) -> dict:
+    """Add a source reference."""
+    tags_val = tags or []
+    row = await fetch_one(
+        pool,
+        """
+        INSERT INTO references_ (title, url, author, ref_type, status, notes, tags, importance)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id, title, status
+        """,
+        (title, url, author, ref_type, status, notes, tags_val, importance),
+    )
+    return {"id": str(row["id"]), "title": row["title"], "status": row["status"]}
+
+
+async def hivemem_link_reference(
+    pool: AsyncConnectionPool,
+    drawer_id: str,
+    reference_id: str,
+    relation: str = "source",
+) -> dict:
+    """Link a reference to a drawer."""
+    row = await fetch_one(
+        pool,
+        """
+        INSERT INTO drawer_references (drawer_id, reference_id, relation)
+        VALUES (%s, %s, %s)
+        RETURNING id
+        """,
+        (drawer_id, reference_id, relation),
+    )
+    return {"id": str(row["id"]), "drawer_id": drawer_id, "reference_id": reference_id, "relation": relation}
+
+
+async def hivemem_register_agent(
+    pool: AsyncConnectionPool,
+    name: str,
+    focus: str,
+    autonomy: dict | None = None,
+    schedule: str | None = None,
+    model_routing: dict | None = None,
+    tools: list[str] | None = None,
+) -> dict:
+    """Register or update an agent in the fleet."""
+    import json
+    autonomy_json = json.dumps(autonomy or {"default": "suggest_only"})
+    routing_json = json.dumps(model_routing) if model_routing else None
+    tools_val = tools or []
+    row = await fetch_one(
+        pool,
+        """
+        INSERT INTO agents (name, focus, autonomy, schedule, model_routing, tools)
+        VALUES (%s, %s, %s::jsonb, %s, %s::jsonb, %s)
+        ON CONFLICT (name) DO UPDATE
+            SET focus = EXCLUDED.focus,
+                autonomy = EXCLUDED.autonomy,
+                schedule = EXCLUDED.schedule,
+                model_routing = EXCLUDED.model_routing,
+                tools = EXCLUDED.tools
+        RETURNING name, focus
+        """,
+        (name, focus, autonomy_json, schedule, routing_json, tools_val),
+    )
+    return {"name": row["name"], "focus": row["focus"]}
+
+
+async def hivemem_diary_write(
+    pool: AsyncConnectionPool,
+    agent: str,
+    entry: str,
+) -> dict:
+    """Write an entry to an agent's diary."""
+    row = await fetch_one(
+        pool,
+        "INSERT INTO agent_diary (agent, entry) VALUES (%s, %s) RETURNING id",
+        (agent, entry),
+    )
+    return {"id": str(row["id"]), "agent": agent}
+
+
 async def hivemem_update_identity(
     pool: AsyncConnectionPool,
     key: str,
