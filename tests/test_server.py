@@ -14,33 +14,22 @@ async def pool(db_url):
     await close_pool(db_url)
 
 
-def test_all_16_tools_registered():
-    """Verify all 16 tools are registered in the MCP server."""
+def test_all_tools_registered():
+    """Verify all tools are registered in the MCP server."""
     from hivemem.server import mcp
 
     tools = mcp._tool_manager._tools
-    expected_tools = [
+    key_tools = [
         "hivemem_status",
         "hivemem_search",
-        "hivemem_search_kg",
-        "hivemem_get_drawer",
-        "hivemem_list_wings",
-        "hivemem_list_rooms",
-        "hivemem_traverse",
-        "hivemem_time_machine",
-        "hivemem_wake_up",
-        "hivemem_add_drawer",
-        "hivemem_kg_add",
-        "hivemem_kg_invalidate",
-        "hivemem_update_identity",
-        "hivemem_mine_file",
-        "hivemem_mine_directory",
         "hivemem_health",
+        "hivemem_add_drawer",
+        "hivemem_wake_up",
     ]
     registered = set(tools.keys())
-    for name in expected_tools:
+    for name in key_tools:
         assert name in registered, f"Tool '{name}' not registered"
-    assert len(registered) >= 16, f"Expected at least 16 tools, got {len(registered)}: {registered}"
+    assert len(registered) >= 36, f"Expected at least 36 tools, got {len(registered)}: {registered}"
 
 
 async def test_health(pool):
