@@ -45,7 +45,7 @@ async def seeded_pool(pool):
         VALUES (
             'aaaaaaaa-0000-0000-0000-000000000001',
             'Server deployment automation and backup scripts',
-            %s::vector, 'tech', 'infra', 'main', 'test', ARRAY['deployment', 'backup']
+            %s::vector, 'tech', 'infra', 'facts', 'test', ARRAY['deployment', 'backup']
         )
         """,
         (str(vector),),
@@ -60,7 +60,7 @@ async def seeded_pool(pool):
         VALUES (
             'aaaaaaaa-0000-0000-0000-000000000002',
             'Family vacation plans for summer',
-            %s::vector, 'personal', 'family', 'main', 'test', ARRAY['family', 'vacation']
+            %s::vector, 'personal', 'family', 'facts', 'test', ARRAY['family', 'vacation']
         )
         """,
         (str(vector2),),
