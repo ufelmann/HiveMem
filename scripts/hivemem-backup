@@ -7,6 +7,9 @@ DUMP_FILE="$BACKUP_DIR/hivemem-$DATE.sql.gz"
 
 mkdir -p "$BACKUP_DIR"
 
+# Get DB password from secrets
+export PGPASSWORD=$(python3 -c "from hivemem.security import load_secrets; print(load_secrets()['db_password'])")
+
 pg_dump -U hivemem -h /var/run/postgresql hivemem | gzip > "$DUMP_FILE"
 
 # Keep only last 7 daily dumps
