@@ -52,3 +52,22 @@ def test_db():
 @pytest.fixture
 def db_url(test_db):
     return test_db
+
+
+@pytest.fixture(autouse=True)
+def _mock_embeddings(monkeypatch):
+    """Replace real BGE-M3 embedding with a fast dummy (no torch needed)."""
+    import random
+
+    def dummy_encode(text, return_sparse=False):
+        random.seed(hash(text) % (2**32))
+        vec = [random.gauss(0, 1) for _ in range(1024)]
+        if return_sparse:
+            return {"dense": vec, "sparse": {}}
+        return vec
+
+    def dummy_encode_query(text):
+        return dummy_encode(text)
+
+    monkeypatch.setattr("hivemem.embeddings.encode", dummy_encode)
+    monkeypatch.setattr("hivemem.embeddings.encode_query", dummy_encode_query)
