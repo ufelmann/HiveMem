@@ -1,15 +1,15 @@
 """Embedding model loading and encoding — BGE-M3 (dense + sparse)."""
 
-from FlagEmbedding import BGEM3FlagModel
-
-_model: BGEM3FlagModel | None = None
+_model = None
 MODEL_NAME = "BAAI/bge-m3"
 
 
-def get_model() -> BGEM3FlagModel:
+def get_model():
     """Load BGE-M3 model (singleton). ~2.2GB RAM."""
     global _model
     if _model is None:
+        from FlagEmbedding import BGEM3FlagModel
+
         _model = BGEM3FlagModel(MODEL_NAME, use_fp16=True)
     return _model
 
