@@ -14,9 +14,12 @@ from hivemem.tools.import_tools import (
     hivemem_mine_file as _mine_file,
 )
 from hivemem.tools.read import (
+    hivemem_drawer_history as _drawer_history,
+    hivemem_fact_history as _fact_history,
     hivemem_get_drawer as _get_drawer,
     hivemem_list_rooms as _list_rooms,
     hivemem_list_wings as _list_wings,
+    hivemem_pending_approvals as _pending_approvals,
     hivemem_search as _search,
     hivemem_search_kg as _search_kg,
     hivemem_status as _status,
@@ -26,8 +29,12 @@ from hivemem.tools.read import (
 )
 from hivemem.tools.write import (
     hivemem_add_drawer as _add_drawer,
+    hivemem_approve_pending as _approve_pending,
+    hivemem_check_contradiction as _check_contradiction,
     hivemem_kg_add as _kg_add,
     hivemem_kg_invalidate as _kg_invalidate,
+    hivemem_revise_drawer as _revise_drawer,
+    hivemem_revise_fact as _revise_fact,
     hivemem_update_identity as _update_identity,
 )
 
@@ -143,6 +150,10 @@ async def hivemem_add_drawer(
     hall: str | None = None,
     source: str | None = None,
     tags: list[str] | None = None,
+    importance: int | None = None,
+    summary: str | None = None,
+    status: str = "committed",
+    created_by: str | None = None,
     valid_from: str | None = None,
 ) -> dict:
     """Encode content and store as a drawer with optional metadata."""
@@ -155,7 +166,9 @@ async def hivemem_add_drawer(
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
     return await _add_drawer(
-        pool, content, wing=wing, room=room, hall=hall, source=source, tags=tags, valid_from=dt
+        pool, content, wing=wing, room=room, hall=hall, source=source, tags=tags,
+        importance=importance, summary=summary, status=status, created_by=created_by,
+        valid_from=dt,
     )
 
 
@@ -166,6 +179,8 @@ async def hivemem_kg_add(
     object_: str,
     confidence: float = 1.0,
     source_id: str | None = None,
+    status: str = "committed",
+    created_by: str | None = None,
     valid_from: str | None = None,
 ) -> dict:
     """Add a fact to the knowledge graph."""
@@ -178,7 +193,8 @@ async def hivemem_kg_add(
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
     return await _kg_add(
-        pool, subject, predicate, object_, confidence=confidence, source_id=source_id, valid_from=dt
+        pool, subject, predicate, object_, confidence=confidence, source_id=source_id,
+        status=status, created_by=created_by, valid_from=dt,
     )
 
 
@@ -194,6 +210,68 @@ async def hivemem_update_identity(key: str, content: str) -> dict:
     """UPSERT into identity with rough token count."""
     pool = await get_db_pool()
     return await _update_identity(pool, key, content)
+
+
+@mcp.tool()
+async def hivemem_revise_drawer(
+    old_id: str,
+    new_content: str,
+    new_summary: str | None = None,
+    created_by: str = "user",
+) -> dict:
+    """Revise a drawer: close old version and insert new with parent_id link."""
+    pool = await get_db_pool()
+    return await _revise_drawer(pool, old_id, new_content, new_summary=new_summary, created_by=created_by)
+
+
+@mcp.tool()
+async def hivemem_revise_fact(
+    old_id: str,
+    new_object: str,
+    created_by: str = "user",
+) -> dict:
+    """Revise a fact: close old version and insert new with parent_id link."""
+    pool = await get_db_pool()
+    return await _revise_fact(pool, old_id, new_object, created_by=created_by)
+
+
+@mcp.tool()
+async def hivemem_check_contradiction(
+    subject: str,
+    predicate: str,
+    new_object: str,
+) -> list[dict]:
+    """Check if a new fact contradicts existing active facts."""
+    pool = await get_db_pool()
+    return await _check_contradiction(pool, subject, predicate, new_object)
+
+
+@mcp.tool()
+async def hivemem_drawer_history(drawer_id: str) -> list[dict]:
+    """Get all versions of a drawer via the parent_id chain."""
+    pool = await get_db_pool()
+    return await _drawer_history(pool, drawer_id)
+
+
+@mcp.tool()
+async def hivemem_fact_history(fact_id: str) -> list[dict]:
+    """Get all versions of a fact via the parent_id chain."""
+    pool = await get_db_pool()
+    return await _fact_history(pool, fact_id)
+
+
+@mcp.tool()
+async def hivemem_pending_approvals() -> list[dict]:
+    """List all pending agent suggestions awaiting approval."""
+    pool = await get_db_pool()
+    return await _pending_approvals(pool)
+
+
+@mcp.tool()
+async def hivemem_approve_pending(ids: list[str], decision: str) -> dict:
+    """Approve or reject pending drawers/facts by ID list."""
+    pool = await get_db_pool()
+    return await _approve_pending(pool, ids, decision)
 
 
 # ── Import Tools ────────────────────────────────────────────────────────
