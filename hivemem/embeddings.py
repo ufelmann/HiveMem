@@ -1,16 +1,21 @@
 """Embedding model loading and encoding — BGE-M3 (dense + sparse)."""
 
+import threading
+
 _model = None
+_model_lock = threading.Lock()
 MODEL_NAME = "BAAI/bge-m3"
 
 
 def get_model():
-    """Load BGE-M3 model (singleton). ~2.2GB RAM."""
+    """Load BGE-M3 model (singleton, thread-safe). ~2.2GB RAM."""
     global _model
     if _model is None:
-        from FlagEmbedding import BGEM3FlagModel
+        with _model_lock:
+            if _model is None:
+                from FlagEmbedding import BGEM3FlagModel
 
-        _model = BGEM3FlagModel(MODEL_NAME, use_fp16=True)
+                _model = BGEM3FlagModel(MODEL_NAME, use_fp16=True)
     return _model
 
 

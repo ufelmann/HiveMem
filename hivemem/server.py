@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from contextvars import ContextVar
 
@@ -95,13 +96,19 @@ mcp = FastMCP(
 )
 
 _pool_cache = None
+_pool_cache_lock = None  # created lazily to avoid event loop issues
 
 
 async def get_db_pool():
-    """Get the shared database pool (lazy init)."""
-    global _pool_cache
-    if _pool_cache is None:
-        _pool_cache = await get_pool(DB_URL)
+    """Get the shared database pool (lazy init, concurrency-safe)."""
+    global _pool_cache, _pool_cache_lock
+    if _pool_cache is not None:
+        return _pool_cache
+    if _pool_cache_lock is None:
+        _pool_cache_lock = asyncio.Lock()
+    async with _pool_cache_lock:
+        if _pool_cache is None:
+            _pool_cache = await get_pool(DB_URL)
     return _pool_cache
 
 

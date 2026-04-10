@@ -250,7 +250,7 @@ def check_rate_limit(ip: str) -> int | None:
         elapsed = time.time() - last_fail
         if elapsed < BAN_SECONDS:
             return int(BAN_SECONDS - elapsed)
-        del _failed_attempts[ip]
+        _failed_attempts.pop(ip, None)
     return None
 
 
@@ -372,7 +372,7 @@ class AuthMiddleware:
             # LRU eviction: remove oldest entries if cache is full
             if len(self._cache) >= self.CACHE_MAX_SIZE:
                 oldest_key = min(self._cache, key=lambda k: self._cache[k][1])
-                del self._cache[oldest_key]
+                self._cache.pop(oldest_key, None)
             self._cache[token_hash] = (identity, now)
         else:
             self._cache.pop(token_hash, None)
