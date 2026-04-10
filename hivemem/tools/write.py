@@ -297,8 +297,10 @@ async def hivemem_update_map(
     key_drawers: list[str] | None = None,
     created_by: str | None = None,
 ) -> dict:
-    """Create or update a Map of Content (append-only, atomic)."""
+    """Create or update a Map of Content (append-only, atomic, serialized per wing)."""
     async with pool.connection() as conn:
+        # Advisory lock prevents concurrent map updates for the same wing
+        await conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"map:{wing}",))
         await conn.execute(
             "UPDATE maps SET valid_until = now() WHERE wing = %s AND valid_until IS NULL",
             (wing,),

@@ -1,23 +1,29 @@
 """Database connection pool and helpers."""
 
+import asyncio
+
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
 _pools: dict[str, AsyncConnectionPool] = {}
+_pool_lock = asyncio.Lock()
 
 
 async def get_pool(db_url: str) -> AsyncConnectionPool:
     """Get or create an async connection pool for the given URL."""
-    if db_url not in _pools:
-        pool = AsyncConnectionPool(
-            db_url,
-            min_size=2,
-            max_size=20,
-            open=False,
-            kwargs={"row_factory": dict_row},
-        )
-        await pool.open()
-        _pools[db_url] = pool
+    if db_url in _pools:
+        return _pools[db_url]
+    async with _pool_lock:
+        if db_url not in _pools:
+            pool = AsyncConnectionPool(
+                db_url,
+                min_size=2,
+                max_size=20,
+                open=False,
+                kwargs={"row_factory": dict_row},
+            )
+            await pool.open()
+            _pools[db_url] = pool
     return _pools[db_url]
 
 
