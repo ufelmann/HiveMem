@@ -4,10 +4,17 @@ set -euo pipefail
 PGDATA="${PGDATA:-/data/pgdata}"
 export PGDATA
 
+# Generate secrets (API token + DB password) on first start
+echo "Checking secrets..."
+python3 -c "from hivemem.security import ensure_secrets; ensure_secrets()"
+
+# Read DB password from secrets for PG setup
+DB_PASSWORD=$(python3 -c "from hivemem.security import load_secrets; print(load_secrets()['db_password'])")
+
 # Initialize PostgreSQL if data directory is empty
 if [ ! -f "$PGDATA/PG_VERSION" ]; then
     echo "Initializing PostgreSQL..."
-    initdb -U hivemem -D "$PGDATA" --auth=trust
+    initdb -U hivemem -D "$PGDATA" --auth=scram-sha-256 --pwfile=<(echo "$DB_PASSWORD")
     echo "unix_socket_directories = '/var/run/postgresql'" >> "$PGDATA/postgresql.conf"
     echo "listen_addresses = 'localhost'" >> "$PGDATA/postgresql.conf"
 fi
@@ -30,6 +37,9 @@ for i in $(seq 1 30); do
     sleep 1
 done
 echo "PostgreSQL ready."
+
+# Set PGPASSWORD for psql commands
+export PGPASSWORD="$DB_PASSWORD"
 
 # Create database if it doesn't exist (connect to default 'postgres' db first)
 psql -U hivemem -h /var/run/postgresql -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'hivemem'" | grep -q 1 || \
