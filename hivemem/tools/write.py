@@ -182,19 +182,19 @@ async def hivemem_approve_pending(
     decision: str,
 ) -> dict:
     """Approve or reject pending items (drawers and facts)."""
-    count = 0
-    for item_id in ids:
-        await execute(
-            pool,
-            "UPDATE drawers SET status = %s WHERE id = %s AND status = 'pending'",
-            (decision, item_id),
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "WITH updated AS (UPDATE drawers SET status = %s WHERE id = ANY(%s::uuid[]) AND status = 'pending' RETURNING id) SELECT count(*) AS cnt FROM updated",
+            (decision, ids),
         )
-        await execute(
-            pool,
-            "UPDATE facts SET status = %s WHERE id = %s AND status = 'pending'",
-            (decision, item_id),
+        drawer_row = await cur.fetchone()
+        cur = await conn.execute(
+            "WITH updated AS (UPDATE facts SET status = %s WHERE id = ANY(%s::uuid[]) AND status = 'pending' RETURNING id) SELECT count(*) AS cnt FROM updated",
+            (decision, ids),
         )
-        count += 1
+        fact_row = await cur.fetchone()
+        await conn.commit()
+    count = (drawer_row["cnt"] if drawer_row else 0) + (fact_row["cnt"] if fact_row else 0)
     return {"decision": decision, "count": count}
 
 
@@ -297,25 +297,25 @@ async def hivemem_update_map(
     key_drawers: list[str] | None = None,
     created_by: str | None = None,
 ) -> dict:
-    """Create or update a Map of Content for a wing (append-only)."""
-    # Close previous map for this wing
-    await execute(
-        pool,
-        "UPDATE maps SET valid_until = now() WHERE wing = %s AND valid_until IS NULL",
-        (wing,),
-    )
-    room_order_val = room_order or []
-    key_drawers_val = key_drawers or []
-    row = await fetch_one(
-        pool,
-        """
-        INSERT INTO maps (wing, title, narrative, room_order, key_drawers, created_by)
-        VALUES (%s, %s, %s, %s, %s::uuid[], %s)
-        RETURNING id, wing, title
-        """,
-        (wing, title, narrative, room_order_val, key_drawers_val, created_by),
-    )
-    return {"id": str(row["id"]), "wing": row["wing"], "title": row["title"]}
+    """Create or update a Map of Content (append-only, atomic)."""
+    async with pool.connection() as conn:
+        await conn.execute(
+            "UPDATE maps SET valid_until = now() WHERE wing = %s AND valid_until IS NULL",
+            (wing,),
+        )
+        cur = await conn.execute(
+            """INSERT INTO maps (wing, title, narrative, room_order, key_drawers, created_by)
+               VALUES (%s, %s, %s, %s, %s::uuid[], %s)
+               RETURNING id, wing, title""",
+            (wing, title, narrative, room_order or [], key_drawers or [], created_by),
+        )
+        row = await cur.fetchone()
+        await conn.commit()
+    return {
+        "id": str(row["id"]),
+        "wing": row["wing"],
+        "title": row["title"],
+    }
 
 
 async def hivemem_update_identity(
