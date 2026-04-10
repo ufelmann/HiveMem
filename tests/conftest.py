@@ -19,18 +19,12 @@ def setup_test_db():
         conn.execute("DROP DATABASE IF EXISTS hivemem_test")
         conn.execute("CREATE DATABASE hivemem_test")
 
-    with psycopg.connect(TEST_DB_URL) as conn:
-        conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    with psycopg.connect(TEST_DB_URL, autocommit=True) as conn:
         schema_path = os.path.join(
             os.path.dirname(__file__), "..", "hivemem", "schema.sql"
         )
         with open(schema_path) as f:
-            sql = f.read()
-            for statement in sql.split(";"):
-                statement = statement.strip()
-                if statement and "CREATE EXTENSION" not in statement:
-                    conn.execute(statement)
-        conn.commit()
+            conn.execute(f.read())
 
     yield
 
