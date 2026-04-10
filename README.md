@@ -59,18 +59,24 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 
 ## Quick Start
 
-### 1. Clone and build
+### Option A: Pre-built image (recommended)
+
+```bash
+docker run -d --name hivemem \
+  -p 8421:8421 \
+  -v hivemem_data:/data \
+  -v hivemem_models:/data/models \
+  --restart unless-stopped \
+  ghcr.io/ufelmann/hivemem:main
+```
+
+### Option B: Build from source
 
 ```bash
 git clone https://github.com/ufelmann/HiveMem.git
 cd HiveMem
 docker build -f Dockerfile.base -t hivemem-base .  # once (~20 min)
 docker build -t hivemem .                           # fast (~5s)
-```
-
-### 2. Run
-
-```bash
 docker run -d --name hivemem \
   -p 8421:8421 \
   -v hivemem_data:/data \
@@ -79,42 +85,65 @@ docker run -d --name hivemem \
   hivemem
 ```
 
-First start initializes PostgreSQL and downloads the BGE-M3 embedding model (~2.2 GB). Check progress:
+### Option C: Docker Compose
+
+```yaml
+services:
+  hivemem:
+    image: ghcr.io/ufelmann/hivemem:main
+    container_name: hivemem
+    ports:
+      - "8421:8421"
+    volumes:
+      - hivemem_data:/data
+      - hivemem_models:/data/models
+    restart: unless-stopped
+
+volumes:
+  hivemem_data:
+  hivemem_models:
+```
+
+```bash
+docker compose up -d
+```
+
+First start initializes PostgreSQL and downloads the BGE-M3 embedding model (~2.2 GB). This takes 1-2 minutes. Check progress:
 
 ```bash
 docker logs -f hivemem
 ```
 
-Or use the deploy script (auto-detects base image changes):
+Wait for `Uvicorn running on http://0.0.0.0:8421` before proceeding.
+
+### Create an API token
 
 ```bash
-./deploy.sh
+docker exec hivemem hivemem-token create my-admin --role admin
 ```
 
-### 3. Create an API token
-
-Tokens are stored in PostgreSQL, hashed with SHA-256. The plaintext is shown once at creation.
+Save the token -- it is shown once and cannot be retrieved.
 
 ```bash
-# Create an admin token (full access to all 36 tools)
-docker exec hivemem hivemem-token create my-admin --role admin
-
-# Create a read-only token (17 tools)
-docker exec hivemem hivemem-token create dashboard --role reader
-
-# Create an agent token (writes go to pending, can't self-approve)
-docker exec hivemem hivemem-token create archivarius --role agent
-
-# List all tokens
+# More token examples
+docker exec hivemem hivemem-token create dashboard --role reader   # read-only (17 tools)
+docker exec hivemem hivemem-token create archivarius --role agent  # writes go to pending
 docker exec hivemem hivemem-token list
-
-# Revoke a token
 docker exec hivemem hivemem-token revoke dashboard
 ```
 
-### 4. Connect to Claude
+### Connect to Claude Code
 
-Add to your MCP client config (Claude Desktop `claude_desktop_config.json` or Claude Code `.mcp.json`):
+**CLI (recommended):**
+
+```bash
+claude mcp add --scope user hivemem --transport http http://localhost:8421/mcp \
+  --header "Authorization: Bearer YOUR_TOKEN_HERE"
+```
+
+Restart Claude Code. The 36 HiveMem tools are now available in every session.
+
+**Manual config** (`~/.claude.json` for user-level, or `.mcp.json` for project-level):
 
 ```json
 {
@@ -130,7 +159,25 @@ Add to your MCP client config (Claude Desktop `claude_desktop_config.json` or Cl
 }
 ```
 
-### 5. Seed identity (optional)
+### Connect to Claude Desktop
+
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "hivemem": {
+      "type": "http",
+      "url": "http://localhost:8421/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}
+```
+
+### Seed identity (optional)
 
 Customize `scripts/seed-identity.py` with your own profile, then:
 
@@ -387,10 +434,18 @@ pytest tests/ -v
 
 ### Deploy changes
 
+For local builds:
+
 ```bash
 ./deploy.sh
 # Auto-detects if base image needs rebuild (Dockerfile.base or pyproject.toml changed)
 # App rebuild takes ~5 seconds (only copies code)
+```
+
+For GHCR image (CI builds automatically on push to main):
+
+```bash
+docker compose pull && docker compose up -d
 ```
 
 ### Debugging
