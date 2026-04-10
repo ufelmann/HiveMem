@@ -129,12 +129,6 @@ async def create_token(
     if role not in VALID_ROLES:
         raise ValueError(f"Invalid role '{role}'. Must be one of: {', '.join(sorted(VALID_ROLES))}")
 
-    from hivemem.db import fetch_one
-
-    existing = await fetch_one(pool, "SELECT 1 FROM api_tokens WHERE name = %s", (name,))
-    if existing:
-        raise ValueError(f"Token '{name}' already exists")
-
     plaintext = secrets.token_urlsafe(32)
     token_hash = _hash_token(plaintext)
 
@@ -142,13 +136,17 @@ async def create_token(
     if expires_in_days is not None:
         expires_at = datetime.now(timezone.utc) + timedelta(days=expires_in_days)
 
-    from hivemem.db import execute
+    from psycopg.errors import UniqueViolation
 
-    await execute(
-        pool,
-        "INSERT INTO api_tokens (token_hash, name, role, expires_at) VALUES (%s, %s, %s, %s)",
-        (token_hash, name, role, expires_at),
-    )
+    try:
+        async with pool.connection() as conn:
+            await conn.execute(
+                "INSERT INTO api_tokens (token_hash, name, role, expires_at) VALUES (%s, %s, %s, %s)",
+                (token_hash, name, role, expires_at),
+            )
+            await conn.commit()
+    except UniqueViolation:
+        raise ValueError(f"Token '{name}' already exists")
     return plaintext
 
 
@@ -170,14 +168,23 @@ async def validate_token(pool, plaintext: str) -> dict | None:
     return {"name": row["name"], "role": row["role"]}
 
 
-async def list_tokens(pool) -> list[dict]:
+async def list_tokens(pool, include_revoked: bool = True, limit: int = 500) -> list[dict]:
     """List all tokens (no hashes, no plaintext)."""
     from hivemem.db import fetch_all
 
-    rows = await fetch_all(
-        pool,
-        "SELECT name, role, created_at, expires_at, revoked_at FROM api_tokens ORDER BY created_at",
-    )
+    if include_revoked:
+        rows = await fetch_all(
+            pool,
+            "SELECT name, role, created_at, expires_at, revoked_at FROM api_tokens ORDER BY created_at LIMIT %s",
+            (limit,),
+        )
+    else:
+        rows = await fetch_all(
+            pool,
+            "SELECT name, role, created_at, expires_at, revoked_at FROM api_tokens "
+            "WHERE revoked_at IS NULL ORDER BY created_at LIMIT %s",
+            (limit,),
+        )
     return [
         {
             "name": r["name"],
@@ -194,18 +201,16 @@ async def list_tokens(pool) -> list[dict]:
 
 
 async def revoke_token(pool, name: str) -> None:
-    """Revoke a token by name."""
-    from hivemem.db import fetch_one, execute
-
-    existing = await fetch_one(pool, "SELECT 1 FROM api_tokens WHERE name = %s", (name,))
-    if not existing:
-        raise ValueError(f"Token '{name}' not found")
-
-    await execute(
-        pool,
-        "UPDATE api_tokens SET revoked_at = now() WHERE name = %s AND revoked_at IS NULL",
-        (name,),
-    )
+    """Revoke a token by name. Atomic — no race between check and update."""
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "UPDATE api_tokens SET revoked_at = now() WHERE name = %s AND revoked_at IS NULL RETURNING id",
+            (name,),
+        )
+        row = await cur.fetchone()
+        await conn.commit()
+    if row is None:
+        raise ValueError(f"Token '{name}' not found or already revoked")
 
 
 async def get_token_info(pool, name: str) -> dict | None:
@@ -293,9 +298,15 @@ def audit(ip: str, status: str, detail: str = ""):
 
 
 class AuthMiddleware:
-    """ASGI middleware: Bearer token auth via DB + rate limiting + audit."""
+    """ASGI middleware: Bearer token auth via DB + rate limiting + audit.
+
+    Cache: valid tokens are cached for CACHE_TTL seconds (default 60s).
+    Revoked tokens remain usable until their cache entry expires.
+    Cache is capped at CACHE_MAX_SIZE entries (LRU eviction).
+    """
 
     CACHE_TTL = 60  # seconds
+    CACHE_MAX_SIZE = 1000
 
     def __init__(self, app, pool=None):
         self.app = app
@@ -358,6 +369,10 @@ class AuthMiddleware:
 
         identity = await validate_token(self.pool, plaintext)
         if identity is not None:
+            # LRU eviction: remove oldest entries if cache is full
+            if len(self._cache) >= self.CACHE_MAX_SIZE:
+                oldest_key = min(self._cache, key=lambda k: self._cache[k][1])
+                del self._cache[oldest_key]
             self._cache[token_hash] = (identity, now)
         else:
             self._cache.pop(token_hash, None)

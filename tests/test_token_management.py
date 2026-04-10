@@ -542,3 +542,75 @@ async def test_e2e_rate_limiting_still_works(pool):
 
     # Cleanup
     clear_failed_auth(ip)
+
+
+# ── SQL Robustness Tests ──────────────────────────────────────────────
+
+
+async def test_double_revoke_raises(pool):
+    """Revoking an already-revoked token raises ValueError."""
+    plaintext = await create_token(pool, "double-rev", "writer")
+    await revoke_token(pool, "double-rev")
+    with pytest.raises(ValueError, match="already revoked"):
+        await revoke_token(pool, "double-rev")
+
+
+async def test_create_duplicate_is_atomic(pool):
+    """Concurrent-safe: duplicate name gives ValueError, not raw DB exception."""
+    await create_token(pool, "atomic-dup", "reader")
+    with pytest.raises(ValueError, match="already exists"):
+        await create_token(pool, "atomic-dup", "admin")
+
+
+async def test_list_tokens_with_limit(pool):
+    """list_tokens respects limit parameter."""
+    for i in range(5):
+        await create_token(pool, f"limit-{i}", "reader")
+    tokens = await list_tokens(pool, limit=3)
+    assert len(tokens) == 3
+
+
+async def test_list_tokens_exclude_revoked(pool):
+    """list_tokens can filter out revoked tokens."""
+    await create_token(pool, "active-tok", "reader")
+    plaintext = await create_token(pool, "revoked-tok", "reader")
+    await revoke_token(pool, "revoked-tok")
+
+    all_tokens = await list_tokens(pool, include_revoked=True)
+    active_only = await list_tokens(pool, include_revoked=False)
+
+    all_names = [t["name"] for t in all_tokens]
+    active_names = [t["name"] for t in active_only]
+
+    assert "revoked-tok" in all_names
+    assert "revoked-tok" not in active_names
+    assert "active-tok" in active_names
+
+
+async def test_cache_evicts_at_max_size(pool):
+    """Cache evicts oldest entry when CACHE_MAX_SIZE is reached."""
+    from hivemem.security import AuthMiddleware
+
+    async def noop_app(scope, receive, send):
+        pass
+
+    mw = AuthMiddleware(noop_app, pool)
+    mw.CACHE_MAX_SIZE = 3  # small cap for testing
+
+    # Create and validate 4 tokens — 4th should evict 1st
+    tokens = []
+    for i in range(4):
+        t = await create_token(pool, f"cache-evict-{i}", "reader")
+        tokens.append(t)
+
+    # Validate all 4 through middleware cache
+    for t in tokens:
+        scope = {
+            "type": "http",
+            "headers": [(b"authorization", f"Bearer {t}".encode())],
+            "client": ("127.0.0.1", 12345),
+        }
+        await mw(scope, lambda: {}, lambda msg: None)
+
+    # Cache should be capped at 3
+    assert len(mw._cache) == 3
