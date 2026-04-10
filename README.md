@@ -1,8 +1,8 @@
 # HiveMem
 
-Personal knowledge system with semantic search and temporal knowledge graph.
+Personal knowledge system with semantic search, temporal knowledge graph, and progressive summarization.
 
-MCP server backed by PostgreSQL 17 (pgvector + Apache AGE) with BGE-M3 embeddings.
+MCP server backed by PostgreSQL 17 (pgvector + Apache AGE) with BGE-M3 embeddings. 36 tools, append-only versioning, agent fleet with approval workflow.
 
 ## Vision & Research
 
@@ -39,12 +39,17 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 
 ## Features
 
-- 16 MCP tools (search, knowledge graph, time machine, wake-up, import, ...)
-- Semantic search with BGE-M3 (1024 dims, 100+ languages, <1s queries)
-- Temporal knowledge graph (valid_from/valid_until, historical queries)
-- Multi-hop graph traversal (recursive CTEs / Apache AGE)
-- Single container deployment (one command: `docker run`)
-- Built-in backup command
+- **36 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
+- **5-signal ranked search** — semantic similarity + keyword match + recency + importance + popularity
+- **Append-only versioning** — never lose history, revise with parent_id chains, point-in-time queries
+- **Progressive summarization** (L0-L3) — content, summary, key_points, insight per drawer
+- **Temporal knowledge graph** — facts with valid_from/valid_until, contradiction detection, multi-hop traversal
+- **Agent fleet** with approval workflow — agents write pending suggestions, user approves/rejects
+- **Maps of Content** — curated narrative overviews per wing, append-only versioned
+- **References & reading list** — track sources, link to drawers, filter by type/status
+- **Bearer token auth** — auto-generated, rate limiting, audit logging
+- **Single container deployment** — PostgreSQL + MCP server in one `docker run`
+- **93 tests** with testcontainers — no deployment needed, CI-ready
 
 ## Prerequisites
 
@@ -52,14 +57,15 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 - ~4 GB free disk space (BGE-M3 model ~2.2 GB + Docker image ~3.5 GB)
 - ~3 GB free RAM (BGE-M3 embedding model runs on CPU)
 
-## Installation
+## Quick Start
 
 ### 1. Clone and build
 
 ```bash
 git clone https://github.com/ufelmann/HiveMem.git
 cd HiveMem
-docker build -t hivemem .
+docker build -f Dockerfile.base -t hivemem-base .  # once (~20 min)
+docker build -t hivemem .                           # fast (~5s)
 ```
 
 ### 2. Run
@@ -68,28 +74,29 @@ docker build -t hivemem .
 docker run -d --name hivemem \
   -p 8421:8421 \
   -v hivemem_data:/data \
+  -v hivemem_models:/data/models \
   --restart unless-stopped \
   hivemem
 ```
 
-First start takes a few minutes — the container initializes PostgreSQL and downloads the BGE-M3 embedding model (~2.2 GB). Check progress:
+First start initializes PostgreSQL and downloads the BGE-M3 embedding model (~2.2 GB). Check progress:
 
 ```bash
 docker logs -f hivemem
 ```
 
-Alternatively, use Docker Compose:
+Or use the deploy script (auto-detects base image changes):
 
 ```bash
-docker compose up -d
+./deploy.sh
 ```
 
-### 3. Verify
+### 3. Get your API token
 
 ```bash
-curl -s http://localhost:8421/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | head -c 200
+docker logs hivemem 2>&1 | grep "API token"
+# or anytime:
+docker exec hivemem hivemem-token
 ```
 
 ### 4. Connect to Claude
@@ -110,91 +117,12 @@ Add to your MCP client config (Claude Desktop `claude_desktop_config.json` or Cl
 }
 ```
 
-Get your token from the container logs (see [Authentication](#authentication) section below). All 16 `hivemem_*` tools should now be available.
-
 ### 5. Seed identity (optional)
 
 Customize `scripts/seed-identity.py` with your own profile, then:
 
 ```bash
 docker exec hivemem python3 scripts/seed-identity.py
-```
-
-## Authentication
-
-HiveMem generates a random API token on first start. Find it in the container logs:
-
-```bash
-docker logs hivemem 2>&1 | grep "API token"
-```
-
-Or retrieve it anytime:
-
-```bash
-docker exec hivemem hivemem-token
-```
-
-Add the token to your MCP client config:
-
-```json
-{
-  "mcpServers": {
-    "hivemem": {
-      "type": "http",
-      "url": "http://host:8421/mcp",
-      "headers": {
-        "Authorization": "Bearer YOUR_TOKEN_HERE"
-      }
-    }
-  }
-}
-```
-
-### Token Management
-
-```bash
-# Show current token
-docker exec hivemem hivemem-token
-
-# Generate new token (no restart needed)
-docker exec hivemem hivemem-token regenerate
-
-# Show database password (for debugging)
-docker exec hivemem hivemem-token show-db
-```
-
-### Security Features
-
-- **Bearer Token Auth** — every request requires `Authorization: Bearer <token>`
-- **Rate Limiting** — 5 failed attempts per IP → 15 minute ban
-- **Audit Log** — all requests logged to `/data/audit.log`
-- **PostgreSQL Auth** — scram-sha-256, no trust auth
-
-## Backups
-
-```bash
-docker exec hivemem hivemem-backup
-```
-
-Dumps are saved to `/data/backups/` inside the volume (gzipped, last 7 days kept). For automated daily backups, add a cron job on the host:
-
-```bash
-0 3 * * * docker exec hivemem hivemem-backup
-```
-
-## Debugging
-
-```bash
-# PostgreSQL shell
-docker exec -it hivemem psql -U hivemem
-
-# Container logs
-docker logs hivemem --tail 50
-
-# Health check
-curl -s http://localhost:8421/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"hivemem_health","arguments":{}}}'
 ```
 
 ## Architecture
@@ -204,34 +132,211 @@ graph TB
     Client["Claude / MCP Client"]
 
     subgraph Container["Docker Container"]
-        MCP["FastMCP Server<br/>:8421<br/><i>Streamable HTTP</i>"]
+        Auth["Auth Middleware<br/><i>Bearer token + rate limit</i>"]
+        MCP["FastMCP Server<br/>:8421<br/><i>36 tools · Streamable HTTP</i>"]
         BGE["BGE-M3<br/><i>1024d embeddings</i>"]
 
         subgraph PG["PostgreSQL 17"]
-            pgvector["pgvector<br/><i>semantic search</i>"]
+            pgvector["pgvector<br/><i>5-signal ranked search</i>"]
             AGE["Apache AGE<br/><i>graph traversal</i>"]
-            Tables["drawers · facts · edges · identity"]
+            Tables["10 tables · 6 views · 8 functions"]
         end
     end
 
-    Volume["/data volume<br/><i>pgdata + models + backups</i>"]
+    Volume["/data volume<br/><i>pgdata + backups + audit.log</i>"]
+    Models["/data/models volume<br/><i>BGE-M3 cache</i>"]
 
-    Client -->|"MCP over HTTP"| MCP
+    Client -->|"MCP over HTTP"| Auth
+    Auth --> MCP
     MCP --> BGE
     MCP -->|"Unix socket"| PG
     pgvector --> Tables
     AGE --> Tables
     PG --- Volume
+    BGE --- Models
 ```
 
-### Tools (16)
+### Data Model
 
-| Category | Tools |
-|---|---|
-| **Read** (9) | `search` · `search_kg` · `get_drawer` · `list_wings` · `list_rooms` · `traverse` · `time_machine` · `wake_up` · `status` |
-| **Write** (4) | `add_drawer` · `kg_add` · `kg_invalidate` · `update_identity` |
-| **Import** (2) | `mine_file` · `mine_directory` |
-| **Admin** (1) | `health` |
+```mermaid
+erDiagram
+    drawers {
+        UUID id PK
+        UUID parent_id FK
+        TEXT content
+        vector embedding
+        TEXT wing
+        TEXT room
+        TEXT hall
+        TEXT summary
+        TEXT[] key_points
+        TEXT insight
+        TEXT actionability
+        SMALLINT importance
+        TEXT status
+        TIMESTAMPTZ valid_from
+        TIMESTAMPTZ valid_until
+    }
+    facts {
+        UUID id PK
+        UUID parent_id FK
+        TEXT subject
+        TEXT predicate
+        TEXT object
+        REAL confidence
+        UUID source_id FK
+        TEXT status
+        TIMESTAMPTZ valid_from
+        TIMESTAMPTZ valid_until
+    }
+    edges {
+        UUID id PK
+        TEXT from_entity
+        TEXT to_entity
+        TEXT relation
+        REAL weight
+    }
+    maps {
+        UUID id PK
+        TEXT wing
+        TEXT title
+        TEXT narrative
+        TEXT[] room_order
+        UUID[] key_drawers
+        TIMESTAMPTZ valid_from
+        TIMESTAMPTZ valid_until
+    }
+    agents {
+        TEXT name PK
+        TEXT focus
+        JSONB autonomy
+        TEXT schedule
+    }
+    references_ {
+        UUID id PK
+        TEXT title
+        TEXT url
+        TEXT ref_type
+        TEXT status
+        SMALLINT importance
+    }
+
+    drawers ||--o{ facts : "source_id"
+    drawers ||--o{ drawers : "parent_id (revision chain)"
+    facts ||--o{ facts : "parent_id (revision chain)"
+    drawers ||--o{ drawer_references : "links"
+    references_ ||--o{ drawer_references : "links"
+    agents ||--o{ agent_diary : "writes"
+    drawers ||--o{ access_log : "tracked"
+```
+
+### Tools (36)
+
+| Category | Count | Tools |
+|---|---|---|
+| **Search** | 4 | `search` (5-signal ranked) · `search_kg` · `quick_facts` · `time_machine` |
+| **Read** | 7 | `status` · `get_drawer` · `list_wings` · `list_rooms` · `traverse` · `wake_up` · `get_map` |
+| **Write** | 7 | `add_drawer` (L0-L3) · `kg_add` · `kg_invalidate` · `revise_drawer` · `revise_fact` · `update_identity` · `update_map` |
+| **Integrity** | 3 | `check_duplicate` · `check_contradiction` · `approve_pending` |
+| **History** | 3 | `drawer_history` · `fact_history` · `pending_approvals` |
+| **References** | 3 | `add_reference` · `link_reference` · `reading_list` |
+| **Agents** | 4 | `register_agent` · `list_agents` · `diary_write` · `diary_read` |
+| **Admin** | 3 | `health` · `log_access` · `refresh_popularity` |
+| **Import** | 2 | `mine_file` · `mine_directory` |
+
+### Search Signals
+
+The `hivemem_search` tool combines 5 signals with configurable weights:
+
+| Signal | Default Weight | Description |
+|---|---|---|
+| Semantic | 0.35 | Vector cosine similarity (BGE-M3, 1024d) |
+| Keyword | 0.15 | PostgreSQL full-text search (tsvector, BM25-like) |
+| Recency | 0.20 | Exponential decay, 90-day half-life |
+| Importance | 0.15 | User/agent assigned 1-5 scale |
+| Popularity | 0.15 | Access frequency (materialized view) |
+
+### Progressive Summarization
+
+Every drawer supports 4 layers of progressive summarization:
+
+| Layer | Field | Purpose |
+|---|---|---|
+| L0 | `content` | Full verbatim text |
+| L1 | `summary` | One-sentence summary for scanning |
+| L2 | `key_points` | 3-5 core takeaways |
+| L3 | `insight` | Personal conclusion / implication |
+
+Plus `actionability` (actionable / reference / someday / archive) and `importance` (1-5).
+
+## Authentication
+
+HiveMem generates a random API token on first start. Every request requires `Authorization: Bearer <token>`.
+
+```bash
+# Show token
+docker exec hivemem hivemem-token
+
+# Generate new token (no restart needed)
+docker exec hivemem hivemem-token regenerate
+
+# Show database password (for debugging)
+docker exec hivemem hivemem-token show-db
+```
+
+### Security
+
+- **Bearer Token Auth** — timing-safe comparison on every request
+- **Rate Limiting** — 5 failed attempts per IP → 15 minute ban
+- **Audit Log** — all requests logged to `/data/audit.log` (rotating, 10 MB)
+- **PostgreSQL Auth** — scram-sha-256, auto-generated password
+
+## Backups
+
+```bash
+docker exec hivemem hivemem-backup
+```
+
+Dumps are saved to `/data/backups/` (gzipped, last 7 days kept). For automated daily backups:
+
+```bash
+0 3 * * * docker exec hivemem hivemem-backup
+```
+
+## Development
+
+### Run tests (no deployment needed)
+
+Tests use [testcontainers](https://testcontainers-python.readthedocs.io/) — a PostgreSQL container with pgvector + AGE is automatically started and destroyed per session.
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install psycopg[binary] psycopg-pool pytest pytest-asyncio "testcontainers[postgres]"
+pytest tests/ -v
+```
+
+```
+93 passed in 17s
+```
+
+Embeddings are mocked in tests (deterministic word-hash vectors) — no torch or GPU needed.
+
+### Deploy changes
+
+```bash
+./deploy.sh
+# Auto-detects if base image needs rebuild (Dockerfile.base or pyproject.toml changed)
+# App rebuild takes ~5 seconds (only copies code)
+```
+
+### Debugging
+
+```bash
+docker exec -it hivemem psql -U hivemem    # PostgreSQL shell
+docker logs hivemem --tail 50               # Container logs
+docker exec hivemem cat /data/audit.log     # Auth audit log
+```
 
 ## License
 
