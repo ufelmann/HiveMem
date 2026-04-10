@@ -20,6 +20,9 @@ async def hivemem_add_drawer(
     tags: list[str] | None = None,
     importance: int | None = None,
     summary: str | None = None,
+    key_points: list[str] | None = None,
+    insight: str | None = None,
+    actionability: str | None = None,
     status: str = "committed",
     created_by: str | None = None,
     valid_from: datetime | None = None,
@@ -28,17 +31,20 @@ async def hivemem_add_drawer(
     vector = encode(content)
     vector_str = str(vector)
     tags_val = tags or []
+    key_points_val = key_points or []
 
     row = await fetch_one(
         pool,
         """
         INSERT INTO drawers (content, embedding, wing, room, hall, source, tags,
-                             importance, summary, status, created_by, valid_from)
-        VALUES (%s, %s::vector, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, now()))
+                             importance, summary, key_points, insight, actionability,
+                             status, created_by, valid_from)
+        VALUES (%s, %s::vector, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, now()))
         RETURNING id, wing, room, hall, status
         """,
         (content, vector_str, wing, room, hall, source, tags_val,
-         importance, summary, status, created_by, valid_from),
+         importance, summary, key_points_val, insight, actionability,
+         status, created_by, valid_from),
     )
     return {
         "id": str(row["id"]),
@@ -47,6 +53,29 @@ async def hivemem_add_drawer(
         "hall": row["hall"],
         "status": row["status"],
     }
+
+
+async def hivemem_check_duplicate(
+    pool: AsyncConnectionPool,
+    content: str,
+    threshold: float = 0.95,
+) -> list[dict]:
+    """Check if similar content already exists."""
+    vector = encode(content)
+    vector_str = str(vector)
+    rows = await fetch_all(
+        pool,
+        "SELECT * FROM check_duplicate_drawer(%s::vector, %s::real)",
+        (vector_str, threshold),
+    )
+    return [
+        {
+            "id": str(row["id"]),
+            "similarity": round(float(row["similarity"]), 4),
+            "summary": row["summary"],
+        }
+        for row in rows
+    ]
 
 
 async def hivemem_kg_add(
