@@ -51,8 +51,8 @@ async def hivemem_search(
     rows = await fetch_all(
         pool,
         """SELECT * FROM ranked_search(
-            %s::vector, %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s
+            %s::vector, %s::text, %s::text, %s::text, %s::text, %s::integer,
+            %s::real, %s::real, %s::real, %s::real, %s::real
         )""",
         (vector_str, query, wing, room, hall, limit,
          weight_semantic, weight_keyword, weight_recency,
