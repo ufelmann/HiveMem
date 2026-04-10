@@ -20,6 +20,8 @@ from hivemem.tools.read import (
     hivemem_list_rooms as _list_rooms,
     hivemem_list_wings as _list_wings,
     hivemem_pending_approvals as _pending_approvals,
+    hivemem_log_access as _log_access,
+    hivemem_refresh_popularity as _refresh_popularity,
     hivemem_search as _search,
     hivemem_search_kg as _search_kg,
     hivemem_status as _status,
@@ -73,10 +75,24 @@ async def hivemem_status() -> dict:
 
 
 @mcp.tool()
-async def hivemem_search(query: str, limit: int = 10, wing: str | None = None) -> list[dict]:
-    """Semantic search using vector cosine distance."""
+async def hivemem_search(
+    query: str,
+    limit: int = 10,
+    wing: str | None = None,
+    room: str | None = None,
+    hall: str | None = None,
+    weight_semantic: float = 0.35,
+    weight_keyword: float = 0.15,
+    weight_recency: float = 0.20,
+    weight_importance: float = 0.15,
+    weight_popularity: float = 0.15,
+) -> list[dict]:
+    """5-signal ranked search: semantic + keyword + recency + importance + popularity. Adjust weights to change ranking."""
     pool = await get_db_pool()
-    return await _search(pool, query, limit=limit, wing=wing)
+    return await _search(pool, query, limit=limit, wing=wing, room=room, hall=hall,
+                         weight_semantic=weight_semantic, weight_keyword=weight_keyword,
+                         weight_recency=weight_recency, weight_importance=weight_importance,
+                         weight_popularity=weight_popularity)
 
 
 @mcp.tool()
@@ -309,6 +325,20 @@ async def hivemem_health() -> dict:
     """Check DB connection, extension versions, drawer/fact counts, db size, disk free."""
     pool = await get_db_pool()
     return await _health(pool)
+
+
+@mcp.tool()
+async def hivemem_log_access(drawer_id: str | None = None, fact_id: str | None = None, accessed_by: str = "user") -> dict:
+    """Log an access event for popularity tracking."""
+    pool = await get_db_pool()
+    return await _log_access(pool, drawer_id=drawer_id, fact_id=fact_id, accessed_by=accessed_by)
+
+
+@mcp.tool()
+async def hivemem_refresh_popularity() -> dict:
+    """Refresh the drawer popularity materialized view."""
+    pool = await get_db_pool()
+    return await _refresh_popularity(pool)
 
 
 class _AcceptMiddleware:
