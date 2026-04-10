@@ -38,6 +38,7 @@ docker rm "$CONTAINER_NAME" 2>/dev/null || true
 docker run -d --name "$CONTAINER_NAME" \
     -p 8421:8421 \
     -v hivemem_data:/data \
+    -v hivemem_models:/data/models \
     --restart unless-stopped \
     "$IMAGE_NAME:latest"
 
