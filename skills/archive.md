@@ -1,47 +1,42 @@
 ---
 name: hivemem-archive
 description: Archive the current session into HiveMem — extract knowledge, facts, and decisions
-trigger: User says "archive", "save session", or "save to hivemem"
+trigger: User says "archive", "save session", "save to hivemem", or session is ending.
 ---
 
-# Archive This Session
+# Archive Session Skill
 
-Analyze the current conversation and persist the knowledge into HiveMem.
+## Trigger
+User says "archive", "save session", "save to hivemem", or session is ending.
 
 ## Steps
 
-1. **Summarize** the session in 2-3 sentences. What was discussed? What was decided?
+1. **Summarize** the session in 2-3 sentences (what was discussed, what was decided)
 
 2. **Classify** the content:
-   - **Wing**: Which domain? (e.g. engineering, product, personal, infrastructure, general)
-   - **Room**: What specific topic? (e.g. api-migration, auth-refactor, deployment)
-   - **Hall**: What type of knowledge?
-     - facts: decisions, directions, agreed approaches
-     - events: sessions, milestones, debugging sessions
-     - discoveries: breakthroughs, new insights
-     - preferences: user preferences, habits
-     - advice: recommendations, solution patterns
+   - `wing`: domain (engineering, product, personal, infrastructure, team)
+   - `room`: specific topic in kebab-case (auth-migration, hivemem-v2, team-split)
+   - `hall`: knowledge type (facts, events, discoveries, preferences, advice)
 
-3. **Store the drawer** — call `add_drawer` with:
-   - content: the full summary (not abbreviated, not compressed)
-   - wing, room, hall as determined above
-   - source: the current client (claude-code, claude-desktop, etc.)
-   - tags: relevant keywords
+3. **Check for duplicates**: Call `hivemem_check_duplicate` with the summary
 
-4. **Extract KG facts** — for each decision, relationship, or status change:
-   - call `kg_add` with subject → predicate → object
-   - Examples:
-     - ("platform_team", "decided_to_use", "GraphQL")
-     - ("Alice", "discussed_with", "Bob")
-     - ("api_gateway", "status", "in_development")
+4. **Store the drawer** with all progressive summarization layers:
+   - `content`: full summary (L0)
+   - `summary`: one sentence (L1)
+   - `key_points`: 3-5 core takeaways (L2)
+   - `insight`: what does this mean for the user? (L3)
+   - `actionability`: actionable / reference / someday / archive
+   - `importance`: 1-5 (1=critical)
+   - `source`: which client (claude-code, claude-desktop, etc.)
 
-5. **Check for contradictions** — if a new fact contradicts an existing one:
-   - call `search_kg` to find the old fact
-   - call `kg_invalidate` on the old fact
-   - call `kg_add` for the new fact
-   - mention the update in the drawer content
+5. **Extract facts** for each decision, relationship, or status change:
+   - Call `hivemem_check_contradiction` first
+   - If contradiction: call `hivemem_kg_invalidate` on old fact
+   - Then call `hivemem_kg_add` with the new fact
+   - Always include `valid_from` date
 
-6. **Confirm** — tell the user what was archived:
-   - Wing/Room/Hall
-   - Number of KG facts added
-   - Any contradictions resolved
+6. **Update Map of Content** if a wing's structure changed significantly:
+   - Call `hivemem_get_map` for the wing
+   - If the session added a new room or changed priorities: `hivemem_update_map`
+
+7. **Confirm** to user: wing/room/hall, drawer count, facts added, contradictions resolved
