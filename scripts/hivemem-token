@@ -1,25 +1,103 @@
-#!/bin/bash
-set -euo pipefail
+#!/usr/bin/env python3
+"""HiveMem token management CLI."""
 
-CMD="${1:-show}"
+import argparse
+import asyncio
+import sys
 
-case "$CMD" in
-    show)
-        python3 -c "from hivemem.security import get_api_token; print(get_api_token())"
-        ;;
-    regenerate)
-        TOKEN=$(python3 -c "from hivemem.security import regenerate_api_token; print(regenerate_api_token())")
-        echo "New API token: $TOKEN"
-        echo "Update your MCP client config. Server restart NOT required."
-        ;;
-    show-db)
-        python3 -c "from hivemem.security import load_secrets; print(load_secrets()['db_password'])"
-        ;;
-    *)
-        echo "Usage: hivemem-token [show|regenerate|show-db]"
-        echo "  show        - Show current API token (default)"
-        echo "  regenerate  - Generate new API token"
-        echo "  show-db     - Show database password"
-        exit 1
-        ;;
-esac
+from hivemem.db import get_pool
+from hivemem.security import (
+    create_token,
+    get_db_url,
+    get_token_info,
+    list_tokens,
+    revoke_token,
+    VALID_ROLES,
+)
+
+
+async def cmd_create(args):
+    pool = await get_pool(get_db_url())
+    expires = None
+    if args.expires:
+        val = args.expires.rstrip("d")
+        expires = int(val)
+    try:
+        plaintext = await create_token(pool, args.name, args.role, expires_in_days=expires)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    print(f"\n{'=' * 60}")
+    print(f"  Token created: {args.name} (role: {args.role})")
+    print(f"  API token: {plaintext}")
+    print(f"  Save this now — it cannot be retrieved later.")
+    print(f"{'=' * 60}\n")
+
+
+async def cmd_list(args):
+    pool = await get_pool(get_db_url())
+    tokens = await list_tokens(pool)
+    if not tokens:
+        print("No tokens found.")
+        return
+    print(f"{'Name':<20} {'Role':<10} {'Status':<10} {'Created':<20} {'Expires':<20}")
+    print("-" * 80)
+    for t in tokens:
+        expires = t["expires_at"][:10] if t["expires_at"] else "never"
+        print(f"{t['name']:<20} {t['role']:<10} {t['status']:<10} {t['created_at'][:10]:<20} {expires:<20}")
+
+
+async def cmd_revoke(args):
+    pool = await get_pool(get_db_url())
+    try:
+        await revoke_token(pool, args.name)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    print(f"Token '{args.name}' revoked.")
+
+
+async def cmd_info(args):
+    pool = await get_pool(get_db_url())
+    info = await get_token_info(pool, args.name)
+    if info is None:
+        print(f"Token '{args.name}' not found.", file=sys.stderr)
+        sys.exit(1)
+    print(f"Name:       {info['name']}")
+    print(f"Role:       {info['role']}")
+    print(f"Created:    {info['created_at']}")
+    print(f"Expires:    {info['expires_at'] or 'never'}")
+    print(f"Revoked:    {info['revoked_at'] or 'no'}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="HiveMem token management")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_create = sub.add_parser("create", help="Create a new API token")
+    p_create.add_argument("name", help="Token name (unique identifier)")
+    p_create.add_argument("--role", required=True, choices=sorted(VALID_ROLES), help="Token role")
+    p_create.add_argument("--expires", help="Expiry in days, e.g. 90d", default=None)
+
+    sub.add_parser("list", help="List all tokens")
+
+    p_revoke = sub.add_parser("revoke", help="Revoke a token")
+    p_revoke.add_argument("name", help="Token name to revoke")
+
+    p_info = sub.add_parser("info", help="Show token details")
+    p_info.add_argument("name", help="Token name")
+
+    args = parser.parse_args()
+
+    commands = {
+        "create": cmd_create,
+        "list": cmd_list,
+        "revoke": cmd_revoke,
+        "info": cmd_info,
+    }
+
+    asyncio.run(commands[args.command](args))
+
+
+if __name__ == "__main__":
+    main()
