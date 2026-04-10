@@ -41,10 +41,22 @@ docker run -d --name "$CONTAINER_NAME" \
     --restart unless-stopped \
     "$IMAGE_NAME:latest"
 
-# Wait for health
+# Wait for health (read token from secrets for auth)
 echo "Waiting for startup..."
-for i in $(seq 1 60); do
-    if curl -sf http://localhost:8421/mcp -H "Content-Type: application/json" \
+for i in $(seq 1 90); do
+    TOKEN=$(docker exec "$CONTAINER_NAME" hivemem-token 2>/dev/null) && break
+    sleep 2
+done
+
+if [ -z "${TOKEN:-}" ]; then
+    echo "WARNING: Could not read API token. Check logs: docker logs $CONTAINER_NAME"
+    exit 1
+fi
+
+for i in $(seq 1 30); do
+    if curl -sf http://localhost:8421/mcp \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $TOKEN" \
         -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' > /dev/null 2>&1; then
         echo "HiveMem ready on port 8421."
         exit 0
