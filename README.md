@@ -68,13 +68,16 @@ Add to your MCP client config (Claude Desktop `claude_desktop_config.json` or Cl
   "mcpServers": {
     "hivemem": {
       "type": "http",
-      "url": "http://localhost:8421/mcp"
+      "url": "http://localhost:8421/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN_HERE"
+      }
     }
   }
 }
 ```
 
-All 16 `hivemem_*` tools should now be available.
+Get your token from the container logs (see [Authentication](#authentication) section below). All 16 `hivemem_*` tools should now be available.
 
 ### 5. Seed identity (optional)
 
@@ -83,6 +86,56 @@ Customize `scripts/seed-identity.py` with your own profile, then:
 ```bash
 docker exec hivemem python3 scripts/seed-identity.py
 ```
+
+## Authentication
+
+HiveMem generates a random API token on first start. Find it in the container logs:
+
+```bash
+docker logs hivemem 2>&1 | grep "API token"
+```
+
+Or retrieve it anytime:
+
+```bash
+docker exec hivemem hivemem-token
+```
+
+Add the token to your MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "hivemem": {
+      "type": "http",
+      "url": "http://host:8421/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}
+```
+
+### Token Management
+
+```bash
+# Show current token
+docker exec hivemem hivemem-token
+
+# Generate new token (no restart needed)
+docker exec hivemem hivemem-token regenerate
+
+# Show database password (for debugging)
+docker exec hivemem hivemem-token show-db
+```
+
+### Security Features
+
+- **Bearer Token Auth** — every request requires `Authorization: Bearer <token>`
+- **Rate Limiting** — 5 failed attempts per IP → 15 minute ban
+- **Audit Log** — all requests logged to `/data/audit.log`
+- **PostgreSQL Auth** — scram-sha-256, no trust auth
 
 ## Backups
 
