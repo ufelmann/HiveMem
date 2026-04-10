@@ -665,9 +665,22 @@ if __name__ == "__main__":
     mcp_app = mcp.streamable_http_app()
     auth_mw = AuthMiddleware(_AcceptMiddleware(_IdentityMiddleware(_ToolGateMiddleware(mcp_app))))
 
-    async def startup():
-        pool = await get_db_pool()
-        auth_mw.pool = pool
+    class _LifespanWrapper:
+        """Wraps the ASGI app to init the DB pool on startup within uvicorn's event loop."""
 
-    asyncio.get_event_loop().run_until_complete(startup())
-    uvicorn.run(auth_mw, host="0.0.0.0", port=MCP_PORT)
+        def __init__(self, app):
+            self.app = app
+
+        async def __call__(self, scope, receive, send):
+            if scope["type"] == "lifespan":
+                async def wrapped_receive():
+                    msg = await receive()
+                    if msg["type"] == "lifespan.startup":
+                        pool = await get_db_pool()
+                        auth_mw.pool = pool
+                    return msg
+                await self.app(scope, wrapped_receive, send)
+            else:
+                await self.app(scope, receive, send)
+
+    uvicorn.run(_LifespanWrapper(auth_mw), host="0.0.0.0", port=MCP_PORT)
