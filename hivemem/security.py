@@ -86,6 +86,62 @@ def _hash_token(plaintext: str) -> str:
 
 VALID_ROLES = {"admin", "writer", "reader", "agent"}
 
+# ── Role-based tool permissions ───────────────────────────────────────
+
+READ_TOOLS = {
+    "hivemem_status",
+    "hivemem_search",
+    "hivemem_search_kg",
+    "hivemem_get_drawer",
+    "hivemem_list_wings",
+    "hivemem_list_rooms",
+    "hivemem_traverse",
+    "hivemem_quick_facts",
+    "hivemem_time_machine",
+    "hivemem_wake_up",
+    "hivemem_drawer_history",
+    "hivemem_fact_history",
+    "hivemem_pending_approvals",
+    "hivemem_get_map",
+    "hivemem_reading_list",
+    "hivemem_list_agents",
+    "hivemem_diary_read",
+}
+
+WRITE_TOOLS = {
+    "hivemem_add_drawer",
+    "hivemem_check_duplicate",
+    "hivemem_kg_add",
+    "hivemem_kg_invalidate",
+    "hivemem_update_identity",
+    "hivemem_add_reference",
+    "hivemem_link_reference",
+    "hivemem_revise_drawer",
+    "hivemem_revise_fact",
+    "hivemem_check_contradiction",
+    "hivemem_register_agent",
+    "hivemem_diary_write",
+    "hivemem_update_map",
+    "hivemem_mine_file",
+    "hivemem_mine_directory",
+}
+
+ADMIN_TOOLS = {
+    "hivemem_approve_pending",
+    "hivemem_health",
+    "hivemem_log_access",
+    "hivemem_refresh_popularity",
+}
+
+ALL_TOOLS = READ_TOOLS | WRITE_TOOLS | ADMIN_TOOLS
+
+ROLE_TOOLS: dict[str, set[str]] = {
+    "admin": ALL_TOOLS,
+    "writer": READ_TOOLS | WRITE_TOOLS,
+    "reader": READ_TOOLS,
+    "agent": READ_TOOLS | WRITE_TOOLS,
+}
+
 
 async def create_token(
     pool, name: str, role: str, expires_in_days: int | None = None
