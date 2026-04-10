@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 
 from psycopg_pool import AsyncConnectionPool
@@ -49,7 +50,7 @@ async def hivemem_search(
     weight_popularity: float = 0.15,
 ) -> list[dict]:
     """5-signal ranked search: semantic + keyword + recency + importance + popularity."""
-    vector = encode_query(query)
+    vector = await asyncio.to_thread(encode_query, query)
     vector_str = str(vector)
 
     rows = await fetch_all(
