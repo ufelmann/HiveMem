@@ -31,6 +31,7 @@ from hivemem.tools.read import (
     hivemem_status as _status,
     hivemem_time_machine as _time_machine,
     hivemem_traverse as _traverse,
+    hivemem_get_map as _get_map,
     hivemem_wake_up as _wake_up,
 )
 from hivemem.tools.write import (
@@ -47,6 +48,7 @@ from hivemem.tools.write import (
     hivemem_revise_drawer as _revise_drawer,
     hivemem_revise_fact as _revise_fact,
     hivemem_update_identity as _update_identity,
+    hivemem_update_map as _update_map,
 )
 
 DB_URL = os.environ.get("HIVEMEM_DB_URL", None) or get_db_url()
@@ -376,6 +378,31 @@ async def hivemem_diary_read(agent: str, last_n: int = 10) -> list[dict]:
     """Read recent diary entries for an agent."""
     pool = await get_db_pool()
     return await _diary_read(pool, agent, last_n=last_n)
+
+
+# ── Maps of Content ─────────────────────────────────────────────────────
+
+
+@mcp.tool()
+async def hivemem_get_map(wing: str | None = None) -> list[dict]:
+    """Get active Maps of Content for a wing (or all wings)."""
+    pool = await get_db_pool()
+    return await _get_map(pool, wing=wing)
+
+
+@mcp.tool()
+async def hivemem_update_map(
+    wing: str,
+    title: str,
+    narrative: str,
+    room_order: list[str] | None = None,
+    key_drawers: list[str] | None = None,
+    created_by: str | None = None,
+) -> dict:
+    """Create or update a Map of Content for a wing (append-only versioning)."""
+    pool = await get_db_pool()
+    return await _update_map(pool, wing, title, narrative, room_order=room_order,
+                             key_drawers=key_drawers, created_by=created_by)
 
 
 # ── Import Tools ────────────────────────────────────────────────────────
