@@ -11,15 +11,7 @@ from hivemem.tools.read import (
 import pytest
 
 
-@pytest.fixture
-async def pool(db_url):
-    p = await get_pool(db_url)
-    yield p
-    await execute(p, "DELETE FROM access_log")
-    await execute(p, "DELETE FROM facts")
-    await execute(p, "DELETE FROM drawers")
-    await execute(p, "REFRESH MATERIALIZED VIEW drawer_popularity")
-    await p.close()
+# pool fixture is defined in conftest.py
 
 
 async def test_ranked_search_returns_scores(pool):
