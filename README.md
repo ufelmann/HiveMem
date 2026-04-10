@@ -2,11 +2,11 @@
 
 Personal knowledge system with semantic search, temporal knowledge graph, and progressive summarization.
 
-MCP server backed by PostgreSQL 17 (pgvector + Apache AGE) with BGE-M3 embeddings. 36 tools, append-only versioning, agent fleet with approval workflow.
+MCP server backed by PostgreSQL 17 (pgvector + Apache AGE) with BGE-M3 embeddings. 36 tools, append-only versioning, role-based token auth, agent fleet with approval workflow.
 
 ## Vision & Research
 
-HiveMem is built on the premise that well-structured external knowledge systems are not just storage — they extend cognition. Every design decision is grounded in research on how humans process, retain, and retrieve information.
+HiveMem is built on the premise that well-structured external knowledge systems are not just storage -- they extend cognition. Every design decision is grounded in research on how humans process, retain, and retrieve information.
 
 ### Scientific Foundations
 
@@ -19,12 +19,12 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 
 ### PKM Frameworks
 
-**Zettelkasten** (Luhmann) — Atomic notes + linking. Knowledge emerges from connections, not hierarchies. Luhmann produced 70 books and 400 papers from 90,000 linked notes.
+**Zettelkasten** (Luhmann) -- Atomic notes + linking. Knowledge emerges from connections, not hierarchies. Luhmann produced 70 books and 400 papers from 90,000 linked notes.
 
 *What HiveMem adopts:* Atomic drawers (one topic per drawer), knowledge graph as linking (facts, edges), cross-wing tunnels as cross-references.
-*What HiveMem does differently:* No manual linking — LLM agents detect connections. Semantic search instead of manual navigation. Temporal validity — notes can expire.
+*What HiveMem does differently:* No manual linking -- LLM agents detect connections. Semantic search instead of manual navigation. Temporal validity -- notes can expire.
 
-**PARA** (Tiago Forte) — Projects / Areas / Resources / Archive. Sorted by actionability, not topic.
+**PARA** (Tiago Forte) -- Projects / Areas / Resources / Archive. Sorted by actionability, not topic.
 
 *What HiveMem adopts:* Actionability field (actionable / reference / someday / archive). Wake-up prioritizes actionable over reference. Wings map to Areas.
 
@@ -40,16 +40,16 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 ## Features
 
 - **36 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
-- **5-signal ranked search** — semantic similarity + keyword match + recency + importance + popularity
-- **Append-only versioning** — never lose history, revise with parent_id chains, point-in-time queries
-- **Progressive summarization** (L0-L3) — content, summary, key_points, insight per drawer
-- **Temporal knowledge graph** — facts with valid_from/valid_until, contradiction detection, multi-hop traversal
-- **Agent fleet** with approval workflow — agents write pending suggestions, user approves/rejects
-- **Maps of Content** — curated narrative overviews per wing, append-only versioned
-- **References & reading list** — track sources, link to drawers, filter by type/status
-- **Bearer token auth** — auto-generated, rate limiting, audit logging
-- **Single container deployment** — PostgreSQL + MCP server in one `docker run`
-- **93 tests** with testcontainers — no deployment needed, CI-ready
+- **5-signal ranked search** -- semantic similarity + keyword match + recency + importance + popularity
+- **Append-only versioning** -- never lose history, revise with parent_id chains, point-in-time queries
+- **Progressive summarization** (L0-L3) -- content, summary, key_points, insight per drawer
+- **Temporal knowledge graph** -- facts with valid_from/valid_until, contradiction detection, multi-hop traversal
+- **Role-based token auth** -- multiple tokens, 4 roles (admin/writer/reader/agent), per-role tool visibility
+- **Agent fleet** with approval workflow -- agents write pending suggestions, only admins approve
+- **Maps of Content** -- curated narrative overviews per wing, append-only versioned
+- **References & reading list** -- track sources, link to drawers, filter by type/status
+- **Single container deployment** -- PostgreSQL + MCP server in one `docker run`
+- **164 tests** with testcontainers -- unit, integration, HTTP end-to-end, performance
 
 ## Prerequisites
 
@@ -91,12 +91,25 @@ Or use the deploy script (auto-detects base image changes):
 ./deploy.sh
 ```
 
-### 3. Get your API token
+### 3. Create an API token
+
+Tokens are stored in PostgreSQL, hashed with SHA-256. The plaintext is shown once at creation.
 
 ```bash
-docker logs hivemem 2>&1 | grep "API token"
-# or anytime:
-docker exec hivemem hivemem-token
+# Create an admin token (full access to all 36 tools)
+docker exec hivemem hivemem-token create my-admin --role admin
+
+# Create a read-only token (17 tools)
+docker exec hivemem hivemem-token create dashboard --role reader
+
+# Create an agent token (writes go to pending, can't self-approve)
+docker exec hivemem hivemem-token create archivarius --role agent
+
+# List all tokens
+docker exec hivemem hivemem-token list
+
+# Revoke a token
+docker exec hivemem hivemem-token revoke dashboard
 ```
 
 ### 4. Connect to Claude
@@ -132,14 +145,16 @@ graph TB
     Client["Claude / MCP Client"]
 
     subgraph Container["Docker Container"]
-        Auth["Auth Middleware<br/><i>Bearer token + rate limit</i>"]
-        MCP["FastMCP Server<br/>:8421<br/><i>36 tools · Streamable HTTP</i>"]
+        Auth["Auth Middleware<br/><i>Token auth + role check + rate limit</i>"]
+        ToolGate["Tool Gate<br/><i>Filter tools/list by role</i>"]
+        Identity["Identity Injection<br/><i>created_by from token</i>"]
+        MCP["FastMCP Server<br/>:8421<br/><i>36 tools, Streamable HTTP</i>"]
         BGE["BGE-M3<br/><i>1024d embeddings</i>"]
 
         subgraph PG["PostgreSQL 17"]
             pgvector["pgvector<br/><i>5-signal ranked search</i>"]
             AGE["Apache AGE<br/><i>graph traversal</i>"]
-            Tables["10 tables · 6 views · 8 functions"]
+            Tables["11 tables, 6 views, 9 functions"]
         end
     end
 
@@ -147,7 +162,9 @@ graph TB
     Models["/data/models volume<br/><i>BGE-M3 cache</i>"]
 
     Client -->|"MCP over HTTP"| Auth
-    Auth --> MCP
+    Auth --> ToolGate
+    ToolGate --> Identity
+    Identity --> MCP
     MCP --> BGE
     MCP -->|"Unix socket"| PG
     pgvector --> Tables
@@ -206,6 +223,14 @@ erDiagram
         TIMESTAMPTZ valid_from
         TIMESTAMPTZ valid_until
     }
+    api_tokens {
+        UUID id PK
+        TEXT token_hash
+        TEXT name
+        TEXT role
+        TIMESTAMPTZ expires_at
+        TIMESTAMPTZ revoked_at
+    }
     agents {
         TEXT name PK
         TEXT focus
@@ -234,15 +259,15 @@ erDiagram
 
 | Category | Count | Tools |
 |---|---|---|
-| **Search** | 4 | `search` (5-signal ranked) · `search_kg` · `quick_facts` · `time_machine` |
-| **Read** | 7 | `status` · `get_drawer` · `list_wings` · `list_rooms` · `traverse` · `wake_up` · `get_map` |
-| **Write** | 7 | `add_drawer` (L0-L3) · `kg_add` · `kg_invalidate` · `revise_drawer` · `revise_fact` · `update_identity` · `update_map` |
-| **Integrity** | 3 | `check_duplicate` · `check_contradiction` · `approve_pending` |
-| **History** | 3 | `drawer_history` · `fact_history` · `pending_approvals` |
-| **References** | 3 | `add_reference` · `link_reference` · `reading_list` |
-| **Agents** | 4 | `register_agent` · `list_agents` · `diary_write` · `diary_read` |
-| **Admin** | 3 | `health` · `log_access` · `refresh_popularity` |
-| **Import** | 2 | `mine_file` · `mine_directory` |
+| **Search** | 4 | `search` (5-signal ranked), `search_kg`, `quick_facts`, `time_machine` |
+| **Read** | 7 | `status`, `get_drawer`, `list_wings`, `list_rooms`, `traverse`, `wake_up`, `get_map` |
+| **Write** | 7 | `add_drawer` (L0-L3), `kg_add`, `kg_invalidate`, `revise_drawer`, `revise_fact`, `update_identity`, `update_map` |
+| **Integrity** | 3 | `check_duplicate`, `check_contradiction`, `approve_pending` |
+| **History** | 3 | `drawer_history`, `fact_history`, `pending_approvals` |
+| **References** | 3 | `add_reference`, `link_reference`, `reading_list` |
+| **Agents** | 4 | `register_agent`, `list_agents`, `diary_write`, `diary_read` |
+| **Admin** | 3 | `health`, `log_access`, `refresh_popularity` |
+| **Import** | 2 | `mine_file`, `mine_directory` |
 
 ### Search Signals
 
@@ -269,27 +294,42 @@ Every drawer supports 4 layers of progressive summarization:
 
 Plus `actionability` (actionable / reference / someday / archive) and `importance` (1-5).
 
-## Authentication
+## Authentication & Authorization
 
-HiveMem generates a random API token on first start. Every request requires `Authorization: Bearer <token>`.
+Tokens are stored as SHA-256 hashes in PostgreSQL. The plaintext is shown exactly once at creation and never stored. Auth responses are cached for 60 seconds (LRU, max 1000 entries).
+
+### Roles
+
+Each token has one of four roles. The role controls which tools the client sees in `tools/list` and which it can call.
+
+| Role | Visible tools | Write behavior | Can approve? |
+|---|---|---|---|
+| `admin` | All 36 | `status: committed` | Yes |
+| `writer` | 32 (no admin tools) | `status: committed` | No |
+| `reader` | 17 (read only) | Can't write | No |
+| `agent` | 32 (same as writer) | `status: pending` | No |
+
+The `agent` role is the key constraint: agents can add knowledge, but every write goes into a pending queue. Only an admin can approve or reject it. This prevents any agent from writing and self-approving in the same session.
+
+`created_by` is set automatically from the token name. Clients can't override it.
+
+### Token management
 
 ```bash
-# Show token
-docker exec hivemem hivemem-token
-
-# Generate new token (no restart needed)
-docker exec hivemem hivemem-token regenerate
-
-# Show database password (for debugging)
-docker exec hivemem hivemem-token show-db
+hivemem-token create <name> --role admin|writer|reader|agent [--expires 90d]
+hivemem-token list
+hivemem-token revoke <name>
+hivemem-token info <name>
 ```
 
-### Security
+All commands run inside the container: `docker exec hivemem hivemem-token ...`
 
-- **Bearer Token Auth** — timing-safe comparison on every request
-- **Rate Limiting** — 5 failed attempts per IP → 15 minute ban
-- **Audit Log** — all requests logged to `/data/audit.log` (rotating, 10 MB)
-- **PostgreSQL Auth** — scram-sha-256, auto-generated password
+### Security details
+
+- **Rate limiting** -- 5 failed auth attempts per IP triggers a 15-minute ban
+- **Audit log** -- every request logged to `/data/audit.log` (rotating, 10 MB max)
+- **PostgreSQL auth** -- scram-sha-256, auto-generated password in `/data/secrets.json`
+- **Timing-safe** -- token comparison uses SHA-256 hash lookup, not string comparison
 
 ## Backups
 
@@ -307,20 +347,39 @@ Dumps are saved to `/data/backups/` (gzipped, last 7 days kept). For automated d
 
 ### Run tests (no deployment needed)
 
-Tests use [testcontainers](https://testcontainers-python.readthedocs.io/) — a PostgreSQL container with pgvector + AGE is automatically started and destroyed per session.
+Tests use [testcontainers](https://testcontainers-python.readthedocs.io/) -- a PostgreSQL container with pgvector + AGE is started and destroyed per session. Embeddings are mocked (deterministic word-hash vectors, no torch/GPU needed).
 
 ```bash
-python3 -m venv .venv
-. .venv/bin/activate
-pip install psycopg[binary] psycopg-pool pytest pytest-asyncio "testcontainers[postgres]"
+pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
 ```
-93 passed in 17s
+164 passed in 22s
 ```
 
-Embeddings are mocked in tests (deterministic word-hash vectors) — no torch or GPU needed.
+### Test structure
+
+| File | Tests | What it covers |
+|---|---|---|
+| `test_token_management.py` | 43 | Token CRUD, middleware auth, role mapping, tool filtering, E2E flows, SQL robustness |
+| `test_http_integration.py` | 15 | Full HTTP stack: request to auth to MCP to PostgreSQL |
+| `test_token_performance.py` | 7 | Cache latency (0.002ms), DB lookup (0.65ms), HTTP throughput (218 req/s) |
+| `test_sql_robustness.py` | 6 | Batch approve, query limits, atomic transactions, cycle-safe traversal |
+| `test_ranked_search.py` | 5 | 5-signal search, weight tuning, filters |
+| `test_integration.py` | 8 | Cross-feature flows (revise + summarization, agent pipeline, contradictions) |
+| `test_agent_fleet.py` | 7 | Agent registration, pending/approve/reject workflow, diary |
+| `test_schema_v2.py` | 14 | Append-only versioning, views, PL/pgSQL functions, constraints |
+| `test_read.py` | 14 | All read tools |
+| `test_write.py` | 7 | All write tools |
+| `test_progressive_summarization.py` | 5 | L0-L3 layers, actionability constraints, duplicate check |
+| `test_references.py` | 5 | References, reading list, drawer linking |
+| `test_maps.py` | 5 | Maps of Content CRUD, append-only versioning |
+| `test_graph_search.py` | 6 | quick_facts, traverse with/without filters, depth limits |
+| `test_import.py` | 5 | File and directory import |
+| `test_server.py` | 2 | Tool registration count, health check |
+| `test_db.py` | 2 | Pool connection, basic CRUD |
+| `test_embeddings.py` | 5 | Mock embedding dimensions, similarity, German text |
 
 ### Deploy changes
 
@@ -336,6 +395,7 @@ Embeddings are mocked in tests (deterministic word-hash vectors) — no torch or
 docker exec -it hivemem psql -U hivemem    # PostgreSQL shell
 docker logs hivemem --tail 50               # Container logs
 docker exec hivemem cat /data/audit.log     # Auth audit log
+docker exec hivemem hivemem-token list      # Show all tokens
 ```
 
 ## License
