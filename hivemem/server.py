@@ -14,14 +14,17 @@ from hivemem.tools.import_tools import (
     hivemem_mine_file as _mine_file,
 )
 from hivemem.tools.read import (
+    hivemem_diary_read as _diary_read,
     hivemem_drawer_history as _drawer_history,
     hivemem_fact_history as _fact_history,
     hivemem_get_drawer as _get_drawer,
+    hivemem_list_agents as _list_agents,
     hivemem_list_rooms as _list_rooms,
     hivemem_list_wings as _list_wings,
     hivemem_pending_approvals as _pending_approvals,
     hivemem_log_access as _log_access,
     hivemem_refresh_popularity as _refresh_popularity,
+    hivemem_reading_list as _reading_list,
     hivemem_search as _search,
     hivemem_search_kg as _search_kg,
     hivemem_status as _status,
@@ -31,11 +34,15 @@ from hivemem.tools.read import (
 )
 from hivemem.tools.write import (
     hivemem_add_drawer as _add_drawer,
+    hivemem_add_reference as _add_reference,
     hivemem_approve_pending as _approve_pending,
     hivemem_check_contradiction as _check_contradiction,
     hivemem_check_duplicate as _check_duplicate,
+    hivemem_diary_write as _diary_write,
     hivemem_kg_add as _kg_add,
     hivemem_kg_invalidate as _kg_invalidate,
+    hivemem_link_reference as _link_reference,
+    hivemem_register_agent as _register_agent,
     hivemem_revise_drawer as _revise_drawer,
     hivemem_revise_fact as _revise_fact,
     hivemem_update_identity as _update_identity,
@@ -240,6 +247,37 @@ async def hivemem_update_identity(key: str, content: str) -> dict:
 
 
 @mcp.tool()
+async def hivemem_add_reference(
+    title: str,
+    url: str | None = None,
+    author: str | None = None,
+    ref_type: str | None = None,
+    status: str = "read",
+    notes: str | None = None,
+    tags: list[str] | None = None,
+    importance: int | None = None,
+) -> dict:
+    """Add a source reference (article, paper, book, video, etc.)."""
+    pool = await get_db_pool()
+    return await _add_reference(pool, title, url=url, author=author, ref_type=ref_type,
+                                status=status, notes=notes, tags=tags, importance=importance)
+
+
+@mcp.tool()
+async def hivemem_link_reference(drawer_id: str, reference_id: str, relation: str = "source") -> dict:
+    """Link a reference to a drawer (source, inspired_by, contradicts, extends)."""
+    pool = await get_db_pool()
+    return await _link_reference(pool, drawer_id, reference_id, relation=relation)
+
+
+@mcp.tool()
+async def hivemem_reading_list(ref_type: str | None = None, limit: int = 20) -> list[dict]:
+    """Show unread and in-progress references."""
+    pool = await get_db_pool()
+    return await _reading_list(pool, ref_type=ref_type, limit=limit)
+
+
+@mcp.tool()
 async def hivemem_revise_drawer(
     old_id: str,
     new_content: str,
@@ -299,6 +337,37 @@ async def hivemem_approve_pending(ids: list[str], decision: str) -> dict:
     """Approve or reject pending drawers/facts by ID list."""
     pool = await get_db_pool()
     return await _approve_pending(pool, ids, decision)
+
+
+# ── Agent Fleet Tools ───────────────────────────────────────────────────
+
+
+@mcp.tool()
+async def hivemem_register_agent(name: str, focus: str, schedule: str | None = None) -> dict:
+    """Register or update an agent in the fleet."""
+    pool = await get_db_pool()
+    return await _register_agent(pool, name, focus, schedule=schedule)
+
+
+@mcp.tool()
+async def hivemem_diary_write(agent: str, entry: str) -> dict:
+    """Write an entry to an agent's diary."""
+    pool = await get_db_pool()
+    return await _diary_write(pool, agent, entry)
+
+
+@mcp.tool()
+async def hivemem_list_agents() -> list[dict]:
+    """List all registered agents."""
+    pool = await get_db_pool()
+    return await _list_agents(pool)
+
+
+@mcp.tool()
+async def hivemem_diary_read(agent: str, last_n: int = 10) -> list[dict]:
+    """Read recent diary entries for an agent."""
+    pool = await get_db_pool()
+    return await _diary_read(pool, agent, last_n=last_n)
 
 
 # ── Import Tools ────────────────────────────────────────────────────────
