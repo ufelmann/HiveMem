@@ -375,3 +375,35 @@ BEGIN
     LIMIT p_limit;
 END;
 $$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- PROGRESSIVE SUMMARIZATION (L0-L3)
+-- ============================================================
+
+ALTER TABLE drawers ADD COLUMN IF NOT EXISTS key_points TEXT[];
+ALTER TABLE drawers ADD COLUMN IF NOT EXISTS insight TEXT;
+ALTER TABLE drawers ADD COLUMN IF NOT EXISTS actionability TEXT
+    CHECK (actionability IN ('actionable', 'reference', 'someday', 'archive'));
+
+-- Duplicate check: find drawers with embedding similarity > threshold
+CREATE OR REPLACE FUNCTION check_duplicate_drawer(
+    query_embedding vector(1024),
+    threshold REAL DEFAULT 0.95
+)
+RETURNS TABLE (
+    id UUID,
+    similarity REAL,
+    summary TEXT
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT d.id,
+           (1 - (d.embedding <=> query_embedding))::REAL as similarity,
+           d.summary
+    FROM active_drawers d
+    WHERE d.embedding IS NOT NULL
+      AND (1 - (d.embedding <=> query_embedding))::REAL > threshold
+    ORDER BY similarity DESC
+    LIMIT 5;
+END;
+$$ LANGUAGE plpgsql;
