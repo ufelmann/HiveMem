@@ -85,17 +85,21 @@ def db_url(test_db):
 
 @pytest.fixture
 async def pool(db_url):
-    """Create a fresh pool per test, clean up data after."""
-    from hivemem.db import get_pool, execute
+    """Create a standalone pool per test (no global cache). Clean up data after."""
+    from psycopg.rows import dict_row
+    from psycopg_pool import AsyncConnectionPool
 
-    # Clear cached pools to avoid stale connections
-    from hivemem.db import _pools
-    _pools.clear()
-
-    p = await get_pool(db_url)
+    p = AsyncConnectionPool(
+        db_url, min_size=1, max_size=5, open=False,
+        kwargs={"row_factory": dict_row},
+    )
+    await p.open()
     yield p
 
-    # Clean up data but don't close pool
-    await execute(p, "DELETE FROM access_log")
-    await execute(p, "DELETE FROM facts")
-    await execute(p, "DELETE FROM drawers")
+    # Clean up data
+    async with p.connection() as conn:
+        await conn.execute("DELETE FROM access_log")
+        await conn.execute("DELETE FROM facts")
+        await conn.execute("DELETE FROM drawers")
+        await conn.commit()
+    await p.close()
