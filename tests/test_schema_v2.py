@@ -22,14 +22,7 @@ from hivemem.tools.read import (
 import pytest
 
 
-@pytest.fixture
-async def pool(db_url):
-    p = await get_pool(db_url)
-    yield p
-    # Clean up test data
-    await execute(p, "DELETE FROM facts")
-    await execute(p, "DELETE FROM drawers")
-    await p.close()
+# pool fixture is defined in conftest.py
 
 
 async def test_add_drawer_with_new_columns(pool):
