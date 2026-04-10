@@ -101,5 +101,6 @@ async def pool(db_url):
         await conn.execute("DELETE FROM access_log")
         await conn.execute("DELETE FROM facts")
         await conn.execute("DELETE FROM drawers")
+        await conn.execute("DELETE FROM api_tokens")
         await conn.commit()
     await p.close()
