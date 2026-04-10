@@ -56,18 +56,31 @@ def db_url(test_db):
 
 @pytest.fixture(autouse=True)
 def _mock_embeddings(monkeypatch):
-    """Replace real BGE-M3 embedding with a fast dummy (no torch needed)."""
-    import random
+    """Replace BGE-M3 with a hash-based embedding that preserves word overlap similarity."""
+    import hashlib
+    import math
+
+    def _word_hash_embed(text, dim=1024):
+        """Deterministic embedding: each word hashes to fixed positions, similar texts → similar vectors."""
+        vec = [0.0] * dim
+        words = text.lower().split()
+        for word in words:
+            h = hashlib.md5(word.encode()).digest()
+            for i in range(0, len(h), 2):
+                idx = (h[i] << 8 | h[i + 1]) % dim
+                vec[idx] += 1.0
+        # Normalize to unit vector
+        norm = math.sqrt(sum(x * x for x in vec)) or 1.0
+        return [x / norm for x in vec]
 
     def dummy_encode(text, return_sparse=False):
-        random.seed(hash(text) % (2**32))
-        vec = [random.gauss(0, 1) for _ in range(1024)]
+        vec = _word_hash_embed(text)
         if return_sparse:
             return {"dense": vec, "sparse": {}}
         return vec
 
     def dummy_encode_query(text):
-        return dummy_encode(text)
+        return _word_hash_embed(text)
 
     monkeypatch.setattr("hivemem.embeddings.encode", dummy_encode)
     monkeypatch.setattr("hivemem.embeddings.encode_query", dummy_encode_query)
