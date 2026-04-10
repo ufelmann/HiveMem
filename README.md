@@ -366,14 +366,14 @@ pytest tests/ -v
 | `test_http_integration.py` | 15 | Full HTTP stack: request to auth to MCP to PostgreSQL |
 | `test_token_performance.py` | 7 | Cache latency (0.002ms), DB lookup (0.65ms), HTTP throughput (218 req/s) |
 | `test_sql_robustness.py` | 6 | Batch approve, query limits, atomic transactions, cycle-safe traversal |
-| `test_ranked_search.py` | 5 | 5-signal search, weight tuning, filters |
+| `test_ranked_search.py` | 6 | 5-signal search, weight tuning, filters |
 | `test_integration.py` | 8 | Cross-feature flows (revise + summarization, agent pipeline, contradictions) |
 | `test_agent_fleet.py` | 7 | Agent registration, pending/approve/reject workflow, diary |
-| `test_schema_v2.py` | 14 | Append-only versioning, views, PL/pgSQL functions, constraints |
+| `test_schema_v2.py` | 15 | Append-only versioning, views, PL/pgSQL functions, constraints |
 | `test_read.py` | 14 | All read tools |
 | `test_write.py` | 7 | All write tools |
 | `test_progressive_summarization.py` | 5 | L0-L3 layers, actionability constraints, duplicate check |
-| `test_references.py` | 5 | References, reading list, drawer linking |
+| `test_references.py` | 6 | References, reading list, drawer linking |
 | `test_maps.py` | 5 | Maps of Content CRUD, append-only versioning |
 | `test_graph_search.py` | 6 | quick_facts, traverse with/without filters, depth limits |
 | `test_import.py` | 5 | File and directory import |
