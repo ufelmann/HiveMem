@@ -192,24 +192,44 @@ async def hivemem_traverse(
     pool: AsyncConnectionPool,
     entity: str,
     max_depth: int = 2,
+    relation_filter: str | None = None,
 ) -> list[dict]:
-    """Recursive CTE graph traversal on the edges table."""
-    sql = """
-        WITH RECURSIVE graph AS (
-            SELECT from_entity, to_entity, relation, weight, 1 AS depth
-            FROM edges
-            WHERE from_entity = %s
-            UNION ALL
-            SELECT e.from_entity, e.to_entity, e.relation, e.weight, g.depth + 1
-            FROM edges e
-            JOIN graph g ON e.from_entity = g.to_entity
-            WHERE g.depth < %s
-        )
-        SELECT DISTINCT from_entity, to_entity, relation, weight, depth
-        FROM graph
-        ORDER BY depth, from_entity
-    """
-    rows = await fetch_all(pool, sql, (entity, max_depth))
+    """Recursive CTE graph traversal on the edges table with optional relation filter."""
+    if relation_filter:
+        sql = """
+            WITH RECURSIVE graph AS (
+                SELECT from_entity, to_entity, relation, weight, 1 AS depth
+                FROM edges
+                WHERE from_entity = %s AND relation = %s
+                UNION ALL
+                SELECT e.from_entity, e.to_entity, e.relation, e.weight, g.depth + 1
+                FROM edges e
+                JOIN graph g ON e.from_entity = g.to_entity
+                WHERE g.depth < %s AND e.relation = %s
+            )
+            SELECT DISTINCT from_entity, to_entity, relation, weight, depth
+            FROM graph
+            ORDER BY depth, from_entity
+        """
+        rows = await fetch_all(pool, sql, (entity, relation_filter, max_depth, relation_filter))
+    else:
+        sql = """
+            WITH RECURSIVE graph AS (
+                SELECT from_entity, to_entity, relation, weight, 1 AS depth
+                FROM edges
+                WHERE from_entity = %s
+                UNION ALL
+                SELECT e.from_entity, e.to_entity, e.relation, e.weight, g.depth + 1
+                FROM edges e
+                JOIN graph g ON e.from_entity = g.to_entity
+                WHERE g.depth < %s
+            )
+            SELECT DISTINCT from_entity, to_entity, relation, weight, depth
+            FROM graph
+            ORDER BY depth, from_entity
+        """
+        rows = await fetch_all(pool, sql, (entity, max_depth))
+
     return [
         {
             "from_entity": row["from_entity"],
@@ -217,6 +237,29 @@ async def hivemem_traverse(
             "relation": row["relation"],
             "weight": float(row["weight"]),
             "depth": row["depth"],
+        }
+        for row in rows
+    ]
+
+
+async def hivemem_quick_facts(
+    pool: AsyncConnectionPool,
+    entity: str,
+) -> list[dict]:
+    """Get all active facts about an entity (as subject or object)."""
+    rows = await fetch_all(
+        pool,
+        "SELECT * FROM quick_facts(%s)",
+        (entity,),
+    )
+    return [
+        {
+            "id": str(row["id"]),
+            "subject": row["subject"],
+            "predicate": row["predicate"],
+            "object": row["object"],
+            "confidence": float(row["confidence"]),
+            "valid_from": str(row["valid_from"]),
         }
         for row in rows
     ]
@@ -427,6 +470,34 @@ async def hivemem_diary_read(
             "agent": row["agent"],
             "entry": row["entry"],
             "created_at": str(row["created_at"]),
+        }
+        for row in rows
+    ]
+
+
+async def hivemem_get_map(
+    pool: AsyncConnectionPool,
+    wing: str | None = None,
+) -> list[dict]:
+    """Get active Maps of Content."""
+    if wing:
+        sql = """SELECT id, wing, title, narrative, room_order, key_drawers, created_by, valid_from
+                 FROM active_maps WHERE wing = %s ORDER BY valid_from DESC"""
+        rows = await fetch_all(pool, sql, (wing,))
+    else:
+        sql = """SELECT id, wing, title, narrative, room_order, key_drawers, created_by, valid_from
+                 FROM active_maps ORDER BY wing, valid_from DESC"""
+        rows = await fetch_all(pool, sql)
+    return [
+        {
+            "id": str(row["id"]),
+            "wing": row["wing"],
+            "title": row["title"],
+            "narrative": row["narrative"],
+            "room_order": row["room_order"] or [],
+            "key_drawers": [str(d) for d in row["key_drawers"]] if row["key_drawers"] else [],
+            "created_by": row["created_by"],
+            "valid_from": str(row["valid_from"]),
         }
         for row in rows
     ]
