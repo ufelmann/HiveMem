@@ -141,10 +141,11 @@ async def hivemem_search_kg(
     subject: str | None = None,
     predicate: str | None = None,
     object_: str | None = None,
+    limit: int = 100,
 ) -> list[dict]:
     """ILIKE search on the knowledge graph facts table."""
     pool = await get_db_pool()
-    return await _search_kg(pool, subject=subject, predicate=predicate, object_=object_)
+    return await _search_kg(pool, subject=subject, predicate=predicate, object_=object_, limit=limit)
 
 
 @mcp.tool()
@@ -183,7 +184,7 @@ async def hivemem_quick_facts(entity: str) -> list[dict]:
 
 
 @mcp.tool()
-async def hivemem_time_machine(subject: str, as_of: str | None = None) -> list[dict]:
+async def hivemem_time_machine(subject: str, as_of: str | None = None, limit: int = 100) -> list[dict]:
     """Facts valid at a point in time using valid_from/valid_until."""
     from datetime import datetime, timezone
 
@@ -193,7 +194,7 @@ async def hivemem_time_machine(subject: str, as_of: str | None = None) -> list[d
         dt = datetime.fromisoformat(as_of)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-    return await _time_machine(pool, subject, as_of=dt)
+    return await _time_machine(pool, subject, as_of=dt, limit=limit)
 
 
 @mcp.tool()

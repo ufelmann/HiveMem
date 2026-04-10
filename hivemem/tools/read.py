@@ -12,22 +12,26 @@ from hivemem.embeddings import encode_query
 
 async def hivemem_status(pool: AsyncConnectionPool) -> dict:
     """Counts of drawers, facts, edges, wings list, and last activity."""
-    drawer_count = await fetch_one(pool, "SELECT count(*) AS cnt FROM active_drawers")
-    fact_count = await fetch_one(pool, "SELECT count(*) AS cnt FROM active_facts")
-    edge_count = await fetch_one(pool, "SELECT count(*) AS cnt FROM edges")
-    pending_count = await fetch_one(pool, "SELECT count(*) AS cnt FROM pending_approvals")
-    wings = await fetch_all(pool, "SELECT DISTINCT wing FROM active_drawers WHERE wing IS NOT NULL ORDER BY wing")
-    last_activity = await fetch_one(
+    counts = await fetch_one(
         pool,
-        "SELECT created_at FROM drawers ORDER BY created_at DESC LIMIT 1",
+        """SELECT
+            (SELECT count(*) FROM active_drawers) AS drawers,
+            (SELECT count(*) FROM active_facts) AS facts,
+            (SELECT count(*) FROM edges) AS edges,
+            (SELECT count(*) FROM pending_approvals) AS pending,
+            (SELECT max(created_at) FROM drawers) AS last_activity""",
+    )
+    wings = await fetch_all(
+        pool,
+        "SELECT DISTINCT wing FROM active_drawers WHERE wing IS NOT NULL ORDER BY wing",
     )
     return {
-        "drawers": drawer_count["cnt"],
-        "facts": fact_count["cnt"],
-        "edges": edge_count["cnt"],
-        "pending": pending_count["cnt"],
+        "drawers": counts["drawers"],
+        "facts": counts["facts"],
+        "edges": counts["edges"],
+        "pending": counts["pending"],
+        "last_activity": counts["last_activity"].isoformat() if counts["last_activity"] else None,
         "wings": [w["wing"] for w in wings],
-        "last_activity": str(last_activity["created_at"]) if last_activity else None,
     }
 
 
@@ -85,6 +89,7 @@ async def hivemem_search_kg(
     subject: str | None = None,
     predicate: str | None = None,
     object_: str | None = None,
+    limit: int = 100,
 ) -> list[dict]:
     """ILIKE search on active facts."""
     conditions = []
@@ -100,7 +105,8 @@ async def hivemem_search_kg(
         params.append(f"%{object_}%")
 
     where = " AND ".join(conditions) if conditions else "TRUE"
-    sql = f"SELECT id, subject, predicate, object, confidence, valid_from, valid_until FROM active_facts WHERE {where} ORDER BY created_at DESC"
+    sql = f"SELECT id, subject, predicate, object, confidence, valid_from, valid_until FROM active_facts WHERE {where} ORDER BY created_at DESC LIMIT %s"
+    params.append(limit)
     rows = await fetch_all(pool, sql, tuple(params))
     return [
         {
@@ -201,7 +207,7 @@ async def hivemem_traverse(
                 SELECT from_entity, to_entity, relation, weight, 1 AS depth
                 FROM edges
                 WHERE from_entity = %s AND relation = %s
-                UNION ALL
+                UNION
                 SELECT e.from_entity, e.to_entity, e.relation, e.weight, g.depth + 1
                 FROM edges e
                 JOIN graph g ON e.from_entity = g.to_entity
@@ -218,7 +224,7 @@ async def hivemem_traverse(
                 SELECT from_entity, to_entity, relation, weight, 1 AS depth
                 FROM edges
                 WHERE from_entity = %s
-                UNION ALL
+                UNION
                 SELECT e.from_entity, e.to_entity, e.relation, e.weight, g.depth + 1
                 FROM edges e
                 JOIN graph g ON e.from_entity = g.to_entity
@@ -269,6 +275,7 @@ async def hivemem_time_machine(
     pool: AsyncConnectionPool,
     subject: str,
     as_of: datetime | None = None,
+    limit: int = 100,
 ) -> list[dict]:
     """Facts valid at a point in time."""
     if as_of is None:
@@ -277,8 +284,9 @@ async def hivemem_time_machine(
             FROM active_facts
             WHERE subject ILIKE %s
             ORDER BY valid_from DESC
+            LIMIT %s
         """
-        rows = await fetch_all(pool, sql, (f"%{subject}%",))
+        rows = await fetch_all(pool, sql, (f"%{subject}%", limit))
     else:
         sql = """
             SELECT id, subject, predicate, object, confidence, valid_from, valid_until
@@ -288,8 +296,9 @@ async def hivemem_time_machine(
               AND (valid_until IS NULL OR valid_until > %s)
               AND status = 'committed'
             ORDER BY valid_from DESC
+            LIMIT %s
         """
-        rows = await fetch_all(pool, sql, (f"%{subject}%", as_of, as_of))
+        rows = await fetch_all(pool, sql, (f"%{subject}%", as_of, as_of, limit))
 
     return [
         {
