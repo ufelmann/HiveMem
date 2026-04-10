@@ -328,14 +328,14 @@ BEGIN
 
             -- 1. Semantic similarity (0-1)
             CASE WHEN d.embedding IS NOT NULL
-                 THEN 1 - (d.embedding <=> query_embedding)::REAL
-                 ELSE 0 END
+                 THEN (1 - (d.embedding <=> query_embedding))::REAL
+                 ELSE 0::REAL END
             AS sem,
 
             -- 2. Keyword match (0-1, BM25-like)
             CASE WHEN query_text IS NOT NULL AND query_text != ''
-                 THEN LEAST(ts_rank_cd(d.tsv, plainto_tsquery('english', query_text)), 1.0)
-                 ELSE 0 END
+                 THEN LEAST(ts_rank_cd(d.tsv, plainto_tsquery('english', query_text))::REAL, 1.0::REAL)
+                 ELSE 0::REAL END
             AS kw,
 
             -- 3. Recency (0-1, exponential decay, half-life 90 days)
