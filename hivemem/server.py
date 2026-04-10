@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 import os
+from contextvars import ContextVar
 
 from mcp.server.fastmcp import FastMCP
+
+_request_identity: ContextVar[dict] = ContextVar("request_identity", default={"name": "anonymous", "role": "admin"})
+
+
+def get_identity() -> dict:
+    """Get the current request's token identity."""
+    return _request_identity.get()
 
 from hivemem.db import get_pool
 from hivemem.security import get_db_url
@@ -212,13 +220,16 @@ async def hivemem_add_drawer(
     insight: str | None = None,
     actionability: str | None = None,
     status: str = "committed",
-    created_by: str | None = None,
     valid_from: str | None = None,
 ) -> dict:
     """Store knowledge with progressive summarization. RULE: Always call hivemem_check_duplicate BEFORE adding. Include all layers: content (L0), summary (L1), key_points (L2), insight (L3). One drawer per topic."""
     from datetime import datetime, timezone
 
     pool = await get_db_pool()
+    identity = get_identity()
+    created_by = identity["name"]
+    if identity["role"] == "agent":
+        status = "pending"
     dt = None
     if valid_from:
         dt = datetime.fromisoformat(valid_from)
@@ -246,13 +257,16 @@ async def hivemem_kg_add(
     confidence: float = 1.0,
     source_id: str | None = None,
     status: str = "committed",
-    created_by: str | None = None,
     valid_from: str | None = None,
 ) -> dict:
     """Add a fact triple to the knowledge graph. RULE: Always call hivemem_check_contradiction FIRST. Keep facts atomic — one triple per relationship. Always include valid_from date."""
     from datetime import datetime, timezone
 
     pool = await get_db_pool()
+    identity = get_identity()
+    created_by = identity["name"]
+    if identity["role"] == "agent":
+        status = "pending"
     dt = None
     if valid_from:
         dt = datetime.fromisoformat(valid_from)
@@ -314,10 +328,11 @@ async def hivemem_revise_drawer(
     old_id: str,
     new_content: str,
     new_summary: str | None = None,
-    created_by: str = "user",
 ) -> dict:
     """Revise a drawer: close old version and insert new with parent_id link."""
     pool = await get_db_pool()
+    identity = get_identity()
+    created_by = identity["name"]
     return await _revise_drawer(pool, old_id, new_content, new_summary=new_summary, created_by=created_by)
 
 
@@ -325,10 +340,11 @@ async def hivemem_revise_drawer(
 async def hivemem_revise_fact(
     old_id: str,
     new_object: str,
-    created_by: str = "user",
 ) -> dict:
     """Revise a fact: close old version and insert new with parent_id link."""
     pool = await get_db_pool()
+    identity = get_identity()
+    created_by = identity["name"]
     return await _revise_fact(pool, old_id, new_object, created_by=created_by)
 
 
@@ -419,10 +435,11 @@ async def hivemem_update_map(
     narrative: str,
     room_order: list[str] | None = None,
     key_drawers: list[str] | None = None,
-    created_by: str | None = None,
 ) -> dict:
     """Create or update a Map of Content for a wing (append-only versioning)."""
     pool = await get_db_pool()
+    identity = get_identity()
+    created_by = identity["name"]
     return await _update_map(pool, wing, title, narrative, room_order=room_order,
                              key_drawers=key_drawers, created_by=created_by)
 
@@ -478,6 +495,25 @@ async def hivemem_refresh_popularity() -> dict:
     return await _refresh_popularity(pool)
 
 
+class _IdentityMiddleware:
+    """ASGI middleware: copy token identity from scope into contextvar."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            name = scope.get("token_name", "anonymous")
+            role = scope.get("token_role", "admin")
+            token = _request_identity.set({"name": name, "role": role})
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                _request_identity.reset(token)
+        else:
+            await self.app(scope, receive, send)
+
+
 class _AcceptMiddleware:
     """ASGI middleware: ensure Accept header includes both MCP-required types."""
 
@@ -493,6 +529,7 @@ class _AcceptMiddleware:
 
 
 if __name__ == "__main__":
+    import asyncio
     import uvicorn
 
     from hivemem.embeddings import get_model
@@ -502,5 +539,12 @@ if __name__ == "__main__":
     get_model()
     print("Model ready.")
 
-    app = AuthMiddleware(_AcceptMiddleware(mcp.streamable_http_app()))
-    uvicorn.run(app, host="0.0.0.0", port=MCP_PORT)
+    mcp_app = mcp.streamable_http_app()
+    auth_mw = AuthMiddleware(_AcceptMiddleware(_IdentityMiddleware(mcp_app)))
+
+    async def startup():
+        pool = await get_db_pool()
+        auth_mw.pool = pool
+
+    asyncio.get_event_loop().run_until_complete(startup())
+    uvicorn.run(auth_mw, host="0.0.0.0", port=MCP_PORT)

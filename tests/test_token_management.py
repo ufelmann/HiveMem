@@ -360,3 +360,50 @@ def test_filter_tools_for_writer():
     assert "hivemem_add_drawer" in names
     assert "hivemem_approve_pending" not in names
     assert "hivemem_health" not in names
+
+
+from hivemem.tools.write import hivemem_add_drawer, hivemem_kg_add
+from hivemem.db import fetch_one as db_fetch_one
+
+
+async def test_agent_write_forces_pending(pool):
+    """Agent-role writes get status=pending regardless of input."""
+    result = await hivemem_add_drawer(
+        pool,
+        content="Agent suggestion about testing",
+        wing="eng", room="test", hall="facts",
+        status="pending",
+        created_by="test-agent",
+    )
+    row = await db_fetch_one(pool, "SELECT status, created_by FROM drawers WHERE id = %s", (result["id"],))
+    assert row["status"] == "pending"
+    assert row["created_by"] == "test-agent"
+
+
+async def test_writer_write_is_committed(pool):
+    """Writer-role writes get status=committed."""
+    result = await hivemem_add_drawer(
+        pool,
+        content="Writer content about testing",
+        wing="eng", room="test", hall="facts",
+        status="committed",
+        created_by="test-writer",
+    )
+    row = await db_fetch_one(pool, "SELECT status, created_by FROM drawers WHERE id = %s", (result["id"],))
+    assert row["status"] == "committed"
+    assert row["created_by"] == "test-writer"
+
+
+async def test_agent_fact_forces_pending(pool):
+    """Agent-role fact writes get status=pending."""
+    result = await hivemem_kg_add(
+        pool,
+        subject="HiveMem",
+        predicate="tested_by",
+        object_="pytest",
+        status="pending",
+        created_by="test-agent",
+    )
+    row = await db_fetch_one(pool, "SELECT status, created_by FROM facts WHERE id = %s", (result["id"],))
+    assert row["status"] == "pending"
+    assert row["created_by"] == "test-agent"
