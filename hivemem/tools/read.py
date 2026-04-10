@@ -121,7 +121,8 @@ async def hivemem_get_drawer(pool: AsyncConnectionPool, drawer_id: str) -> dict 
     row = await fetch_one(
         pool,
         """SELECT id, parent_id, content, wing, room, hall, source, tags,
-                  importance, summary, status, created_by, created_at, valid_from, valid_until
+                  importance, summary, key_points, insight, actionability,
+                  status, created_by, created_at, valid_from, valid_until
            FROM drawers WHERE id = %s""",
         (drawer_id,),
     )
@@ -138,6 +139,9 @@ async def hivemem_get_drawer(pool: AsyncConnectionPool, drawer_id: str) -> dict 
         "tags": row["tags"] or [],
         "importance": row["importance"],
         "summary": row["summary"],
+        "key_points": row["key_points"] or [],
+        "insight": row["insight"],
+        "actionability": row["actionability"],
         "status": row["status"],
         "created_by": row["created_by"],
         "created_at": str(row["created_at"]),
