@@ -288,6 +288,36 @@ async def hivemem_diary_write(
     return {"id": str(row["id"]), "agent": agent}
 
 
+async def hivemem_update_map(
+    pool: AsyncConnectionPool,
+    wing: str,
+    title: str,
+    narrative: str,
+    room_order: list[str] | None = None,
+    key_drawers: list[str] | None = None,
+    created_by: str | None = None,
+) -> dict:
+    """Create or update a Map of Content for a wing (append-only)."""
+    # Close previous map for this wing
+    await execute(
+        pool,
+        "UPDATE maps SET valid_until = now() WHERE wing = %s AND valid_until IS NULL",
+        (wing,),
+    )
+    room_order_val = room_order or []
+    key_drawers_val = key_drawers or []
+    row = await fetch_one(
+        pool,
+        """
+        INSERT INTO maps (wing, title, narrative, room_order, key_drawers, created_by)
+        VALUES (%s, %s, %s, %s, %s::uuid[], %s)
+        RETURNING id, wing, title
+        """,
+        (wing, title, narrative, room_order_val, key_drawers_val, created_by),
+    )
+    return {"id": str(row["id"]), "wing": row["wing"], "title": row["title"]}
+
+
 async def hivemem_update_identity(
     pool: AsyncConnectionPool,
     key: str,
