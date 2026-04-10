@@ -8,13 +8,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability, please report it responsibly:
-
-1. **Do not** open a public issue
-2. Email: ufelmann@gmail.com
-3. Include steps to reproduce and potential impact
-
-You can expect an initial response within 72 hours.
+If you discover a security vulnerability, please report it via [GitHub Issues](https://github.com/ufelmann/HiveMem/issues). Include steps to reproduce and potential impact.
 
 ## Security Architecture
 
