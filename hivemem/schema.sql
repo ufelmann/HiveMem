@@ -385,6 +385,38 @@ ALTER TABLE drawers ADD COLUMN IF NOT EXISTS insight TEXT;
 ALTER TABLE drawers ADD COLUMN IF NOT EXISTS actionability TEXT
     CHECK (actionability IN ('actionable', 'reference', 'someday', 'archive'));
 
+-- ============================================================
+-- REFERENCES & READING LIST
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS references_ (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title       TEXT NOT NULL,
+    url         TEXT,
+    author      TEXT,
+    ref_type    TEXT CHECK (ref_type IN ('article','paper','book','video','podcast','tweet','repo','conversation','internal','other')),
+    status      TEXT NOT NULL DEFAULT 'read'
+                CHECK (status IN ('unread','reading','read','archived')),
+    notes       TEXT,
+    tags        TEXT[],
+    importance  SMALLINT CHECK (importance BETWEEN 1 AND 5),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS drawer_references (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    drawer_id    UUID NOT NULL REFERENCES drawers(id),
+    reference_id UUID NOT NULL REFERENCES references_(id),
+    relation     TEXT NOT NULL DEFAULT 'source'
+                 CHECK (relation IN ('source','inspired_by','contradicts','extends')),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_refs_status ON references_ (status) WHERE status IN ('unread', 'reading');
+CREATE INDEX IF NOT EXISTS idx_refs_type ON references_ (ref_type);
+CREATE INDEX IF NOT EXISTS idx_drawer_refs_drawer ON drawer_references (drawer_id);
+CREATE INDEX IF NOT EXISTS idx_drawer_refs_ref ON drawer_references (reference_id);
+
 -- Duplicate check: find drawers with embedding similarity > threshold
 CREATE OR REPLACE FUNCTION check_duplicate_drawer(
     query_embedding vector(1024),
@@ -407,3 +439,26 @@ BEGIN
     LIMIT 5;
 END;
 $$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- AGENT FLEET
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS agents (
+    name        TEXT PRIMARY KEY,
+    focus       TEXT NOT NULL,
+    autonomy    JSONB NOT NULL DEFAULT '{"default":"suggest_only"}',
+    schedule    TEXT,
+    model_routing JSONB,
+    tools       TEXT[],
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS agent_diary (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent       TEXT NOT NULL REFERENCES agents(name),
+    entry       TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_diary_agent ON agent_diary (agent, created_at DESC);
