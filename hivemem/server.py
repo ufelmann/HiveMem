@@ -23,6 +23,7 @@ from hivemem.tools.read import (
     hivemem_list_wings as _list_wings,
     hivemem_pending_approvals as _pending_approvals,
     hivemem_log_access as _log_access,
+    hivemem_quick_facts as _quick_facts,
     hivemem_refresh_popularity as _refresh_popularity,
     hivemem_reading_list as _reading_list,
     hivemem_search as _search,
@@ -136,10 +137,17 @@ async def hivemem_list_rooms(wing: str) -> list[dict]:
 
 
 @mcp.tool()
-async def hivemem_traverse(entity: str, max_depth: int = 2) -> list[dict]:
-    """Recursive graph traversal on the edges table."""
+async def hivemem_traverse(entity: str, max_depth: int = 2, relation_filter: str | None = None) -> list[dict]:
+    """Recursive graph traversal on edges. Optional relation_filter to only follow specific edge types."""
     pool = await get_db_pool()
-    return await _traverse(pool, entity, max_depth=max_depth)
+    return await _traverse(pool, entity, max_depth=max_depth, relation_filter=relation_filter)
+
+
+@mcp.tool()
+async def hivemem_quick_facts(entity: str) -> list[dict]:
+    """Get all active facts about an entity (as subject or object)."""
+    pool = await get_db_pool()
+    return await _quick_facts(pool, entity)
 
 
 @mcp.tool()
