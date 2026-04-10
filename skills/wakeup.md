@@ -1,28 +1,23 @@
 ---
 name: hivemem-wakeup
 description: Load context from HiveMem at session start
-trigger: Session start, or user says "wake up", "load context", "what do you know about me"
+trigger: Start of every session. MANDATORY — no exceptions.
 ---
 
-# Wake Up — Load HiveMem Context
+# Wake-up Skill
 
-Load identity and relevant context from HiveMem at the start of a session.
+## Trigger
+Start of every session. MANDATORY — no exceptions.
 
 ## Steps
 
-1. **Load identity** — call `wake_up`
-   - Returns L0 (identity, ~50 tokens) and L1 (critical facts, ~120 tokens)
-   - This is your baseline context about the user
+1. Call `hivemem_wake_up` to load L0 identity + L1 critical facts
+2. Greet the user naturally using what you learned
+3. Never say "Remembering..." or mention the tool
+4. If the user's message implies a topic, call `hivemem_search` to load relevant context
+5. If a wing is implied, call `hivemem_get_map` to understand the domain structure
 
-2. **Detect topic** — if the user's first message mentions a specific topic:
-   - call `search` with the topic as query (limit 5)
-   - call `search_kg` with relevant entities
-   - This gives you prior decisions and context
-
-3. **Summarize briefly** — tell the user:
-   - "HiveMem loaded. I have [X relevant facts]."
-   - Only mention facts directly relevant to the current topic
-   - Do NOT dump the entire identity — just confirm you have it
-
-4. **Stay lean** — do NOT load everything. Only load what's relevant.
-   Progressive loading: start with L0+L1, load more on demand.
+## Rules
+- Never start a session without calling wake_up
+- Don't dump all loaded context — use it naturally
+- If wake_up returns empty, proceed normally (new user)
