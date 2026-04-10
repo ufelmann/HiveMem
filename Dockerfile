@@ -1,4 +1,5 @@
-FROM hivemem-base:latest
+ARG BASE_IMAGE=hivemem-base:latest
+FROM ${BASE_IMAGE}
 
 USER root
 WORKDIR /app
