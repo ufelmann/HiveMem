@@ -153,3 +153,110 @@ def test_no_unknown_tools_in_roles():
     for role, tools in ROLE_TOOLS.items():
         unknown = tools - ALL_TOOLS
         assert not unknown, f"Role '{role}' has unknown tools: {unknown}"
+
+
+from hivemem.security import AuthMiddleware, create_token, validate_token, revoke_token
+
+
+async def test_middleware_valid_token(pool):
+    """Valid token passes auth and injects identity into scope."""
+    plaintext = await create_token(pool, "mw-admin", "admin")
+
+    captured_scope = {}
+
+    async def mock_app(scope, receive, send):
+        captured_scope.update(scope)
+
+    mw = AuthMiddleware(mock_app, pool)
+
+    scope = {
+        "type": "http",
+        "headers": [
+            (b"authorization", f"Bearer {plaintext}".encode()),
+        ],
+        "client": ("127.0.0.1", 12345),
+    }
+
+    sent = []
+
+    async def mock_receive():
+        return {}
+
+    async def mock_send(message):
+        sent.append(message)
+
+    await mw(scope, mock_receive, mock_send)
+    assert captured_scope.get("token_name") == "mw-admin"
+    assert captured_scope.get("token_role") == "admin"
+    assert not sent  # no error response
+
+
+async def test_middleware_invalid_token(pool):
+    """Invalid token gets 401."""
+    async def mock_app(scope, receive, send):
+        raise AssertionError("Should not reach app")
+
+    mw = AuthMiddleware(mock_app, pool)
+
+    scope = {
+        "type": "http",
+        "headers": [(b"authorization", b"Bearer bad-token")],
+        "client": ("127.0.0.1", 12345),
+    }
+
+    sent = []
+
+    async def mock_send(message):
+        sent.append(message)
+
+    await mw(scope, lambda: {}, mock_send)
+    assert sent[0]["status"] == 401
+
+
+async def test_middleware_missing_token(pool):
+    """Missing token gets 401."""
+    async def mock_app(scope, receive, send):
+        raise AssertionError("Should not reach app")
+
+    mw = AuthMiddleware(mock_app, pool)
+
+    scope = {
+        "type": "http",
+        "headers": [],
+        "client": ("127.0.0.1", 12345),
+    }
+
+    sent = []
+
+    async def mock_send(message):
+        sent.append(message)
+
+    await mw(scope, lambda: {}, mock_send)
+    assert sent[0]["status"] == 401
+
+
+async def test_middleware_revoked_token(pool):
+    """Revoked token gets 401."""
+    plaintext = await create_token(pool, "mw-revoked", "writer")
+    await revoke_token(pool, "mw-revoked")
+
+    async def mock_app(scope, receive, send):
+        raise AssertionError("Should not reach app")
+
+    mw = AuthMiddleware(mock_app, pool)
+    # Clear cache so revocation is immediate in tests
+    mw._cache.clear()
+
+    scope = {
+        "type": "http",
+        "headers": [(b"authorization", f"Bearer {plaintext}".encode())],
+        "client": ("127.0.0.1", 12345),
+    }
+
+    sent = []
+
+    async def mock_send(message):
+        sent.append(message)
+
+    await mw(scope, lambda: {}, mock_send)
+    assert sent[0]["status"] == 401

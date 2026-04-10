@@ -292,9 +292,12 @@ def get_audit_logger() -> logging.Logger:
     if _audit_logger is None:
         _audit_logger = logging.getLogger("hivemem.audit")
         _audit_logger.setLevel(logging.INFO)
-        handler = RotatingFileHandler(
-            str(AUDIT_LOG_FILE), maxBytes=10 * 1024 * 1024, backupCount=3
-        )
+        if AUDIT_LOG_FILE.parent.exists():
+            handler: logging.Handler = RotatingFileHandler(
+                str(AUDIT_LOG_FILE), maxBytes=10 * 1024 * 1024, backupCount=3
+            )
+        else:
+            handler = logging.StreamHandler()
         handler.setFormatter(
             logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
         )
@@ -311,10 +314,14 @@ def audit(ip: str, status: str, detail: str = ""):
 
 
 class AuthMiddleware:
-    """ASGI middleware: Bearer token auth + rate limiting + audit."""
+    """ASGI middleware: Bearer token auth via DB + rate limiting + audit."""
 
-    def __init__(self, app):
+    CACHE_TTL = 60  # seconds
+
+    def __init__(self, app, pool=None):
         self.app = app
+        self.pool = pool
+        self._cache: dict[str, tuple[dict, float]] = {}  # hash -> (identity, timestamp)
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -327,8 +334,10 @@ class AuthMiddleware:
         ban_remaining = check_rate_limit(ip)
         if ban_remaining is not None:
             audit(ip, "AUTH_BANNED", f"remaining={ban_remaining}s")
-            await self._send_error(send, 429, f"Too many failed attempts. Retry in {ban_remaining}s.",
-                                   headers=[(b"retry-after", str(ban_remaining).encode())])
+            await self._send_error(
+                send, 429, f"Too many failed attempts. Retry in {ban_remaining}s.",
+                headers=[(b"retry-after", str(ban_remaining).encode())],
+            )
             return
 
         # Extract Bearer token
@@ -339,25 +348,47 @@ class AuthMiddleware:
             await self._send_error(send, 401, "Bearer token required.")
             return
 
-        # Timing-safe token comparison (re-read on every call so regenerate works live)
-        if not hmac.compare_digest(token, get_api_token()):
+        # Validate token (cached)
+        identity = await self._validate_cached(token)
+        if identity is None:
             record_failed_auth(ip)
             audit(ip, "AUTH_FAIL", "invalid token")
             await self._send_error(send, 401, "Invalid token.")
             return
 
-        # Auth OK
+        # Auth OK — inject identity into scope
         clear_failed_auth(ip)
-        audit(ip, "AUTH_OK")
+        scope = dict(scope, token_name=identity["name"], token_role=identity["role"])
+        audit(ip, "AUTH_OK", f"token={identity['name']} role={identity['role']}")
 
         await self.app(scope, receive, send)
+
+    async def _validate_cached(self, plaintext: str) -> dict | None:
+        """Validate token with in-memory cache (TTL-based)."""
+        token_hash = _hash_token(plaintext)
+        now = time.time()
+
+        cached = self._cache.get(token_hash)
+        if cached is not None:
+            identity, cached_at = cached
+            if now - cached_at < self.CACHE_TTL:
+                return identity
+
+        if self.pool is None:
+            return None
+
+        identity = await validate_token(self.pool, plaintext)
+        if identity is not None:
+            self._cache[token_hash] = (identity, now)
+        else:
+            self._cache.pop(token_hash, None)
+        return identity
 
     @staticmethod
     def _get_client_ip(scope) -> str:
         client = scope.get("client")
         if client:
             return client[0]
-        # Check X-Forwarded-For for proxied requests
         for key, value in scope.get("headers", []):
             if key == b"x-forwarded-for":
                 return value.decode().split(",")[0].strip()
@@ -375,6 +406,7 @@ class AuthMiddleware:
     @staticmethod
     async def _send_error(send, status: int, message: str, headers: list | None = None):
         import json as _json
+
         body = _json.dumps({"error": message}).encode()
         response_headers = [
             (b"content-type", b"application/json"),
