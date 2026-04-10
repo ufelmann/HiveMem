@@ -6,7 +6,7 @@ from datetime import datetime
 
 from psycopg_pool import AsyncConnectionPool
 
-from hivemem.db import fetch_all, fetch_one
+from hivemem.db import fetch_all, fetch_one, execute
 from hivemem.embeddings import encode_query
 
 
@@ -36,32 +36,28 @@ async def hivemem_search(
     query: str,
     limit: int = 10,
     wing: str | None = None,
+    room: str | None = None,
+    hall: str | None = None,
+    weight_semantic: float = 0.35,
+    weight_keyword: float = 0.15,
+    weight_recency: float = 0.20,
+    weight_importance: float = 0.15,
+    weight_popularity: float = 0.15,
 ) -> list[dict]:
-    """Semantic search over active drawers using encode_query + vector cosine distance."""
+    """5-signal ranked search: semantic + keyword + recency + importance + popularity."""
     vector = encode_query(query)
     vector_str = str(vector)
 
-    if wing:
-        sql = """
-            SELECT id, content, summary, wing, room, hall, importance,
-                   1 - (embedding <=> %s::vector) AS similarity
-            FROM active_drawers
-            WHERE wing = %s AND embedding IS NOT NULL
-            ORDER BY embedding <=> %s::vector
-            LIMIT %s
-        """
-        rows = await fetch_all(pool, sql, (vector_str, wing, vector_str, limit))
-    else:
-        sql = """
-            SELECT id, content, summary, wing, room, hall, importance,
-                   1 - (embedding <=> %s::vector) AS similarity
-            FROM active_drawers
-            WHERE embedding IS NOT NULL
-            ORDER BY embedding <=> %s::vector
-            LIMIT %s
-        """
-        rows = await fetch_all(pool, sql, (vector_str, vector_str, limit))
-
+    rows = await fetch_all(
+        pool,
+        """SELECT * FROM ranked_search(
+            %s::vector, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s
+        )""",
+        (vector_str, query, wing, room, hall, limit,
+         weight_semantic, weight_keyword, weight_recency,
+         weight_importance, weight_popularity),
+    )
     return [
         {
             "id": str(row["id"]),
@@ -70,8 +66,15 @@ async def hivemem_search(
             "wing": row["wing"],
             "room": row["room"],
             "hall": row["hall"],
+            "tags": row["tags"] or [],
             "importance": row["importance"],
-            "similarity": float(row["similarity"]),
+            "created_at": str(row["created_at"]),
+            "score_semantic": round(float(row["score_semantic"]), 4),
+            "score_keyword": round(float(row["score_keyword"]), 4),
+            "score_recency": round(float(row["score_recency"]), 4),
+            "score_importance": round(float(row["score_importance"]), 4),
+            "score_popularity": round(float(row["score_popularity"]), 4),
+            "score_total": round(float(row["score_total"]), 4),
         }
         for row in rows
     ]
@@ -318,6 +321,28 @@ async def hivemem_pending_approvals(pool: AsyncConnectionPool) -> list[dict]:
         }
         for row in rows
     ]
+
+
+async def hivemem_log_access(
+    pool: AsyncConnectionPool,
+    drawer_id: str | None = None,
+    fact_id: str | None = None,
+    accessed_by: str = "user",
+) -> dict:
+    """Log an access event for popularity tracking."""
+    await execute(
+        pool,
+        "INSERT INTO access_log (drawer_id, fact_id, accessed_by) VALUES (%s, %s, %s)",
+        (drawer_id, fact_id, accessed_by),
+    )
+    return {"logged": True}
+
+
+async def hivemem_refresh_popularity(pool: AsyncConnectionPool) -> dict:
+    """Refresh the drawer_popularity materialized view."""
+    await execute(pool, "REFRESH MATERIALIZED VIEW CONCURRENTLY drawer_popularity")
+    row = await fetch_one(pool, "SELECT count(*) AS cnt FROM drawer_popularity")
+    return {"refreshed": True, "drawer_count": row["cnt"]}
 
 
 async def hivemem_wake_up(pool: AsyncConnectionPool) -> dict:
