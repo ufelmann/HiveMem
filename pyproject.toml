@@ -2,6 +2,9 @@
 name = "hivemem"
 version = "0.1.0"
 description = "Personal knowledge system — MCP server with PostgreSQL"
+license = "MIT"
+readme = "README.md"
+authors = [{name = "Viktor Ufelmann"}]
 requires-python = ">=3.11"
 dependencies = [
     "mcp>=1.27.0",
@@ -18,6 +21,10 @@ dev = [
     "pytest-asyncio>=0.24",
     "testcontainers[postgres]>=4.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ufelmann/HiveMem"
+Repository = "https://github.com/ufelmann/HiveMem"
 
 [build-system]
 requires = ["hatchling"]

@@ -11,3 +11,10 @@ CLAUDE.md
 AGENTS.md
 docs/
 .base-hash
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+*.log
+models/
