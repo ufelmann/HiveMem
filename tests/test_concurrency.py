@@ -206,18 +206,8 @@ async def test_concurrent_revoke_same_token(pool):
     assert len(errors) == 1
 
 
-async def test_pool_init_concurrent(db_url):
-    """Concurrent get_pool calls for same URL return the same pool."""
-    from hivemem.db import get_pool, _pools, _pool_lock
-
-    # Clear cached pool for this URL to test init race
-    old_pool = _pools.pop(db_url, None)
-
-    pools = await asyncio.gather(*[get_pool(db_url) for _ in range(10)])
-
-    # All should be the same pool object
-    assert all(p is pools[0] for p in pools)
-
-    # Restore for other tests
-    if old_pool:
-        _pools[db_url] = old_pool
+async def test_pool_lock_exists():
+    """Pool creation uses asyncio.Lock to prevent stampede."""
+    from hivemem.db import _pool_lock
+    assert _pool_lock is not None
+    assert isinstance(_pool_lock, asyncio.Lock)

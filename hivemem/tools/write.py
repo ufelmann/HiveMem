@@ -176,12 +176,17 @@ async def hivemem_check_contradiction(
     ]
 
 
+VALID_DECISIONS = {"committed", "rejected"}
+
+
 async def hivemem_approve_pending(
     pool: AsyncConnectionPool,
     ids: list[str],
     decision: str,
 ) -> dict:
     """Approve or reject pending items (drawers and facts)."""
+    if decision not in VALID_DECISIONS:
+        raise ValueError(f"Invalid decision '{decision}'. Must be 'committed' or 'rejected'.")
     async with pool.connection() as conn:
         cur = await conn.execute(
             "WITH updated AS (UPDATE drawers SET status = %s WHERE id = ANY(%s::uuid[]) AND status = 'pending' RETURNING id) SELECT count(*) AS cnt FROM updated",
