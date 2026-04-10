@@ -349,6 +349,89 @@ async def hivemem_refresh_popularity(pool: AsyncConnectionPool) -> dict:
     return {"refreshed": True, "drawer_count": row["cnt"]}
 
 
+async def hivemem_reading_list(
+    pool: AsyncConnectionPool,
+    ref_type: str | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    """Show unread and in-progress references."""
+    if ref_type:
+        sql = """
+            SELECT r.id, r.title, r.url, r.author, r.ref_type, r.status, r.importance, r.created_at,
+                   count(dr.id) AS linked_drawers
+            FROM references_ r
+            LEFT JOIN drawer_references dr ON dr.reference_id = r.id
+            WHERE r.status IN ('unread', 'reading') AND r.ref_type = %s
+            GROUP BY r.id
+            ORDER BY r.importance ASC NULLS LAST, r.created_at DESC
+            LIMIT %s
+        """
+        rows = await fetch_all(pool, sql, (ref_type, limit))
+    else:
+        sql = """
+            SELECT r.id, r.title, r.url, r.author, r.ref_type, r.status, r.importance, r.created_at,
+                   count(dr.id) AS linked_drawers
+            FROM references_ r
+            LEFT JOIN drawer_references dr ON dr.reference_id = r.id
+            WHERE r.status IN ('unread', 'reading')
+            GROUP BY r.id
+            ORDER BY r.importance ASC NULLS LAST, r.created_at DESC
+            LIMIT %s
+        """
+        rows = await fetch_all(pool, sql, (limit,))
+
+    return [
+        {
+            "id": str(row["id"]),
+            "title": row["title"],
+            "url": row["url"],
+            "author": row["author"],
+            "ref_type": row["ref_type"],
+            "status": row["status"],
+            "importance": row["importance"],
+            "linked_drawers": row["linked_drawers"],
+            "created_at": str(row["created_at"]),
+        }
+        for row in rows
+    ]
+
+
+async def hivemem_list_agents(pool: AsyncConnectionPool) -> list[dict]:
+    """List all registered agents."""
+    rows = await fetch_all(pool, "SELECT name, focus, schedule, created_at FROM agents ORDER BY name")
+    return [
+        {
+            "name": row["name"],
+            "focus": row["focus"],
+            "schedule": row["schedule"],
+            "created_at": str(row["created_at"]),
+        }
+        for row in rows
+    ]
+
+
+async def hivemem_diary_read(
+    pool: AsyncConnectionPool,
+    agent: str,
+    last_n: int = 10,
+) -> list[dict]:
+    """Read recent diary entries for an agent."""
+    rows = await fetch_all(
+        pool,
+        "SELECT id, agent, entry, created_at FROM agent_diary WHERE agent = %s ORDER BY created_at DESC LIMIT %s",
+        (agent, last_n),
+    )
+    return [
+        {
+            "id": str(row["id"]),
+            "agent": row["agent"],
+            "entry": row["entry"],
+            "created_at": str(row["created_at"]),
+        }
+        for row in rows
+    ]
+
+
 async def hivemem_wake_up(pool: AsyncConnectionPool) -> dict:
     """Load l0_identity and l1_critical from identity table."""
     rows = await fetch_all(
