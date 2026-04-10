@@ -1,41 +1,54 @@
-"""Shared test fixtures."""
+"""Shared test fixtures — spins up a PostgreSQL testcontainer with pgvector + AGE."""
 
 import os
+import subprocess
 
 import psycopg
 import pytest
-
-TEST_DB_URL = os.environ.get(
-    "HIVEMEM_TEST_DB_URL",
-    "postgresql://hivemem@/hivemem_test?host=/var/run/postgresql",
-)
+from testcontainers.core.container import DockerContainer
+from testcontainers.core.waiting_utils import wait_for_logs
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_test_db():
-    """Create test database and apply schema."""
-    admin_url = TEST_DB_URL.rsplit("/", 1)[0] + "/postgres"
-    with psycopg.connect(admin_url, autocommit=True) as conn:
-        conn.execute("DROP DATABASE IF EXISTS hivemem_test")
-        conn.execute("CREATE DATABASE hivemem_test")
+def test_db():
+    """Build testdb image and start a container for the entire test session."""
+    # Build the test DB image (pgvector + AGE)
+    project_root = os.path.join(os.path.dirname(__file__), "..")
+    subprocess.run(
+        ["docker", "build", "-f", "Dockerfile.testdb", "-t", "hivemem-testdb:latest", "."],
+        cwd=project_root,
+        check=True,
+        capture_output=True,
+    )
 
-    with psycopg.connect(TEST_DB_URL, autocommit=True) as conn:
-        schema_path = os.path.join(
-            os.path.dirname(__file__), "..", "hivemem", "schema.sql"
-        )
+    container = (
+        DockerContainer("hivemem-testdb:latest")
+        .with_env("POSTGRES_USER", "hivemem")
+        .with_env("POSTGRES_PASSWORD", "test")
+        .with_env("POSTGRES_DB", "hivemem_test")
+        .with_exposed_ports(5432)
+    )
+    container.start()
+    wait_for_logs(container, "database system is ready to accept connections", timeout=30)
+
+    host = container.get_container_host_ip()
+    port = container.get_exposed_port(5432)
+    db_url = f"postgresql://hivemem:test@{host}:{port}/hivemem_test"
+
+    # Apply schema
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        schema_path = os.path.join(project_root, "hivemem", "schema.sql")
         with open(schema_path) as f:
             conn.execute(f.read())
 
-    yield
+    # Set env var so db_url fixture and any direct os.environ reads work
+    os.environ["HIVEMEM_TEST_DB_URL"] = db_url
 
-    with psycopg.connect(admin_url, autocommit=True) as conn:
-        conn.execute(
-            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-            "WHERE datname = 'hivemem_test' AND pid <> pg_backend_pid()"
-        )
-        conn.execute("DROP DATABASE IF EXISTS hivemem_test")
+    yield db_url
+
+    container.stop()
 
 
 @pytest.fixture
-def db_url():
-    return TEST_DB_URL
+def db_url(test_db):
+    return test_db
