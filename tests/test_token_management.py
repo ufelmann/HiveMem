@@ -407,3 +407,138 @@ async def test_agent_fact_forces_pending(pool):
     row = await db_fetch_one(pool, "SELECT status, created_by FROM facts WHERE id = %s", (result["id"],))
     assert row["status"] == "pending"
     assert row["created_by"] == "test-agent"
+
+
+# ── End-to-End Integration Tests ──────────────────────────────────────
+
+from hivemem.tools.write import hivemem_approve_pending
+from hivemem.tools.read import hivemem_pending_approvals
+
+
+async def test_e2e_agent_writes_admin_approves(pool):
+    """Full flow: agent writes pending, admin approves, drawer becomes active."""
+    result = await hivemem_add_drawer(
+        pool,
+        content="Agent discovery about memory patterns",
+        wing="eng", room="patterns", hall="discoveries",
+        status="pending",
+        created_by="archivarius",
+        summary="Memory pattern observation",
+    )
+    drawer_id = result["id"]
+    assert result["status"] == "pending"
+
+    # Verify it's in pending approvals
+    pending = await hivemem_pending_approvals(pool)
+    assert any(p["id"] == drawer_id for p in pending)
+
+    # Admin approves
+    approve_result = await hivemem_approve_pending(pool, [drawer_id], "committed")
+    assert approve_result["count"] == 1
+
+    # Verify it's now active
+    row = await fetch_one(pool, "SELECT status FROM drawers WHERE id = %s", (drawer_id,))
+    assert row["status"] == "committed"
+
+
+async def test_e2e_multiple_tokens_different_roles(pool):
+    """Create tokens with different roles, validate each has correct permissions."""
+    from hivemem.security import check_tool_permission
+
+    admin_token = await create_token(pool, "e2e-admin", "admin")
+    writer_token = await create_token(pool, "e2e-writer", "writer")
+    reader_token = await create_token(pool, "e2e-reader", "reader")
+    agent_token = await create_token(pool, "e2e-agent", "agent")
+
+    admin_id = await validate_token(pool, admin_token)
+    writer_id = await validate_token(pool, writer_token)
+    reader_id = await validate_token(pool, reader_token)
+    agent_id = await validate_token(pool, agent_token)
+
+    assert admin_id["role"] == "admin"
+    assert writer_id["role"] == "writer"
+    assert reader_id["role"] == "reader"
+    assert agent_id["role"] == "agent"
+
+    # Admin can do everything
+    assert check_tool_permission("admin", "hivemem_approve_pending") is None
+    assert check_tool_permission("admin", "hivemem_health") is None
+
+    # Writer can write but not approve
+    assert check_tool_permission("writer", "hivemem_add_drawer") is None
+    assert check_tool_permission("writer", "hivemem_approve_pending") is not None
+
+    # Reader can only read
+    assert check_tool_permission("reader", "hivemem_search") is None
+    assert check_tool_permission("reader", "hivemem_add_drawer") is not None
+
+    # Agent same as writer
+    assert check_tool_permission("agent", "hivemem_add_drawer") is None
+    assert check_tool_permission("agent", "hivemem_approve_pending") is not None
+
+
+async def test_e2e_token_lifecycle(pool):
+    """Create → validate → revoke → validate fails → list shows revoked."""
+    plaintext = await create_token(pool, "lifecycle", "writer")
+
+    # Active
+    identity = await validate_token(pool, plaintext)
+    assert identity is not None
+
+    # Revoke
+    await revoke_token(pool, "lifecycle")
+
+    # Revoked — fails
+    identity = await validate_token(pool, plaintext)
+    assert identity is None
+
+    # List shows revoked
+    tokens = await list_tokens(pool)
+    lifecycle_token = [t for t in tokens if t["name"] == "lifecycle"][0]
+    assert lifecycle_token["status"] == "revoked"
+
+
+async def test_e2e_many_tokens(pool):
+    """Can create and manage many tokens."""
+    names = [f"bulk-{i}" for i in range(10)]
+    for name in names:
+        await create_token(pool, name, "reader")
+
+    tokens = await list_tokens(pool)
+    bulk_tokens = [t for t in tokens if t["name"].startswith("bulk-")]
+    assert len(bulk_tokens) == 10
+
+    # Revoke half
+    for name in names[:5]:
+        await revoke_token(pool, name)
+
+    tokens = await list_tokens(pool)
+    active_bulk = [t for t in tokens if t["name"].startswith("bulk-") and t["status"] == "active"]
+    revoked_bulk = [t for t in tokens if t["name"].startswith("bulk-") and t["status"] == "revoked"]
+    assert len(active_bulk) == 5
+    assert len(revoked_bulk) == 5
+
+
+async def test_e2e_rate_limiting_still_works(pool):
+    """Rate limiting works with DB-backed auth."""
+    from hivemem.security import (
+        check_rate_limit,
+        record_failed_auth,
+        clear_failed_auth,
+        MAX_FAILED_ATTEMPTS,
+    )
+
+    ip = "10.0.0.99"
+    clear_failed_auth(ip)
+
+    # Record max failures
+    for _ in range(MAX_FAILED_ATTEMPTS):
+        record_failed_auth(ip)
+
+    # Should be banned
+    remaining = check_rate_limit(ip)
+    assert remaining is not None
+    assert remaining > 0
+
+    # Cleanup
+    clear_failed_auth(ip)
