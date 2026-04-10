@@ -32,43 +32,6 @@ def save_secrets(data: dict):
     SECRETS_FILE.chmod(0o600)
 
 
-def ensure_secrets() -> dict:
-    """Generate API token and DB password on first start. Returns secrets dict."""
-    data = load_secrets()
-    changed = False
-
-    if "api_token" not in data:
-        data["api_token"] = secrets.token_urlsafe(32)
-        changed = True
-        print(f"\n{'=' * 60}")
-        print(f"  HiveMem API token: {data['api_token']}")
-        print(f"  Save this for your MCP client config.")
-        print(f"  Retrieve later: docker exec hivemem hivemem-token")
-        print(f"{'=' * 60}\n")
-
-    if "db_password" not in data:
-        data["db_password"] = secrets.token_urlsafe(24)
-        changed = True
-
-    if changed:
-        save_secrets(data)
-
-    return data
-
-
-def get_api_token() -> str:
-    """Get the current API token."""
-    return load_secrets()["api_token"]
-
-
-def regenerate_api_token() -> str:
-    """Generate a new API token. Returns the new token."""
-    data = load_secrets()
-    data["api_token"] = secrets.token_urlsafe(32)
-    save_secrets(data)
-    return data["api_token"]
-
-
 def get_db_url() -> str:
     """Build DB URL with password from secrets."""
     data = load_secrets()
