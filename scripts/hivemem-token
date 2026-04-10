@@ -1,0 +1,25 @@
+#!/bin/bash
+set -euo pipefail
+
+CMD="${1:-show}"
+
+case "$CMD" in
+    show)
+        python3 -c "from hivemem.security import get_api_token; print(get_api_token())"
+        ;;
+    regenerate)
+        TOKEN=$(python3 -c "from hivemem.security import regenerate_api_token; print(regenerate_api_token())")
+        echo "New API token: $TOKEN"
+        echo "Update your MCP client config. Server restart NOT required."
+        ;;
+    show-db)
+        python3 -c "from hivemem.security import load_secrets; print(load_secrets()['db_password'])"
+        ;;
+    *)
+        echo "Usage: hivemem-token [show|regenerate|show-db]"
+        echo "  show        - Show current API token (default)"
+        echo "  regenerate  - Generate new API token"
+        echo "  show-db     - Show database password"
+        exit 1
+        ;;
+esac
