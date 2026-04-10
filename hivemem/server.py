@@ -7,6 +7,7 @@ import os
 from mcp.server.fastmcp import FastMCP
 
 from hivemem.db import get_pool
+from hivemem.security import get_db_url
 from hivemem.tools.admin import hivemem_health as _health
 from hivemem.tools.import_tools import (
     hivemem_mine_directory as _mine_directory,
@@ -30,10 +31,7 @@ from hivemem.tools.write import (
     hivemem_update_identity as _update_identity,
 )
 
-DB_URL = os.environ.get(
-    "HIVEMEM_DB_URL",
-    "postgresql://hivemem@/hivemem?host=/var/run/postgresql",
-)
+DB_URL = os.environ.get("HIVEMEM_DB_URL", None) or get_db_url()
 
 MCP_PORT = int(os.environ.get("HIVEMEM_PORT", "8421"))
 
@@ -253,10 +251,11 @@ if __name__ == "__main__":
     import uvicorn
 
     from hivemem.embeddings import get_model
+    from hivemem.security import AuthMiddleware
 
     print("Loading BGE-M3 embedding model...")
     get_model()
     print("Model ready.")
 
-    app = _AcceptMiddleware(mcp.streamable_http_app())
+    app = AuthMiddleware(_AcceptMiddleware(mcp.streamable_http_app()))
     uvicorn.run(app, host="0.0.0.0", port=MCP_PORT)
