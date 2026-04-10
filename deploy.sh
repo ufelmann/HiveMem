@@ -1,0 +1,56 @@
+#!/bin/bash
+set -euo pipefail
+
+HASH_FILE=".base-hash"
+CONTAINER_NAME="hivemem"
+IMAGE_NAME="hivemem"
+BASE_IMAGE="hivemem-base"
+
+# Compute hash of base dependencies
+current_hash=$(cat Dockerfile.base pyproject.toml | sha256sum | cut -d' ' -f1)
+
+# Check if base image needs rebuild
+rebuild_base=false
+if ! docker image inspect "$BASE_IMAGE:latest" > /dev/null 2>&1; then
+    echo "Base image not found, building..."
+    rebuild_base=true
+elif [ ! -f "$HASH_FILE" ] || [ "$(cat "$HASH_FILE")" != "$current_hash" ]; then
+    echo "Dependencies changed, rebuilding base image..."
+    rebuild_base=true
+fi
+
+if [ "$rebuild_base" = true ]; then
+    docker build -f Dockerfile.base -t "$BASE_IMAGE:latest" .
+    echo "$current_hash" > "$HASH_FILE"
+    echo "Base image built."
+else
+    echo "Base image up to date."
+fi
+
+# Build app image (fast, ~5s)
+echo "Building app image..."
+docker build -t "$IMAGE_NAME:latest" .
+
+# Restart container
+echo "Restarting container..."
+docker stop "$CONTAINER_NAME" 2>/dev/null || true
+docker rm "$CONTAINER_NAME" 2>/dev/null || true
+docker run -d --name "$CONTAINER_NAME" \
+    -p 8421:8421 \
+    -v hivemem_data:/data \
+    --restart unless-stopped \
+    "$IMAGE_NAME:latest"
+
+# Wait for health
+echo "Waiting for startup..."
+for i in $(seq 1 60); do
+    if curl -sf http://localhost:8421/mcp -H "Content-Type: application/json" \
+        -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' > /dev/null 2>&1; then
+        echo "HiveMem ready on port 8421."
+        exit 0
+    fi
+    sleep 2
+done
+
+echo "WARNING: Health check timed out. Check logs: docker logs $CONTAINER_NAME"
+exit 1
