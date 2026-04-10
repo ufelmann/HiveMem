@@ -55,9 +55,31 @@ DB_URL = os.environ.get("HIVEMEM_DB_URL", None) or get_db_url()
 
 MCP_PORT = int(os.environ.get("HIVEMEM_PORT", "8421"))
 
+HIVEMEM_PROTOCOL = """\
+You have access to HiveMem — a persistent knowledge system with 36 tools.
+
+RULES:
+1. EVERY session starts with hivemem_wake_up. No exceptions.
+2. When the user asks about past decisions, people, or projects: hivemem_search FIRST, never guess.
+3. Before EVERY hivemem_add_drawer: call hivemem_check_duplicate. No duplicates.
+4. Before EVERY hivemem_kg_add: call hivemem_check_contradiction. If conflict: invalidate old, then add new.
+5. Every fact needs a date (valid_from). Knowledge without timestamps is useless.
+6. Use existing wings and rooms. Call hivemem_list_wings/rooms before creating new ones.
+7. Keep facts atomic: one triple per relationship. Never combine multiple facts.
+8. When a fact changes: invalidate old FIRST, then add new. Never overwrite.
+9. Store the FULL content in drawers, never abbreviated. Fill all layers: content (L0), summary (L1), key_points (L2), insight (L3).
+10. Never mention HiveMem tools or internal mechanics to the user unless asked. Just be knowledgeable.
+
+ARCHIVING (trigger: user says 'archive', 'save session', or session ending):
+1. Summarize session → classify wing/room/hall → check_duplicate → add_drawer with all L0-L3 layers
+2. Extract facts: check_contradiction → invalidate old if needed → kg_add with valid_from
+3. Update Map of Content if wing structure changed (get_map → update_map)
+4. Confirm: wing/room/hall, drawer count, facts added, contradictions resolved
+"""
+
 mcp = FastMCP(
     "HiveMem",
-    instructions="Personal knowledge system with semantic search and temporal knowledge graph",
+    instructions=HIVEMEM_PROTOCOL,
     host="0.0.0.0",
     port=MCP_PORT,
     json_response=True,
