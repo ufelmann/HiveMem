@@ -4,10 +4,32 @@ from __future__ import annotations
 
 import glob
 import os
+from pathlib import Path
 
 from psycopg_pool import AsyncConnectionPool
 
 from hivemem.tools.write import hivemem_add_drawer
+
+# Only allow imports from these directories (resolved, no symlink escape)
+ALLOWED_IMPORT_DIRS = [
+    Path("/data/imports"),
+    Path("/tmp"),
+]
+
+
+def _validate_path(raw_path: str) -> Path:
+    """Resolve path and check it's inside an allowed directory."""
+    resolved = Path(raw_path).resolve()
+    for allowed in ALLOWED_IMPORT_DIRS:
+        try:
+            resolved.relative_to(allowed.resolve())
+            return resolved
+        except ValueError:
+            continue
+    raise PermissionError(
+        f"Path outside allowed import directories. "
+        f"Allowed: {', '.join(str(d) for d in ALLOWED_IMPORT_DIRS)}"
+    )
 
 
 async def hivemem_mine_file(
@@ -18,7 +40,8 @@ async def hivemem_mine_file(
     hall: str | None = None,
 ) -> dict:
     """Read a file and store its content as a drawer."""
-    with open(file_path, "r", encoding="utf-8") as f:
+    safe_path = _validate_path(file_path)
+    with open(safe_path, "r", encoding="utf-8") as f:
         content = f.read()
 
     if not content.strip():
@@ -47,6 +70,7 @@ async def hivemem_mine_directory(
     extensions: list[str] | None = None,
 ) -> dict:
     """Glob for files and call mine_file for each."""
+    _validate_path(dir_path)  # check base dir is allowed
     if extensions is None:
         extensions = [".md", ".txt", ".yaml"]
 
@@ -66,7 +90,7 @@ async def hivemem_mine_directory(
             )
             drawers_created += result["drawers_created"]
         except Exception as e:
-            errors.append({"file": file_path, "error": str(e)})
+            errors.append({"file": os.path.basename(file_path), "error": type(e).__name__})
 
     return {
         "files_processed": len(files),

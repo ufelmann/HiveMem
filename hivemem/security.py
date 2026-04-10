@@ -381,12 +381,7 @@ class AuthMiddleware:
     @staticmethod
     def _get_client_ip(scope) -> str:
         client = scope.get("client")
-        if client:
-            return client[0]
-        for key, value in scope.get("headers", []):
-            if key == b"x-forwarded-for":
-                return value.decode().split(",")[0].strip()
-        return "unknown"
+        return client[0] if client else "unknown"
 
     @staticmethod
     def _extract_bearer_token(scope) -> str | None:

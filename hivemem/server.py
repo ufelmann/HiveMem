@@ -8,7 +8,7 @@ from contextvars import ContextVar
 
 from mcp.server.fastmcp import FastMCP
 
-_request_identity: ContextVar[dict] = ContextVar("request_identity", default={"name": "anonymous", "role": "admin"})
+_request_identity: ContextVar[dict] = ContextVar("request_identity", default={"name": "unauthenticated", "role": "reader"})
 
 
 def get_identity() -> dict:
@@ -490,10 +490,11 @@ async def hivemem_health() -> dict:
 
 
 @mcp.tool()
-async def hivemem_log_access(drawer_id: str | None = None, fact_id: str | None = None, accessed_by: str = "user") -> dict:
+async def hivemem_log_access(drawer_id: str | None = None, fact_id: str | None = None) -> dict:
     """Log an access event for popularity tracking."""
     pool = await get_db_pool()
-    return await _log_access(pool, drawer_id=drawer_id, fact_id=fact_id, accessed_by=accessed_by)
+    identity = get_identity()
+    return await _log_access(pool, drawer_id=drawer_id, fact_id=fact_id, accessed_by=identity["name"])
 
 
 @mcp.tool()
@@ -504,7 +505,7 @@ async def hivemem_refresh_popularity() -> dict:
 
 
 class _ToolGateMiddleware:
-    """ASGI middleware: filter tools/list by role, reject unauthorized tools/call."""
+    """ASGI middleware: filter tools/list by role, enforce tools/call permissions."""
 
     def __init__(self, app):
         self.app = app
@@ -514,33 +515,70 @@ class _ToolGateMiddleware:
             await self.app(scope, receive, send)
             return
 
-        role = scope.get("token_role", "admin")
+        role = scope.get("token_role", "reader")
 
+        # Intercept request body to enforce tools/call permissions
+        body_parts = []
+
+        async def buffering_receive():
+            message = await receive()
+            if message.get("type") == "http.request":
+                body_parts.append(message.get("body", b""))
+            return message
+
+        # Buffer the request to inspect it
+        first_message = await receive()
+        if first_message.get("type") == "http.request":
+            body_parts.append(first_message.get("body", b""))
+
+        request_body = b"".join(body_parts)
+
+        # Check tools/call permission
+        try:
+            import json as _json
+            data = _json.loads(request_body)
+            if isinstance(data, dict) and data.get("method") == "tools/call":
+                tool_name = data.get("params", {}).get("name", "")
+                from hivemem.security import check_tool_permission
+                err = check_tool_permission(role, tool_name)
+                if err:
+                    await self._send_jsonrpc_error(
+                        send, data.get("id"), -32600, err
+                    )
+                    return
+        except (ValueError, KeyError, AttributeError):
+            pass
+
+        # Replay the buffered message for the inner app
+        replayed = False
+
+        async def replay_receive():
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return first_message
+            return await receive()
+
+        # Intercept response to filter tools/list
         response_parts = []
-        response_started = False
 
         async def capture_send(message):
-            nonlocal response_started
             if message["type"] == "http.response.start":
-                response_started = True
                 response_parts.append(message)
             elif message["type"] == "http.response.body":
                 body = message.get("body", b"")
                 if body:
                     try:
-                        import json
-                        data = json.loads(body)
-                        # Filter tools/list response
-                        if isinstance(data, dict) and "result" in data:
-                            result = data["result"]
+                        resp_data = _json.loads(body)
+                        if isinstance(resp_data, dict) and "result" in resp_data:
+                            result = resp_data["result"]
                             if isinstance(result, dict) and "tools" in result:
                                 from hivemem.security import filter_tools_for_role
                                 result["tools"] = filter_tools_for_role(role, result["tools"])
-                                body = json.dumps(data).encode()
+                                body = _json.dumps(resp_data).encode()
                                 message = dict(message, body=body)
-                    except (json.JSONDecodeError, KeyError):
+                    except (ValueError, KeyError):
                         pass
-                # Update content-length if we modified the body
                 if response_parts:
                     start_msg = response_parts[0]
                     headers = [
@@ -555,12 +593,29 @@ class _ToolGateMiddleware:
             else:
                 await send(message)
 
-        await self.app(scope, receive, capture_send)
+        await self.app(scope, replay_receive, capture_send)
 
-        # If response started but no body sent, flush the start
         if response_parts:
             for part in response_parts:
                 await send(part)
+
+    @staticmethod
+    async def _send_jsonrpc_error(send, req_id, code: int, message: str):
+        import json as _json
+        body = _json.dumps({
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": {"code": code, "message": message},
+        }).encode()
+        await send({
+            "type": "http.response.start",
+            "status": 403,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+            ],
+        })
+        await send({"type": "http.response.body", "body": body})
 
 
 class _IdentityMiddleware:
@@ -572,7 +627,7 @@ class _IdentityMiddleware:
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
             name = scope.get("token_name", "anonymous")
-            role = scope.get("token_role", "admin")
+            role = scope.get("token_role", "reader")
             token = _request_identity.set({"name": name, "role": role})
             try:
                 await self.app(scope, receive, send)

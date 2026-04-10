@@ -65,6 +65,18 @@ def test_db():
     port = container.get_exposed_port(5432)
     db_url = f"postgresql://hivemem:test@{host}:{port}/hivemem_test"
 
+    # Retry connection -- PG restarts after initdb, "ready" log appears twice
+    import time
+    for attempt in range(10):
+        try:
+            with psycopg.connect(db_url, autocommit=True) as conn:
+                conn.execute("SELECT 1")
+            break
+        except psycopg.OperationalError:
+            time.sleep(1)
+    else:
+        raise RuntimeError("Could not connect to test database after 10 attempts")
+
     # Apply schema
     with psycopg.connect(db_url, autocommit=True) as conn:
         schema_path = os.path.join(project_root, "hivemem", "schema.sql")
