@@ -462,3 +462,49 @@ CREATE TABLE IF NOT EXISTS agent_diary (
 );
 
 CREATE INDEX IF NOT EXISTS idx_diary_agent ON agent_diary (agent, created_at DESC);
+
+-- ============================================================
+-- GRAPH SEARCH
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION quick_facts(p_entity TEXT)
+RETURNS TABLE (
+    id UUID,
+    subject TEXT,
+    predicate TEXT,
+    object TEXT,
+    confidence REAL,
+    valid_from TIMESTAMPTZ
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT f.id, f.subject, f.predicate, f.object, f.confidence, f.valid_from
+    FROM active_facts f
+    WHERE f.subject = p_entity OR f.object = p_entity
+    ORDER BY f.valid_from DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- MAPS OF CONTENT
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS maps (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    wing        TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    narrative   TEXT NOT NULL,
+    room_order  TEXT[],
+    key_drawers UUID[],
+    created_by  TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    valid_from  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    valid_until TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_maps_wing ON maps (wing);
+CREATE INDEX IF NOT EXISTS idx_maps_temporal ON maps (valid_from, valid_until);
+
+CREATE OR REPLACE VIEW active_maps AS
+SELECT * FROM maps
+WHERE valid_until IS NULL OR valid_until > now();
