@@ -24,7 +24,11 @@ CREATE TABLE IF NOT EXISTS drawers (
     created_by  TEXT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     valid_from  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    valid_until TIMESTAMPTZ
+    valid_until TIMESTAMPTZ,
+    tsv         tsvector GENERATED ALWAYS AS (
+                    setweight(to_tsvector('english', coalesce(summary, '')), 'A') ||
+                    setweight(to_tsvector('english', coalesce(content, '')), 'B')
+                ) STORED
 );
 
 CREATE TABLE IF NOT EXISTS facts (
@@ -250,13 +254,7 @@ $$ LANGUAGE plpgsql;
 -- RANKED SEARCH INFRASTRUCTURE
 -- ============================================================
 
--- Full-text search vector (generated column)
-ALTER TABLE drawers ADD COLUMN IF NOT EXISTS tsv tsvector
-    GENERATED ALWAYS AS (
-        setweight(to_tsvector('english', coalesce(summary, '')), 'A') ||
-        setweight(to_tsvector('english', coalesce(content, '')), 'B')
-    ) STORED;
-
+-- Full-text search index (tsv column defined in CREATE TABLE above)
 CREATE INDEX IF NOT EXISTS idx_drawers_tsv ON drawers USING GIN (tsv);
 
 -- HNSW vector index (works well at any scale, better recall than ivfflat)
