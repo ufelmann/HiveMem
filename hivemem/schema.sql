@@ -31,6 +31,11 @@ CREATE TABLE IF NOT EXISTS drawers (
                 ) STORED
 );
 
+ALTER TABLE drawers ADD COLUMN IF NOT EXISTS key_points TEXT[];
+ALTER TABLE drawers ADD COLUMN IF NOT EXISTS insight TEXT;
+ALTER TABLE drawers ADD COLUMN IF NOT EXISTS actionability TEXT
+    CHECK (actionability IN ('actionable', 'reference', 'someday', 'archive'));
+
 CREATE TABLE IF NOT EXISTS facts (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     parent_id   UUID REFERENCES facts(id),
@@ -81,6 +86,7 @@ CREATE INDEX IF NOT EXISTS idx_facts_temporal ON facts (valid_from, valid_until)
 CREATE INDEX IF NOT EXISTS idx_facts_source ON facts (source_id);
 CREATE INDEX IF NOT EXISTS idx_facts_status ON facts (status) WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_facts_parent ON facts (parent_id);
+CREATE INDEX IF NOT EXISTS idx_facts_created ON facts (created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_edges_from ON edges (from_entity);
 CREATE INDEX IF NOT EXISTS idx_edges_to ON edges (to_entity);
@@ -132,8 +138,14 @@ DECLARE
     v_new_id UUID;
     v_old RECORD;
 BEGIN
-    UPDATE drawers SET valid_until = now() WHERE id = p_old_id AND valid_until IS NULL;
-    SELECT * INTO v_old FROM drawers WHERE id = p_old_id;
+    UPDATE drawers SET valid_until = now()
+    WHERE id = p_old_id AND valid_until IS NULL
+    RETURNING * INTO v_old;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Drawer % not found or already revised', p_old_id;
+    END IF;
+
     INSERT INTO drawers (parent_id, content, wing, room, hall, source, tags, importance, summary,
                          key_points, insight, actionability, status, created_by)
     VALUES (p_old_id, p_new_content, v_old.wing, v_old.room, v_old.hall, v_old.source, v_old.tags,
@@ -155,8 +167,14 @@ DECLARE
     v_new_id UUID;
     v_old RECORD;
 BEGIN
-    UPDATE facts SET valid_until = p_new_valid_from WHERE id = p_old_id AND valid_until IS NULL;
-    SELECT * INTO v_old FROM facts WHERE id = p_old_id;
+    UPDATE facts SET valid_until = p_new_valid_from
+    WHERE id = p_old_id AND valid_until IS NULL
+    RETURNING * INTO v_old;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Fact % not found or already revised', p_old_id;
+    END IF;
+
     INSERT INTO facts (parent_id, subject, predicate, object, confidence, source_id, status, created_by, valid_from)
     VALUES (p_old_id, v_old.subject, v_old.predicate, p_new_object, v_old.confidence,
             v_old.source_id, 'committed', p_created_by, p_new_valid_from)
@@ -218,13 +236,15 @@ RETURNS TABLE (
 BEGIN
     RETURN QUERY
     WITH RECURSIVE chain AS (
-        SELECT d.id, d.parent_id, d.summary, d.created_by, d.valid_from, d.valid_until
+        SELECT d.id, d.parent_id, d.summary, d.created_by, d.valid_from, d.valid_until, 1 AS depth
         FROM drawers d WHERE d.id = p_id
         UNION ALL
-        SELECT d.id, d.parent_id, d.summary, d.created_by, d.valid_from, d.valid_until
+        SELECT d.id, d.parent_id, d.summary, d.created_by, d.valid_from, d.valid_until, c.depth + 1
         FROM drawers d JOIN chain c ON d.id = c.parent_id
+        WHERE c.depth < 100
     )
-    SELECT * FROM chain ORDER BY valid_from ASC;
+    SELECT chain.id, chain.parent_id, chain.summary, chain.created_by, chain.valid_from, chain.valid_until
+    FROM chain ORDER BY chain.valid_from ASC;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -242,13 +262,15 @@ RETURNS TABLE (
 BEGIN
     RETURN QUERY
     WITH RECURSIVE chain AS (
-        SELECT f.id, f.parent_id, f.subject, f.predicate, f.object, f.created_by, f.valid_from, f.valid_until
+        SELECT f.id, f.parent_id, f.subject, f.predicate, f.object, f.created_by, f.valid_from, f.valid_until, 1 AS depth
         FROM facts f WHERE f.id = p_id
         UNION ALL
-        SELECT f.id, f.parent_id, f.subject, f.predicate, f.object, f.created_by, f.valid_from, f.valid_until
+        SELECT f.id, f.parent_id, f.subject, f.predicate, f.object, f.created_by, f.valid_from, f.valid_until, c.depth + 1
         FROM facts f JOIN chain c ON f.id = c.parent_id
+        WHERE c.depth < 100
     )
-    SELECT * FROM chain ORDER BY valid_from ASC;
+    SELECT chain.id, chain.parent_id, chain.subject, chain.predicate, chain.object, chain.created_by, chain.valid_from, chain.valid_until
+    FROM chain ORDER BY chain.valid_from ASC;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -382,11 +404,6 @@ $$ LANGUAGE plpgsql;
 -- PROGRESSIVE SUMMARIZATION (L0-L3)
 -- ============================================================
 
-ALTER TABLE drawers ADD COLUMN IF NOT EXISTS key_points TEXT[];
-ALTER TABLE drawers ADD COLUMN IF NOT EXISTS insight TEXT;
-ALTER TABLE drawers ADD COLUMN IF NOT EXISTS actionability TEXT
-    CHECK (actionability IN ('actionable', 'reference', 'someday', 'archive'));
-
 -- ============================================================
 -- REFERENCES & READING LIST
 -- ============================================================
@@ -431,13 +448,17 @@ RETURNS TABLE (
 ) AS $$
 BEGIN
     RETURN QUERY
-    SELECT d.id,
-           (1 - (d.embedding <=> query_embedding))::REAL as similarity,
-           d.summary
-    FROM active_drawers d
-    WHERE d.embedding IS NOT NULL
-      AND (1 - (d.embedding <=> query_embedding))::REAL > threshold
-    ORDER BY similarity DESC
+    SELECT sub.id, (1 - sub.dist)::REAL AS similarity, sub.summary
+    FROM (
+        SELECT d.id, d.summary,
+               (d.embedding <=> query_embedding) AS dist
+        FROM active_drawers d
+        WHERE d.embedding IS NOT NULL
+        ORDER BY d.embedding <=> query_embedding
+        LIMIT 20
+    ) sub
+    WHERE (1 - sub.dist)::REAL > threshold
+    ORDER BY sub.dist ASC
     LIMIT 5;
 END;
 $$ LANGUAGE plpgsql;
