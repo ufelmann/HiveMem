@@ -495,6 +495,66 @@ async def hivemem_refresh_popularity() -> dict:
     return await _refresh_popularity(pool)
 
 
+class _ToolGateMiddleware:
+    """ASGI middleware: filter tools/list by role, reject unauthorized tools/call."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        role = scope.get("token_role", "admin")
+
+        response_parts = []
+        response_started = False
+
+        async def capture_send(message):
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+                response_parts.append(message)
+            elif message["type"] == "http.response.body":
+                body = message.get("body", b"")
+                if body:
+                    try:
+                        import json
+                        data = json.loads(body)
+                        # Filter tools/list response
+                        if isinstance(data, dict) and "result" in data:
+                            result = data["result"]
+                            if isinstance(result, dict) and "tools" in result:
+                                from hivemem.security import filter_tools_for_role
+                                result["tools"] = filter_tools_for_role(role, result["tools"])
+                                body = json.dumps(data).encode()
+                                message = dict(message, body=body)
+                    except (json.JSONDecodeError, KeyError):
+                        pass
+                # Update content-length if we modified the body
+                if response_parts:
+                    start_msg = response_parts[0]
+                    headers = [
+                        (k, v) for k, v in start_msg.get("headers", [])
+                        if k != b"content-length"
+                    ]
+                    headers.append((b"content-length", str(len(message.get("body", b""))).encode()))
+                    start_msg = dict(start_msg, headers=headers)
+                    await send(start_msg)
+                    response_parts.clear()
+                await send(message)
+            else:
+                await send(message)
+
+        await self.app(scope, receive, capture_send)
+
+        # If response started but no body sent, flush the start
+        if response_parts:
+            for part in response_parts:
+                await send(part)
+
+
 class _IdentityMiddleware:
     """ASGI middleware: copy token identity from scope into contextvar."""
 
@@ -540,7 +600,7 @@ if __name__ == "__main__":
     print("Model ready.")
 
     mcp_app = mcp.streamable_http_app()
-    auth_mw = AuthMiddleware(_AcceptMiddleware(_IdentityMiddleware(mcp_app)))
+    auth_mw = AuthMiddleware(_AcceptMiddleware(_IdentityMiddleware(_ToolGateMiddleware(mcp_app))))
 
     async def startup():
         pool = await get_db_pool()
