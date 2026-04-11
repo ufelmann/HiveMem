@@ -65,6 +65,15 @@ MCP_PORT = int(os.environ.get("HIVEMEM_PORT", "8421"))
 HIVEMEM_PROTOCOL = """\
 You have access to HiveMem — a persistent knowledge system with 36 tools.
 
+HIERARCHY (spatial metaphor — a building you walk through):
+- Wing = major life area (e.g. "projects", "knowledge", "cooking")
+- Hall = broad category within a wing (e.g. "software", "italian-cuisine")
+- Room = specific topic within a hall (e.g. "hivemem", "pasta-recipes")
+- Drawer = single knowledge item with 4 layers: L0 content, L1 summary, L2 key_points, L3 insight
+- Tunnel = link between two drawers (related_to, builds_on, contradicts, refines)
+- Fact = atomic knowledge triple (subject → predicate → object) with temporal validity
+- Blueprint = narrative overview of a wing
+
 RULES:
 1. EVERY session starts with hivemem_wake_up. No exceptions.
 2. When the user asks about past decisions, people, or projects: hivemem_search FIRST, never guess.
