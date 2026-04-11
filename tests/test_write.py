@@ -193,3 +193,18 @@ async def test_remove_edge_idempotent(pool):
     await hivemem_remove_edge(pool, edge["id"])
     result = await hivemem_remove_edge(pool, edge["id"])
     assert result["removed"] is True
+
+
+async def test_approve_pending_edges(pool):
+    """approve_pending handles edge IDs alongside drawers/facts."""
+    d1 = await hivemem_add_drawer(pool, "Drawer K", wing="eng", room="code")
+    d2 = await hivemem_add_drawer(pool, "Drawer L", wing="eng", room="code")
+    from hivemem.tools.write import hivemem_add_edge, hivemem_approve_pending
+    edge = await hivemem_add_edge(pool, d1["id"], d2["id"], "related_to", status="pending", created_by="agent")
+    assert edge["status"] == "pending"
+    result = await hivemem_approve_pending(pool, [edge["id"]], "committed")
+    assert result["count"] == 1
+    # Verify edge is now in active_edges
+    from hivemem.db import fetch_all
+    active = await fetch_all(pool, "SELECT * FROM active_edges WHERE id = %s", (edge["id"],))
+    assert len(active) == 1
