@@ -8,8 +8,8 @@ class Drawer(BaseModel):
     id: str | None = None
     content: str
     wing: str | None = None
-    room: str | None = None
     hall: str | None = None
+    room: str | None = None
     source: str | None = None
     tags: list[str] = Field(default_factory=list)
     valid_from: datetime | None = None
@@ -27,7 +27,7 @@ class Fact(BaseModel):
     valid_until: datetime | None = None
 
 
-class Edge(BaseModel):
+class Tunnel(BaseModel):
     from_drawer: str
     to_drawer: str
     relation: str
@@ -38,7 +38,7 @@ class SearchResult(BaseModel):
     id: str
     content: str
     wing: str | None = None
-    room: str | None = None
+    hall: str | None = None
     similarity: float
 
 

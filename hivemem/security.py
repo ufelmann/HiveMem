@@ -57,7 +57,7 @@ READ_TOOLS = {
     "hivemem_search_kg",
     "hivemem_get_drawer",
     "hivemem_list_wings",
-    "hivemem_list_rooms",
+    "hivemem_list_halls",
     "hivemem_traverse",
     "hivemem_quick_facts",
     "hivemem_time_machine",
@@ -65,7 +65,7 @@ READ_TOOLS = {
     "hivemem_drawer_history",
     "hivemem_fact_history",
     "hivemem_pending_approvals",
-    "hivemem_get_map",
+    "hivemem_get_blueprint",
     "hivemem_reading_list",
     "hivemem_list_agents",
     "hivemem_diary_read",
@@ -73,20 +73,20 @@ READ_TOOLS = {
 
 WRITE_TOOLS = {
     "hivemem_add_drawer",
-    "hivemem_add_edge",
+    "hivemem_add_tunnel",
     "hivemem_check_duplicate",
     "hivemem_kg_add",
     "hivemem_kg_invalidate",
     "hivemem_update_identity",
     "hivemem_add_reference",
     "hivemem_link_reference",
-    "hivemem_remove_edge",
+    "hivemem_remove_tunnel",
     "hivemem_revise_drawer",
     "hivemem_revise_fact",
     "hivemem_check_contradiction",
     "hivemem_register_agent",
     "hivemem_diary_write",
-    "hivemem_update_map",
+    "hivemem_update_blueprint",
 }
 
 ADMIN_TOOLS = {
