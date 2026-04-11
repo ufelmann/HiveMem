@@ -2,7 +2,7 @@
 
 Personal knowledge system with semantic search, temporal knowledge graph, and progressive summarization.
 
-MCP server backed by PostgreSQL 17 (pgvector + Apache AGE) with BGE-M3 embeddings. 36 tools, append-only versioning, role-based token auth, agent fleet with approval workflow.
+MCP server backed by PostgreSQL 17 (pgvector + Apache AGE) with BGE-M3 embeddings. 34 tools, append-only versioning, role-based token auth, agent fleet with approval workflow.
 
 ## Vision & Research
 
@@ -39,7 +39,7 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 
 ## Features
 
-- **36 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
+- **34 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
 - **5-signal ranked search** -- semantic similarity + keyword match + recency + importance + popularity
 - **Append-only versioning** -- never lose history, revise with parent_id chains, point-in-time queries
 - **Progressive summarization** (L0-L3) -- content, summary, key_points, insight per drawer
@@ -195,7 +195,7 @@ graph TB
         Auth["Auth Middleware<br/><i>Token auth + role check + rate limit</i>"]
         ToolGate["Tool Gate<br/><i>Filter tools/list by role</i>"]
         Identity["Identity Injection<br/><i>created_by from token</i>"]
-        MCP["FastMCP Server<br/>:8421<br/><i>36 tools, Streamable HTTP</i>"]
+        MCP["FastMCP Server<br/>:8421<br/><i>34 tools, Streamable HTTP</i>"]
         BGE["BGE-M3<br/><i>1024d embeddings</i>"]
 
         subgraph PG["PostgreSQL 17"]
@@ -302,7 +302,7 @@ erDiagram
     drawers ||--o{ access_log : "tracked"
 ```
 
-### Tools (36)
+### Tools (34)
 
 | Category | Count | Tools |
 |---|---|---|
@@ -314,7 +314,6 @@ erDiagram
 | **References** | 3 | `add_reference`, `link_reference`, `reading_list` |
 | **Agents** | 4 | `register_agent`, `list_agents`, `diary_write`, `diary_read` |
 | **Admin** | 3 | `health`, `log_access`, `refresh_popularity` |
-| **Import** | 2 | `mine_file`, `mine_directory` |
 
 ### Search Signals
 
@@ -351,10 +350,10 @@ Each token has one of four roles. The role controls which tools the client sees 
 
 | Role | Visible tools | Write behavior | Can approve? |
 |---|---|---|---|
-| `admin` | All 36 | `status: committed` | Yes |
-| `writer` | 32 (no admin tools) | `status: committed` | No |
+| `admin` | All 34 | `status: committed` | Yes |
+| `writer` | 30 (no admin tools) | `status: committed` | No |
 | `reader` | 17 (read only) | Can't write | No |
-| `agent` | 32 (same as writer) | `status: pending` | No |
+| `agent` | 30 (same as writer) | `status: pending` | No |
 
 The `agent` role is the key constraint: agents can add knowledge, but every write goes into a pending queue. Only an admin can approve or reject it. This prevents any agent from writing and self-approving in the same session.
 

@@ -85,8 +85,6 @@ WRITE_TOOLS = {
     "hivemem_register_agent",
     "hivemem_diary_write",
     "hivemem_update_map",
-    "hivemem_mine_file",
-    "hivemem_mine_directory",
 }
 
 ADMIN_TOOLS = {
