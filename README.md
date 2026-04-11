@@ -49,7 +49,7 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 - **Maps of Content** -- curated narrative overviews per wing, append-only versioned
 - **References & reading list** -- track sources, link to drawers, filter by type/status
 - **Single container deployment** -- PostgreSQL + MCP server in one `docker run`
-- **211 tests** with testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
+- **216 tests** with testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
 
 ## Prerequisites
 
@@ -436,6 +436,7 @@ pytest tests/ -v
 | `test_server.py` | 2 | Tool registration count, health check |
 | `test_db.py` | 2 | Pool connection, basic CRUD |
 | `test_embeddings.py` | 5 | Mock embedding dimensions, similarity, German text |
+| `test_migrations.py` | 5 | yoyo tracking, applied state, idempotent, final schema |
 
 ### Deploy changes
 
@@ -451,6 +452,28 @@ For GHCR image (CI builds automatically on push to main):
 
 ```bash
 docker compose pull && docker compose up -d
+```
+
+### Migrations
+
+Schema changes are managed by [yoyo-migrations](https://ollycope.com/software/yoyo/latest/). Migrations run automatically on container start with pre-migration backup.
+
+```bash
+# Add a new migration
+cat > migrations/0003_my_feature.sql << 'EOF'
+-- depends: 0002_edges_v2
+
+CREATE TABLE IF NOT EXISTS my_table (...);
+EOF
+
+# Deploy — migrations apply automatically on restart
+./deploy.sh
+```
+
+Manual migration (if needed):
+
+```bash
+docker exec hivemem python3 /app/scripts/hivemem-migrate
 ```
 
 ### Debugging
