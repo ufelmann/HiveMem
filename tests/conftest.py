@@ -78,11 +78,14 @@ def test_db():
     else:
         raise RuntimeError("Could not connect to test database after 10 attempts")
 
-    # Apply schema
-    with psycopg.connect(db_url, autocommit=True) as conn:
-        schema_path = os.path.join(project_root, "hivemem", "schema.sql")
-        with open(schema_path) as f:
-            conn.execute(f.read())
+    # Apply migrations (same path as production)
+    from yoyo import get_backend, read_migrations
+
+    migrations_dir = os.path.join(project_root, "migrations")
+    yoyo_url = db_url.replace("postgresql://", "postgresql+psycopg://")
+    backend = get_backend(yoyo_url)
+    all_migrations = read_migrations(migrations_dir)
+    backend.apply_migrations(backend.to_apply(all_migrations))
 
     os.environ["HIVEMEM_TEST_DB_URL"] = db_url
 

@@ -4,6 +4,13 @@
 -- HiveMem v2 — Append-only versioned knowledge system
 
 -- ============================================================
+-- EXTENSIONS
+-- ============================================================
+
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS age;
+
+-- ============================================================
 -- CORE STORAGE (append-only)
 -- ============================================================
 
