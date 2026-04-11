@@ -70,8 +70,9 @@ async def test_traverse_no_exponential_blowup(pool):
     assert d_b["id"] in found
     assert d_c["id"] in found
     assert d_d["id"] in found
-    # UNION deduplicates — bounded number of edges
-    assert len(results) <= 8  # bidirectional may find more but still bounded
+    # UNION deduplicates — bounded: 4 edges × 2 directions × up to 3 depths
+    # Key check: no exponential blowup, result count stays reasonable
+    assert len(results) <= 16
 
 
 async def test_status_returns_all_fields(pool):

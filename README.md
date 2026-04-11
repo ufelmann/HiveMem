@@ -2,7 +2,7 @@
 
 Personal knowledge system with semantic search, temporal knowledge graph, and progressive summarization.
 
-MCP server backed by PostgreSQL 17 (pgvector + Apache AGE) with BGE-M3 embeddings. 34 tools, append-only versioning, role-based token auth, agent fleet with approval workflow.
+MCP server backed by PostgreSQL 17 (pgvector + Apache AGE) with BGE-M3 embeddings. 36 tools, append-only versioning, role-based token auth, agent fleet with approval workflow.
 
 ## Vision & Research
 
@@ -21,8 +21,8 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 
 **Zettelkasten** (Luhmann) -- Atomic notes + linking. Knowledge emerges from connections, not hierarchies. Luhmann produced 70 books and 400 papers from 90,000 linked notes.
 
-*What HiveMem adopts:* Atomic drawers (one topic per drawer), knowledge graph as linking (facts, edges), cross-wing tunnels as cross-references.
-*What HiveMem does differently:* No manual linking -- LLM agents detect connections. Semantic search instead of manual navigation. Temporal validity -- notes can expire.
+*What HiveMem adopts:* Atomic drawers (one topic per drawer), knowledge graph as linking (facts), drawer-to-drawer edges with temporal versioning (related_to, builds_on, contradicts, refines).
+*What HiveMem does differently:* Semi-automatic linking -- LLM agents create edges after archiving based on semantic search. Bidirectional traversal. Temporal validity -- notes and edges can expire.
 
 **PARA** (Tiago Forte) -- Projects / Areas / Resources / Archive. Sorted by actionability, not topic.
 
@@ -39,7 +39,7 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 
 ## Features
 
-- **34 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
+- **36 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
 - **5-signal ranked search** -- semantic similarity + keyword match + recency + importance + popularity
 - **Append-only versioning** -- never lose history, revise with parent_id chains, point-in-time queries
 - **Progressive summarization** (L0-L3) -- content, summary, key_points, insight per drawer
@@ -49,7 +49,7 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 - **Maps of Content** -- curated narrative overviews per wing, append-only versioned
 - **References & reading list** -- track sources, link to drawers, filter by type/status
 - **Single container deployment** -- PostgreSQL + MCP server in one `docker run`
-- **195 tests** with testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
+- **211 tests** with testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
 
 ## Prerequisites
 
@@ -195,7 +195,7 @@ graph TB
         Auth["Auth Middleware<br/><i>Token auth + role check + rate limit</i>"]
         ToolGate["Tool Gate<br/><i>Filter tools/list by role</i>"]
         Identity["Identity Injection<br/><i>created_by from token</i>"]
-        MCP["FastMCP Server<br/>:8421<br/><i>34 tools, Streamable HTTP</i>"]
+        MCP["FastMCP Server<br/>:8421<br/><i>36 tools, Streamable HTTP</i>"]
         BGE["BGE-M3<br/><i>1024d embeddings</i>"]
 
         subgraph PG["PostgreSQL 17"]
@@ -255,10 +255,14 @@ erDiagram
     }
     edges {
         UUID id PK
-        TEXT from_entity
-        TEXT to_entity
+        UUID from_drawer FK
+        UUID to_drawer FK
         TEXT relation
-        REAL weight
+        TEXT note
+        TEXT status
+        TEXT created_by
+        TIMESTAMPTZ valid_from
+        TIMESTAMPTZ valid_until
     }
     maps {
         UUID id PK
@@ -302,13 +306,14 @@ erDiagram
     drawers ||--o{ access_log : "tracked"
 ```
 
-### Tools (34)
+### Tools (36)
 
 | Category | Count | Tools |
 |---|---|---|
 | **Search** | 4 | `search` (5-signal ranked), `search_kg`, `quick_facts`, `time_machine` |
 | **Read** | 7 | `status`, `get_drawer`, `list_wings`, `list_rooms`, `traverse`, `wake_up`, `get_map` |
 | **Write** | 7 | `add_drawer` (L0-L3), `kg_add`, `kg_invalidate`, `revise_drawer`, `revise_fact`, `update_identity`, `update_map` |
+| **Edges** | 2 | `add_edge` (drawer-to-drawer link), `remove_edge` (soft-delete) |
 | **Integrity** | 3 | `check_duplicate`, `check_contradiction`, `approve_pending` |
 | **History** | 3 | `drawer_history`, `fact_history`, `pending_approvals` |
 | **References** | 3 | `add_reference`, `link_reference`, `reading_list` |
@@ -350,10 +355,10 @@ Each token has one of four roles. The role controls which tools the client sees 
 
 | Role | Visible tools | Write behavior | Can approve? |
 |---|---|---|---|
-| `admin` | All 34 | `status: committed` | Yes |
-| `writer` | 30 (no admin tools) | `status: committed` | No |
+| `admin` | All 36 | `status: committed` | Yes |
+| `writer` | 34 (no admin tools) | `status: committed` | No |
 | `reader` | 17 (read only) | Can't write | No |
-| `agent` | 30 (same as writer) | `status: pending` | No |
+| `agent` | 34 (same as writer) | `status: pending` | No |
 
 The `agent` role is the key constraint: agents can add knowledge, but every write goes into a pending queue. Only an admin can approve or reject it. This prevents any agent from writing and self-approving in the same session.
 
@@ -403,7 +408,7 @@ pytest tests/ -v
 ```
 
 ```
-195 passed in 38s
+211 passed in 38s
 ```
 
 ### Test structure
@@ -421,11 +426,12 @@ pytest tests/ -v
 | `test_agent_fleet.py` | 7 | Agent registration, pending/approve/reject workflow, diary |
 | `test_schema_v2.py` | 15 | Append-only versioning, views, PL/pgSQL functions, constraints |
 | `test_read.py` | 14 | All read tools |
-| `test_write.py` | 7 | All write tools |
+| `test_write.py` | 13 | All write tools incl. add_edge, remove_edge, approve edges |
+| `test_edges_migration.py` | 7 | Edge schema constraints, FK, views, indexes |
 | `test_progressive_summarization.py` | 5 | L0-L3 layers, actionability constraints, duplicate check |
 | `test_references.py` | 6 | References, reading list, drawer linking |
 | `test_maps.py` | 5 | Maps of Content CRUD, append-only versioning |
-| `test_graph_search.py` | 6 | quick_facts, traverse with/without filters, depth limits |
+| `test_graph_search.py` | 9 | quick_facts, UUID traverse, bidirectional, pending/removed filtering |
 | `test_import.py` | 5 | File and directory import |
 | `test_server.py` | 2 | Tool registration count, health check |
 | `test_db.py` | 2 | Pool connection, basic CRUD |
