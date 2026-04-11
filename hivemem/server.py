@@ -24,7 +24,7 @@ from hivemem.tools.read import (
     hivemem_fact_history as _fact_history,
     hivemem_get_drawer as _get_drawer,
     hivemem_list_agents as _list_agents,
-    hivemem_list_rooms as _list_rooms,
+    hivemem_list_halls as _list_halls,
     hivemem_list_wings as _list_wings,
     hivemem_pending_approvals as _pending_approvals,
     hivemem_log_access as _log_access,
@@ -36,7 +36,7 @@ from hivemem.tools.read import (
     hivemem_status as _status,
     hivemem_time_machine as _time_machine,
     hivemem_traverse as _traverse,
-    hivemem_get_map as _get_map,
+    hivemem_get_blueprint as _get_blueprint,
     hivemem_wake_up as _wake_up,
 )
 from hivemem.tools.write import (
@@ -53,9 +53,9 @@ from hivemem.tools.write import (
     hivemem_revise_drawer as _revise_drawer,
     hivemem_revise_fact as _revise_fact,
     hivemem_update_identity as _update_identity,
-    hivemem_update_map as _update_map,
-    hivemem_add_edge as _add_edge,
-    hivemem_remove_edge as _remove_edge,
+    hivemem_update_blueprint as _update_blueprint,
+    hivemem_add_tunnel as _add_tunnel,
+    hivemem_remove_tunnel as _remove_tunnel,
 )
 
 DB_URL = os.environ.get("HIVEMEM_DB_URL", None) or get_db_url()
@@ -71,7 +71,7 @@ RULES:
 3. Before EVERY hivemem_add_drawer: call hivemem_check_duplicate. No duplicates.
 4. Before EVERY hivemem_kg_add: call hivemem_check_contradiction. If conflict: invalidate old, then add new.
 5. Every fact needs a date (valid_from). Knowledge without timestamps is useless.
-6. Use existing wings and rooms. Call hivemem_list_wings/rooms before creating new ones.
+6. Use existing wings and halls. Call hivemem_list_wings/halls before creating new ones.
 7. Keep facts atomic: one triple per relationship. Never combine multiple facts.
 8. When a fact changes: invalidate old FIRST, then add new. Never overwrite.
 9. Store the FULL content in drawers, never abbreviated. Fill all layers: content (L0), summary (L1), key_points (L2), insight (L3).
@@ -82,16 +82,16 @@ ARCHIVING:
 - Archive when the user says 'archive' or 'save session'.
 - At session end, archive anything not yet stored.
 Steps:
-1. Summarize → classify wing/room → check_duplicate → add_drawer with all L0-L3 layers
+1. Summarize → classify wing/hall → check_duplicate → add_drawer with all L0-L3 layers
 2. Extract facts: check_contradiction → invalidate old if needed → kg_add with valid_from
-2b. Link related drawers: hivemem_search with key_points → for top 2-3 results: hivemem_add_edge(from=new_id, to=found_id, relation, note). Relations: related_to, builds_on, contradicts, refines. Do not over-link.
-3. Update Map of Content if wing structure changed (get_map → update_map)
-4. Confirm: wing/room, drawer count, facts added, contradictions resolved
+2b. Link related drawers: hivemem_search with key_points → for top 2-3 results: hivemem_add_tunnel(from=new_id, to=found_id, relation, note). Relations: related_to, builds_on, contradicts, refines. Do not over-link.
+3. Update Blueprint if wing structure changed (get_blueprint → update_blueprint)
+4. Confirm: wing/hall, drawer count, facts added, contradictions resolved
 
 BULK FILE ARCHIVING (trigger: user asks to archive files or directories):
 1. Read files yourself — understand the content before storing
 2. For many files: dispatch parallel subagents, each handling a subset
-3. Each file → read content → classify wing/room → write summary/key_points/insight → check_duplicate → add_drawer with full L0-L3
+3. Each file → read content → classify wing/hall → write summary/key_points/insight → check_duplicate → add_drawer with full L0-L3
 4. Extract cross-file facts and relationships into the knowledge graph
 """
 
@@ -126,7 +126,7 @@ async def get_db_pool():
 
 @mcp.tool()
 async def hivemem_status() -> dict:
-    """Counts of drawers, facts, edges, wings list, and last activity."""
+    """Counts of drawers, facts, tunnels, wings list, and last activity."""
     pool = await get_db_pool()
     return await _status(pool)
 
@@ -136,8 +136,8 @@ async def hivemem_search(
     query: str,
     limit: int = 10,
     wing: str | None = None,
-    room: str | None = None,
     hall: str | None = None,
+    room: str | None = None,
     weight_semantic: float = 0.35,
     weight_keyword: float = 0.15,
     weight_recency: float = 0.20,
@@ -146,7 +146,7 @@ async def hivemem_search(
 ) -> list[dict]:
     """5-signal ranked search. RULE: If the user asks about past decisions, people, or projects — ALWAYS search first, never guess. Returns results ranked by semantic similarity, keyword match, recency, importance, and popularity. Adjust weights to change ranking."""
     pool = await get_db_pool()
-    return await _search(pool, query, limit=limit, wing=wing, room=room, hall=hall,
+    return await _search(pool, query, limit=limit, wing=wing, hall=hall, room=room,
                          weight_semantic=weight_semantic, weight_keyword=weight_keyword,
                          weight_recency=weight_recency, weight_importance=weight_importance,
                          weight_popularity=weight_popularity)
@@ -173,21 +173,21 @@ async def hivemem_get_drawer(drawer_id: str) -> dict | None:
 
 @mcp.tool()
 async def hivemem_list_wings() -> list[dict]:
-    """List all wings with room and drawer counts."""
+    """List all wings with hall and drawer counts."""
     pool = await get_db_pool()
     return await _list_wings(pool)
 
 
 @mcp.tool()
-async def hivemem_list_rooms(wing: str) -> list[dict]:
-    """List rooms within a wing."""
+async def hivemem_list_halls(wing: str) -> list[dict]:
+    """List halls within a wing."""
     pool = await get_db_pool()
-    return await _list_rooms(pool, wing)
+    return await _list_halls(pool, wing)
 
 
 @mcp.tool()
 async def hivemem_traverse(drawer_id: str, max_depth: int = 2, relation_filter: str | None = None) -> list[dict]:
-    """Bidirectional graph traversal on drawer-to-drawer edges. Returns linked drawers with relation type and depth."""
+    """Bidirectional graph traversal on drawer-to-drawer tunnels. Returns linked drawers with relation type and depth."""
     pool = await get_db_pool()
     return await _traverse(pool, drawer_id, max_depth=max_depth, relation_filter=relation_filter)
 
@@ -227,8 +227,8 @@ async def hivemem_wake_up() -> dict:
 async def hivemem_add_drawer(
     content: str,
     wing: str | None = None,
-    room: str | None = None,
     hall: str | None = None,
+    room: str | None = None,
     source: str | None = None,
     tags: list[str] | None = None,
     importance: int | None = None,
@@ -253,7 +253,7 @@ async def hivemem_add_drawer(
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
     return await _add_drawer(
-        pool, content, wing=wing, room=room, hall=hall, source=source, tags=tags,
+        pool, content, wing=wing, hall=hall, room=room, source=source, tags=tags,
         importance=importance, summary=summary, key_points=key_points, insight=insight,
         actionability=actionability, status=status, created_by=created_by, valid_from=dt,
     )
@@ -435,38 +435,38 @@ async def hivemem_diary_read(agent: str, last_n: int = 10) -> list[dict]:
     return await _diary_read(pool, agent, last_n=last_n)
 
 
-# ── Maps of Content ─────────────────────────────────────────────────────
+# ── Blueprints ─────────────────────────────────────────────────────────
 
 
 @mcp.tool()
-async def hivemem_get_map(wing: str | None = None) -> list[dict]:
-    """Get active Maps of Content for a wing (or all wings)."""
+async def hivemem_get_blueprint(wing: str | None = None) -> list[dict]:
+    """Get active Blueprints for a wing (or all wings)."""
     pool = await get_db_pool()
-    return await _get_map(pool, wing=wing)
+    return await _get_blueprint(pool, wing=wing)
 
 
 @mcp.tool()
-async def hivemem_update_map(
+async def hivemem_update_blueprint(
     wing: str,
     title: str,
     narrative: str,
-    room_order: list[str] | None = None,
+    hall_order: list[str] | None = None,
     key_drawers: list[str] | None = None,
 ) -> dict:
-    """Create or update a Map of Content for a wing (append-only versioning)."""
+    """Create or update a Blueprint for a wing (append-only versioning)."""
     pool = await get_db_pool()
     identity = get_identity()
     created_by = identity["name"]
-    return await _update_map(pool, wing, title, narrative, room_order=room_order,
-                             key_drawers=key_drawers, created_by=created_by)
+    return await _update_blueprint(pool, wing, title, narrative, hall_order=hall_order,
+                                   key_drawers=key_drawers, created_by=created_by)
 
 
 
-# ── Edge Tools ─────────────────────────────────────────────────────────
+# ── Tunnel Tools ───────────────────────────────────────────────────────
 
 
 @mcp.tool()
-async def hivemem_add_edge(
+async def hivemem_add_tunnel(
     from_drawer: str,
     to_drawer: str,
     relation: str,
@@ -479,14 +479,14 @@ async def hivemem_add_edge(
     created_by = identity["name"]
     if identity["role"] == "agent":
         status = "pending"
-    return await _add_edge(pool, from_drawer, to_drawer, relation, note=note, status=status, created_by=created_by)
+    return await _add_tunnel(pool, from_drawer, to_drawer, relation, note=note, status=status, created_by=created_by)
 
 
 @mcp.tool()
-async def hivemem_remove_edge(edge_id: str) -> dict:
-    """Soft-delete an edge (sets valid_until to now). The edge remains in history for time-machine queries."""
+async def hivemem_remove_tunnel(tunnel_id: str) -> dict:
+    """Soft-delete a tunnel (sets valid_until to now). The tunnel remains in history for time-machine queries."""
     pool = await get_db_pool()
-    return await _remove_edge(pool, edge_id)
+    return await _remove_tunnel(pool, tunnel_id)
 
 
 # ── Admin Tools ─────────────────────────────────────────────────────────
