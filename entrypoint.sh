@@ -72,9 +72,13 @@ fi
 # Create backup directory
 mkdir -p /data/backups
 
-# Pre-load BGE-M3 embedding model
+# Pre-load BGE-M3 embedding model (offline if cached, online for first download)
 echo "Loading BGE-M3 embedding model..."
-python3 -c "from hivemem.embeddings import get_model; get_model()"
+if [ -d "$HF_HOME/hub/models--BAAI--bge-m3" ]; then
+    HF_HUB_OFFLINE=1 python3 -c "from hivemem.embeddings import get_model; get_model()"
+else
+    python3 -c "from hivemem.embeddings import get_model; get_model()"
+fi
 echo "Model ready."
 
 # Start MCP server (replaces this shell, becomes PID 1)
