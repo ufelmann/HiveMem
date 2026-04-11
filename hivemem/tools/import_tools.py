@@ -36,8 +36,8 @@ async def hivemem_mine_file(
     pool: AsyncConnectionPool,
     file_path: str,
     wing: str | None = None,
-    room: str | None = None,
     hall: str | None = None,
+    room: str | None = None,
 ) -> dict:
     """Read a file and store its content as a drawer."""
     safe_path = _validate_path(file_path)
@@ -51,8 +51,8 @@ async def hivemem_mine_file(
         pool,
         content=content,
         wing=wing,
-        room=room,
         hall=hall,
+        room=room,
         source=file_path,
     )
     return {
@@ -66,7 +66,7 @@ async def hivemem_mine_directory(
     pool: AsyncConnectionPool,
     dir_path: str,
     wing: str | None = None,
-    hall: str | None = None,
+    room: str | None = None,
     extensions: list[str] | None = None,
 ) -> dict:
     """Glob for files and call mine_file for each."""
@@ -86,7 +86,7 @@ async def hivemem_mine_directory(
     for file_path in files:
         try:
             result = await hivemem_mine_file(
-                pool, file_path, wing=wing, hall=hall
+                pool, file_path, wing=wing, room=room
             )
             drawers_created += result["drawers_created"]
         except Exception as e:
