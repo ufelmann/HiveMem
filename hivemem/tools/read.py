@@ -18,7 +18,7 @@ async def hivemem_status(pool: AsyncConnectionPool) -> dict:
         """SELECT
             (SELECT count(*) FROM active_drawers) AS drawers,
             (SELECT count(*) FROM active_facts) AS facts,
-            (SELECT count(*) FROM edges) AS edges,
+            (SELECT count(*) FROM active_edges) AS edges,
             (SELECT count(*) FROM pending_approvals) AS pending,
             (SELECT max(created_at) FROM drawers) AS last_activity""",
     )
@@ -197,52 +197,75 @@ async def hivemem_list_rooms(pool: AsyncConnectionPool, wing: str) -> list[dict]
 
 async def hivemem_traverse(
     pool: AsyncConnectionPool,
-    entity: str,
+    drawer_id: str,
     max_depth: int = 2,
     relation_filter: str | None = None,
 ) -> list[dict]:
-    """Recursive CTE graph traversal on the edges table with optional relation filter."""
+    """Bidirectional recursive CTE graph traversal on active_edges."""
     if relation_filter:
         sql = """
-            WITH RECURSIVE graph AS (
-                SELECT from_entity, to_entity, relation, weight, 1 AS depth
-                FROM edges
-                WHERE from_entity = %s AND relation = %s
+            WITH RECURSIVE
+            bidir AS (
+                SELECT from_drawer AS node, to_drawer AS neighbor, from_drawer, to_drawer, relation, note
+                FROM active_edges WHERE relation = %s
+                UNION ALL
+                SELECT to_drawer AS node, from_drawer AS neighbor, from_drawer, to_drawer, relation, note
+                FROM active_edges WHERE relation = %s
+            ),
+            graph AS (
+                SELECT from_drawer, to_drawer, relation, note, neighbor, 1 AS depth
+                FROM bidir
+                WHERE node = %s
                 UNION
-                SELECT e.from_entity, e.to_entity, e.relation, e.weight, g.depth + 1
-                FROM edges e
-                JOIN graph g ON e.from_entity = g.to_entity
-                WHERE g.depth < %s AND e.relation = %s
-            )
-            SELECT DISTINCT from_entity, to_entity, relation, weight, depth
-            FROM graph
-            ORDER BY depth, from_entity
-        """
-        rows = await fetch_all(pool, sql, (entity, relation_filter, max_depth, relation_filter))
-    else:
-        sql = """
-            WITH RECURSIVE graph AS (
-                SELECT from_entity, to_entity, relation, weight, 1 AS depth
-                FROM edges
-                WHERE from_entity = %s
-                UNION
-                SELECT e.from_entity, e.to_entity, e.relation, e.weight, g.depth + 1
-                FROM edges e
-                JOIN graph g ON e.from_entity = g.to_entity
+                SELECT b.from_drawer, b.to_drawer, b.relation, b.note, b.neighbor, g.depth + 1
+                FROM bidir b
+                JOIN graph g ON b.node = g.neighbor
                 WHERE g.depth < %s
             )
-            SELECT DISTINCT from_entity, to_entity, relation, weight, depth
+            SELECT DISTINCT from_drawer, to_drawer, relation, note, depth
             FROM graph
-            ORDER BY depth, from_entity
+            ORDER BY depth, from_drawer
         """
-        rows = await fetch_all(pool, sql, (entity, max_depth))
+        rows = await fetch_all(pool, sql, (
+            relation_filter, relation_filter,
+            drawer_id,
+            max_depth,
+        ))
+    else:
+        sql = """
+            WITH RECURSIVE
+            bidir AS (
+                SELECT from_drawer AS node, to_drawer AS neighbor, from_drawer, to_drawer, relation, note
+                FROM active_edges
+                UNION ALL
+                SELECT to_drawer AS node, from_drawer AS neighbor, from_drawer, to_drawer, relation, note
+                FROM active_edges
+            ),
+            graph AS (
+                SELECT from_drawer, to_drawer, relation, note, neighbor, 1 AS depth
+                FROM bidir
+                WHERE node = %s
+                UNION
+                SELECT b.from_drawer, b.to_drawer, b.relation, b.note, b.neighbor, g.depth + 1
+                FROM bidir b
+                JOIN graph g ON b.node = g.neighbor
+                WHERE g.depth < %s
+            )
+            SELECT DISTINCT from_drawer, to_drawer, relation, note, depth
+            FROM graph
+            ORDER BY depth, from_drawer
+        """
+        rows = await fetch_all(pool, sql, (
+            drawer_id,
+            max_depth,
+        ))
 
     return [
         {
-            "from_entity": row["from_entity"],
-            "to_entity": row["to_entity"],
+            "from_drawer": str(row["from_drawer"]),
+            "to_drawer": str(row["to_drawer"]),
             "relation": row["relation"],
-            "weight": float(row["weight"]),
+            "note": row["note"],
             "depth": row["depth"],
         }
         for row in rows
