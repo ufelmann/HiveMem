@@ -4,14 +4,14 @@ Personal knowledge system with semantic search, temporal knowledge graph, and pr
 
 MCP server backed by PostgreSQL 17 (pgvector + Apache AGE) with BGE-M3 embeddings. 36 tools, append-only versioning, role-based token auth, agent fleet with approval workflow.
 
+[![CI](https://github.com/ufelmann/HiveMem/actions/workflows/ci.yml/badge.svg)](https://github.com/ufelmann/HiveMem/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/ufelmann/HiveMem/graph/badge.svg)](https://codecov.io/gh/ufelmann/HiveMem)
 [![GitHub release](https://img.shields.io/github/v/release/ufelmann/HiveMem)](https://github.com/ufelmann/HiveMem/releases)
 [![GHCR](https://img.shields.io/badge/ghcr.io-ufelmann%2Fhivemem-blue)](https://github.com/ufelmann/HiveMem/pkgs/container/hivemem)
-[![Tests](https://img.shields.io/badge/tests-215%20passed-brightgreen)](https://github.com/ufelmann/HiveMem)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org)
 [![PostgreSQL](https://img.shields.io/badge/postgresql-17-336791)](https://postgresql.org)
 [![MCP Tools](https://img.shields.io/badge/MCP%20tools-36-orange)](https://github.com/ufelmann/HiveMem#tools-36)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/ufelmann/HiveMem/blob/main/LICENSE)
-[![Docker](https://img.shields.io/badge/docker-one%20container-2496ED)](https://github.com/ufelmann/HiveMem#quick-start)
 
 **Docker image:** [`ghcr.io/ufelmann/hivemem:main`](https://github.com/ufelmann/HiveMem/pkgs/container/hivemem)
 
