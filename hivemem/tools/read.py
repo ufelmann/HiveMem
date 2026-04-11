@@ -12,13 +12,13 @@ from hivemem.embeddings import encode_query
 
 
 async def hivemem_status(pool: AsyncConnectionPool) -> dict:
-    """Counts of drawers, facts, edges, wings list, and last activity."""
+    """Counts of drawers, facts, tunnels, wings list, and last activity."""
     counts = await fetch_one(
         pool,
         """SELECT
             (SELECT count(*) FROM active_drawers) AS drawers,
             (SELECT count(*) FROM active_facts) AS facts,
-            (SELECT count(*) FROM active_edges) AS edges,
+            (SELECT count(*) FROM active_tunnels) AS tunnels,
             (SELECT count(*) FROM pending_approvals) AS pending,
             (SELECT max(created_at) FROM drawers) AS last_activity""",
     )
@@ -29,7 +29,7 @@ async def hivemem_status(pool: AsyncConnectionPool) -> dict:
     return {
         "drawers": counts["drawers"],
         "facts": counts["facts"],
-        "edges": counts["edges"],
+        "tunnels": counts["tunnels"],
         "pending": counts["pending"],
         "last_activity": counts["last_activity"].isoformat() if counts["last_activity"] else None,
         "wings": [w["wing"] for w in wings],
@@ -41,8 +41,8 @@ async def hivemem_search(
     query: str,
     limit: int = 10,
     wing: str | None = None,
-    room: str | None = None,
     hall: str | None = None,
+    room: str | None = None,
     weight_semantic: float = 0.35,
     weight_keyword: float = 0.15,
     weight_recency: float = 0.20,
@@ -59,7 +59,7 @@ async def hivemem_search(
             %s::vector, %s::text, %s::text, %s::text, %s::text, %s::integer,
             %s::real, %s::real, %s::real, %s::real, %s::real
         )""",
-        (vector_str, query, wing, room, hall, limit,
+        (vector_str, query, wing, hall, room, limit,
          weight_semantic, weight_keyword, weight_recency,
          weight_importance, weight_popularity),
     )
@@ -69,8 +69,8 @@ async def hivemem_search(
             "content": row["content"],
             "summary": row["summary"],
             "wing": row["wing"],
-            "room": row["room"],
             "hall": row["hall"],
+            "room": row["room"],
             "tags": row["tags"] or [],
             "importance": row["importance"],
             "created_at": str(row["created_at"]),
@@ -127,7 +127,7 @@ async def hivemem_get_drawer(pool: AsyncConnectionPool, drawer_id: str) -> dict 
     """Get a single drawer by UUID."""
     row = await fetch_one(
         pool,
-        """SELECT id, parent_id, content, wing, room, hall, source, tags,
+        """SELECT id, parent_id, content, wing, hall, room, source, tags,
                   importance, summary, key_points, insight, actionability,
                   status, created_by, created_at, valid_from, valid_until
            FROM drawers WHERE id = %s""",
@@ -140,8 +140,8 @@ async def hivemem_get_drawer(pool: AsyncConnectionPool, drawer_id: str) -> dict 
         "parent_id": str(row["parent_id"]) if row["parent_id"] else None,
         "content": row["content"],
         "wing": row["wing"],
-        "room": row["room"],
         "hall": row["hall"],
+        "room": row["room"],
         "source": row["source"],
         "tags": row["tags"] or [],
         "importance": row["importance"],
@@ -161,7 +161,7 @@ async def hivemem_list_wings(pool: AsyncConnectionPool) -> list[dict]:
     """Wing stats from active drawers."""
     sql = """
         SELECT wing,
-               count(DISTINCT room) AS room_count,
+               count(DISTINCT hall) AS hall_count,
                count(*) AS drawer_count
         FROM active_drawers
         WHERE wing IS NOT NULL
@@ -172,25 +172,25 @@ async def hivemem_list_wings(pool: AsyncConnectionPool) -> list[dict]:
     return [
         {
             "wing": row["wing"],
-            "room_count": row["room_count"],
+            "hall_count": row["hall_count"],
             "drawer_count": row["drawer_count"],
         }
         for row in rows
     ]
 
 
-async def hivemem_list_rooms(pool: AsyncConnectionPool, wing: str) -> list[dict]:
-    """List rooms within a wing from active drawers."""
+async def hivemem_list_halls(pool: AsyncConnectionPool, wing: str) -> list[dict]:
+    """List halls within a wing from active drawers."""
     sql = """
-        SELECT room, count(*) AS drawer_count
+        SELECT hall, count(*) AS drawer_count
         FROM active_drawers
-        WHERE wing = %s AND room IS NOT NULL
-        GROUP BY room
-        ORDER BY room
+        WHERE wing = %s AND hall IS NOT NULL
+        GROUP BY hall
+        ORDER BY hall
     """
     rows = await fetch_all(pool, sql, (wing,))
     return [
-        {"room": row["room"], "drawer_count": row["drawer_count"]}
+        {"hall": row["hall"], "drawer_count": row["drawer_count"]}
         for row in rows
     ]
 
@@ -201,16 +201,16 @@ async def hivemem_traverse(
     max_depth: int = 2,
     relation_filter: str | None = None,
 ) -> list[dict]:
-    """Bidirectional recursive CTE graph traversal on active_edges."""
+    """Bidirectional recursive CTE graph traversal on active_tunnels."""
     if relation_filter:
         sql = """
             WITH RECURSIVE
             bidir AS (
                 SELECT from_drawer AS node, to_drawer AS neighbor, from_drawer, to_drawer, relation, note
-                FROM active_edges WHERE relation = %s
+                FROM active_tunnels WHERE relation = %s
                 UNION ALL
                 SELECT to_drawer AS node, from_drawer AS neighbor, from_drawer, to_drawer, relation, note
-                FROM active_edges WHERE relation = %s
+                FROM active_tunnels WHERE relation = %s
             ),
             graph AS (
                 SELECT from_drawer, to_drawer, relation, note, neighbor, 1 AS depth
@@ -236,10 +236,10 @@ async def hivemem_traverse(
             WITH RECURSIVE
             bidir AS (
                 SELECT from_drawer AS node, to_drawer AS neighbor, from_drawer, to_drawer, relation, note
-                FROM active_edges
+                FROM active_tunnels
                 UNION ALL
                 SELECT to_drawer AS node, from_drawer AS neighbor, from_drawer, to_drawer, relation, note
-                FROM active_edges
+                FROM active_tunnels
             ),
             graph AS (
                 SELECT from_drawer, to_drawer, relation, note, neighbor, 1 AS depth
@@ -395,7 +395,7 @@ async def hivemem_pending_approvals(pool: AsyncConnectionPool) -> list[dict]:
             "id": str(row["id"]),
             "description": row["description"],
             "wing": row["wing"],
-            "room": row["room"],
+            "hall": row["hall"],
             "created_by": row["created_by"],
             "created_at": str(row["created_at"]),
         }
@@ -508,18 +508,18 @@ async def hivemem_diary_read(
     ]
 
 
-async def hivemem_get_map(
+async def hivemem_get_blueprint(
     pool: AsyncConnectionPool,
     wing: str | None = None,
 ) -> list[dict]:
-    """Get active Maps of Content."""
+    """Get active Blueprints of Content."""
     if wing:
-        sql = """SELECT id, wing, title, narrative, room_order, key_drawers, created_by, valid_from
-                 FROM active_maps WHERE wing = %s ORDER BY valid_from DESC"""
+        sql = """SELECT id, wing, title, narrative, hall_order, key_drawers, created_by, valid_from
+                 FROM active_blueprints WHERE wing = %s ORDER BY valid_from DESC"""
         rows = await fetch_all(pool, sql, (wing,))
     else:
-        sql = """SELECT id, wing, title, narrative, room_order, key_drawers, created_by, valid_from
-                 FROM active_maps ORDER BY wing, valid_from DESC"""
+        sql = """SELECT id, wing, title, narrative, hall_order, key_drawers, created_by, valid_from
+                 FROM active_blueprints ORDER BY wing, valid_from DESC"""
         rows = await fetch_all(pool, sql)
     return [
         {
@@ -527,7 +527,7 @@ async def hivemem_get_map(
             "wing": row["wing"],
             "title": row["title"],
             "narrative": row["narrative"],
-            "room_order": row["room_order"] or [],
+            "hall_order": row["hall_order"] or [],
             "key_drawers": [str(d) for d in row["key_drawers"]] if row["key_drawers"] else [],
             "created_by": row["created_by"],
             "valid_from": str(row["valid_from"]),
