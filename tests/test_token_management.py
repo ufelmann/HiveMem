@@ -371,7 +371,7 @@ async def test_agent_write_forces_pending(pool):
     result = await hivemem_add_drawer(
         pool,
         content="Agent suggestion about testing",
-        wing="eng", room="test", hall="facts",
+        wing="eng", hall="test", room="facts",
         status="pending",
         created_by="test-agent",
     )
@@ -385,7 +385,7 @@ async def test_writer_write_is_committed(pool):
     result = await hivemem_add_drawer(
         pool,
         content="Writer content about testing",
-        wing="eng", room="test", hall="facts",
+        wing="eng", hall="test", room="facts",
         status="committed",
         created_by="test-writer",
     )
@@ -420,7 +420,7 @@ async def test_e2e_agent_writes_admin_approves(pool):
     result = await hivemem_add_drawer(
         pool,
         content="Agent discovery about memory patterns",
-        wing="eng", room="patterns", hall="discoveries",
+        wing="eng", hall="patterns", room="discoveries",
         status="pending",
         created_by="archivarius",
         summary="Memory pattern observation",

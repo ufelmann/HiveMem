@@ -8,7 +8,7 @@ from hivemem.db import close_pool, execute, fetch_one, get_pool
 from hivemem.embeddings import encode
 from hivemem.tools.read import (
     hivemem_get_drawer,
-    hivemem_list_rooms,
+    hivemem_list_halls,
     hivemem_list_wings,
     hivemem_search,
     hivemem_search_kg,
@@ -31,7 +31,7 @@ async def pool(db_url):
 async def seeded_pool(pool):
     """Seed data for read tool tests."""
     # Clean up from previous runs
-    await execute(pool, "DELETE FROM edges")
+    await execute(pool, "DELETE FROM tunnels")
     await execute(pool, "DELETE FROM facts")
     await execute(pool, "DELETE FROM drawers")
     await execute(pool, "DELETE FROM identity")
@@ -103,7 +103,7 @@ async def seeded_pool(pool):
         (past + timedelta(days=180),),
     )
 
-    # Seed two more drawers so we have 4 total for edge seeding
+    # Seed two more drawers so we have 4 total for tunnel seeding
     vector3 = encode("Project planning and task management")
     await execute(
         pool,
@@ -131,16 +131,16 @@ async def seeded_pool(pool):
         (str(vector4),),
     )
 
-    # Seed edges for graph traversal (drawer-to-drawer)
-    from hivemem.tools.write import hivemem_add_edge
+    # Seed tunnels for graph traversal (drawer-to-drawer)
+    from hivemem.tools.write import hivemem_add_tunnel
     from hivemem.db import fetch_all as _fa
     all_drawers = await _fa(pool, "SELECT id FROM drawers ORDER BY created_at LIMIT 4")
     if len(all_drawers) >= 2:
-        await hivemem_add_edge(pool, str(all_drawers[0]["id"]), str(all_drawers[1]["id"]), "related_to", created_by="test")
+        await hivemem_add_tunnel(pool, str(all_drawers[0]["id"]), str(all_drawers[1]["id"]), "related_to", created_by="test")
     if len(all_drawers) >= 3:
-        await hivemem_add_edge(pool, str(all_drawers[1]["id"]), str(all_drawers[2]["id"]), "builds_on", created_by="test")
+        await hivemem_add_tunnel(pool, str(all_drawers[1]["id"]), str(all_drawers[2]["id"]), "builds_on", created_by="test")
     if len(all_drawers) >= 4:
-        await hivemem_add_edge(pool, str(all_drawers[2]["id"]), str(all_drawers[3]["id"]), "builds_on", created_by="test")
+        await hivemem_add_tunnel(pool, str(all_drawers[2]["id"]), str(all_drawers[3]["id"]), "builds_on", created_by="test")
 
     # Seed identity
     await execute(
@@ -159,7 +159,7 @@ async def test_status(seeded_pool):
     result = await hivemem_status(seeded_pool)
     assert result["drawers"] == 4
     assert result["facts"] >= 2  # active_facts filters by status+valid_until
-    assert result["edges"] == 3
+    assert result["tunnels"] == 3
     assert "tech" in result["wings"]
     assert "personal" in result["wings"]
     assert result["last_activity"] is not None
@@ -212,10 +212,10 @@ async def test_list_wings(seeded_pool):
     assert "personal" in wing_names
 
 
-async def test_list_rooms(seeded_pool):
-    rooms = await hivemem_list_rooms(seeded_pool, "tech")
-    assert len(rooms) >= 1
-    assert rooms[0]["room"] == "infra"
+async def test_list_halls(seeded_pool):
+    halls = await hivemem_list_halls(seeded_pool, "tech")
+    assert len(halls) >= 1
+    assert halls[0]["hall"] == "infra"
 
 
 async def test_traverse(seeded_pool):

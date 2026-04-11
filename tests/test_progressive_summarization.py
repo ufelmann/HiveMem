@@ -15,7 +15,7 @@ async def test_add_drawer_with_all_layers(pool):
         key_points=["Camunda 7 → Temporal migration", "Better DX", "Native Go support"],
         insight="This unblocks the Go rewrite of the orchestration layer",
         actionability="actionable",
-        wing="engineering", room="bogis", hall="facts",
+        wing="engineering", hall="bogis", room="facts",
         importance=1, source="claude-code",
     )
     assert result["id"]
@@ -32,7 +32,7 @@ async def test_actionability_check_constraint(pool):
     with pytest.raises(Exception):
         await hivemem_add_drawer(
             pool, content="Bad actionability",
-            wing="test", room="test", hall="facts",
+            wing="test", hall="test", room="facts",
             actionability="invalid_value",
         )
 
@@ -41,7 +41,7 @@ async def test_check_duplicate_finds_similar(pool):
     """check_duplicate finds existing drawer with >0.95 similarity."""
     await hivemem_add_drawer(
         pool, content="PostgreSQL vector search with pgvector extension",
-        wing="eng", room="db", hall="facts", summary="pgvector search",
+        wing="eng", hall="db", room="facts", summary="pgvector search",
     )
     # Same content should be a duplicate
     dupes = await hivemem_check_duplicate(
@@ -55,7 +55,7 @@ async def test_check_duplicate_no_match(pool):
     """check_duplicate returns empty for completely different content."""
     await hivemem_add_drawer(
         pool, content="PostgreSQL vector search",
-        wing="eng", room="db", hall="facts",
+        wing="eng", hall="db", room="facts",
     )
     dupes = await hivemem_check_duplicate(
         pool, "Cooking Italian pasta recipes for dinner tonight"
@@ -67,7 +67,7 @@ async def test_layers_optional(pool):
     """All progressive summarization fields are optional."""
     result = await hivemem_add_drawer(
         pool, content="Minimal drawer without layers",
-        wing="test", room="test", hall="facts",
+        wing="test", hall="test", room="facts",
     )
     drawer = await hivemem_get_drawer(pool, result["id"])
     assert drawer["key_points"] == []

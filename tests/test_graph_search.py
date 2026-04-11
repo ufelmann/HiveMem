@@ -1,6 +1,6 @@
 """E2E tests for graph search and traversal."""
 
-from hivemem.tools.write import hivemem_add_drawer, hivemem_add_edge, hivemem_kg_add
+from hivemem.tools.write import hivemem_add_drawer, hivemem_add_tunnel, hivemem_kg_add
 from hivemem.tools.read import hivemem_quick_facts, hivemem_traverse
 from hivemem.db import execute
 
@@ -33,14 +33,14 @@ async def test_quick_facts_empty(pool):
 
 
 async def test_traverse_with_relation_filter(pool):
-    """Traverse with relation_filter only follows matching edges."""
-    d_a = await hivemem_add_drawer(pool, "Node A", wing="test", room="graph")
-    d_b = await hivemem_add_drawer(pool, "Node B", wing="test", room="graph")
-    d_c = await hivemem_add_drawer(pool, "Node C", wing="test", room="graph")
-    d_d = await hivemem_add_drawer(pool, "Node D", wing="test", room="graph")
-    await hivemem_add_edge(pool, d_a["id"], d_b["id"], "builds_on", created_by="test")
-    await hivemem_add_edge(pool, d_a["id"], d_c["id"], "related_to", created_by="test")
-    await hivemem_add_edge(pool, d_b["id"], d_d["id"], "builds_on", created_by="test")
+    """Traverse with relation_filter only follows matching tunnels."""
+    d_a = await hivemem_add_drawer(pool, "Node A", wing="test", hall="graph")
+    d_b = await hivemem_add_drawer(pool, "Node B", wing="test", hall="graph")
+    d_c = await hivemem_add_drawer(pool, "Node C", wing="test", hall="graph")
+    d_d = await hivemem_add_drawer(pool, "Node D", wing="test", hall="graph")
+    await hivemem_add_tunnel(pool, d_a["id"], d_b["id"], "builds_on", created_by="test")
+    await hivemem_add_tunnel(pool, d_a["id"], d_c["id"], "related_to", created_by="test")
+    await hivemem_add_tunnel(pool, d_b["id"], d_d["id"], "builds_on", created_by="test")
 
     results = await hivemem_traverse(pool, d_a["id"], max_depth=3, relation_filter="builds_on")
     targets = [r["to_drawer"] for r in results]
@@ -50,12 +50,12 @@ async def test_traverse_with_relation_filter(pool):
 
 
 async def test_traverse_without_filter(pool):
-    """Traverse without filter follows all edges."""
-    d_a = await hivemem_add_drawer(pool, "Node A2", wing="test", room="graph")
-    d_b = await hivemem_add_drawer(pool, "Node B2", wing="test", room="graph")
-    d_c = await hivemem_add_drawer(pool, "Node C2", wing="test", room="graph")
-    await hivemem_add_edge(pool, d_a["id"], d_b["id"], "builds_on", created_by="test")
-    await hivemem_add_edge(pool, d_a["id"], d_c["id"], "related_to", created_by="test")
+    """Traverse without filter follows all tunnels."""
+    d_a = await hivemem_add_drawer(pool, "Node A2", wing="test", hall="graph")
+    d_b = await hivemem_add_drawer(pool, "Node B2", wing="test", hall="graph")
+    d_c = await hivemem_add_drawer(pool, "Node C2", wing="test", hall="graph")
+    await hivemem_add_tunnel(pool, d_a["id"], d_b["id"], "builds_on", created_by="test")
+    await hivemem_add_tunnel(pool, d_a["id"], d_c["id"], "related_to", created_by="test")
 
     results = await hivemem_traverse(pool, d_a["id"], max_depth=2)
     targets = [r["to_drawer"] for r in results]
@@ -65,13 +65,13 @@ async def test_traverse_without_filter(pool):
 
 async def test_traverse_depth_limit(pool):
     """Traverse respects depth limit."""
-    d_a = await hivemem_add_drawer(pool, "Node A3", wing="test", room="graph")
-    d_b = await hivemem_add_drawer(pool, "Node B3", wing="test", room="graph")
-    d_c = await hivemem_add_drawer(pool, "Node C3", wing="test", room="graph")
-    d_d = await hivemem_add_drawer(pool, "Node D3", wing="test", room="graph")
-    await hivemem_add_edge(pool, d_a["id"], d_b["id"], "builds_on", created_by="test")
-    await hivemem_add_edge(pool, d_b["id"], d_c["id"], "builds_on", created_by="test")
-    await hivemem_add_edge(pool, d_c["id"], d_d["id"], "builds_on", created_by="test")
+    d_a = await hivemem_add_drawer(pool, "Node A3", wing="test", hall="graph")
+    d_b = await hivemem_add_drawer(pool, "Node B3", wing="test", hall="graph")
+    d_c = await hivemem_add_drawer(pool, "Node C3", wing="test", hall="graph")
+    d_d = await hivemem_add_drawer(pool, "Node D3", wing="test", hall="graph")
+    await hivemem_add_tunnel(pool, d_a["id"], d_b["id"], "builds_on", created_by="test")
+    await hivemem_add_tunnel(pool, d_b["id"], d_c["id"], "builds_on", created_by="test")
+    await hivemem_add_tunnel(pool, d_c["id"], d_d["id"], "builds_on", created_by="test")
 
     results = await hivemem_traverse(pool, d_a["id"], max_depth=2)
     targets = [r["to_drawer"] for r in results]
@@ -81,15 +81,15 @@ async def test_traverse_depth_limit(pool):
 
 
 async def test_traverse_bidirectional(pool):
-    """Traverse finds backlinks (edges pointing TO the starting drawer)."""
-    d_a = await hivemem_add_drawer(pool, "Node A4", wing="test", room="graph")
-    d_b = await hivemem_add_drawer(pool, "Node B4", wing="test", room="graph")
+    """Traverse finds backlinks (tunnels pointing TO the starting drawer)."""
+    d_a = await hivemem_add_drawer(pool, "Node A4", wing="test", hall="graph")
+    d_b = await hivemem_add_drawer(pool, "Node B4", wing="test", hall="graph")
     # B builds_on A — traversing from A should find B as a backlink
-    await hivemem_add_edge(pool, d_b["id"], d_a["id"], "builds_on", created_by="test")
+    await hivemem_add_tunnel(pool, d_b["id"], d_a["id"], "builds_on", created_by="test")
 
     results = await hivemem_traverse(pool, d_a["id"], max_depth=1)
     assert len(results) >= 1
-    # Should find the edge connecting to B
+    # Should find the tunnel connecting to B
     found_drawers = set()
     for r in results:
         found_drawers.add(r["from_drawer"])
@@ -97,23 +97,23 @@ async def test_traverse_bidirectional(pool):
     assert d_b["id"] in found_drawers
 
 
-async def test_traverse_ignores_removed_edges(pool):
-    """Traverse does not follow soft-deleted edges."""
-    d_a = await hivemem_add_drawer(pool, "Node A5", wing="test", room="graph")
-    d_b = await hivemem_add_drawer(pool, "Node B5", wing="test", room="graph")
-    from hivemem.tools.write import hivemem_remove_edge
-    edge = await hivemem_add_edge(pool, d_a["id"], d_b["id"], "related_to", created_by="test")
-    await hivemem_remove_edge(pool, edge["id"])
+async def test_traverse_ignores_removed_tunnels(pool):
+    """Traverse does not follow soft-deleted tunnels."""
+    d_a = await hivemem_add_drawer(pool, "Node A5", wing="test", hall="graph")
+    d_b = await hivemem_add_drawer(pool, "Node B5", wing="test", hall="graph")
+    from hivemem.tools.write import hivemem_remove_tunnel
+    tunnel = await hivemem_add_tunnel(pool, d_a["id"], d_b["id"], "related_to", created_by="test")
+    await hivemem_remove_tunnel(pool, tunnel["id"])
 
     results = await hivemem_traverse(pool, d_a["id"], max_depth=1)
     assert len(results) == 0
 
 
-async def test_traverse_ignores_pending_edges(pool):
-    """Traverse does not follow pending edges."""
-    d_a = await hivemem_add_drawer(pool, "Node A6", wing="test", room="graph")
-    d_b = await hivemem_add_drawer(pool, "Node B6", wing="test", room="graph")
-    await hivemem_add_edge(pool, d_a["id"], d_b["id"], "related_to", status="pending", created_by="agent")
+async def test_traverse_ignores_pending_tunnels(pool):
+    """Traverse does not follow pending tunnels."""
+    d_a = await hivemem_add_drawer(pool, "Node A6", wing="test", hall="graph")
+    d_b = await hivemem_add_drawer(pool, "Node B6", wing="test", hall="graph")
+    await hivemem_add_tunnel(pool, d_a["id"], d_b["id"], "related_to", status="pending", created_by="agent")
 
     results = await hivemem_traverse(pool, d_a["id"], max_depth=1)
     assert len(results) == 0

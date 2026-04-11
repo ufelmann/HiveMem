@@ -13,7 +13,7 @@ from hivemem.tools.write import (
     hivemem_diary_write,
     hivemem_add_reference,
     hivemem_link_reference,
-    hivemem_update_map,
+    hivemem_update_blueprint,
 )
 from hivemem.tools.read import (
     hivemem_search,
@@ -22,7 +22,7 @@ from hivemem.tools.read import (
     hivemem_quick_facts,
     hivemem_log_access,
     hivemem_refresh_popularity,
-    hivemem_get_map,
+    hivemem_get_blueprint,
     hivemem_reading_list,
     hivemem_time_machine,
 )
@@ -38,7 +38,7 @@ async def test_revise_drawer_preserves_progressive_summarization(pool):
     original = await hivemem_add_drawer(
         pool,
         content="Original content about auth migration",
-        wing="eng", room="auth", hall="facts",
+        wing="eng", hall="auth", room="facts",
         summary="Auth migration v1",
         key_points=["Migrate from Camunda", "Use Temporal", "Q3 deadline"],
         insight="This unblocks the Go rewrite",
@@ -62,7 +62,7 @@ async def test_revise_fact_preserves_source_id(pool):
     """Revising a fact must carry forward the source_id link to the originating drawer."""
     drawer = await hivemem_add_drawer(
         pool, content="Source drawer for fact",
-        wing="eng", room="test", hall="facts",
+        wing="eng", hall="test", room="facts",
     )
     fact = await hivemem_kg_add(
         pool, "HiveMem", "uses", "PostgreSQL",
@@ -82,7 +82,7 @@ async def test_pending_drawer_excluded_from_ranked_search(pool):
     await hivemem_register_agent(pool, "classifier", "Test classifier")
     pending = await hivemem_add_drawer(
         pool, content="Pending drawer about vector database optimization",
-        wing="eng", room="db", hall="discoveries",
+        wing="eng", hall="db", room="discoveries",
         status="pending", created_by="classifier",
         summary="Vector DB optimization",
     )
@@ -103,14 +103,14 @@ async def test_pending_drawer_excluded_from_ranked_search(pool):
     await execute(pool, "DELETE FROM agents")
 
 
-async def test_map_key_drawers_dangling_after_revise(pool):
-    """Known limitation: map key_drawers holds old UUID after drawer is revised."""
+async def test_blueprint_key_drawers_dangling_after_revise(pool):
+    """Known limitation: blueprint key_drawers holds old UUID after drawer is revised."""
     drawer = await hivemem_add_drawer(
         pool, content="Important drawer",
-        wing="eng", room="arch", hall="facts",
+        wing="eng", hall="arch", room="facts",
         summary="Key architecture decision",
     )
-    await hivemem_update_map(
+    await hivemem_update_blueprint(
         pool, wing="eng", title="Engineering Overview",
         narrative="Architecture decisions",
         key_drawers=[drawer["id"]],
@@ -118,8 +118,8 @@ async def test_map_key_drawers_dangling_after_revise(pool):
     # Revise the drawer — old UUID gets valid_until
     revised = await hivemem_revise_drawer(pool, drawer["id"], "Updated important drawer")
 
-    # Map still references the OLD UUID (known limitation)
-    maps = await hivemem_get_map(pool, wing="eng")
+    # Blueprint still references the OLD UUID (known limitation)
+    maps = await hivemem_get_blueprint(pool, wing="eng")
     assert drawer["id"] in maps[0]["key_drawers"]
     assert revised["new_id"] not in maps[0]["key_drawers"]
     await execute(pool, "DELETE FROM maps")
@@ -130,7 +130,7 @@ async def test_popularity_without_refresh_returns_zero(pool):
     """Popularity score must be 0 when materialized view is not refreshed after access logging."""
     drawer = await hivemem_add_drawer(
         pool, content="Content about Docker container orchestration",
-        wing="eng", room="infra", hall="facts",
+        wing="eng", hall="infra", room="facts",
         summary="Docker orchestration",
     )
     # Log access but do NOT refresh materialized view
@@ -151,7 +151,7 @@ async def test_full_agent_pipeline(pool):
 
     drawer = await hivemem_add_drawer(
         pool, content="Curated summary of authentication patterns",
-        wing="eng", room="auth", hall="facts",
+        wing="eng", hall="auth", room="facts",
         summary="Auth patterns curated",
         status="pending", created_by="curator",
     )
@@ -203,7 +203,7 @@ async def test_mine_file_then_search(pool):
         tmp_path = f.name
 
     try:
-        result = await hivemem_mine_file(pool, tmp_path, wing="eng", room="search", hall="discoveries")
+        result = await hivemem_mine_file(pool, tmp_path, wing="eng", hall="search", room="discoveries")
         assert result["drawer_id"]
 
         results = await hivemem_search(pool, "PostgreSQL pgvector semantic search")
