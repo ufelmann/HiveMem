@@ -49,7 +49,7 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 - **Blueprints** -- curated narrative overviews per wing, append-only versioned
 - **References & reading list** -- track sources, link to drawers, filter by type/status
 - **Single container deployment** -- PostgreSQL + MCP server in one `docker run`
-- **216 tests** with testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
+- **215 tests** with testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
 
 ## Prerequisites
 
@@ -66,6 +66,7 @@ docker run -d --name hivemem \
   -p 8421:8421 \
   -v hivemem_data:/data \
   -v hivemem_models:/data/models \
+  --security-opt apparmor=unconfined \
   --restart unless-stopped \
   ghcr.io/ufelmann/hivemem:main
 ```
@@ -81,6 +82,7 @@ docker run -d --name hivemem \
   -p 8421:8421 \
   -v hivemem_data:/data \
   -v hivemem_models:/data/models \
+  --security-opt apparmor=unconfined \
   --restart unless-stopped \
   hivemem
 ```
@@ -97,6 +99,8 @@ services:
     volumes:
       - hivemem_data:/data
       - hivemem_models:/data/models
+    security_opt:
+      - apparmor=unconfined
     restart: unless-stopped
 
 volumes:
@@ -524,15 +528,17 @@ All commands run inside the container: `docker exec hivemem hivemem-token ...`
 
 ## Backups
 
+`hivemem-backup` runs automatically inside the container via cron at **01:45 daily** (pg_dump, gzipped). The last 7 daily dumps are kept in `/data/backups/`.
+
+Manual backup:
+
 ```bash
 docker exec hivemem hivemem-backup
 ```
 
-Dumps are saved to `/data/backups/` (gzipped, last 7 days kept). For automated daily backups:
+**LXC/Proxmox users:** Schedule a vzdump at 02:00 to capture the full container including the database dumps. This gives you both logical (pg_dump) and physical (filesystem) backup coverage.
 
-```bash
-0 3 * * * docker exec hivemem hivemem-backup
-```
+**Warning:** Never run `docker system prune --volumes` on the host -- it deletes all named volumes including `hivemem_data` (your database) and `hivemem_models` (the 2.2 GB embedding model cache).
 
 ## Development
 
@@ -546,7 +552,7 @@ pytest tests/ -v
 ```
 
 ```
-211 passed in 38s
+215 passed in 38s
 ```
 
 ### Test structure
