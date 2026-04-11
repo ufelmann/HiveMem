@@ -346,3 +346,45 @@ async def hivemem_update_identity(
         (key, content, token_count),
     )
     return {"key": key, "token_count": token_count}
+
+
+async def hivemem_add_edge(
+    pool: AsyncConnectionPool,
+    from_drawer: str,
+    to_drawer: str,
+    relation: str,
+    note: str | None = None,
+    status: str = "committed",
+    created_by: str = "system",
+) -> dict:
+    """Create a drawer-to-drawer edge (link)."""
+    row = await fetch_one(
+        pool,
+        """
+        INSERT INTO edges (from_drawer, to_drawer, relation, note, status, created_by)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        RETURNING id, from_drawer, to_drawer, relation, note, status
+        """,
+        (from_drawer, to_drawer, relation, note, status, created_by),
+    )
+    return {
+        "id": str(row["id"]),
+        "from_drawer": str(row["from_drawer"]),
+        "to_drawer": str(row["to_drawer"]),
+        "relation": row["relation"],
+        "note": row["note"],
+        "status": row["status"],
+    }
+
+
+async def hivemem_remove_edge(
+    pool: AsyncConnectionPool,
+    edge_id: str,
+) -> dict:
+    """Soft-delete an edge by setting valid_until to now()."""
+    await execute(
+        pool,
+        "UPDATE edges SET valid_until = now() WHERE id = %s AND valid_until IS NULL",
+        (edge_id,),
+    )
+    return {"id": edge_id, "removed": True}
