@@ -122,7 +122,7 @@ async def test_blueprint_key_drawers_dangling_after_revise(pool):
     maps = await hivemem_get_blueprint(pool, wing="eng")
     assert drawer["id"] in maps[0]["key_drawers"]
     assert revised["new_id"] not in maps[0]["key_drawers"]
-    await execute(pool, "DELETE FROM maps")
+    await execute(pool, "DELETE FROM blueprints")
     await execute(pool, "DELETE FROM drawers")
 
 

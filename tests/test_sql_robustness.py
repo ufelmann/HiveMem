@@ -91,9 +91,9 @@ async def test_update_blueprint_atomic(pool):
     r1 = await hivemem_update_blueprint(pool, "test-wing", "Map v1", "First version")
     r2 = await hivemem_update_blueprint(pool, "test-wing", "Map v2", "Second version")
     # Old map should be closed
-    row = await fetch_one(pool, "SELECT valid_until FROM maps WHERE id = %s", (r1["id"],))
+    row = await fetch_one(pool, "SELECT valid_until FROM blueprints WHERE id = %s", (r1["id"],))
     assert row["valid_until"] is not None
     # New map should be active
-    row = await fetch_one(pool, "SELECT valid_until FROM maps WHERE id = %s", (r2["id"],))
+    row = await fetch_one(pool, "SELECT valid_until FROM blueprints WHERE id = %s", (r2["id"],))
     assert row["valid_until"] is None
-    await execute(pool, "DELETE FROM maps")
+    await execute(pool, "DELETE FROM blueprints")
