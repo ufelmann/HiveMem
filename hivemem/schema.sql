@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS drawers (
     content     TEXT NOT NULL,
     embedding   vector(1024),
     wing        TEXT,
-    room        TEXT,
-    hall        TEXT CHECK (hall IN ('facts','events','discoveries','preferences','advice')),
+    hall        TEXT,
+    room        TEXT CHECK (room IN ('facts','events','discoveries','preferences','advice')),
     source      TEXT,
     tags        TEXT[],
     importance  SMALLINT CHECK (importance BETWEEN 1 AND 5),
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS facts (
     valid_until TIMESTAMPTZ
 );
 
-CREATE TABLE IF NOT EXISTS edges (
+CREATE TABLE IF NOT EXISTS tunnels (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     from_drawer  UUID NOT NULL REFERENCES drawers(id),
     to_drawer    UUID NOT NULL REFERENCES drawers(id),
@@ -80,8 +80,8 @@ CREATE TABLE IF NOT EXISTS identity (
 -- INDEXES
 -- ============================================================
 
-CREATE INDEX IF NOT EXISTS idx_drawers_wing_room ON drawers (wing, room);
-CREATE INDEX IF NOT EXISTS idx_drawers_hall ON drawers (hall);
+CREATE INDEX IF NOT EXISTS idx_drawers_wing_hall ON drawers (wing, hall);
+CREATE INDEX IF NOT EXISTS idx_drawers_room ON drawers (room);
 CREATE INDEX IF NOT EXISTS idx_drawers_temporal ON drawers (valid_from, valid_until);
 CREATE INDEX IF NOT EXISTS idx_drawers_source ON drawers (source);
 CREATE INDEX IF NOT EXISTS idx_drawers_status ON drawers (status) WHERE status = 'pending';
@@ -96,11 +96,11 @@ CREATE INDEX IF NOT EXISTS idx_facts_status ON facts (status) WHERE status = 'pe
 CREATE INDEX IF NOT EXISTS idx_facts_parent ON facts (parent_id);
 CREATE INDEX IF NOT EXISTS idx_facts_created ON facts (created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_edges_from ON edges (from_drawer) WHERE valid_until IS NULL;
-CREATE INDEX IF NOT EXISTS idx_edges_to ON edges (to_drawer) WHERE valid_until IS NULL;
-CREATE INDEX IF NOT EXISTS idx_edges_relation ON edges (relation) WHERE valid_until IS NULL;
-CREATE INDEX IF NOT EXISTS idx_edges_temporal ON edges (valid_from, valid_until);
-CREATE INDEX IF NOT EXISTS idx_edges_status ON edges (status) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_tunnels_from ON tunnels (from_drawer) WHERE valid_until IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tunnels_to ON tunnels (to_drawer) WHERE valid_until IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tunnels_relation ON tunnels (relation) WHERE valid_until IS NULL;
+CREATE INDEX IF NOT EXISTS idx_tunnels_temporal ON tunnels (valid_from, valid_until);
+CREATE INDEX IF NOT EXISTS idx_tunnels_status ON tunnels (status) WHERE status = 'pending';
 
 -- ============================================================
 -- VIEWS
@@ -116,30 +116,30 @@ SELECT * FROM facts
 WHERE (valid_until IS NULL OR valid_until > now())
   AND status = 'committed';
 
-CREATE OR REPLACE VIEW active_edges AS
-SELECT * FROM edges
+CREATE OR REPLACE VIEW active_tunnels AS
+SELECT * FROM tunnels
 WHERE (valid_until IS NULL OR valid_until > now())
   AND status = 'committed';
 
 CREATE OR REPLACE VIEW pending_approvals AS
-SELECT 'drawer' as type, id, summary as description, wing, room, created_by, created_at
+SELECT 'drawer' as type, id, summary as description, wing, hall, created_by, created_at
 FROM drawers WHERE status = 'pending'
 UNION ALL
 SELECT 'fact' as type, id, subject || ' -> ' || predicate || ' -> ' || object, NULL, NULL, created_by, created_at
 FROM facts WHERE status = 'pending'
 UNION ALL
-SELECT 'edge' as type, id, from_drawer::text || ' -[' || relation || ']-> ' || to_drawer::text, NULL, NULL, created_by, created_at
-FROM edges WHERE status = 'pending'
+SELECT 'tunnel' as type, id, from_drawer::text || ' -[' || relation || ']-> ' || to_drawer::text, NULL, NULL, created_by, created_at
+FROM tunnels WHERE status = 'pending'
 ORDER BY created_at ASC;
 
 CREATE OR REPLACE VIEW wing_stats AS
-SELECT wing, room, hall,
+SELECT wing, hall, room,
        COUNT(*) as drawer_count,
        MIN(created_at) as first_entry,
        MAX(created_at) as last_entry
 FROM active_drawers
-GROUP BY wing, room, hall
-ORDER BY wing, room, hall;
+GROUP BY wing, hall, room
+ORDER BY wing, hall, room;
 
 -- ============================================================
 -- FUNCTIONS
@@ -164,9 +164,9 @@ BEGIN
         RAISE EXCEPTION 'Drawer % not found or already revised', p_old_id;
     END IF;
 
-    INSERT INTO drawers (parent_id, content, wing, room, hall, source, tags, importance, summary,
+    INSERT INTO drawers (parent_id, content, wing, hall, room, source, tags, importance, summary,
                          key_points, insight, actionability, status, created_by)
-    VALUES (p_old_id, p_new_content, v_old.wing, v_old.room, v_old.hall, v_old.source, v_old.tags,
+    VALUES (p_old_id, p_new_content, v_old.wing, v_old.hall, v_old.room, v_old.source, v_old.tags,
             v_old.importance, COALESCE(p_new_summary, v_old.summary),
             v_old.key_points, v_old.insight, v_old.actionability, 'committed', p_created_by)
     RETURNING id INTO v_new_id;
@@ -332,8 +332,8 @@ CREATE OR REPLACE FUNCTION ranked_search(
     query_embedding vector(1024),
     query_text TEXT,
     p_wing TEXT DEFAULT NULL,
-    p_room TEXT DEFAULT NULL,
     p_hall TEXT DEFAULT NULL,
+    p_room TEXT DEFAULT NULL,
     p_limit INTEGER DEFAULT 10,
     p_weight_semantic REAL DEFAULT 0.35,
     p_weight_keyword REAL DEFAULT 0.15,
@@ -346,8 +346,8 @@ RETURNS TABLE (
     content TEXT,
     summary TEXT,
     wing TEXT,
-    room TEXT,
     hall TEXT,
+    room TEXT,
     tags TEXT[],
     importance SMALLINT,
     created_at TIMESTAMPTZ,
@@ -366,7 +366,7 @@ BEGIN
     ),
     scored AS (
         SELECT
-            d.id, d.content, d.summary, d.wing, d.room, d.hall,
+            d.id, d.content, d.summary, d.wing, d.hall, d.room,
             d.tags, d.importance, d.created_at, d.valid_from,
 
             -- 1. Semantic similarity (0-1)
@@ -400,11 +400,11 @@ BEGIN
         WHERE (d.valid_until IS NULL OR d.valid_until > now())
           AND d.status = 'committed'
           AND (p_wing IS NULL OR d.wing = p_wing)
-          AND (p_room IS NULL OR d.room = p_room)
           AND (p_hall IS NULL OR d.hall = p_hall)
+          AND (p_room IS NULL OR d.room = p_room)
     )
     SELECT
-        s.id, s.content, s.summary, s.wing, s.room, s.hall,
+        s.id, s.content, s.summary, s.wing, s.hall, s.room,
         s.tags, s.importance, s.created_at, s.valid_from,
         s.sem, s.kw, s.rec, s.imp, s.pop,
         (s.sem * p_weight_semantic +
@@ -528,15 +528,15 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================
--- MAPS OF CONTENT
+-- BLUEPRINTS (Maps of Content)
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS maps (
+CREATE TABLE IF NOT EXISTS blueprints (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     wing        TEXT NOT NULL,
     title       TEXT NOT NULL,
     narrative   TEXT NOT NULL,
-    room_order  TEXT[],
+    hall_order  TEXT[],
     key_drawers UUID[],
     created_by  TEXT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -544,11 +544,11 @@ CREATE TABLE IF NOT EXISTS maps (
     valid_until TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS idx_maps_wing ON maps (wing);
-CREATE INDEX IF NOT EXISTS idx_maps_temporal ON maps (valid_from, valid_until);
+CREATE INDEX IF NOT EXISTS idx_blueprints_wing ON blueprints (wing);
+CREATE INDEX IF NOT EXISTS idx_blueprints_temporal ON blueprints (valid_from, valid_until);
 
-CREATE OR REPLACE VIEW active_maps AS
-SELECT * FROM maps
+CREATE OR REPLACE VIEW active_blueprints AS
+SELECT * FROM blueprints
 WHERE valid_until IS NULL OR valid_until > now();
 
 -- ============================================================

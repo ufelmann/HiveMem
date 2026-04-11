@@ -114,7 +114,7 @@ async def pool(db_url):
 
     # Clean up data
     async with p.connection() as conn:
-        await conn.execute("DELETE FROM edges")
+        await conn.execute("DELETE FROM tunnels")
         await conn.execute("DELETE FROM access_log")
         await conn.execute("DELETE FROM facts")
         await conn.execute("DELETE FROM drawers")
