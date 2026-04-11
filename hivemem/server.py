@@ -18,8 +18,6 @@ def get_identity() -> dict:
 from hivemem.db import get_pool
 from hivemem.security import get_db_url
 from hivemem.tools.admin import hivemem_health as _health
-from hivemem.tools.import_tools import (
-)
 from hivemem.tools.read import (
     hivemem_diary_read as _diary_read,
     hivemem_drawer_history as _drawer_history,
