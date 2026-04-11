@@ -199,8 +199,13 @@ async def hivemem_approve_pending(
             (decision, ids),
         )
         fact_row = await cur.fetchone()
+        cur = await conn.execute(
+            "WITH updated AS (UPDATE edges SET status = %s WHERE id = ANY(%s::uuid[]) AND status = 'pending' RETURNING id) SELECT count(*) AS cnt FROM updated",
+            (decision, ids),
+        )
+        edge_row = await cur.fetchone()
         await conn.commit()
-    count = (drawer_row["cnt"] if drawer_row else 0) + (fact_row["cnt"] if fact_row else 0)
+    count = (drawer_row["cnt"] if drawer_row else 0) + (fact_row["cnt"] if fact_row else 0) + (edge_row["cnt"] if edge_row else 0)
     return {"decision": decision, "count": count}
 
 
