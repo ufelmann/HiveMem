@@ -84,6 +84,12 @@ ARCHIVING (trigger: user says 'archive', 'save session', or session ending):
 2. Extract facts: check_contradiction → invalidate old if needed → kg_add with valid_from
 3. Update Map of Content if wing structure changed (get_map → update_map)
 4. Confirm: wing/room/hall, drawer count, facts added, contradictions resolved
+
+BULK FILE ARCHIVING (trigger: user asks to archive files or directories):
+1. Read files yourself — do NOT use mine_file/mine_directory (they create dumb entries without context)
+2. For many files: dispatch parallel subagents, each handling a subset
+3. Each file → read content → classify wing/room → write summary/key_points/insight → check_duplicate → add_drawer with full L0-L3
+4. Extract cross-file facts and relationships into the knowledge graph
 """
 
 mcp = FastMCP(
