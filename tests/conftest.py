@@ -57,6 +57,7 @@ def test_db():
         .with_env("POSTGRES_PASSWORD", "test")
         .with_env("POSTGRES_DB", "hivemem_test")
         .with_exposed_ports(5432)
+        .with_kwargs(security_opt=["apparmor=unconfined"])
     )
     container.start()
     wait_for_logs(container, "database system is ready to accept connections", timeout=30)
@@ -110,6 +111,7 @@ async def pool(db_url):
 
     # Clean up data
     async with p.connection() as conn:
+        await conn.execute("DELETE FROM edges")
         await conn.execute("DELETE FROM access_log")
         await conn.execute("DELETE FROM facts")
         await conn.execute("DELETE FROM drawers")
