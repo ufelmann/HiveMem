@@ -29,27 +29,27 @@ async def test_add_drawer_with_new_columns(pool):
     """Insert drawer with importance, summary, hall, status, created_by."""
     result = await hivemem_add_drawer(
         pool, content="Test content",
-        wing="engineering", room="auth", hall="facts",
+        wing="engineering", hall="auth", room="facts",
         importance=2, summary="Test summary",
         status="committed", created_by="user",
     )
     assert result["wing"] == "engineering"
-    assert result["hall"] == "facts"
+    assert result["room"] == "facts"
     assert result["status"] == "committed"
 
 
-async def test_hall_check_constraint(pool):
-    """Invalid hall value should fail."""
+async def test_room_check_constraint(pool):
+    """Invalid room value should fail."""
     with pytest.raises(Exception):
         await hivemem_add_drawer(
             pool, content="Bad hall",
-            wing="test", room="test", hall="invalid_hall",
+            wing="test", hall="test", room="invalid_room",
         )
 
 
 async def test_drawer_appears_in_active_view(pool):
     """Committed drawer appears in active_drawers."""
-    await hivemem_add_drawer(pool, content="Active", wing="test", room="test", hall="facts")
+    await hivemem_add_drawer(pool, content="Active", wing="test", hall="test", room="facts")
     row = await fetch_one(pool, "SELECT count(*) AS cnt FROM active_drawers WHERE wing = 'test'")
     assert row["cnt"] == 1
 
@@ -57,7 +57,7 @@ async def test_drawer_appears_in_active_view(pool):
 async def test_pending_drawer_not_in_active_view(pool):
     """Pending drawer does NOT appear in active_drawers."""
     await hivemem_add_drawer(
-        pool, content="Pending", wing="test", room="test", hall="facts",
+        pool, content="Pending", wing="test", hall="test", room="facts",
         status="pending", created_by="classifier",
     )
     row = await fetch_one(pool, "SELECT count(*) AS cnt FROM active_drawers WHERE wing = 'test'")
@@ -67,7 +67,7 @@ async def test_pending_drawer_not_in_active_view(pool):
 async def test_pending_approvals_view(pool):
     """Pending items appear in pending_approvals."""
     await hivemem_add_drawer(
-        pool, content="Needs approval", wing="test", room="test", hall="facts",
+        pool, content="Needs approval", wing="test", hall="test", room="facts",
         summary="Test pending", status="pending", created_by="classifier",
     )
     pending = await hivemem_pending_approvals(pool)
@@ -79,7 +79,7 @@ async def test_pending_approvals_view(pool):
 async def test_approve_pending(pool):
     """Approve pending drawer -> appears in active_drawers."""
     result = await hivemem_add_drawer(
-        pool, content="To approve", wing="test", room="test", hall="facts",
+        pool, content="To approve", wing="test", hall="test", room="facts",
         status="pending", created_by="classifier",
     )
     # Not in active yet
@@ -97,7 +97,7 @@ async def test_approve_pending(pool):
 async def test_revise_drawer(pool):
     """Revise drawer: old gets valid_until, new has parent_id."""
     original = await hivemem_add_drawer(
-        pool, content="Version 1", wing="test", room="test", hall="facts",
+        pool, content="Version 1", wing="test", hall="test", room="facts",
         summary="V1", importance=2,
     )
     revised = await hivemem_revise_drawer(pool, original["id"], "Version 2", new_summary="V2")
@@ -121,7 +121,7 @@ async def test_revise_drawer(pool):
 
 async def test_drawer_history(pool):
     """drawer_history returns version chain."""
-    v1 = await hivemem_add_drawer(pool, content="V1", wing="test", room="test", hall="facts", summary="V1")
+    v1 = await hivemem_add_drawer(pool, content="V1", wing="test", hall="test", room="facts", summary="V1")
     v2 = await hivemem_revise_drawer(pool, v1["id"], "V2", new_summary="V2")
 
     history = await hivemem_drawer_history(pool, v2["new_id"])
@@ -186,18 +186,18 @@ async def test_invalidate_fact(pool):
 
 async def test_wing_stats(pool):
     """wing_stats returns correct counts from active drawers."""
-    await hivemem_add_drawer(pool, content="D1", wing="eng", room="auth", hall="facts")
-    await hivemem_add_drawer(pool, content="D2", wing="eng", room="auth", hall="events")
-    await hivemem_add_drawer(pool, content="D3", wing="eng", room="infra", hall="facts")
+    await hivemem_add_drawer(pool, content="D1", wing="eng", hall="auth", room="facts")
+    await hivemem_add_drawer(pool, content="D2", wing="eng", hall="auth", room="events")
+    await hivemem_add_drawer(pool, content="D3", wing="eng", hall="infra", room="facts")
 
     wings = await hivemem_list_wings(pool)
     eng = next(w for w in wings if w["wing"] == "eng")
     assert eng["drawer_count"] == 3
-    assert eng["room_count"] == 2
+    assert eng["hall_count"] == 2
 
 
 async def test_status_includes_pending_count(pool):
     """Status shows pending count."""
-    await hivemem_add_drawer(pool, content="Pending", wing="test", room="test", hall="facts", status="pending")
+    await hivemem_add_drawer(pool, content="Pending", wing="test", hall="test", room="facts", status="pending")
     status = await hivemem_status(pool)
     assert status["pending"] >= 1

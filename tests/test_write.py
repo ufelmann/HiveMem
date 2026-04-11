@@ -22,7 +22,7 @@ async def pool(db_url):
 @pytest.fixture
 async def clean_pool(pool):
     """Clean tables before write tests."""
-    await execute(pool, "DELETE FROM edges")
+    await execute(pool, "DELETE FROM tunnels")
     await execute(pool, "DELETE FROM facts")
     await execute(pool, "DELETE FROM drawers")
     await execute(pool, "DELETE FROM identity")
@@ -34,12 +34,12 @@ async def test_add_drawer(clean_pool):
         clean_pool,
         content="GraphQL API migration notes",
         wing="tech",
-        room="api",
+        hall="api",
         tags=["graphql", "migration"],
     )
     assert "id" in result
     assert result["wing"] == "tech"
-    assert result["room"] == "api"
+    assert result["hall"] == "api"
 
     # Verify it was actually stored with an embedding
     row = await fetch_one(
@@ -139,12 +139,12 @@ async def test_update_identity_upsert(clean_pool):
     assert row["content"] == "Version 2 updated"
 
 
-async def test_add_edge(pool):
-    """add_edge creates a drawer-to-drawer link."""
-    d1 = await hivemem_add_drawer(pool, "Drawer A about Python", wing="eng", room="code")
-    d2 = await hivemem_add_drawer(pool, "Drawer B about Python testing", wing="eng", room="code")
-    from hivemem.tools.write import hivemem_add_edge
-    result = await hivemem_add_edge(pool, d1["id"], d2["id"], "builds_on", note="B extends A", created_by="test")
+async def test_add_tunnel(pool):
+    """add_tunnel creates a drawer-to-drawer link."""
+    d1 = await hivemem_add_drawer(pool, "Drawer A about Python", wing="eng", hall="code")
+    d2 = await hivemem_add_drawer(pool, "Drawer B about Python testing", wing="eng", hall="code")
+    from hivemem.tools.write import hivemem_add_tunnel
+    result = await hivemem_add_tunnel(pool, d1["id"], d2["id"], "builds_on", note="B extends A", created_by="test")
     assert result["from_drawer"] == d1["id"]
     assert result["to_drawer"] == d2["id"]
     assert result["relation"] == "builds_on"
@@ -152,59 +152,59 @@ async def test_add_edge(pool):
     assert result["status"] == "committed"
 
 
-async def test_add_edge_agent_forces_pending(pool):
-    """add_edge with status override for agent role."""
-    d1 = await hivemem_add_drawer(pool, "Drawer C", wing="eng", room="code")
-    d2 = await hivemem_add_drawer(pool, "Drawer D", wing="eng", room="code")
-    from hivemem.tools.write import hivemem_add_edge
-    result = await hivemem_add_edge(pool, d1["id"], d2["id"], "related_to", status="pending", created_by="agent-bot")
+async def test_add_tunnel_agent_forces_pending(pool):
+    """add_tunnel with status override for agent role."""
+    d1 = await hivemem_add_drawer(pool, "Drawer C", wing="eng", hall="code")
+    d2 = await hivemem_add_drawer(pool, "Drawer D", wing="eng", hall="code")
+    from hivemem.tools.write import hivemem_add_tunnel
+    result = await hivemem_add_tunnel(pool, d1["id"], d2["id"], "related_to", status="pending", created_by="agent-bot")
     assert result["status"] == "pending"
 
 
-async def test_add_edge_invalid_relation(pool):
-    """add_edge rejects invalid relation type."""
-    d1 = await hivemem_add_drawer(pool, "Drawer E", wing="eng", room="code")
-    d2 = await hivemem_add_drawer(pool, "Drawer F", wing="eng", room="code")
-    from hivemem.tools.write import hivemem_add_edge
+async def test_add_tunnel_invalid_relation(pool):
+    """add_tunnel rejects invalid relation type."""
+    d1 = await hivemem_add_drawer(pool, "Drawer E", wing="eng", hall="code")
+    d2 = await hivemem_add_drawer(pool, "Drawer F", wing="eng", hall="code")
+    from hivemem.tools.write import hivemem_add_tunnel
     with pytest.raises(Exception):
-        await hivemem_add_edge(pool, d1["id"], d2["id"], "invalid_relation", created_by="test")
+        await hivemem_add_tunnel(pool, d1["id"], d2["id"], "invalid_relation", created_by="test")
 
 
-async def test_remove_edge(pool):
-    """remove_edge soft-deletes by setting valid_until."""
-    d1 = await hivemem_add_drawer(pool, "Drawer G", wing="eng", room="code")
-    d2 = await hivemem_add_drawer(pool, "Drawer H", wing="eng", room="code")
-    from hivemem.tools.write import hivemem_add_edge, hivemem_remove_edge
-    edge = await hivemem_add_edge(pool, d1["id"], d2["id"], "related_to", created_by="test")
-    result = await hivemem_remove_edge(pool, edge["id"])
+async def test_remove_tunnel(pool):
+    """remove_tunnel soft-deletes by setting valid_until."""
+    d1 = await hivemem_add_drawer(pool, "Drawer G", wing="eng", hall="code")
+    d2 = await hivemem_add_drawer(pool, "Drawer H", wing="eng", hall="code")
+    from hivemem.tools.write import hivemem_add_tunnel, hivemem_remove_tunnel
+    tunnel = await hivemem_add_tunnel(pool, d1["id"], d2["id"], "related_to", created_by="test")
+    result = await hivemem_remove_tunnel(pool, tunnel["id"])
     assert result["removed"] is True
-    # Verify edge is gone from active_edges
+    # Verify tunnel is gone from active_tunnels
     from hivemem.db import fetch_all
-    active = await fetch_all(pool, "SELECT * FROM active_edges WHERE id = %s", (edge["id"],))
+    active = await fetch_all(pool, "SELECT * FROM active_tunnels WHERE id = %s", (tunnel["id"],))
     assert len(active) == 0
 
 
-async def test_remove_edge_idempotent(pool):
-    """remove_edge on already-removed edge succeeds."""
-    d1 = await hivemem_add_drawer(pool, "Drawer I", wing="eng", room="code")
-    d2 = await hivemem_add_drawer(pool, "Drawer J", wing="eng", room="code")
-    from hivemem.tools.write import hivemem_add_edge, hivemem_remove_edge
-    edge = await hivemem_add_edge(pool, d1["id"], d2["id"], "refines", created_by="test")
-    await hivemem_remove_edge(pool, edge["id"])
-    result = await hivemem_remove_edge(pool, edge["id"])
+async def test_remove_tunnel_idempotent(pool):
+    """remove_tunnel on already-removed tunnel succeeds."""
+    d1 = await hivemem_add_drawer(pool, "Drawer I", wing="eng", hall="code")
+    d2 = await hivemem_add_drawer(pool, "Drawer J", wing="eng", hall="code")
+    from hivemem.tools.write import hivemem_add_tunnel, hivemem_remove_tunnel
+    tunnel = await hivemem_add_tunnel(pool, d1["id"], d2["id"], "refines", created_by="test")
+    await hivemem_remove_tunnel(pool, tunnel["id"])
+    result = await hivemem_remove_tunnel(pool, tunnel["id"])
     assert result["removed"] is True
 
 
-async def test_approve_pending_edges(pool):
-    """approve_pending handles edge IDs alongside drawers/facts."""
-    d1 = await hivemem_add_drawer(pool, "Drawer K", wing="eng", room="code")
-    d2 = await hivemem_add_drawer(pool, "Drawer L", wing="eng", room="code")
-    from hivemem.tools.write import hivemem_add_edge, hivemem_approve_pending
-    edge = await hivemem_add_edge(pool, d1["id"], d2["id"], "related_to", status="pending", created_by="agent")
-    assert edge["status"] == "pending"
-    result = await hivemem_approve_pending(pool, [edge["id"]], "committed")
+async def test_approve_pending_tunnels(pool):
+    """approve_pending handles tunnel IDs alongside drawers/facts."""
+    d1 = await hivemem_add_drawer(pool, "Drawer K", wing="eng", hall="code")
+    d2 = await hivemem_add_drawer(pool, "Drawer L", wing="eng", hall="code")
+    from hivemem.tools.write import hivemem_add_tunnel, hivemem_approve_pending
+    tunnel = await hivemem_add_tunnel(pool, d1["id"], d2["id"], "related_to", status="pending", created_by="agent")
+    assert tunnel["status"] == "pending"
+    result = await hivemem_approve_pending(pool, [tunnel["id"]], "committed")
     assert result["count"] == 1
-    # Verify edge is now in active_edges
+    # Verify tunnel is now in active_tunnels
     from hivemem.db import fetch_all
-    active = await fetch_all(pool, "SELECT * FROM active_edges WHERE id = %s", (edge["id"],))
+    active = await fetch_all(pool, "SELECT * FROM active_tunnels WHERE id = %s", (tunnel["id"],))
     assert len(active) == 1

@@ -387,7 +387,7 @@ class TestToolExecution:
             {"name": "hivemem_add_drawer", "arguments": {
                 "content": "Agent HTTP integration test drawer",
                 "wing": "tests",
-                "room": "http",
+                "hall": "http",
             }},
         )
         assert "result" in data, f"Expected result, got: {data}"
@@ -412,7 +412,7 @@ class TestToolExecution:
             {"name": "hivemem_add_drawer", "arguments": {
                 "content": "Writer HTTP integration test drawer",
                 "wing": "tests",
-                "room": "http",
+                "hall": "http",
             }},
         )
         assert "result" in data, f"Expected result, got: {data}"
