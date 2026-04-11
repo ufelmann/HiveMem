@@ -72,14 +72,13 @@ fi
 # Create backup directory
 mkdir -p /data/backups
 
-# Pre-load BGE-M3 embedding model (offline if cached, online for first download)
-echo "Loading BGE-M3 embedding model..."
+# Set HF offline mode if model is already cached (skip network metadata checks)
 if [ -d "$HF_HOME/hub/models--BAAI--bge-m3" ]; then
-    HF_HUB_OFFLINE=1 python3 -c "from hivemem.embeddings import get_model; get_model()"
+    export HF_HUB_OFFLINE=1
+    echo "BGE-M3 model cached, will load on first request."
 else
-    python3 -c "from hivemem.embeddings import get_model; get_model()"
+    echo "BGE-M3 model not cached, will download on first request."
 fi
-echo "Model ready."
 
 # Start MCP server (replaces this shell, becomes PID 1)
 echo "Starting MCP server on port ${HIVEMEM_PORT:-8421}..."
