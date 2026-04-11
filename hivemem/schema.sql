@@ -53,12 +53,17 @@ CREATE TABLE IF NOT EXISTS facts (
 );
 
 CREATE TABLE IF NOT EXISTS edges (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    from_entity TEXT NOT NULL,
-    to_entity   TEXT NOT NULL,
-    relation    TEXT NOT NULL,
-    weight      REAL DEFAULT 1.0,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    from_drawer  UUID NOT NULL REFERENCES drawers(id),
+    to_drawer    UUID NOT NULL REFERENCES drawers(id),
+    relation     TEXT NOT NULL CHECK (relation IN ('related_to','builds_on','contradicts','refines')),
+    note         TEXT,
+    status       TEXT NOT NULL DEFAULT 'committed'
+                 CHECK (status IN ('pending','committed','rejected')),
+    created_by   TEXT NOT NULL DEFAULT 'system',
+    valid_from   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    valid_until  TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS identity (
@@ -88,9 +93,11 @@ CREATE INDEX IF NOT EXISTS idx_facts_status ON facts (status) WHERE status = 'pe
 CREATE INDEX IF NOT EXISTS idx_facts_parent ON facts (parent_id);
 CREATE INDEX IF NOT EXISTS idx_facts_created ON facts (created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_edges_from ON edges (from_entity);
-CREATE INDEX IF NOT EXISTS idx_edges_to ON edges (to_entity);
-CREATE INDEX IF NOT EXISTS idx_edges_relation ON edges (relation);
+CREATE INDEX IF NOT EXISTS idx_edges_from ON edges (from_drawer) WHERE valid_until IS NULL;
+CREATE INDEX IF NOT EXISTS idx_edges_to ON edges (to_drawer) WHERE valid_until IS NULL;
+CREATE INDEX IF NOT EXISTS idx_edges_relation ON edges (relation) WHERE valid_until IS NULL;
+CREATE INDEX IF NOT EXISTS idx_edges_temporal ON edges (valid_from, valid_until);
+CREATE INDEX IF NOT EXISTS idx_edges_status ON edges (status) WHERE status = 'pending';
 
 -- ============================================================
 -- VIEWS
@@ -106,12 +113,20 @@ SELECT * FROM facts
 WHERE (valid_until IS NULL OR valid_until > now())
   AND status = 'committed';
 
+CREATE OR REPLACE VIEW active_edges AS
+SELECT * FROM edges
+WHERE (valid_until IS NULL OR valid_until > now())
+  AND status = 'committed';
+
 CREATE OR REPLACE VIEW pending_approvals AS
 SELECT 'drawer' as type, id, summary as description, wing, room, created_by, created_at
 FROM drawers WHERE status = 'pending'
 UNION ALL
 SELECT 'fact' as type, id, subject || ' -> ' || predicate || ' -> ' || object, NULL, NULL, created_by, created_at
 FROM facts WHERE status = 'pending'
+UNION ALL
+SELECT 'edge' as type, id, from_drawer::text || ' -[' || relation || ']-> ' || to_drawer::text, NULL, NULL, created_by, created_at
+FROM edges WHERE status = 'pending'
 ORDER BY created_at ASC;
 
 CREATE OR REPLACE VIEW wing_stats AS
