@@ -185,6 +185,54 @@ Customize `scripts/seed-identity.py` with your own profile, then:
 docker exec hivemem python3 scripts/seed-identity.py
 ```
 
+### Teach your agent to use HiveMem
+
+The MCP server ships instructions that tell the agent *how* to use the 36 tools (call `wake_up` first, check duplicates before adding, etc.). But the agent won't reliably *remember to archive* unless you tell it to in your own CLAUDE.md.
+
+Add this to your **user-level** CLAUDE.md (`~/.claude/CLAUDE.md`) so it applies to every project:
+
+```markdown
+## HiveMem — Persistent Knowledge
+
+You have access to HiveMem via MCP. It is your long-term memory. Use it.
+
+### Session start
+- Call `hivemem_wake_up` before your first response. No exceptions.
+- If the user asks about past work, decisions, or people: `hivemem_search` first, never guess.
+
+### During work
+- After completing a significant action (bug fix, feature, design decision, deployment, investigation):
+  archive it immediately. Do not batch, do not wait for session end.
+- Archiving means: `check_duplicate` → `add_drawer` (all L0-L3 layers) → extract facts (`check_contradiction` → `kg_add`) → link related drawers (`search` → `add_tunnel` for top 2-3 matches).
+- When facts change: `kg_invalidate` the old fact first, then `kg_add` the new one.
+
+### Session end
+- Before the session ends, archive anything significant that hasn't been stored yet.
+- When the user says "archive", "save", or "persist": archive the full session.
+
+### Classification
+- Use existing wings and halls. Call `list_wings`/`list_halls` before inventing new ones.
+- Wing = major life area, Hall = broad category, Room = specific topic.
+- One drawer per topic. Fill ALL layers: content (L0), summary (L1), key_points (L2), insight (L3).
+- Every fact needs `valid_from`. Knowledge without timestamps is useless.
+
+### What to archive
+- Decisions and their rationale (the "why", not just the "what")
+- Discoveries, surprises, lessons learned
+- Infrastructure changes, deployment details
+- Bug root causes and fixes
+- New patterns, conventions, or processes established
+
+### What NOT to archive
+- Routine code changes that are obvious from git history
+- Temporary debugging steps
+- Information already in the project's CLAUDE.md or README
+```
+
+**Why user-level?** Project-level CLAUDE.md files describe the *project*. HiveMem is *your* memory across all projects. A user-level CLAUDE.md ensures every agent, in every repo, knows to persist knowledge — even in repos that have never heard of HiveMem.
+
+**Why is the MCP protocol not enough?** The MCP `instructions` field tells the agent *how* to use the tools correctly (check duplicates, fill all layers, etc.). But it cannot force the agent to *decide* to archive — that decision depends on the conversation context, which only the CLAUDE.md can influence. The MCP protocol is the "API docs"; the CLAUDE.md is the "job description".
+
 ## The Building
 
 HiveMem organizes knowledge like a building you walk through. Wings, halls, rooms, and drawers -- a spatial hierarchy everyone understands intuitively. Secret tunnels connect drawers across the entire structure, revealing hidden relationships in your knowledge.
