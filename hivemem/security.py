@@ -73,12 +73,14 @@ READ_TOOLS = {
 
 WRITE_TOOLS = {
     "hivemem_add_drawer",
+    "hivemem_add_edge",
     "hivemem_check_duplicate",
     "hivemem_kg_add",
     "hivemem_kg_invalidate",
     "hivemem_update_identity",
     "hivemem_add_reference",
     "hivemem_link_reference",
+    "hivemem_remove_edge",
     "hivemem_revise_drawer",
     "hivemem_revise_fact",
     "hivemem_check_contradiction",
