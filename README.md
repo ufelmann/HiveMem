@@ -4,6 +4,11 @@ Personal knowledge system with semantic search, temporal knowledge graph, and pr
 
 MCP server backed by PostgreSQL 17 (pgvector + Apache AGE) with BGE-M3 embeddings. 36 tools, append-only versioning, role-based token auth, agent fleet with approval workflow.
 
+[![GitHub release](https://img.shields.io/github/v/release/ufelmann/HiveMem)](https://github.com/ufelmann/HiveMem/releases)
+[![GHCR](https://img.shields.io/badge/ghcr.io-ufelmann%2Fhivemem-blue)](https://ghcr.io/ufelmann/hivemem)
+
+**Docker image:** [`ghcr.io/ufelmann/hivemem:main`](https://github.com/ufelmann/HiveMem/pkgs/container/hivemem)
+
 ## Vision & Research
 
 HiveMem is built on the premise that well-structured external knowledge systems are not just storage -- they extend cognition. Every design decision is grounded in research on how humans process, retain, and retrieve information.
