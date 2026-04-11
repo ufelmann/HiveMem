@@ -5,7 +5,13 @@ Personal knowledge system with semantic search, temporal knowledge graph, and pr
 MCP server backed by PostgreSQL 17 (pgvector + Apache AGE) with BGE-M3 embeddings. 36 tools, append-only versioning, role-based token auth, agent fleet with approval workflow.
 
 [![GitHub release](https://img.shields.io/github/v/release/visterion/HiveMem)](https://github.com/visterion/HiveMem/releases)
-[![GHCR](https://img.shields.io/badge/ghcr.io-visterion%2Fhivemem-blue)](https://ghcr.io/visterion/hivemem)
+[![GHCR](https://img.shields.io/badge/ghcr.io-visterion%2Fhivemem-blue)](https://github.com/visterion/HiveMem/pkgs/container/hivemem)
+[![Tests](https://img.shields.io/badge/tests-215%20passed-brightgreen)](https://github.com/visterion/HiveMem)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org)
+[![PostgreSQL](https://img.shields.io/badge/postgresql-17-336791)](https://postgresql.org)
+[![MCP Tools](https://img.shields.io/badge/MCP%20tools-36-orange)](https://github.com/visterion/HiveMem#tools-36)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/visterion/HiveMem/blob/main/LICENSE)
+[![Docker](https://img.shields.io/badge/docker-one%20container-2496ED)](https://github.com/visterion/HiveMem#quick-start)
 
 **Docker image:** [`ghcr.io/visterion/hivemem:main`](https://github.com/visterion/HiveMem/pkgs/container/hivemem)
 
