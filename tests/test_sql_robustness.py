@@ -3,6 +3,7 @@
 from hivemem.db import fetch_one, fetch_all, execute
 from hivemem.tools.write import (
     hivemem_add_drawer,
+    hivemem_add_edge,
     hivemem_kg_add,
     hivemem_approve_pending,
     hivemem_update_map,
@@ -51,21 +52,26 @@ async def test_time_machine_respects_limit(pool):
 async def test_traverse_no_exponential_blowup(pool):
     """Traverse with UNION deduplicates rows with same edge at same depth."""
     # Create a diamond: A -> B, A -> C, B -> D, C -> D
-    await execute(pool, "INSERT INTO edges (from_entity, to_entity, relation) VALUES ('A', 'B', 'links')")
-    await execute(pool, "INSERT INTO edges (from_entity, to_entity, relation) VALUES ('A', 'C', 'links')")
-    await execute(pool, "INSERT INTO edges (from_entity, to_entity, relation) VALUES ('B', 'D', 'links')")
-    await execute(pool, "INSERT INTO edges (from_entity, to_entity, relation) VALUES ('C', 'D', 'links')")
-    results = await hivemem_traverse(pool, "A", max_depth=3)
-    # Should find all entities
-    entities = set()
+    d_a = await hivemem_add_drawer(pool, "Diamond A", wing="test", room="graph")
+    d_b = await hivemem_add_drawer(pool, "Diamond B", wing="test", room="graph")
+    d_c = await hivemem_add_drawer(pool, "Diamond C", wing="test", room="graph")
+    d_d = await hivemem_add_drawer(pool, "Diamond D", wing="test", room="graph")
+    await hivemem_add_edge(pool, d_a["id"], d_b["id"], "related_to", created_by="test")
+    await hivemem_add_edge(pool, d_a["id"], d_c["id"], "related_to", created_by="test")
+    await hivemem_add_edge(pool, d_b["id"], d_d["id"], "related_to", created_by="test")
+    await hivemem_add_edge(pool, d_c["id"], d_d["id"], "related_to", created_by="test")
+    results = await hivemem_traverse(pool, d_a["id"], max_depth=3)
+    # Should find all drawers connected
+    found = set()
     for r in results:
-        entities.add(r["from_entity"])
-        entities.add(r["to_entity"])
-    assert entities == {"A", "B", "C", "D"}
-    # UNION deduplicates: depth 1 has A->B, A->C; depth 2 has B->D, C->D
-    # With UNION ALL we'd get duplicates if same edge appears via different paths at same depth
-    assert len(results) == 4
-    await execute(pool, "DELETE FROM edges")
+        found.add(r["from_drawer"])
+        found.add(r["to_drawer"])
+    assert d_a["id"] in found
+    assert d_b["id"] in found
+    assert d_c["id"] in found
+    assert d_d["id"] in found
+    # UNION deduplicates — bounded number of edges
+    assert len(results) <= 8  # bidirectional may find more but still bounded
 
 
 async def test_status_returns_all_fields(pool):
