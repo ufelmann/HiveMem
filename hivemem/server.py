@@ -77,11 +77,15 @@ RULES:
 9. Store the FULL content in drawers, never abbreviated. Fill all layers: content (L0), summary (L1), key_points (L2), insight (L3).
 10. Never mention HiveMem tools or internal mechanics to the user unless asked. Just be knowledgeable.
 
-ARCHIVING (trigger: user says 'archive', 'save session', or session ending):
-1. Summarize session → classify wing/room/hall → check_duplicate → add_drawer with all L0-L3 layers
+ARCHIVING:
+- Archive IMMEDIATELY after completing a significant action (bug fix, feature, design decision, deployment). Do not wait for session end.
+- Archive when the user says 'archive' or 'save session'.
+- At session end, archive anything not yet stored.
+Steps:
+1. Summarize → classify wing/room → check_duplicate → add_drawer with all L0-L3 layers
 2. Extract facts: check_contradiction → invalidate old if needed → kg_add with valid_from
 3. Update Map of Content if wing structure changed (get_map → update_map)
-4. Confirm: wing/room/hall, drawer count, facts added, contradictions resolved
+4. Confirm: wing/room, drawer count, facts added, contradictions resolved
 
 BULK FILE ARCHIVING (trigger: user asks to archive files or directories):
 1. Read files yourself — understand the content before storing
