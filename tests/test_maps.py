@@ -45,7 +45,7 @@ async def test_update_blueprint_append_only(pool):
     await hivemem_update_blueprint(pool, wing="eng", title="V1", narrative="First version")
     await hivemem_update_blueprint(pool, wing="eng", title="V2", narrative="Updated version")
 
-    # Only V2 in active_maps
+    # Only V2 in active_blueprints
     blueprints = await hivemem_get_blueprint(pool, wing="eng")
     assert len(blueprints) == 1
     assert blueprints[0]["title"] == "V2"
