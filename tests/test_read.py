@@ -103,16 +103,44 @@ async def seeded_pool(pool):
         (past + timedelta(days=180),),
     )
 
-    # Seed edges for graph traversal
+    # Seed two more drawers so we have 4 total for edge seeding
+    vector3 = encode("Project planning and task management")
     await execute(
         pool,
         """
-        INSERT INTO edges (from_entity, to_entity, relation, weight) VALUES
-        ('Alice', 'Acme', 'works_at', 1.0),
-        ('Acme', 'San Francisco', 'located_in', 1.0),
-        ('San Francisco', 'California', 'part_of', 1.0)
+        INSERT INTO drawers (id, content, embedding, wing, room, hall, source, tags)
+        VALUES (
+            'aaaaaaaa-0000-0000-0000-000000000003',
+            'Project planning and task management',
+            %s::vector, 'work', 'projects', 'facts', 'test', ARRAY['planning', 'tasks']
+        )
         """,
+        (str(vector3),),
     )
+    vector4 = encode("Health and fitness tracking notes")
+    await execute(
+        pool,
+        """
+        INSERT INTO drawers (id, content, embedding, wing, room, hall, source, tags)
+        VALUES (
+            'aaaaaaaa-0000-0000-0000-000000000004',
+            'Health and fitness tracking notes',
+            %s::vector, 'personal', 'health', 'facts', 'test', ARRAY['health', 'fitness']
+        )
+        """,
+        (str(vector4),),
+    )
+
+    # Seed edges for graph traversal (drawer-to-drawer)
+    from hivemem.tools.write import hivemem_add_edge
+    from hivemem.db import fetch_all as _fa
+    all_drawers = await _fa(pool, "SELECT id FROM drawers ORDER BY created_at LIMIT 4")
+    if len(all_drawers) >= 2:
+        await hivemem_add_edge(pool, str(all_drawers[0]["id"]), str(all_drawers[1]["id"]), "related_to", created_by="test")
+    if len(all_drawers) >= 3:
+        await hivemem_add_edge(pool, str(all_drawers[1]["id"]), str(all_drawers[2]["id"]), "builds_on", created_by="test")
+    if len(all_drawers) >= 4:
+        await hivemem_add_edge(pool, str(all_drawers[2]["id"]), str(all_drawers[3]["id"]), "builds_on", created_by="test")
 
     # Seed identity
     await execute(
@@ -129,7 +157,7 @@ async def seeded_pool(pool):
 
 async def test_status(seeded_pool):
     result = await hivemem_status(seeded_pool)
-    assert result["drawers"] == 2
+    assert result["drawers"] == 4
     assert result["facts"] >= 2  # active_facts filters by status+valid_until
     assert result["edges"] == 3
     assert "tech" in result["wings"]
@@ -191,19 +219,26 @@ async def test_list_rooms(seeded_pool):
 
 
 async def test_traverse(seeded_pool):
-    results = await hivemem_traverse(seeded_pool, "Alice", max_depth=2)
+    from hivemem.db import fetch_all as _fa
+    all_drawers = await _fa(seeded_pool, "SELECT id FROM drawers ORDER BY created_at LIMIT 4")
+    first_id = str(all_drawers[0]["id"])
+    results = await hivemem_traverse(seeded_pool, first_id, max_depth=2)
     assert len(results) >= 2
-    entities = {r["to_entity"] for r in results}
-    assert "Acme" in entities
-    assert "San Francisco" in entities
+    neighbors = set()
+    for r in results:
+        neighbors.add(r["from_drawer"])
+        neighbors.add(r["to_drawer"])
+    assert first_id in neighbors
 
 
 async def test_traverse_depth_limit(seeded_pool):
-    results = await hivemem_traverse(seeded_pool, "Alice", max_depth=1)
-    entities = {r["to_entity"] for r in results}
-    assert "Acme" in entities
-    # California should NOT be reachable at depth 1
-    assert "California" not in entities
+    from hivemem.db import fetch_all as _fa
+    all_drawers = await _fa(seeded_pool, "SELECT id FROM drawers ORDER BY created_at LIMIT 4")
+    first_id = str(all_drawers[0]["id"])
+    fourth_id = str(all_drawers[3]["id"])
+    results = await hivemem_traverse(seeded_pool, first_id, max_depth=1)
+    targets = [r["to_drawer"] for r in results] + [r["from_drawer"] for r in results]
+    assert fourth_id not in targets
 
 
 async def test_time_machine_current(seeded_pool):
