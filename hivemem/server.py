@@ -578,12 +578,24 @@ class _ToolGateMiddleware:
                 return first_message
             return await receive()
 
-        # Intercept response to filter tools/list
+        # Intercept response to filter tools/list (skip SSE streams)
         response_parts = []
+        is_sse = False
 
         async def capture_send(message):
+            nonlocal is_sse
             if message["type"] == "http.response.start":
+                for k, v in message.get("headers", []):
+                    if k == b"content-type" and b"text/event-stream" in v:
+                        is_sse = True
+                        break
+                if is_sse:
+                    await send(message)
+                    return
                 response_parts.append(message)
+            elif is_sse:
+                await send(message)
+                return
             elif message["type"] == "http.response.body":
                 body = message.get("body", b"")
                 if body:
