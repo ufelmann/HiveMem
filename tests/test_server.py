@@ -29,7 +29,7 @@ def test_all_tools_registered():
     registered = set(tools.keys())
     for name in key_tools:
         assert name in registered, f"Tool '{name}' not registered"
-    assert len(registered) >= 34, f"Expected at least 34 tools, got {len(registered)}: {registered}"
+    assert len(registered) >= 36, f"Expected at least 36 tools, got {len(registered)}: {registered}"
 
 
 async def test_health(pool):
