@@ -56,7 +56,9 @@ psql -U hivemem -h /var/run/postgresql -d postgres -tc "SELECT 1 FROM pg_databas
 # Apply extensions and schema
 psql -U hivemem -h /var/run/postgresql -d hivemem -c "CREATE EXTENSION IF NOT EXISTS vector"
 psql -U hivemem -h /var/run/postgresql -d hivemem -c "CREATE EXTENSION IF NOT EXISTS age"
-psql -U hivemem -h /var/run/postgresql -d hivemem -f /app/hivemem/schema.sql 2>/dev/null || true
+# Apply database migrations
+echo "Applying migrations..."
+python3 /app/scripts/hivemem-migrate
 
 # Check if any API tokens exist
 TOKEN_COUNT=$(psql -U hivemem -h /var/run/postgresql -d hivemem -tAc "SELECT count(*) FROM api_tokens" 2>/dev/null || echo "0")
