@@ -19,8 +19,6 @@ from hivemem.db import get_pool
 from hivemem.security import get_db_url
 from hivemem.tools.admin import hivemem_health as _health
 from hivemem.tools.import_tools import (
-    hivemem_mine_directory as _mine_directory,
-    hivemem_mine_file as _mine_file,
 )
 from hivemem.tools.read import (
     hivemem_diary_read as _diary_read,
@@ -65,7 +63,7 @@ DB_URL = os.environ.get("HIVEMEM_DB_URL", None) or get_db_url()
 MCP_PORT = int(os.environ.get("HIVEMEM_PORT", "8421"))
 
 HIVEMEM_PROTOCOL = """\
-You have access to HiveMem — a persistent knowledge system with 36 tools.
+You have access to HiveMem — a persistent knowledge system with 34 tools.
 
 RULES:
 1. EVERY session starts with hivemem_wake_up. No exceptions.
@@ -86,7 +84,7 @@ ARCHIVING (trigger: user says 'archive', 'save session', or session ending):
 4. Confirm: wing/room/hall, drawer count, facts added, contradictions resolved
 
 BULK FILE ARCHIVING (trigger: user asks to archive files or directories):
-1. Read files yourself — do NOT use mine_file/mine_directory (they create dumb entries without context)
+1. Read files yourself — understand the content before storing
 2. For many files: dispatch parallel subagents, each handling a subset
 3. Each file → read content → classify wing/room → write summary/key_points/insight → check_duplicate → add_drawer with full L0-L3
 4. Extract cross-file facts and relationships into the knowledge graph
@@ -457,32 +455,6 @@ async def hivemem_update_map(
     return await _update_map(pool, wing, title, narrative, room_order=room_order,
                              key_drawers=key_drawers, created_by=created_by)
 
-
-# ── Import Tools ────────────────────────────────────────────────────────
-
-
-@mcp.tool()
-async def hivemem_mine_file(
-    file_path: str,
-    wing: str | None = None,
-    room: str | None = None,
-    hall: str | None = None,
-) -> dict:
-    """Read a file and store its content as a drawer."""
-    pool = await get_db_pool()
-    return await _mine_file(pool, file_path, wing=wing, room=room, hall=hall)
-
-
-@mcp.tool()
-async def hivemem_mine_directory(
-    dir_path: str,
-    wing: str | None = None,
-    hall: str | None = None,
-    extensions: list[str] | None = None,
-) -> dict:
-    """Glob for files in a directory and store each as a drawer."""
-    pool = await get_db_pool()
-    return await _mine_directory(pool, dir_path, wing=wing, hall=hall, extensions=extensions)
 
 
 # ── Admin Tools ─────────────────────────────────────────────────────────
