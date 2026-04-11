@@ -54,6 +54,8 @@ from hivemem.tools.write import (
     hivemem_revise_fact as _revise_fact,
     hivemem_update_identity as _update_identity,
     hivemem_update_map as _update_map,
+    hivemem_add_edge as _add_edge,
+    hivemem_remove_edge as _remove_edge,
 )
 
 DB_URL = os.environ.get("HIVEMEM_DB_URL", None) or get_db_url()
@@ -61,7 +63,7 @@ DB_URL = os.environ.get("HIVEMEM_DB_URL", None) or get_db_url()
 MCP_PORT = int(os.environ.get("HIVEMEM_PORT", "8421"))
 
 HIVEMEM_PROTOCOL = """\
-You have access to HiveMem — a persistent knowledge system with 34 tools.
+You have access to HiveMem — a persistent knowledge system with 36 tools.
 
 RULES:
 1. EVERY session starts with hivemem_wake_up. No exceptions.
@@ -82,6 +84,7 @@ ARCHIVING:
 Steps:
 1. Summarize → classify wing/room → check_duplicate → add_drawer with all L0-L3 layers
 2. Extract facts: check_contradiction → invalidate old if needed → kg_add with valid_from
+2b. Link related drawers: hivemem_search with key_points → for top 2-3 results: hivemem_add_edge(from=new_id, to=found_id, relation, note). Relations: related_to, builds_on, contradicts, refines. Do not over-link.
 3. Update Map of Content if wing structure changed (get_map → update_map)
 4. Confirm: wing/room, drawer count, facts added, contradictions resolved
 
@@ -183,10 +186,10 @@ async def hivemem_list_rooms(wing: str) -> list[dict]:
 
 
 @mcp.tool()
-async def hivemem_traverse(entity: str, max_depth: int = 2, relation_filter: str | None = None) -> list[dict]:
-    """Recursive graph traversal on edges. Optional relation_filter to only follow specific edge types."""
+async def hivemem_traverse(drawer_id: str, max_depth: int = 2, relation_filter: str | None = None) -> list[dict]:
+    """Bidirectional graph traversal on drawer-to-drawer edges. Returns linked drawers with relation type and depth."""
     pool = await get_db_pool()
-    return await _traverse(pool, entity, max_depth=max_depth, relation_filter=relation_filter)
+    return await _traverse(pool, drawer_id, max_depth=max_depth, relation_filter=relation_filter)
 
 
 @mcp.tool()
@@ -457,6 +460,33 @@ async def hivemem_update_map(
     return await _update_map(pool, wing, title, narrative, room_order=room_order,
                              key_drawers=key_drawers, created_by=created_by)
 
+
+
+# ── Edge Tools ─────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+async def hivemem_add_edge(
+    from_drawer: str,
+    to_drawer: str,
+    relation: str,
+    note: str | None = None,
+    status: str = "committed",
+) -> dict:
+    """Link two drawers. Relations: related_to, builds_on, contradicts, refines. RULE: After archiving a drawer, search for related drawers and link the top 2-3."""
+    pool = await get_db_pool()
+    identity = get_identity()
+    created_by = identity["name"]
+    if identity["role"] == "agent":
+        status = "pending"
+    return await _add_edge(pool, from_drawer, to_drawer, relation, note=note, status=status, created_by=created_by)
+
+
+@mcp.tool()
+async def hivemem_remove_edge(edge_id: str) -> dict:
+    """Soft-delete an edge (sets valid_until to now). The edge remains in history for time-machine queries."""
+    pool = await get_db_pool()
+    return await _remove_edge(pool, edge_id)
 
 
 # ── Admin Tools ─────────────────────────────────────────────────────────
