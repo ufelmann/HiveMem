@@ -1,4 +1,7 @@
 -- hivemem/schema.sql
+-- REFERENCE ONLY — not executed directly.
+-- Migrations in migrations/ are the source of truth.
+-- This file reflects the current schema after all migrations.
 -- HiveMem v2 — Append-only versioned knowledge system
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS age;
