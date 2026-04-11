@@ -185,6 +185,96 @@ Customize `scripts/seed-identity.py` with your own profile, then:
 docker exec hivemem python3 scripts/seed-identity.py
 ```
 
+## The Building
+
+HiveMem organizes knowledge like a building you walk through. Wings, halls, rooms, and drawers -- a spatial hierarchy everyone understands intuitively. Secret tunnels connect drawers across the entire structure, revealing hidden relationships in your knowledge.
+
+```mermaid
+graph TB
+    subgraph HM["HiveMem"]
+        direction TB
+
+        subgraph Wing1["Wing: Projects"]
+            direction TB
+            subgraph Hall1["Hall: Software"]
+                direction LR
+                subgraph Room1A["Room: HiveMem"]
+                    D1["Drawer<br/><i>L0: content</i><br/><i>L1: summary</i><br/><i>L2: key points</i><br/><i>L3: insight</i>"]
+                    D2["Drawer"]
+                end
+                subgraph Room1B["Room: Website"]
+                    D3["Drawer"]
+                end
+            end
+        end
+
+        subgraph Wing2["Wing: Knowledge"]
+            direction TB
+            subgraph Hall2["Hall: Tech"]
+                direction LR
+                subgraph Room2A["Room: AI"]
+                    D5["Drawer"]
+                    D6["Drawer"]
+                end
+                subgraph Room2B["Room: Security"]
+                    D7["Drawer"]
+                end
+            end
+        end
+    end
+
+    D1 <-..->|"builds_on"| D5
+    D2 <-..->|"related_to"| D3
+    D6 <-..->|"contradicts"| D7
+
+    subgraph KG["Knowledge Graph"]
+        F1["Fact<br/><i>subject _ predicate _ object</i><br/><i>valid_from / valid_until</i>"]
+    end
+
+    subgraph BP["Blueprint"]
+        M1["Narrative overview<br/><i>per wing</i>"]
+    end
+
+    D1 -.->|"source"| F1
+    Wing1 -.-> M1
+
+    classDef wing fill:#4a90d9,stroke:#2c5f8a,color:white
+    classDef hall fill:#5ba85b,stroke:#3d7a3d,color:white
+    classDef room fill:#e8a838,stroke:#b8802a,color:white
+    classDef drawer fill:#f5f5f5,stroke:#999,color:#333
+    classDef kg fill:#c0392b,stroke:#962d22,color:white
+    classDef bp fill:#9b59b6,stroke:#7d3c98,color:white
+    classDef hm fill:#f0f4f8,stroke:#4a90d9,color:#333
+
+    class Wing1,Wing2 wing
+    class Hall1,Hall2 hall
+    class Room1A,Room1B,Room2A,Room2B room
+    class D1,D2,D3,D5,D6,D7 drawer
+    class KG,F1 kg
+    class BP,M1 bp
+    class HM hm
+```
+
+### Concepts
+
+| Concept | Description | Example |
+|---|---|---|
+| **Wing** | Top-level category -- a wing of the building | "Projects", "Knowledge", "Cooking" |
+| **Hall** | A hall within a wing | "Software", "Italian Cuisine" |
+| **Room** | A room within a hall | "HiveMem", "Pasta Recipes" |
+| **Drawer** | Single knowledge item with 4 layers (L0-L3) | A design decision, a recipe, a meeting note |
+| **Tunnel** | Secret passage connecting two drawers | `builds_on`, `related_to`, `contradicts`, `refines` |
+| **Fact** | Atomic knowledge triple in the knowledge graph | "HiveMem → uses → PostgreSQL" with temporal validity |
+| **Blueprint** | Narrative overview of a wing | How halls, rooms, and key drawers in a wing connect |
+
+### How it works
+
+1. **Store** -- Content is classified into wing/hall/room and stored as a drawer with progressive summarization (L0: full content, L1: summary, L2: key points, L3: insight)
+2. **Connect** -- Tunnels link related drawers across the building; facts capture atomic relationships in the knowledge graph
+3. **Search** -- 5-signal ranked search finds drawers by meaning, keywords, recency, importance, and popularity
+4. **Traverse** -- Follow tunnels to discover hidden connections; use time machine to see what was known at any point
+5. **Wake up** -- Each session starts with identity context and critical facts, like walking back into the building and remembering where everything is
+
 ## Architecture
 
 ```mermaid
