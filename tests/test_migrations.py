@@ -42,20 +42,20 @@ def test_rerun_migrations_idempotent(db_url):
     assert len(list(pending)) == 0
 
 
-def test_final_schema_has_v2_edges(db_url):
-    """After all migrations, edges table has v2 columns."""
+def test_final_schema_has_v2_tunnels(db_url):
+    """After all migrations, tunnels table has v2 columns."""
     with psycopg.connect(db_url, autocommit=True) as conn:
         row = conn.execute(
             "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'edges' AND column_name = 'from_drawer'"
+            "WHERE table_name = 'tunnels' AND column_name = 'from_drawer'"
         ).fetchone()
     assert row is not None
 
 
-def test_final_schema_has_active_edges_view(db_url):
-    """After all migrations, active_edges view exists."""
+def test_final_schema_has_active_tunnels_view(db_url):
+    """After all migrations, active_tunnels view exists."""
     with psycopg.connect(db_url, autocommit=True) as conn:
         row = conn.execute(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.views WHERE table_name = 'active_edges')"
+            "SELECT EXISTS (SELECT 1 FROM information_schema.views WHERE table_name = 'active_tunnels')"
         ).fetchone()
     assert row[0] is True

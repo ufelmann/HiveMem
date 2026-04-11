@@ -9,7 +9,7 @@ from hivemem.tools.write import (
     hivemem_kg_add,
     hivemem_approve_pending,
     hivemem_revise_drawer,
-    hivemem_update_map,
+    hivemem_update_blueprint,
 )
 from hivemem.tools.read import hivemem_pending_approvals
 
@@ -19,7 +19,7 @@ async def test_concurrent_drawer_writes(pool):
     async def write(i):
         return await hivemem_add_drawer(
             pool, content=f"Concurrent drawer {i}",
-            wing="test", room="concurrency", hall="facts",
+            wing="test", hall="concurrency", room="facts",
             status="committed", created_by="tester",
         )
 
@@ -29,7 +29,7 @@ async def test_concurrent_drawer_writes(pool):
 
     row = await fetch_one(
         pool,
-        "SELECT count(*) AS cnt FROM drawers WHERE wing = 'test' AND room = 'concurrency'",
+        "SELECT count(*) AS cnt FROM drawers WHERE wing = 'test' AND hall = 'concurrency'",
     )
     assert row["cnt"] == 10
 
@@ -51,7 +51,7 @@ async def test_concurrent_revise_same_drawer(pool):
     """Two concurrent revisions of the same drawer -- one wins, one fails."""
     original = await hivemem_add_drawer(
         pool, content="Original content",
-        wing="test", room="revise", hall="facts",
+        wing="test", hall="revise", room="facts",
         status="committed", created_by="tester",
         summary="Original",
     )
@@ -144,7 +144,7 @@ async def test_concurrent_approve_same_ids(pool):
     ids = []
     for i in range(5):
         r = await hivemem_add_drawer(
-            pool, content=f"Pending {i}", wing="test", room="approve", hall="facts",
+            pool, content=f"Pending {i}", wing="test", hall="approve", room="facts",
             status="pending", created_by="agent",
         )
         ids.append(r["id"])
@@ -163,10 +163,10 @@ async def test_concurrent_approve_same_ids(pool):
         assert row["status"] == "committed"
 
 
-async def test_concurrent_update_map_same_wing(pool):
-    """Two concurrent map updates for same wing -- advisory lock serializes them."""
+async def test_concurrent_update_blueprint_same_wing(pool):
+    """Two concurrent blueprint updates for same wing -- advisory lock serializes them."""
     async def update(version):
-        return await hivemem_update_map(
+        return await hivemem_update_blueprint(
             pool, "race-wing", f"Map v{version}", f"Narrative {version}",
             created_by="tester",
         )

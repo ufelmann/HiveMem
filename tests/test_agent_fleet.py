@@ -41,7 +41,7 @@ async def test_agent_writes_pending_drawer(pool):
     await hivemem_register_agent(pool, "classifier", "Classify drawers")
     result = await hivemem_add_drawer(
         pool, content="Agent suggestion",
-        wing="eng", room="test", hall="facts",
+        wing="eng", hall="test", room="facts",
         status="pending", created_by="classifier",
     )
     pending = await hivemem_pending_approvals(pool)
@@ -55,7 +55,7 @@ async def test_approve_drawer_becomes_active(pool):
     await hivemem_register_agent(pool, "classifier", "Classify drawers")
     result = await hivemem_add_drawer(
         pool, content="Pending agent drawer about testing",
-        wing="eng", room="test", hall="facts",
+        wing="eng", hall="test", room="facts",
         status="pending", created_by="classifier",
         summary="Agent test drawer",
     )
@@ -72,7 +72,7 @@ async def test_reject_drawer_excluded(pool):
     """Rejected drawer excluded from active_drawers."""
     result = await hivemem_add_drawer(
         pool, content="Bad suggestion",
-        wing="eng", room="test", hall="facts",
+        wing="eng", hall="test", room="facts",
         status="pending", created_by="classifier",
     )
     await hivemem_approve_pending(pool, [result["id"]], "rejected")

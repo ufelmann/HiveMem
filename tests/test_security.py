@@ -104,7 +104,7 @@ def test_all_admin_tools_excluded_from_writer():
 async def test_approve_invalid_decision_rejected(pool):
     """approve_pending rejects decisions other than committed/rejected."""
     r = await hivemem_add_drawer(
-        pool, content="test", wing="test", room="sec", hall="facts",
+        pool, content="test", wing="test", hall="sec", room="facts",
         status="pending", created_by="agent",
     )
     with pytest.raises(ValueError, match="Invalid decision"):

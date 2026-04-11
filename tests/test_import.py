@@ -20,7 +20,7 @@ async def pool(db_url):
 @pytest.fixture
 async def clean_pool(pool):
     """Clean tables before import tests."""
-    await execute(pool, "DELETE FROM edges")
+    await execute(pool, "DELETE FROM tunnels")
     await execute(pool, "DELETE FROM facts")
     await execute(pool, "DELETE FROM drawers")
     await execute(pool, "DELETE FROM identity")
@@ -34,7 +34,7 @@ async def test_mine_file(clean_pool):
 
     try:
         result = await hivemem_mine_file(
-            clean_pool, tmp_path, wing="docs", room="test"
+            clean_pool, tmp_path, wing="docs", hall="test"
         )
         assert result["drawers_created"] == 1
         assert result["drawer_id"] is not None

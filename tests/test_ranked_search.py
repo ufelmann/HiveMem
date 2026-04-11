@@ -18,7 +18,7 @@ async def test_ranked_search_returns_scores(pool):
     """Ranked search returns all 5 individual scores + total."""
     await hivemem_add_drawer(
         pool, content="PostgreSQL vector search with pgvector",
-        wing="eng", room="db", hall="facts", importance=2, summary="pgvector search",
+        wing="eng", hall="db", room="facts", importance=2, summary="pgvector search",
     )
     results = await hivemem_search(pool, "vector search")
     assert len(results) >= 1
@@ -36,11 +36,11 @@ async def test_importance_weight_affects_ranking(pool):
     """Higher importance weight should push important drawers up."""
     await hivemem_add_drawer(
         pool, content="Critical auth decision for production",
-        wing="eng", room="auth", hall="facts", importance=1, summary="Critical auth",
+        wing="eng", hall="auth", room="facts", importance=1, summary="Critical auth",
     )
     await hivemem_add_drawer(
         pool, content="Minor auth logging tweak",
-        wing="eng", room="auth", hall="facts", importance=5, summary="Minor auth logging",
+        wing="eng", hall="auth", room="facts", importance=5, summary="Minor auth logging",
     )
     # High importance weight
     results = await hivemem_search(
@@ -56,7 +56,7 @@ async def test_keyword_search_works(pool):
     """Keyword match should find drawers even with low semantic similarity."""
     await hivemem_add_drawer(
         pool, content="The BGE-M3 model uses 1024 dimensional embeddings for multilingual search",
-        wing="eng", room="ml", hall="facts", summary="BGE-M3 embedding dimensions",
+        wing="eng", hall="ml", room="facts", summary="BGE-M3 embedding dimensions",
     )
     results = await hivemem_search(
         pool, "BGE-M3 1024",
@@ -71,11 +71,11 @@ async def test_popularity_signal(pool):
     """Access logging + popularity refresh affects ranking."""
     d1 = await hivemem_add_drawer(
         pool, content="Popular knowledge about Docker",
-        wing="eng", room="infra", hall="facts", summary="Docker knowledge",
+        wing="eng", hall="infra", room="facts", summary="Docker knowledge",
     )
     await hivemem_add_drawer(
         pool, content="Unpopular knowledge about Docker",
-        wing="eng", room="infra", hall="facts", summary="Docker unpopular",
+        wing="eng", hall="infra", room="facts", summary="Docker unpopular",
     )
 
     # Log 5 accesses for d1
@@ -97,8 +97,8 @@ async def test_popularity_signal(pool):
 
 async def test_wing_filter(pool):
     """Wing filter narrows results."""
-    await hivemem_add_drawer(pool, content="Engineering topic", wing="eng", room="test", hall="facts")
-    await hivemem_add_drawer(pool, content="Personal topic", wing="personal", room="test", hall="facts")
+    await hivemem_add_drawer(pool, content="Engineering topic", wing="eng", hall="test", room="facts")
+    await hivemem_add_drawer(pool, content="Personal topic", wing="personal", hall="test", room="facts")
 
     results = await hivemem_search(pool, "topic", wing="eng")
     assert all(r["wing"] == "eng" for r in results)
@@ -106,8 +106,8 @@ async def test_wing_filter(pool):
 
 async def test_hall_filter(pool):
     """Hall filter narrows results."""
-    await hivemem_add_drawer(pool, content="A discovery about search", wing="eng", room="test", hall="discoveries")
-    await hivemem_add_drawer(pool, content="A fact about search", wing="eng", room="test", hall="facts")
+    await hivemem_add_drawer(pool, content="A discovery about search", wing="eng", hall="test", room="discoveries")
+    await hivemem_add_drawer(pool, content="A fact about search", wing="eng", hall="test", room="facts")
 
     results = await hivemem_search(pool, "search", hall="discoveries")
-    assert all(r["hall"] == "discoveries" for r in results)
+    assert all(r["room"] == "discoveries" for r in results)

@@ -51,7 +51,7 @@ async def test_link_reference_to_drawer(pool):
     """Link a reference to a drawer."""
     drawer = await hivemem_add_drawer(
         pool, content="Based on GraphRAG paper",
-        wing="eng", room="search", hall="discoveries",
+        wing="eng", hall="search", room="discoveries",
     )
     ref = await hivemem_add_reference(pool, title="GraphRAG Paper", ref_type="paper")
     link = await hivemem_link_reference(pool, drawer["id"], ref["id"], relation="source")
