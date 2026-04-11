@@ -15,8 +15,8 @@ async def hivemem_add_drawer(
     pool: AsyncConnectionPool,
     content: str,
     wing: str | None = None,
-    room: str | None = None,
     hall: str | None = None,
+    room: str | None = None,
     source: str | None = None,
     tags: list[str] | None = None,
     importance: int | None = None,
@@ -28,7 +28,7 @@ async def hivemem_add_drawer(
     created_by: str | None = None,
     valid_from: datetime | None = None,
 ) -> dict:
-    """Encode content, insert into drawers, return {id, wing, room, hall, status}."""
+    """Encode content, insert into drawers, return {id, wing, hall, room, status}."""
     vector = await asyncio.to_thread(encode, content)
     vector_str = str(vector)
     tags_val = tags or []
@@ -37,21 +37,21 @@ async def hivemem_add_drawer(
     row = await fetch_one(
         pool,
         """
-        INSERT INTO drawers (content, embedding, wing, room, hall, source, tags,
+        INSERT INTO drawers (content, embedding, wing, hall, room, source, tags,
                              importance, summary, key_points, insight, actionability,
                              status, created_by, valid_from)
         VALUES (%s, %s::vector, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, now()))
-        RETURNING id, wing, room, hall, status
+        RETURNING id, wing, hall, room, status
         """,
-        (content, vector_str, wing, room, hall, source, tags_val,
+        (content, vector_str, wing, hall, room, source, tags_val,
          importance, summary, key_points_val, insight, actionability,
          status, created_by, valid_from),
     )
     return {
         "id": str(row["id"]),
         "wing": row["wing"],
-        "room": row["room"],
         "hall": row["hall"],
+        "room": row["room"],
         "status": row["status"],
     }
 
@@ -200,12 +200,12 @@ async def hivemem_approve_pending(
         )
         fact_row = await cur.fetchone()
         cur = await conn.execute(
-            "WITH updated AS (UPDATE edges SET status = %s WHERE id = ANY(%s::uuid[]) AND status = 'pending' RETURNING id) SELECT count(*) AS cnt FROM updated",
+            "WITH updated AS (UPDATE tunnels SET status = %s WHERE id = ANY(%s::uuid[]) AND status = 'pending' RETURNING id) SELECT count(*) AS cnt FROM updated",
             (decision, ids),
         )
-        edge_row = await cur.fetchone()
+        tunnel_row = await cur.fetchone()
         await conn.commit()
-    count = (drawer_row["cnt"] if drawer_row else 0) + (fact_row["cnt"] if fact_row else 0) + (edge_row["cnt"] if edge_row else 0)
+    count = (drawer_row["cnt"] if drawer_row else 0) + (fact_row["cnt"] if fact_row else 0) + (tunnel_row["cnt"] if tunnel_row else 0)
     return {"decision": decision, "count": count}
 
 
@@ -299,28 +299,28 @@ async def hivemem_diary_write(
     return {"id": str(row["id"]), "agent": agent}
 
 
-async def hivemem_update_map(
+async def hivemem_update_blueprint(
     pool: AsyncConnectionPool,
     wing: str,
     title: str,
     narrative: str,
-    room_order: list[str] | None = None,
+    hall_order: list[str] | None = None,
     key_drawers: list[str] | None = None,
     created_by: str | None = None,
 ) -> dict:
-    """Create or update a Map of Content (append-only, atomic, serialized per wing)."""
+    """Create or update a Blueprint (append-only, atomic, serialized per wing)."""
     async with pool.connection() as conn:
-        # Advisory lock prevents concurrent map updates for the same wing
-        await conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"map:{wing}",))
+        # Advisory lock prevents concurrent blueprint updates for the same wing
+        await conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"blueprint:{wing}",))
         await conn.execute(
-            "UPDATE maps SET valid_until = now() WHERE wing = %s AND valid_until IS NULL",
+            "UPDATE blueprints SET valid_until = now() WHERE wing = %s AND valid_until IS NULL",
             (wing,),
         )
         cur = await conn.execute(
-            """INSERT INTO maps (wing, title, narrative, room_order, key_drawers, created_by)
+            """INSERT INTO blueprints (wing, title, narrative, hall_order, key_drawers, created_by)
                VALUES (%s, %s, %s, %s, %s::uuid[], %s)
                RETURNING id, wing, title""",
-            (wing, title, narrative, room_order or [], key_drawers or [], created_by),
+            (wing, title, narrative, hall_order or [], key_drawers or [], created_by),
         )
         row = await cur.fetchone()
         await conn.commit()
@@ -353,7 +353,7 @@ async def hivemem_update_identity(
     return {"key": key, "token_count": token_count}
 
 
-async def hivemem_add_edge(
+async def hivemem_add_tunnel(
     pool: AsyncConnectionPool,
     from_drawer: str,
     to_drawer: str,
@@ -362,11 +362,11 @@ async def hivemem_add_edge(
     status: str = "committed",
     created_by: str = "system",
 ) -> dict:
-    """Create a drawer-to-drawer edge (link)."""
+    """Create a drawer-to-drawer tunnel (link)."""
     row = await fetch_one(
         pool,
         """
-        INSERT INTO edges (from_drawer, to_drawer, relation, note, status, created_by)
+        INSERT INTO tunnels (from_drawer, to_drawer, relation, note, status, created_by)
         VALUES (%s, %s, %s, %s, %s, %s)
         RETURNING id, from_drawer, to_drawer, relation, note, status
         """,
@@ -382,14 +382,14 @@ async def hivemem_add_edge(
     }
 
 
-async def hivemem_remove_edge(
+async def hivemem_remove_tunnel(
     pool: AsyncConnectionPool,
-    edge_id: str,
+    tunnel_id: str,
 ) -> dict:
-    """Soft-delete an edge by setting valid_until to now()."""
+    """Soft-delete a tunnel by setting valid_until to now()."""
     await execute(
         pool,
-        "UPDATE edges SET valid_until = now() WHERE id = %s AND valid_until IS NULL",
-        (edge_id,),
+        "UPDATE tunnels SET valid_until = now() WHERE id = %s AND valid_until IS NULL",
+        (tunnel_id,),
     )
-    return {"id": edge_id, "removed": True}
+    return {"id": tunnel_id, "removed": True}
