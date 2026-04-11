@@ -180,10 +180,10 @@ async def test_concurrent_update_blueprint_same_wing(pool):
     # Exactly one active map for this wing
     rows = await fetch_all(
         pool,
-        "SELECT id FROM maps WHERE wing = 'race-wing' AND valid_until IS NULL",
+        "SELECT id FROM blueprints WHERE wing = 'race-wing' AND valid_until IS NULL",
     )
     assert len(rows) == 1
-    await execute(pool, "DELETE FROM maps WHERE wing = 'race-wing'")
+    await execute(pool, "DELETE FROM blueprints WHERE wing = 'race-wing'")
 
 
 async def test_concurrent_revoke_same_token(pool):

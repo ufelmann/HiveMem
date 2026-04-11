@@ -15,7 +15,7 @@ async def test_create_blueprint(pool):
     )
     assert result["wing"] == "engineering"
     assert result["title"] == "Engineering: Active Decisions"
-    await execute(pool, "DELETE FROM maps")
+    await execute(pool, "DELETE FROM blueprints")
 
 
 async def test_get_blueprint(pool):
@@ -25,7 +25,7 @@ async def test_get_blueprint(pool):
     assert len(blueprints) == 1
     assert blueprints[0]["title"] == "Eng Map"
     assert blueprints[0]["narrative"] == "Engineering overview"
-    await execute(pool, "DELETE FROM maps")
+    await execute(pool, "DELETE FROM blueprints")
 
 
 async def test_get_all_blueprints(pool):
@@ -37,7 +37,7 @@ async def test_get_all_blueprints(pool):
     wings = [m["wing"] for m in blueprints]
     assert "eng" in wings
     assert "personal" in wings
-    await execute(pool, "DELETE FROM maps")
+    await execute(pool, "DELETE FROM blueprints")
 
 
 async def test_update_blueprint_append_only(pool):
@@ -51,11 +51,11 @@ async def test_update_blueprint_append_only(pool):
     assert blueprints[0]["title"] == "V2"
 
     # V1 still exists in DB with valid_until set
-    all_maps = await fetch_all(pool, "SELECT title, valid_until FROM maps WHERE wing = 'eng' ORDER BY valid_from")
+    all_maps = await fetch_all(pool, "SELECT title, valid_until FROM blueprints WHERE wing = 'eng' ORDER BY valid_from")
     assert len(all_maps) == 2
     assert all_maps[0]["valid_until"] is not None  # V1 closed
     assert all_maps[1]["valid_until"] is None  # V2 active
-    await execute(pool, "DELETE FROM maps")
+    await execute(pool, "DELETE FROM blueprints")
 
 
 async def test_blueprint_with_hall_order(pool):
@@ -66,4 +66,4 @@ async def test_blueprint_with_hall_order(pool):
     )
     blueprints = await hivemem_get_blueprint(pool, wing="eng")
     assert blueprints[0]["hall_order"] == ["auth", "search", "infra"]
-    await execute(pool, "DELETE FROM maps")
+    await execute(pool, "DELETE FROM blueprints")

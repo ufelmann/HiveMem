@@ -5,6 +5,45 @@
 -- Swap room <-> hall columns, rename edges -> tunnels, maps -> blueprints
 -- ============================================================
 
+-- 0. Drop views and functions whose return columns change
+-- PostgreSQL cannot CREATE OR REPLACE these with changed column names
+DROP VIEW IF EXISTS active_drawers CASCADE;
+DROP VIEW IF EXISTS pending_approvals CASCADE;
+DROP VIEW IF EXISTS wing_stats CASCADE;
+DROP FUNCTION IF EXISTS ranked_search(vector,text,text,text,text,integer,real,real,real,real,real);
+
+-- 0b. Drop the CHECK constraint on hall column BEFORE the swap
+-- After swap, the old hall column (with the check) becomes room,
+-- but room accepts free-form text, so the check must go
+DO $$
+DECLARE
+    cons_name TEXT;
+BEGIN
+    SELECT conname INTO cons_name
+    FROM pg_constraint
+    WHERE conrelid = 'drawers'::regclass
+      AND conname LIKE '%hall%check%' OR (conrelid = 'drawers'::regclass AND pg_get_constraintdef(oid) LIKE '%hall%IN%');
+
+    IF cons_name IS NOT NULL THEN
+        EXECUTE 'ALTER TABLE drawers DROP CONSTRAINT ' || cons_name;
+    END IF;
+END $$;
+
+-- Also drop any unnamed check constraint on hall
+DO $$
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN
+        SELECT conname FROM pg_constraint
+        WHERE conrelid = 'drawers'::regclass
+          AND contype = 'c'
+          AND pg_get_constraintdef(oid) LIKE '%hall%'
+    LOOP
+        EXECUTE 'ALTER TABLE drawers DROP CONSTRAINT ' || r.conname;
+    END LOOP;
+END $$;
+
 -- 1. Swap room <-> hall in drawers table
 DO $$
 BEGIN

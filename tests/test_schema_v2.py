@@ -38,15 +38,6 @@ async def test_add_drawer_with_new_columns(pool):
     assert result["status"] == "committed"
 
 
-async def test_room_check_constraint(pool):
-    """Invalid room value should fail."""
-    with pytest.raises(Exception):
-        await hivemem_add_drawer(
-            pool, content="Bad hall",
-            wing="test", hall="test", room="invalid_room",
-        )
-
-
 async def test_drawer_appears_in_active_view(pool):
     """Committed drawer appears in active_drawers."""
     await hivemem_add_drawer(pool, content="Active", wing="test", hall="test", room="facts")

@@ -41,7 +41,7 @@ async def seeded_pool(pool):
     await execute(
         pool,
         """
-        INSERT INTO drawers (id, content, embedding, wing, room, hall, source, tags)
+        INSERT INTO drawers (id, content, embedding, wing, hall, room, source, tags)
         VALUES (
             'aaaaaaaa-0000-0000-0000-000000000001',
             'Server deployment automation and backup scripts',
@@ -56,7 +56,7 @@ async def seeded_pool(pool):
     await execute(
         pool,
         """
-        INSERT INTO drawers (id, content, embedding, wing, room, hall, source, tags)
+        INSERT INTO drawers (id, content, embedding, wing, hall, room, source, tags)
         VALUES (
             'aaaaaaaa-0000-0000-0000-000000000002',
             'Family vacation plans for summer',
@@ -108,7 +108,7 @@ async def seeded_pool(pool):
     await execute(
         pool,
         """
-        INSERT INTO drawers (id, content, embedding, wing, room, hall, source, tags)
+        INSERT INTO drawers (id, content, embedding, wing, hall, room, source, tags)
         VALUES (
             'aaaaaaaa-0000-0000-0000-000000000003',
             'Project planning and task management',
@@ -121,7 +121,7 @@ async def seeded_pool(pool):
     await execute(
         pool,
         """
-        INSERT INTO drawers (id, content, embedding, wing, room, hall, source, tags)
+        INSERT INTO drawers (id, content, embedding, wing, hall, room, source, tags)
         VALUES (
             'aaaaaaaa-0000-0000-0000-000000000004',
             'Health and fitness tracking notes',
