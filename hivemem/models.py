@@ -28,10 +28,10 @@ class Fact(BaseModel):
 
 
 class Edge(BaseModel):
-    from_entity: str
-    to_entity: str
+    from_drawer: str
+    to_drawer: str
     relation: str
-    weight: float = 1.0
+    note: str | None = None
 
 
 class SearchResult(BaseModel):
