@@ -68,7 +68,7 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 - **Blueprints** -- curated narrative overviews per wing, append-only versioned
 - **References & reading list** -- track sources, link to drawers, filter by type/status
 - **Single container deployment** -- PostgreSQL + MCP server in one `docker run`
-- **215 tests** with testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
+- **216 tests** with testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
 
 ## Prerequisites
 
