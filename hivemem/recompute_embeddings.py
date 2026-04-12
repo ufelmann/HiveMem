@@ -182,9 +182,12 @@ async def check_and_recompute(pool: AsyncConnectionPool):
                 return
 
             # Pre-migration backup
-            logger.info("Performing pre-migration backup...")
-            script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "hivemem-backup")
-            subprocess.run(["/bin/bash", script_path], check=True)
+            if os.environ.get("HIVEMEM_SKIP_BACKUP") != "1":
+                logger.info("Performing pre-migration backup...")
+                script_path = os.path.join(os.path.dirname(__file__), "..", "scripts", "hivemem-backup")
+                subprocess.run(["/bin/bash", script_path], check=True)
+            else:
+                logger.info("Skipping backup (HIVEMEM_SKIP_BACKUP=1).")
 
             # Start migration
             logger.info("Starting schema migration...")
