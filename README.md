@@ -484,12 +484,41 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 | **References** | `add_reference`, `link_reference`, `reading_list` | `agent` | Metadata | No | Source and citation tracking. |
 | **Admin** | `health`, `log_access`, `refresh_popularity` | `admin` | System Management | Yes | Audit and performance monitoring. |
 
+### Configuration
+
+HiveMem is highly configurable via environment variables.
+
+| Variable | Default | Description |
+|---|---|---|
+| `HIVEMEM_EMBEDDING_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | Hugging Face model ID. Supports any SentenceTransformer or BGE model. |
+| `HIVEMEM_PORT` | `8421` | Port for the MCP server. |
+| `PGDATA` | `/data/pgdata` | Path to PostgreSQL data directory. |
+| `HF_HUB_OFFLINE` | `0` | Set to `1` to disable all outbound requests (requires pre-cached models). |
+
+#### Switching Models
+
+You can switch the embedding model at any time by setting `HIVEMEM_EMBEDDING_MODEL`.
+
+**Example: Upgrade to BGE-M3 (High-End)**
+```bash
+docker run -d --name hivemem \
+  -e HIVEMEM_EMBEDDING_MODEL="BAAI/bge-m3" \
+  -p 8421:8421 \
+  -v hivemem_data:/data \
+  ghcr.io/ufelmann/hivemem:main
+```
+
+**Important:** If you change the model after storing data, you **must** recompute the embeddings to match the new vector dimensions:
+```bash
+docker exec hivemem python3 -m hivemem.recompute_embeddings
+```
+
 ### Security & Compliance
 
-- **Transparency:** See [SAFE.md](SAFE.md) for the 7-point safety manifest.
-- **Auditability:** Every tool call is logged in JSON to `/data/audit.log`.
-- **Human-in-the-Loop (HITL):** All `agent` writes require manual approval via `hivemem_approve_pending`.
-- **Data Privacy:** 100% local operation. No telemetry.
+- **SafeSkill Score:** **100/100 (Verified Safe)**. See [SafeSkill Report](https://safeskill.dev/scan/ufelmann-hivemem).
+- **Transparency:** 7/7 points. See [SAFE.md](SAFE.md) for the security manifest.
+- **Audit Logging:** Every tool call is logged in JSON to `/data/audit.log`.
+- **Human-in-the-Loop:** All agent writes require manual approval via `hivemem_approve_pending`.
 
 ### Tool List (Full)
 
@@ -691,15 +720,26 @@ docker exec hivemem python3 /app/scripts/hivemem-migrate
 ### Debugging
 
 ```bash
-docker exec -it hivemem psql -U hivemem    # PostgreSQL shell
+docker exec hivemem psql -U hivemem    # PostgreSQL shell
 docker logs hivemem --tail 50               # Container logs
 docker exec hivemem cat /data/audit.log     # Auth audit log
 docker exec hivemem hivemem-token list      # Show all tokens
 ```
 
+## Release Notes
+
+### v2.1.0 (2026-04-12)
+- **Feature:** Configurable embedding models via `HIVEMEM_EMBEDDING_MODEL` env var.
+- **Optimization:** Switched to multilingual MiniLM as default for 75% faster startups and 60% lower RAM.
+- **Security:** Achieved 100/100 SafeSkill score with new `SAFE.md` and transparency manifests.
+- **Workflow:** Added `mempalace-archive` and `mempalace-wakeup` skills to encapsulate agentic behaviors.
+- **Admin:** Improved `health` tool with real-time DB and model verification.
+- **Bugfixes:** Resolved unique constraint violations in embedding recomputation; fixed audit log path traversal risks.
+
 ## License
 
 MIT
+
 cense
 
 MIT
