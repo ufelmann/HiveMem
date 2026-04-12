@@ -64,4 +64,11 @@ async def test_recompute_embeddings_on_model_change(pool):
         embedding = drawer['embedding']
         
         assert embedding is not None
+        
+        # If psycopg returns the vector as a string (common for custom types like vector), 
+        # we parse it as a list first.
+        if isinstance(embedding, str):
+            import json
+            embedding = json.loads(embedding)
+            
         assert len(embedding) == current_dim
