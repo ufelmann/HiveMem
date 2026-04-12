@@ -26,6 +26,9 @@ async def test_recompute_embeddings_on_model_change(pool):
     
     # Setup initial state in 'identity' table representing an old model/dimension
     async with pool.connection() as conn:
+        # Clear existing entries first (since fixture might have added them)
+        await conn.execute("DELETE FROM identity WHERE key IN ('embedding_model', 'embedding_dimension')")
+        
         await conn.execute(
             "INSERT INTO identity (key, content) VALUES ('embedding_model', %s)",
             ("old-model",)
