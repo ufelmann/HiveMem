@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS drawers (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     parent_id   UUID REFERENCES drawers(id),
     content     TEXT NOT NULL,
-    embedding   vector(1024),
+    embedding   vector(384),
     wing        TEXT,
     room        TEXT,
     hall        TEXT CHECK (hall IN ('facts','events','discoveries','preferences','advice')),
@@ -318,7 +318,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_drawer_popularity_id ON drawer_popularity 
 
 -- Ranked search: 5 signals with configurable weights
 CREATE OR REPLACE FUNCTION ranked_search(
-    query_embedding vector(1024),
+    query_embedding vector(384),
     query_text TEXT,
     p_wing TEXT DEFAULT NULL,
     p_room TEXT DEFAULT NULL,
@@ -446,7 +446,7 @@ CREATE INDEX IF NOT EXISTS idx_drawer_refs_ref ON drawer_references (reference_i
 
 -- Duplicate check: find drawers with embedding similarity > threshold
 CREATE OR REPLACE FUNCTION check_duplicate_drawer(
-    query_embedding vector(1024),
+    query_embedding vector(384),
     threshold REAL DEFAULT 0.95
 )
 RETURNS TABLE (
