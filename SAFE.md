@@ -28,6 +28,6 @@ Critical operations, specifically the promotion of knowledge from "pending" to "
 
 ## 7. Cryptographic Integrity
 The integrity of the core logic in the `hivemem/` directory is verified by the following SHA256 hash (v2.1.0):
-`3c0be8ef542da5cbe769911d5dc6be7f70fe7603bc3031dbc85b9f5523e4d62f`
+`aa0a22ade0fb1e31b97c814c46ffb955248387f5bd0ec701cbfa41654049b7a6`
 
 ---
