@@ -9,6 +9,7 @@ from hivemem.db import fetch_one
 logger = logging.getLogger(__name__)
 
 RANKED_SEARCH_SQL = """
+DROP FUNCTION IF EXISTS ranked_search(vector, text, text, text, text, integer, real, real, real, real, real);
 CREATE OR REPLACE FUNCTION ranked_search(
     query_embedding vector({dim}),
     query_text TEXT,
@@ -102,6 +103,7 @@ $$ LANGUAGE plpgsql;
 """
 
 CHECK_DUPLICATE_SQL = """
+DROP FUNCTION IF EXISTS check_duplicate_drawer(vector, real);
 CREATE OR REPLACE FUNCTION check_duplicate_drawer(
     query_embedding vector({dim}),
     threshold REAL DEFAULT 0.95
@@ -127,6 +129,22 @@ BEGIN
     LIMIT 5;
 END;
 $$ LANGUAGE plpgsql;
+"""
+
+VIEWS_SQL = """
+CREATE OR REPLACE VIEW active_drawers AS
+SELECT * FROM drawers
+WHERE (valid_until IS NULL OR valid_until > now())
+  AND status = 'committed';
+
+CREATE OR REPLACE VIEW wing_stats AS
+SELECT wing, hall, room,
+       COUNT(*) as drawer_count,
+       MIN(created_at) as first_entry,
+       MAX(created_at) as last_entry
+FROM active_drawers
+GROUP BY wing, hall, room
+ORDER BY wing, hall, room;
 """
 
 async def check_and_recompute(pool: AsyncConnectionPool):
@@ -172,8 +190,9 @@ async def check_and_recompute(pool: AsyncConnectionPool):
             logger.info("Starting schema migration...")
             async with conn.transaction():
                 # DROP old index and column
+                # Use CASCADE because views (active_drawers, wing_stats) depend on this column
                 await conn.execute("DROP INDEX IF EXISTS idx_drawers_embedding")
-                await conn.execute("ALTER TABLE drawers DROP COLUMN IF EXISTS embedding")
+                await conn.execute("ALTER TABLE drawers DROP COLUMN IF EXISTS embedding CASCADE")
                 
                 # ADD column with new dimension
                 await conn.execute(f"ALTER TABLE drawers ADD COLUMN embedding vector({current_dim})")
@@ -201,7 +220,8 @@ async def check_and_recompute(pool: AsyncConnectionPool):
                 logger.info("Recreating HNSW index...")
                 await conn.execute("CREATE INDEX idx_drawers_embedding ON drawers USING hnsw (embedding vector_cosine_ops)")
 
-                # Update helper functions with new dimension
+                # Update views and helper functions with new dimension
+                await conn.execute(VIEWS_SQL)
                 await conn.execute(RANKED_SEARCH_SQL.format(dim=current_dim))
                 await conn.execute(CHECK_DUPLICATE_SQL.format(dim=current_dim))
 
