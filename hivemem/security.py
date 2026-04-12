@@ -356,6 +356,7 @@ class AuthMiddleware:
     async def _validate_cached(self, plaintext: str) -> dict | None:
         """Validate token with in-memory cache (TTL-based)."""
         token_hash = _hash_token(plaintext)
+        print(f"DEBUG: Calculated hash for incoming token: {token_hash}")
         now = time.time()
 
         cached = self._cache.get(token_hash)
