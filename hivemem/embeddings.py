@@ -8,7 +8,7 @@ _model_lock = threading.Lock()
 _dimension = None
 
 MODEL_NAME = os.getenv(
-    "HIVEMEM_EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L6-v2"
+    "HIVEMEM_EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 )
 
 
