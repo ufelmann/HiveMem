@@ -73,8 +73,8 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) (v20+)
-- ~4 GB free disk space (BGE-M3 model ~2.2 GB + Docker image ~3.5 GB)
-- ~3 GB free RAM (BGE-M3 embedding model runs on CPU)
+- ~2 GB free disk space (Multilingual MiniLM model ~420 MB + Docker image ~1.5 GB)
+- ~1 GB free RAM (SentenceTransformers model runs on CPU)
 
 ## Quick Start
 
@@ -369,7 +369,7 @@ graph TB
     end
 
     Volume["/data volume<br/><i>pgdata + backups + audit.log</i>"]
-    Models["/data/models volume<br/><i>BGE-M3 cache</i>"]
+    Models["/data/models volume<br/><i>Model cache</i>"]
 
     Client -->|"MCP over HTTP"| Auth
     Auth --> ToolGate
@@ -536,7 +536,7 @@ The `hivemem_search` tool combines 5 signals with configurable weights:
 
 | Signal | Default Weight | Description |
 |---|---|---|
-| Semantic | 0.35 | Vector cosine similarity (BGE-M3, 1024d) |
+| Semantic | 0.35 | Vector cosine similarity (MiniLM-L12, 384d) |
 | Keyword | 0.15 | PostgreSQL full-text search (tsvector, BM25-like) |
 | Recency | 0.20 | Exponential decay, 90-day half-life |
 | Importance | 0.15 | User/agent assigned 1-5 scale |
@@ -698,5 +698,11 @@ docker exec hivemem hivemem-token list      # Show all tokens
 ```
 
 ## License
+
+MIT
+cense
+
+MIT
+e
 
 MIT
