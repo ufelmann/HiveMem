@@ -1,0 +1,11 @@
+{
+  "name": "hivemem",
+  "version": "2.1.0",
+  "description": "Personal knowledge system - MCP server with PostgreSQL",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ufelmann/HiveMem.git"
+  },
+  "types": "index.d.ts",
+  "private": true
+}
