@@ -5,6 +5,7 @@ services:
       - "8421:8421"
     volumes:
       - hivemem_data:/data
+      - hivemem_models:/data/models
     restart: unless-stopped
 
 volumes:
