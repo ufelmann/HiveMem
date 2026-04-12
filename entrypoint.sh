@@ -75,11 +75,15 @@ fi
 mkdir -p /data/backups
 
 # Set HF offline mode if model is already cached (skip network metadata checks)
-if [ -d "$HF_HOME/hub/models--BAAI--bge-m3" ]; then
+# Get model name from python to be sure
+MODEL_NAME=$(python3 -c "from hivemem.embeddings import MODEL_NAME; print(MODEL_NAME)")
+MODEL_PATH_PART=$(echo $MODEL_NAME | sed 's/\//--/g')
+
+if [ -d "$HF_HOME/hub/models--$MODEL_PATH_PART" ]; then
     export HF_HUB_OFFLINE=1
-    echo "BGE-M3 model cached, will load on first request."
+    echo "Model $MODEL_NAME cached, will load on first request."
 else
-    echo "BGE-M3 model not cached, will download on first request."
+    echo "Model $MODEL_NAME not cached, will download on first request."
 fi
 
 # Start MCP server (replaces this shell, becomes PID 1)
