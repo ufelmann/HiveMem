@@ -687,10 +687,10 @@ if __name__ == "__main__":
     import asyncio
     import uvicorn
 
-    from hivemem.embeddings import get_model
+    from hivemem.embeddings import get_model, MODEL_NAME
     from hivemem.security import AuthMiddleware
 
-    print("Loading BGE-M3 embedding model...")
+    print(f"Loading embedding model: {MODEL_NAME}...")
     get_model()
     print("Model ready.")
 
