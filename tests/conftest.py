@@ -45,6 +45,19 @@ hivemem.embeddings.encode_query = lambda text: _mock_encode(text)
 # ── Testcontainer ──────────────────────────────────────────────────────
 
 
+import pytest
+from unittest.mock import patch
+
+@pytest.fixture(autouse=True, scope="session")
+def mock_embeddings():
+    """Globally mock embedding operations to prevent HuggingFace downloads during tests."""
+    # Note: 384 is the dimension for paraphrase-multilingual-MiniLM-L6-v2
+    with patch("hivemem.embeddings.get_dimension", return_value=384), \
+         patch("hivemem.embeddings.encode", return_value=[0.1] * 384), \
+         patch("hivemem.embeddings.encode_query", return_value=[0.1] * 384), \
+         patch("hivemem.embeddings.get_model", return_value=None):
+        yield
+
 @pytest.fixture(scope="session", autouse=True)
 def test_db():
     """Build testdb image and start a container for the entire test session."""
