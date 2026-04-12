@@ -173,7 +173,7 @@ ORDER BY wing, hall, room;
 
 -- 9. Recreate ranked_search with swapped hall/room params
 CREATE OR REPLACE FUNCTION ranked_search(
-    query_embedding vector(1024),
+    query_embedding vector(384),
     query_text TEXT,
     p_wing TEXT DEFAULT NULL,
     p_hall TEXT DEFAULT NULL,

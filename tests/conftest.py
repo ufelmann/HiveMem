@@ -15,7 +15,7 @@ from testcontainers.core.waiting_utils import wait_for_logs
 # ── Mock embeddings at import time (before any hivemem module loads) ───
 
 
-def _word_hash_embed(text, dim=1024):
+def _word_hash_embed(text, dim=384):
     """Deterministic embedding: each word hashes to fixed positions."""
     vec = [0.0] * dim
     words = text.lower().split()
@@ -51,11 +51,23 @@ from unittest.mock import patch
 @pytest.fixture(autouse=True, scope="session")
 def mock_embeddings():
     """Globally mock embedding operations to prevent HuggingFace downloads during tests."""
-    # Note: 384 is the dimension for paraphrase-multilingual-MiniLM-L6-v2
+    from unittest.mock import MagicMock
+    
+    # Create a mock model that has an encode method
+    mock_model = MagicMock()
+    mock_model.encode.side_effect = lambda texts, **kwargs: {"dense_vecs": [[0.1] * 384]}
+    mock_model.get_sentence_embedding_dimension.return_value = 384
+
     with patch("hivemem.embeddings.get_dimension", return_value=384), \
-         patch("hivemem.embeddings.encode", return_value=[0.1] * 384), \
+         patch("hivemem.embeddings.encode") as m_encode, \
          patch("hivemem.embeddings.encode_query", return_value=[0.1] * 384), \
-         patch("hivemem.embeddings.get_model", return_value=None):
+         patch("hivemem.embeddings.get_model", return_value=mock_model):
+        
+        # Ensure encode handles return_sparse
+        m_encode.side_effect = lambda text, return_sparse=False: (
+            [0.1] * 384 if not return_sparse 
+            else {"dense": [0.1] * 384, "sparse": {}}
+        )
         yield
 
 @pytest.fixture(scope="session", autouse=True)
@@ -106,6 +118,7 @@ def test_db():
     backend.apply_migrations(backend.to_apply(all_migrations))
 
     os.environ["HIVEMEM_TEST_DB_URL"] = db_url
+    os.environ["HIVEMEM_SKIP_BACKUP"] = "1"
 
     yield db_url
 
@@ -122,12 +135,17 @@ async def pool(db_url):
     """Create a standalone pool per test (no global cache). Clean up data after."""
     from psycopg.rows import dict_row
     from psycopg_pool import AsyncConnectionPool
+    from hivemem.recompute_embeddings import check_and_recompute
 
     p = AsyncConnectionPool(
         db_url, min_size=1, max_size=5, open=False,
         kwargs={"row_factory": dict_row},
     )
     await p.open()
+
+    # Ensure database is migrated to the correct embedding model/dimension
+    await check_and_recompute(p)
+
     yield p
 
     # Clean up data
