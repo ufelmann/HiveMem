@@ -48,6 +48,13 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 - Ahrens, S. (2017). *How to Take Smart Notes.* CreateSpace.
 - Forte, T. (2022). *Building a Second Brain.* Atria Books.
 
+## Transparency & Trust
+
+- **Privacy First:** HiveMem is 100% self-hosted. Your data never leaves your infrastructure.
+- **Local AI:** Embeddings are generated locally. Internet access is only required for the initial model download from Hugging Face.
+- **Auditability:** All tool calls and authentication events are logged to `/data/audit.log`.
+- **Security:** Built-in RBAC (Role-Based Access Control) ensures that agents can only perform actions you approve.
+
 ## Features
 
 - **36 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
