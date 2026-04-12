@@ -12,6 +12,7 @@ MCP server backed by PostgreSQL 17 (pgvector + Apache AGE) with BGE-M3 embedding
 [![PostgreSQL](https://img.shields.io/badge/postgresql-17-336791)](https://postgresql.org)
 [![MCP Tools](https://img.shields.io/badge/MCP%20tools-36-orange)](https://github.com/ufelmann/HiveMem#tools-36)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/ufelmann/HiveMem/blob/main/LICENSE)
+[![SafeSkill](https://safeskill.dev/api/badge/ufelmann-hivemem)](https://safeskill.dev/scan/ufelmann-hivemem)
 
 **Docker image:** [`ghcr.io/ufelmann/hivemem:main`](https://github.com/ufelmann/HiveMem/pkgs/container/hivemem)
 
