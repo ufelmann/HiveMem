@@ -116,7 +116,9 @@ services:
 
 volumes:
   hivemem_data:
+    name: hivemem_data
   hivemem_models:
+    name: hivemem_models
 ```
 
 ```bash
