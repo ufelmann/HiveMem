@@ -31,10 +31,15 @@ def _word_hash_embed(text, dim=1024):
 # Patch before hivemem.embeddings is imported by any test module
 import hivemem.embeddings  # noqa: E402
 
-hivemem.embeddings.encode = lambda text, return_sparse=False: (
-    {"dense": _word_hash_embed(text), "sparse": {}} if return_sparse else _word_hash_embed(text)
-)
-hivemem.embeddings.encode_query = lambda text: _word_hash_embed(text)
+def _mock_encode(text, return_sparse=False):
+    dim = hivemem.embeddings.get_dimension()
+    vec = _word_hash_embed(text, dim=dim)
+    if return_sparse:
+        return {"dense": vec, "sparse": {}}
+    return vec
+
+hivemem.embeddings.encode = _mock_encode
+hivemem.embeddings.encode_query = lambda text: _mock_encode(text)
 
 
 # ── Testcontainer ──────────────────────────────────────────────────────
