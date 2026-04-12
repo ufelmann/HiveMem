@@ -469,19 +469,66 @@ erDiagram
     drawers ||--o{ access_log : "tracked"
 ```
 
-### Tools (36)
+### Security & Capability Matrix
 
-| Category | Count | Tools |
-|---|---|---|
-| **Search** | 4 | `search` (5-signal ranked), `search_kg`, `quick_facts`, `time_machine` |
-| **Read** | 7 | `status`, `get_drawer`, `list_wings`, `list_halls`, `traverse`, `wake_up`, `get_blueprint` |
-| **Write** | 7 | `add_drawer` (L0-L3), `kg_add`, `kg_invalidate`, `revise_drawer`, `revise_fact`, `update_identity`, `update_blueprint` |
-| **Tunnels** | 2 | `add_tunnel` (drawer-to-drawer link), `remove_tunnel` (soft-delete) |
-| **Integrity** | 3 | `check_duplicate`, `check_contradiction`, `approve_pending` |
-| **History** | 3 | `drawer_history`, `fact_history`, `pending_approvals` |
-| **References** | 3 | `add_reference`, `link_reference`, `reading_list` |
-| **Agents** | 4 | `register_agent`, `list_agents`, `diary_write`, `diary_read` |
-| **Admin** | 3 | `health`, `log_access`, `refresh_popularity` |
+Every HiveMem tool is mapped to a specific role to ensure least privilege. Write operations (excluding agents) and admin functions are protected by RBAC.
+
+| Category | Tools | Access Role | Data Flow | HITL Required? | Description |
+|---|---|---|---|---|---|
+| **Search** | `search`, `search_kg`, `quick_facts`, `time_machine` | `reader` | Read Only | No | 5-signal semantic & keyword search. |
+| **Read** | `status`, `get_drawer`, `list_wings`, `list_halls`, `traverse`, `wake_up`, `get_blueprint` | `reader` | Read Only | No | Navigation and context retrieval. |
+| **Write** | `add_drawer`, `kg_add`, `kg_invalidate`, `revise_drawer`, `revise_fact`, `update_identity`, `update_blueprint` | `agent` | Propose Change | Yes (for Agents) | Append-only knowledge capture. |
+| **Tunnels** | `add_tunnel`, `remove_tunnel` | `agent` | Link Discovery | Yes | Drawer-to-drawer semantic linking. |
+| **Integrity** | `check_duplicate`, `check_contradiction`, `approve_pending` | `admin` | Commit Change | Yes | Verification and commit workflow. |
+| **Agent** | `register_agent`, `list_agents`, `diary_write`, `diary_read` | `admin` | Fleet Management | Yes | Autonomous fleet orchestration. |
+| **References** | `add_reference`, `link_reference`, `reading_list` | `agent` | Metadata | No | Source and citation tracking. |
+| **Admin** | `health`, `log_access`, `refresh_popularity` | `admin` | System Management | Yes | Audit and performance monitoring. |
+
+### Security & Compliance
+
+- **Transparency:** See [SAFE.md](SAFE.md) for the 7-point safety manifest.
+- **Auditability:** Every tool call is logged in JSON to `/data/audit.log`.
+- **Human-in-the-Loop (HITL):** All `agent` writes require manual approval via `hivemem_approve_pending`.
+- **Data Privacy:** 100% local operation. No telemetry.
+
+### Tool List (Full)
+
+1. `hivemem_search`: Semantic similarity + keyword search.
+2. `hivemem_search_kg`: Knowledge graph triple lookup.
+3. `hivemem_quick_facts`: Context-aware facts about an entity.
+4. `hivemem_time_machine`: Historical knowledge retrieval.
+5. `hivemem_status`: System overview and counts.
+6. `hivemem_get_drawer`: Read single knowledge item.
+7. `hivemem_list_wings`: List top-level categories.
+8. `hivemem_list_halls`: List mid-level categories.
+9. `hivemem_traverse`: Recursive graph traversal.
+10. `hivemem_wake_up`: Initial session context.
+11. `hivemem_get_blueprint`: Narrative wing overviews.
+12. `hivemem_add_drawer`: Store L0-L3 knowledge layers.
+13. `hivemem_kg_add`: Create a new fact triple.
+14. `hivemem_kg_invalidate`: Soft-delete/expire a fact.
+15. `hivemem_revise_drawer`: Create a new version of a drawer.
+16. `hivemem_revise_fact`: Create a new version of a fact.
+17. `hivemem_update_identity`: Update session context facts.
+18. `hivemem_update_blueprint`: Update wing narrative.
+19. `hivemem_add_tunnel`: Link two drawers together.
+20. `hivemem_remove_tunnel`: Expire a drawer link.
+21. `hivemem_check_duplicate`: Verify knowledge doesn't exist.
+22. `hivemem_check_contradiction`: Detect logic conflicts in KG.
+23. `hivemem_approve_pending`: Admin tool to commit agent work.
+24. `hivemem_drawer_history`: Trace revisions of a drawer.
+25. `hivemem_fact_history`: Trace revisions of a fact.
+26. `hivemem_pending_approvals`: List work awaiting review.
+27. `hivemem_add_reference`: Store source documents/URLs.
+28. `hivemem_link_reference`: Cite source for a drawer.
+29. `hivemem_reading_list`: Manage unread/in-progress sources.
+30. `hivemem_register_agent`: Add an agent to the fleet.
+31. `hivemem_list_agents`: View active agent fleet.
+32. `hivemem_diary_write`: Agent-private reflection tool.
+33. `hivemem_diary_read`: Admin tool to read agent diaries.
+34. `hivemem_health`: Monitor DB and model state.
+35. `hivemem_log_access`: Popularity signal ingestion.
+36. `hivemem_refresh_popularity`: Update search signal cache.
 
 ### Search Signals
 
