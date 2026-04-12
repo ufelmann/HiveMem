@@ -16,6 +16,7 @@ def get_identity() -> dict:
     return _request_identity.get()
 
 from hivemem.db import get_pool
+from hivemem.recompute_embeddings import check_and_recompute
 from hivemem.security import get_db_url
 from hivemem.tools.admin import hivemem_health as _health
 from hivemem.tools.read import (
@@ -708,6 +709,7 @@ if __name__ == "__main__":
                     msg = await receive()
                     if msg["type"] == "lifespan.startup":
                         pool = await get_db_pool()
+                        await check_and_recompute(pool)
                         auth_mw.pool = pool
                     return msg
                 await self.app(scope, wrapped_receive, send)
