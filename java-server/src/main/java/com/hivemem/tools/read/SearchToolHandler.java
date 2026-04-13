@@ -1,0 +1,84 @@
+package com.hivemem.tools.read;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.hivemem.auth.AuthPrincipal;
+import com.hivemem.mcp.ToolHandler;
+import com.hivemem.write.WriteArgumentParser;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
+
+@Component
+@Order(2)
+public class SearchToolHandler implements ToolHandler {
+
+    private static final int DEFAULT_LIMIT = 10;
+    private static final int MAX_LIMIT = 100;
+
+    private final ReadToolService readToolService;
+
+    public SearchToolHandler(ReadToolService readToolService) {
+        this.readToolService = readToolService;
+    }
+
+    @Override
+    public String name() {
+        return "hivemem_search";
+    }
+
+    @Override
+    public String description() {
+        return "5-signal ranked search over committed drawers.";
+    }
+
+    @Override
+    public Object call(AuthPrincipal principal, JsonNode arguments) {
+        String query = WriteArgumentParser.requiredText(arguments, "query");
+        int limit = boundedLimit(arguments, "limit", DEFAULT_LIMIT, MAX_LIMIT);
+        String wing = WriteArgumentParser.optionalText(arguments, "wing");
+        String hall = WriteArgumentParser.optionalText(arguments, "hall");
+        String room = WriteArgumentParser.optionalText(arguments, "room");
+        double weightSemantic = optionalWeight(arguments, "weight_semantic", 0.35d);
+        double weightKeyword = optionalWeight(arguments, "weight_keyword", 0.15d);
+        double weightRecency = optionalWeight(arguments, "weight_recency", 0.20d);
+        double weightImportance = optionalWeight(arguments, "weight_importance", 0.15d);
+        double weightPopularity = optionalWeight(arguments, "weight_popularity", 0.15d);
+        return readToolService.search(
+                query,
+                limit,
+                wing,
+                hall,
+                room,
+                weightSemantic,
+                weightKeyword,
+                weightRecency,
+                weightImportance,
+                weightPopularity
+        );
+    }
+
+    private static int boundedLimit(JsonNode arguments, String field, int defaultValue, int max) {
+        Integer value = WriteArgumentParser.optionalInteger(arguments, field);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value < 1 || value > max) {
+            throw new IllegalArgumentException("Invalid limit");
+        }
+        return value;
+    }
+
+    private static double optionalWeight(JsonNode arguments, String field, double defaultValue) {
+        if (arguments == null || !arguments.has(field) || arguments.get(field).isNull()) {
+            return defaultValue;
+        }
+        JsonNode node = arguments.get(field);
+        if (!node.isNumber()) {
+            throw new IllegalArgumentException("Invalid " + field);
+        }
+        double value = node.asDouble();
+        if (!Double.isFinite(value) || value < 0.0d) {
+            throw new IllegalArgumentException("Invalid " + field);
+        }
+        return value;
+    }
+}
