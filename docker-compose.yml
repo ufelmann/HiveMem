@@ -7,6 +7,19 @@ services:
       - hivemem_data:/data
       - hivemem_models:/data/models
     restart: unless-stopped
+  hivemem-java:
+    build:
+      context: ./java-server
+    profiles:
+      - java
+    ports:
+      - "8422:8421"
+    environment:
+      HIVEMEM_JDBC_URL: ${HIVEMEM_JDBC_URL:-jdbc:postgresql://host.docker.internal:5432/hivemem}
+      HIVEMEM_DB_USER: ${HIVEMEM_DB_USER:-hivemem}
+      HIVEMEM_DB_PASSWORD: ${HIVEMEM_DB_PASSWORD:-hivemem}
+      HIVEMEM_EMBEDDING_URL: ${HIVEMEM_EMBEDDING_URL:-http://host.docker.internal:8081}
+    restart: unless-stopped
 
 volumes:
   hivemem_data:

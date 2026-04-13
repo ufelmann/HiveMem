@@ -13,14 +13,18 @@ public class HttpEmbeddingClient implements EmbeddingClient {
     private final RestClient restClient;
 
     public HttpEmbeddingClient(RestClient.Builder builder, EmbeddingProperties properties) {
+        this(builder, properties, true);
+    }
+
+    HttpEmbeddingClient(RestClient.Builder builder, EmbeddingProperties properties, boolean configureRequestFactory) {
         int timeoutMillis = Math.toIntExact(properties.getTimeout().toMillis());
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(timeoutMillis);
-        requestFactory.setReadTimeout(timeoutMillis);
-        this.restClient = builder
-                .baseUrl(properties.getBaseUrl().toString())
-                .requestFactory(requestFactory)
-                .build();
+        if (configureRequestFactory) {
+            SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+            requestFactory.setConnectTimeout(timeoutMillis);
+            requestFactory.setReadTimeout(timeoutMillis);
+            builder = builder.requestFactory(requestFactory);
+        }
+        this.restClient = builder.baseUrl(properties.getBaseUrl().toString()).build();
     }
 
     @Override
