@@ -5,11 +5,15 @@ import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -19,12 +23,20 @@ import java.security.MessageDigest;
 import java.time.OffsetDateTime;
 import java.util.HexFormat;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItem;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
+@AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
-class DbTokenServiceTest {
+class HttpTokenLifecycleIntegrationTest {
+
+    private static final String TOOLS_LIST_REQUEST = """
+            {"jsonrpc":"2.0","id":1,"method":"tools/list"}
+            """;
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16")
@@ -46,7 +58,7 @@ class DbTokenServiceTest {
     }
 
     @Autowired
-    private DbTokenService dbTokenService;
+    private MockMvc mockMvc;
 
     @Autowired
     private DSLContext dslContext;
@@ -55,53 +67,61 @@ class DbTokenServiceTest {
     private EmbeddingClient embeddingClient;
 
     @BeforeEach
-    void resetDatabase() {
+    void resetTokens() {
         dslContext.execute("TRUNCATE TABLE api_tokens");
     }
 
     @Test
-    void validatesCommittedTokenFromDatabase() throws Exception {
-        dslContext.execute("""
-                INSERT INTO api_tokens (token_hash, name, role)
-                VALUES (?, ?, ?)
-                """, sha256("good-token"), "admin-user", "admin");
-
-        var principal = dbTokenService.validateToken("good-token");
-
-        assertThat(principal).isPresent();
-        assertThat(principal.orElseThrow().name()).isEqualTo("admin-user");
-        assertThat(principal.orElseThrow().role()).isEqualTo(AuthRole.ADMIN);
-    }
-
-    @Test
-    void rejectsUnknownToken() {
-        assertThat(dbTokenService.validateToken("missing-token")).isEmpty();
-    }
-
-    @Test
-    void rejectsRevokedToken() throws Exception {
+    void revokedTokenReturnsUnauthorizedOverMcp() throws Exception {
         insertToken(
-                "revoked-user",
+                "revoked-admin",
                 "revoked-token",
                 "admin",
                 OffsetDateTime.now().plusHours(1),
                 OffsetDateTime.now()
         );
 
-        assertThat(dbTokenService.validateToken("revoked-token")).isEmpty();
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer revoked-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(TOOLS_LIST_REQUEST))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void rejectsExpiredToken() throws Exception {
+    void expiredTokenReturnsUnauthorizedOverMcp() throws Exception {
         insertToken(
-                "expired-user",
+                "expired-admin",
                 "expired-token",
                 "admin",
                 OffsetDateTime.now().minusHours(1),
                 null
         );
 
-        assertThat(dbTokenService.validateToken("expired-token")).isEmpty();
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer expired-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(TOOLS_LIST_REQUEST))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void validAdminTokenRoundTripsOverMcp() throws Exception {
+        insertToken(
+                "admin-user",
+                "admin-token",
+                "admin",
+                OffsetDateTime.now().plusHours(1),
+                null
+        );
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(TOOLS_LIST_REQUEST))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.tools[*].name", hasItem("hivemem_health")))
+                .andExpect(jsonPath("$.result.tools[*].name", hasItem("hivemem_add_drawer")));
     }
 
     private void insertToken(
