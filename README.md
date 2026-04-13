@@ -56,6 +56,10 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 - **Auditability:** All tool calls and authentication events are logged to `/data/audit.log`.
 - **Security:** Built-in RBAC (Role-Based Access Control) ensures that agents can only perform actions you approve.
 
+## Java Migration Track
+
+The Spring Boot implementation lives under `java-server/`. Python remains the production baseline until parity is reached.
+
 ## Features
 
 - **36 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
