@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: hivemem-java
+ 
+hivemem:
+  embedding:
+    base-url: ${HIVEMEM_EMBEDDING_URL:http://localhost:8081}
+    timeout: ${HIVEMEM_EMBEDDING_TIMEOUT:PT5S}
+
+server:
+  port: 8421

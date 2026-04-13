@@ -1,0 +1,1319 @@
+package com.hivemem.tools.write;
+
+import com.hivemem.auth.AuthFilter;
+import com.hivemem.auth.AuthPrincipal;
+import com.hivemem.auth.AuthRole;
+import com.hivemem.auth.TokenService;
+import com.hivemem.embedding.EmbeddingClient;
+import com.hivemem.embedding.FixedEmbeddingClient;
+import org.jooq.DSLContext;
+import org.jooq.Record;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.springframework.test.web.servlet.MockMvc;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.time.OffsetDateTime;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.matchesPattern;
+import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@ExtendWith(SpringExtension.class)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+@Import(WriteToolsIntegrationTest.TestConfig.class)
+@Testcontainers
+class WriteToolsIntegrationTest {
+
+    @Container
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16")
+            .withDatabaseName("hivemem")
+            .withUsername("hivemem")
+            .withPassword("hivemem")
+            .withCreateContainerCmdModifier(cmd -> cmd.withHostConfig(
+                    (cmd.getHostConfig() == null
+                            ? new com.github.dockerjava.api.model.HostConfig()
+                            : cmd.getHostConfig())
+                            .withSecurityOpts(java.util.List.of("apparmor=unconfined"))));
+
+    @DynamicPropertySource
+    static void registerProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", POSTGRES::getUsername);
+        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        registry.add("spring.datasource.driver-class-name", POSTGRES::getDriverClassName);
+    }
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private DSLContext dslContext;
+
+    @BeforeEach
+    void resetDatabase() {
+        dslContext.execute("TRUNCATE TABLE agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
+    }
+
+    @Test
+    void writerCanAddCommittedFactAndSeeItInActiveFacts() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":1,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_kg_add",
+                                    "arguments":{
+                                      "subject":"HiveMem",
+                                      "predicate":"runs on",
+                                      "object_":"Java",
+                                      "confidence":0.75,
+                                      "source_id":null,
+                                      "valid_from":"2026-04-03T12:00:00Z"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].id").isString())
+                .andExpect(jsonPath("$.result.content[0].subject").value("HiveMem"))
+                .andExpect(jsonPath("$.result.content[0].predicate").value("runs on"))
+                .andExpect(jsonPath("$.result.content[0].object").value("Java"))
+                .andExpect(jsonPath("$.result.content[0].status").value("committed"));
+
+        Record row = dslContext.fetchOne("""
+                SELECT subject, predicate, "object", status, created_by
+                FROM active_facts
+                WHERE subject = ? AND predicate = ? AND "object" = ?
+                """, "HiveMem", "runs on", "Java");
+        org.junit.jupiter.api.Assertions.assertNotNull(row);
+        org.junit.jupiter.api.Assertions.assertEquals("committed", row.get("status", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("writer-1", row.get("created_by", String.class));
+    }
+
+    @Test
+    void writerCanAddDrawerWithEmbeddingAndProgressiveLayers() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":11,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_add_drawer",
+                                    "arguments":{
+                                      "content":"Semantic oracle drawer",
+                                      "wing":"alpha",
+                                      "hall":"facts",
+                                      "room":"search",
+                                      "source":"system",
+                                      "tags":["semantic","oracle"],
+                                      "importance":2,
+                                      "summary":"Semantic oracle summary",
+                                      "key_points":["semantic","oracle"],
+                                      "insight":"Used for semantic search",
+                                      "actionability":"reference",
+                                      "valid_from":"2026-04-03T12:00:00Z"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].status").value("committed"))
+                .andExpect(jsonPath("$.result.content[0].wing").value("alpha"))
+                .andExpect(jsonPath("$.result.content[0].hall").value("facts"));
+
+        Record row = dslContext.fetchOne("""
+                SELECT content, wing, hall, room, source, tags, importance, summary, key_points, insight, actionability, status, created_by, embedding
+                FROM drawers
+                WHERE content = ?
+                """, "Semantic oracle drawer");
+        org.junit.jupiter.api.Assertions.assertNotNull(row);
+        org.junit.jupiter.api.Assertions.assertEquals("alpha", row.get("wing", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("facts", row.get("hall", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("search", row.get("room", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("system", row.get("source", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("Semantic oracle summary", row.get("summary", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("Used for semantic search", row.get("insight", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("reference", row.get("actionability", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("committed", row.get("status", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("writer-1", row.get("created_by", String.class));
+        org.junit.jupiter.api.Assertions.assertNotNull(row.get("embedding"));
+    }
+
+    @Test
+    void checkDuplicateFindsNearDuplicateDrawers() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":12,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_add_drawer",
+                                    "arguments":{
+                                      "content":"Duplicate oracle alpha",
+                                      "wing":"alpha",
+                                      "hall":"facts",
+                                      "room":"search",
+                                      "summary":"Duplicate oracle alpha"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":13,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_check_duplicate",
+                                    "arguments":{
+                                      "content":"Duplicate oracle beta",
+                                      "threshold":0.95
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].length()").value(1))
+                .andExpect(jsonPath("$.result.content[0][0].content").value("Duplicate oracle alpha"))
+                .andExpect(jsonPath("$.result.content[0][0].similarity").isNumber());
+    }
+
+    @Test
+    void agentKgAddForcesPendingAndShowsInPendingApprovals() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer agent-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":2,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_kg_add",
+                                    "arguments":{
+                                      "subject":"Agentic fact",
+                                      "predicate":"needs review",
+                                      "object_":"yes",
+                                      "status":"committed"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].status").value("pending"));
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":3,
+                                  "method":"tools/call",
+                                  "params":{"name":"hivemem_pending_approvals","arguments":{}}
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0][0].type").value("fact"))
+                .andExpect(jsonPath("$.result.content[0][0].description").value("Agentic fact -> needs review -> yes"));
+
+        Record row = dslContext.fetchOne("""
+                SELECT status, created_by
+                FROM facts
+                WHERE subject = ? AND predicate = ? AND "object" = ?
+                """, "Agentic fact", "needs review", "yes");
+        org.junit.jupiter.api.Assertions.assertNotNull(row);
+        org.junit.jupiter.api.Assertions.assertEquals("pending", row.get("status", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("agent-1", row.get("created_by", String.class));
+    }
+
+    @Test
+    void checkContradictionReturnsOnlyConflictingActiveFact() throws Exception {
+        insertFact(
+                UUID.fromString("00000000-0000-0000-0000-000000000101"),
+                null,
+                "HiveMem",
+                "runs on",
+                "PostgreSQL",
+                0.9f,
+                null,
+                "committed",
+                "writer-1",
+                OffsetDateTime.parse("2026-04-01T10:00:00Z"),
+                OffsetDateTime.parse("2026-04-01T10:00:00Z"),
+                null
+        );
+        insertFact(
+                UUID.fromString("00000000-0000-0000-0000-000000000102"),
+                null,
+                "HiveMem",
+                "runs on",
+                "Java",
+                0.8f,
+                null,
+                "committed",
+                "writer-1",
+                OffsetDateTime.parse("2026-04-02T10:00:00Z"),
+                OffsetDateTime.parse("2026-04-02T10:00:00Z"),
+                null
+        );
+        insertFact(
+                UUID.fromString("00000000-0000-0000-0000-000000000103"),
+                null,
+                "HiveMem",
+                "ships with",
+                "Java",
+                0.7f,
+                null,
+                "committed",
+                "writer-1",
+                OffsetDateTime.parse("2026-04-02T11:00:00Z"),
+                OffsetDateTime.parse("2026-04-02T11:00:00Z"),
+                null
+        );
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":4,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_check_contradiction",
+                                    "arguments":{
+                                      "subject":"HiveMem",
+                                      "predicate":"runs on",
+                                      "new_object":"Spring Boot"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].length()").value(2))
+                .andExpect(jsonPath("$.result.content[0][*].existing_object",
+                        containsInAnyOrder("PostgreSQL", "Java")))
+                .andExpect(jsonPath("$.result.content[0][*].valid_from",
+                        everyItem(matchesPattern("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?[+-]\\d{2}:\\d{2}"))));
+    }
+
+    @Test
+    void kgInvalidateRemovesFactFromActiveAndSearchPaths() throws Exception {
+        UUID factId = UUID.fromString("00000000-0000-0000-0000-000000000201");
+        insertFact(
+                factId,
+                null,
+                "Transient fact",
+                "state",
+                "active",
+                1.0f,
+                null,
+                "committed",
+                "writer-1",
+                OffsetDateTime.parse("2026-04-01T10:00:00Z"),
+                OffsetDateTime.parse("2026-04-01T10:00:00Z"),
+                null
+        );
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":5,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_kg_invalidate",
+                                    "arguments":{"fact_id":"00000000-0000-0000-0000-000000000201"}
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].invalidated").value(true));
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":6,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_search_kg",
+                                    "arguments":{"subject":"Transient fact"}
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].length()").value(0));
+
+        org.junit.jupiter.api.Assertions.assertNull(dslContext.fetchOne("""
+                SELECT id
+                FROM active_facts
+                WHERE id = ?
+                """, factId));
+    }
+
+    @Test
+    void writerCanReviseCommittedFactAndPreserveFactHistory() throws Exception {
+        UUID oldId = UUID.fromString("00000000-0000-0000-0000-000000000401");
+        UUID sourceDrawerId = UUID.fromString("00000000-0000-0000-0000-000000000402");
+        insertDrawer(sourceDrawerId, null, "Fact source", "alpha", "planning", "facts", "system", 1,
+                "Source summary", null, null, "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-05T09:59:00Z"),
+                OffsetDateTime.parse("2026-04-05T09:59:00Z"),
+                null);
+        insertFact(
+                oldId,
+                null,
+                "HiveMem",
+                "runs on",
+                "Java",
+                0.85f,
+                sourceDrawerId,
+                "committed",
+                "writer-1",
+                OffsetDateTime.parse("2026-04-05T10:00:00Z"),
+                OffsetDateTime.parse("2026-04-05T10:00:00Z"),
+                null
+        );
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":12,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_revise_fact",
+                                    "arguments":{
+                                      "old_id":"00000000-0000-0000-0000-000000000401",
+                                      "new_object":"Spring Boot"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].old_id").value(oldId.toString()))
+                .andExpect(jsonPath("$.result.content[0].new_id").isString());
+
+        Record oldRow = dslContext.fetchOne("""
+                SELECT id, valid_until, subject, predicate, "object", confidence, source_id, status, created_by
+                FROM facts
+                WHERE id = ?
+                """, oldId);
+        org.junit.jupiter.api.Assertions.assertNotNull(oldRow);
+        org.junit.jupiter.api.Assertions.assertNotNull(oldRow.get("valid_until"));
+
+        Record newRow = dslContext.fetchOne("""
+                SELECT id, parent_id, subject, predicate, "object", confidence, source_id, status, created_by, valid_from
+                FROM facts
+                WHERE parent_id = ? AND "object" = ?
+                """, oldId, "Spring Boot");
+        org.junit.jupiter.api.Assertions.assertNotNull(newRow);
+        org.junit.jupiter.api.Assertions.assertEquals(oldId, newRow.get("parent_id", UUID.class));
+        org.junit.jupiter.api.Assertions.assertEquals("HiveMem", newRow.get("subject", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("runs on", newRow.get("predicate", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals(0.85d, newRow.get("confidence", Double.class), 0.000001d);
+        org.junit.jupiter.api.Assertions.assertEquals(UUID.fromString("00000000-0000-0000-0000-000000000402"),
+                newRow.get("source_id", UUID.class));
+        org.junit.jupiter.api.Assertions.assertEquals("Spring Boot", newRow.get("object", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("committed", newRow.get("status", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("writer-1", newRow.get("created_by", String.class));
+
+        UUID newId = newRow.get("id", UUID.class);
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":13,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_fact_history",
+                                    "arguments":{"fact_id":"%s"}
+                                  }
+                                }
+                                """.formatted(newId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].length()").value(2))
+                .andExpect(jsonPath("$.result.content[0][0].id").value(oldId.toString()))
+                .andExpect(jsonPath("$.result.content[0][1].id").value(newId.toString()));
+    }
+
+    @Test
+    void agentRevisingFactForcesPendingNewRow() throws Exception {
+        UUID oldId = UUID.fromString("00000000-0000-0000-0000-000000000403");
+        insertFact(
+                oldId,
+                null,
+                "Agent fact",
+                "status",
+                "open",
+                0.6f,
+                null,
+                "committed",
+                "writer-1",
+                OffsetDateTime.parse("2026-04-05T11:00:00Z"),
+                OffsetDateTime.parse("2026-04-05T11:00:00Z"),
+                null
+        );
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer agent-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":14,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_revise_fact",
+                                    "arguments":{
+                                      "old_id":"00000000-0000-0000-0000-000000000403",
+                                      "new_object":"closed"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].old_id").value(oldId.toString()))
+                .andExpect(jsonPath("$.result.content[0].new_id").isString());
+
+        Record newRow = dslContext.fetchOne("""
+                SELECT parent_id, "object", status, created_by
+                FROM facts
+                WHERE parent_id = ? AND "object" = ?
+                """, oldId, "closed");
+        org.junit.jupiter.api.Assertions.assertNotNull(newRow);
+        org.junit.jupiter.api.Assertions.assertEquals("pending", newRow.get("status", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("agent-1", newRow.get("created_by", String.class));
+    }
+
+    @Test
+    void revisingConflictingFactRemovesOldObjectFromContradictionCheck() throws Exception {
+        UUID oldId = UUID.fromString("00000000-0000-0000-0000-000000000404");
+        insertFact(
+                oldId,
+                null,
+                "HiveMem",
+                "runs on",
+                "PostgreSQL",
+                0.9f,
+                null,
+                "committed",
+                "writer-1",
+                OffsetDateTime.parse("2026-04-05T12:00:00Z"),
+                OffsetDateTime.parse("2026-04-05T12:00:00Z"),
+                null
+        );
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":15,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_revise_fact",
+                                    "arguments":{
+                                      "old_id":"00000000-0000-0000-0000-000000000404",
+                                      "new_object":"Spring Boot"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":16,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_check_contradiction",
+                                    "arguments":{
+                                      "subject":"HiveMem",
+                                      "predicate":"runs on",
+                                      "new_object":"Spring Boot"
+                                    }
+                                  }
+                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].length()").value(0));
+    }
+
+    @Test
+    void writerCanUpsertIdentityAndPersistTokenCount() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":19,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_update_identity",
+                                    "arguments":{
+                                      "key":"l0_identity",
+                                      "content":"I am HiveMem."
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].key").value("l0_identity"))
+                .andExpect(jsonPath("$.result.content[0].token_count").value(3));
+
+        Record row = dslContext.fetchOne("""
+                SELECT content, token_count
+                FROM identity
+                WHERE key = ?
+                """, "l0_identity");
+        org.junit.jupiter.api.Assertions.assertNotNull(row);
+        org.junit.jupiter.api.Assertions.assertEquals("I am HiveMem.", row.get("content", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals(3, row.get("token_count", Integer.class));
+    }
+
+    @Test
+    void writerCanAddReferenceAndLinkItToDrawer() throws Exception {
+        UUID drawerId = UUID.fromString("00000000-0000-0000-0000-000000000501");
+        insertDrawer(drawerId, null, "Reference drawer", "eng", "docs", "refs", "system", 2,
+                "Reference summary", null, null, "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-05T13:00:00Z"),
+                OffsetDateTime.parse("2026-04-05T13:00:00Z"),
+                null);
+
+        String referenceId = mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":20,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_add_reference",
+                                    "arguments":{
+                                      "title":"GraphRAG Survey 2024",
+                                      "url":"https://example.com/graphrag",
+                                      "author":"Zhang et al.",
+                                      "ref_type":"paper",
+                                      "status":"unread",
+                                      "notes":"Worth reading",
+                                      "tags":["graph","rag"],
+                                      "importance":2
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].title").value("GraphRAG Survey 2024"))
+                .andExpect(jsonPath("$.result.content[0].status").value("unread"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String refId = com.jayway.jsonpath.JsonPath.read(referenceId, "$.result.content[0].id");
+        Record referenceRow = dslContext.fetchOne("""
+                SELECT title, url, author, ref_type, status, notes, tags, importance
+                FROM references_
+                WHERE id = ?
+                """, UUID.fromString(refId));
+        org.junit.jupiter.api.Assertions.assertNotNull(referenceRow);
+        org.junit.jupiter.api.Assertions.assertEquals("GraphRAG Survey 2024", referenceRow.get("title", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("unread", referenceRow.get("status", String.class));
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":21,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_link_reference",
+                                    "arguments":{
+                                      "drawer_id":"00000000-0000-0000-0000-000000000501",
+                                      "reference_id":"%s",
+                                      "relation":"source"
+                                    }
+                                  }
+                                }
+                                """.formatted(refId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].drawer_id").value(drawerId.toString()))
+                .andExpect(jsonPath("$.result.content[0].reference_id").value(refId))
+                .andExpect(jsonPath("$.result.content[0].relation").value("source"));
+
+        Record linkRow = dslContext.fetchOne("""
+                SELECT drawer_id, reference_id, relation
+                FROM drawer_references
+                WHERE drawer_id = ? AND reference_id = ?
+                """, drawerId, UUID.fromString(refId));
+        org.junit.jupiter.api.Assertions.assertNotNull(linkRow);
+        org.junit.jupiter.api.Assertions.assertEquals("source", linkRow.get("relation", String.class));
+    }
+
+    @Test
+    void writerCanRegisterAgentAndWriteDiaryEntries() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":22,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_register_agent",
+                                    "arguments":{
+                                      "name":"classifier",
+                                      "focus":"Classify incoming drawers",
+                                      "schedule":"nightly"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].name").value("classifier"))
+                .andExpect(jsonPath("$.result.content[0].focus").value("Classify incoming drawers"));
+
+        Record agentRow = dslContext.fetchOne("""
+                SELECT focus, schedule
+                FROM agents
+                WHERE name = ?
+                """, "classifier");
+        org.junit.jupiter.api.Assertions.assertNotNull(agentRow);
+        org.junit.jupiter.api.Assertions.assertEquals("Classify incoming drawers", agentRow.get("focus", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("nightly", agentRow.get("schedule", String.class));
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":23,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_diary_write",
+                                    "arguments":{
+                                      "agent":"classifier",
+                                      "entry":"Merged duplicates, kept most recent"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].agent").value("classifier"))
+                .andExpect(jsonPath("$.result.content[0].id").isString());
+
+        Record diaryRow = dslContext.fetchOne("""
+                SELECT agent, entry
+                FROM agent_diary
+                WHERE agent = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """, "classifier");
+        org.junit.jupiter.api.Assertions.assertNotNull(diaryRow);
+        org.junit.jupiter.api.Assertions.assertEquals("Merged duplicates, kept most recent", diaryRow.get("entry", String.class));
+    }
+
+    @Test
+    void writerCanAppendBlueprintsAndClosePreviousVersion() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":24,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_update_blueprint",
+                                    "arguments":{
+                                      "wing":"eng",
+                                      "title":"V1",
+                                      "narrative":"First version",
+                                      "hall_order":["auth","search"]
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].wing").value("eng"))
+                .andExpect(jsonPath("$.result.content[0].title").value("V1"));
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":25,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_update_blueprint",
+                                    "arguments":{
+                                      "wing":"eng",
+                                      "title":"V2",
+                                      "narrative":"Updated version",
+                                      "hall_order":["auth","search","infra"]
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].title").value("V2"));
+
+        Record activeRow = dslContext.fetchOne("""
+                SELECT title, valid_until, created_by
+                FROM blueprints
+                WHERE wing = ? AND valid_until IS NULL
+                """, "eng");
+        org.junit.jupiter.api.Assertions.assertNotNull(activeRow);
+        org.junit.jupiter.api.Assertions.assertEquals("V2", activeRow.get("title", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("writer-1", activeRow.get("created_by", String.class));
+
+        org.junit.jupiter.api.Assertions.assertEquals(2L, dslContext.fetchOne("""
+                SELECT count(*) AS cnt
+                FROM blueprints
+                WHERE wing = ?
+                """, "eng").get("cnt", Long.class));
+    }
+
+    @Test
+    void writerCanReviseDrawerAndPreserveDrawerHistory() throws Exception {
+        UUID drawerId = UUID.fromString("00000000-0000-0000-0000-000000000550");
+        insertDrawer(drawerId, null, "Drawer V1", "eng", "docs", "facts", "system", 3,
+                "Summary V1", new String[]{"docs"}, new String[]{"v1"}, "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-05T13:30:00Z"),
+                OffsetDateTime.parse("2026-04-05T13:30:00Z"),
+                null);
+
+        String response = mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":251,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_revise_drawer",
+                                    "arguments":{
+                                      "old_id":"00000000-0000-0000-0000-000000000550",
+                                      "new_content":"Drawer V2",
+                                      "new_summary":"Summary V2"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].old_id").value(drawerId.toString()))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String newId = com.jayway.jsonpath.JsonPath.read(response, "$.result.content[0].new_id");
+        Record oldRow = dslContext.fetchOne("""
+                SELECT valid_until
+                FROM drawers
+                WHERE id = ?
+                """, drawerId);
+        org.junit.jupiter.api.Assertions.assertNotNull(oldRow);
+        org.junit.jupiter.api.Assertions.assertNotNull(oldRow.get("valid_until"));
+
+        Record newRow = dslContext.fetchOne("""
+                SELECT parent_id, content, summary, importance, created_by, status
+                FROM drawers
+                WHERE id = ?
+                """, UUID.fromString(newId));
+        org.junit.jupiter.api.Assertions.assertNotNull(newRow);
+        org.junit.jupiter.api.Assertions.assertEquals(drawerId, newRow.get("parent_id", UUID.class));
+        org.junit.jupiter.api.Assertions.assertEquals("Drawer V2", newRow.get("content", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("Summary V2", newRow.get("summary", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals(3, newRow.get("importance", Integer.class));
+        org.junit.jupiter.api.Assertions.assertEquals("writer-1", newRow.get("created_by", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("committed", newRow.get("status", String.class));
+    }
+
+    @Test
+    void agentAddTunnelForcesPendingAndRemoveTunnelClosesIt() throws Exception {
+        UUID fromDrawerId = UUID.fromString("00000000-0000-0000-0000-000000000601");
+        UUID toDrawerId = UUID.fromString("00000000-0000-0000-0000-000000000602");
+        insertDrawer(fromDrawerId, null, "Tunnel from", "eng", "graph", "refs", "system", 2,
+                "From summary", null, null, "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-05T14:00:00Z"),
+                OffsetDateTime.parse("2026-04-05T14:00:00Z"),
+                null);
+        insertDrawer(toDrawerId, null, "Tunnel to", "eng", "graph", "refs", "system", 2,
+                "To summary", null, null, "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-05T14:00:00Z"),
+                OffsetDateTime.parse("2026-04-05T14:00:00Z"),
+                null);
+
+        String tunnelResponse = mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer agent-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":26,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_add_tunnel",
+                                    "arguments":{
+                                      "from_drawer":"00000000-0000-0000-0000-000000000601",
+                                      "to_drawer":"00000000-0000-0000-0000-000000000602",
+                                      "relation":"related_to",
+                                      "note":"context link",
+                                      "status":"committed"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].status").value("pending"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        String tunnelId = com.jayway.jsonpath.JsonPath.read(tunnelResponse, "$.result.content[0].id");
+        Record tunnelRow = dslContext.fetchOne("""
+                SELECT from_drawer, to_drawer, relation, note, status, created_by, valid_until
+                FROM tunnels
+                WHERE id = ?
+                """, UUID.fromString(tunnelId));
+        org.junit.jupiter.api.Assertions.assertNotNull(tunnelRow);
+        org.junit.jupiter.api.Assertions.assertEquals("pending", tunnelRow.get("status", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("agent-1", tunnelRow.get("created_by", String.class));
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":27,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_remove_tunnel",
+                                    "arguments":{"tunnel_id":"%s"}
+                                  }
+                                }
+                                """.formatted(tunnelId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].removed").value(true));
+
+        Record removedRow = dslContext.fetchOne("""
+                SELECT valid_until
+                FROM tunnels
+                WHERE id = ?
+                """, UUID.fromString(tunnelId));
+        org.junit.jupiter.api.Assertions.assertNotNull(removedRow.get("valid_until"));
+    }
+
+    @Test
+    void adminCanLogAccessRefreshPopularityAndCheckHealth() throws Exception {
+        UUID drawerId = UUID.fromString("00000000-0000-0000-0000-000000000701");
+        insertDrawer(drawerId, null, "Popular drawer", "eng", "search", "facts", "system", 4,
+                "Popular summary", null, null, "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-05T15:00:00Z"),
+                OffsetDateTime.parse("2026-04-05T15:00:00Z"),
+                null);
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":261,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_log_access",
+                                    "arguments":{"drawer_id":"00000000-0000-0000-0000-000000000701"}
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].logged").value(true));
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":262,
+                                  "method":"tools/call",
+                                  "params":{"name":"hivemem_refresh_popularity","arguments":{}}
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].refreshed").value(true))
+                .andExpect(jsonPath("$.result.content[0].drawer_count").isNumber());
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":263,
+                                  "method":"tools/call",
+                                  "params":{"name":"hivemem_health","arguments":{}}
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].db_connected").value(true))
+                .andExpect(jsonPath("$.result.content[0].drawers").value(1))
+                .andExpect(jsonPath("$.result.content[0].facts").value(0));
+
+        org.junit.jupiter.api.Assertions.assertEquals(1L, dslContext.fetchOne("""
+                SELECT count(*) AS cnt
+                FROM access_log
+                WHERE drawer_id = ?
+                """, drawerId).get("cnt", Long.class));
+        org.junit.jupiter.api.Assertions.assertEquals(1L, dslContext.fetchOne("""
+                SELECT access_count
+                FROM drawer_popularity
+                WHERE drawer_id = ?
+                """, drawerId).get("access_count", Long.class));
+    }
+
+    @Test
+    void reviseFactRejectsMissingOrUnknownOldId() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":17,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_revise_fact",
+                                    "arguments":{"new_object":"Spring Boot"}
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.error.code").value(-32602))
+                .andExpect(jsonPath("$.error.message").value("Missing old_id"));
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":18,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_revise_fact",
+                                    "arguments":{
+                                      "old_id":"00000000-0000-0000-0000-000000000499",
+                                      "new_object":"Spring Boot"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.error.code").value(-32602))
+                .andExpect(jsonPath("$.error.message").value("Fact 00000000-0000-0000-0000-000000000499 not found or already revised"));
+    }
+
+    @Test
+    void adminApprovePendingCommitsPendingRowsAcrossTables() throws Exception {
+        UUID drawerId = UUID.fromString("00000000-0000-0000-0000-000000000301");
+        UUID factId = UUID.fromString("00000000-0000-0000-0000-000000000302");
+        UUID fromDrawerId = UUID.fromString("00000000-0000-0000-0000-000000000303");
+        UUID toDrawerId = UUID.fromString("00000000-0000-0000-0000-000000000304");
+        UUID tunnelId = UUID.fromString("00000000-0000-0000-0000-000000000305");
+
+        insertDrawer(fromDrawerId, null, "From drawer", "alpha", "planning", "facts", "system", 2,
+                "From summary", null, null, "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
+                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
+                null);
+        insertDrawer(toDrawerId, null, "To drawer", "alpha", "planning", "facts", "system", 2,
+                "To summary", null, null, "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
+                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
+                null);
+        insertDrawer(drawerId, null, "Pending drawer", "alpha", "planning", "facts", "system", 2,
+                "Pending summary", null, null, "pending", "agent-1",
+                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
+                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
+                null);
+        insertFact(factId, null, "Pending fact", "needs", "review", 0.5f, null, "pending", "agent-1",
+                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
+                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
+                null);
+        insertTunnel(tunnelId, fromDrawerId, toDrawerId, "related_to", "Pending tunnel", "pending", "agent-1",
+                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
+                OffsetDateTime.parse("2026-04-01T09:00:00Z"),
+                null);
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":7,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_approve_pending",
+                                    "arguments":{
+                                      "ids":[
+                                        "00000000-0000-0000-0000-000000000301",
+                                        "00000000-0000-0000-0000-000000000302",
+                                        "00000000-0000-0000-0000-000000000305"
+                                      ],
+                                      "decision":"committed"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.content[0].decision").value("committed"))
+                .andExpect(jsonPath("$.result.content[0].count").value(3));
+
+        org.junit.jupiter.api.Assertions.assertEquals("committed", dslContext.fetchOne("""
+                SELECT status FROM drawers WHERE id = ?
+                """, drawerId).get("status", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("committed", dslContext.fetchOne("""
+                SELECT status FROM facts WHERE id = ?
+                """, factId).get("status", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("committed", dslContext.fetchOne("""
+                SELECT status FROM tunnels WHERE id = ?
+                """, tunnelId).get("status", String.class));
+    }
+
+    @Test
+    void nonAdminCannotApprovePending() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0","id":8,"method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_approve_pending",
+                                    "arguments":{"ids":[],"decision":"committed"}
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.error.code").value(-32003))
+                .andExpect(jsonPath("$.error.message").value("Tool not permitted: hivemem_approve_pending"));
+    }
+
+    @Test
+    void invalidApproveDecisionReturnsInvalidParams() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":9,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_approve_pending",
+                                    "arguments":{"ids":[],"decision":"maybe"}
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.error.code").value(-32602))
+                .andExpect(jsonPath("$.error.message").value("Invalid decision 'maybe'. Must be 'committed' or 'rejected'."));
+    }
+
+    @Test
+    void malformedOrBlankRequiredArgsAreRejected() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":10,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_kg_add",
+                                    "arguments":{
+                                      "predicate":"runs on",
+                                      "object_":"Java"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.error.code").value(-32602))
+                .andExpect(jsonPath("$.error.message").value("Missing subject"));
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":11,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_check_contradiction",
+                                    "arguments":{
+                                      "subject":"   ",
+                                      "predicate":"runs on",
+                                      "new_object":"Java"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.error.code").value(-32602))
+                .andExpect(jsonPath("$.error.message").value("Missing subject"));
+    }
+
+    private void insertFact(
+            UUID id,
+            UUID parentId,
+            String subject,
+            String predicate,
+            String object,
+            float confidence,
+            UUID sourceId,
+            String status,
+            String createdBy,
+            OffsetDateTime validFrom,
+            OffsetDateTime createdAt,
+            OffsetDateTime validUntil
+    ) {
+        dslContext.execute("""
+                INSERT INTO facts (id, parent_id, subject, predicate, "object", confidence, source_id,
+                                   status, created_by, valid_from, created_at, valid_until)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz, ?::timestamptz)
+                """, id, parentId, subject, predicate, object, confidence, sourceId, status, createdBy, validFrom, createdAt, validUntil);
+    }
+
+    private void insertDrawer(
+            UUID id,
+            UUID parentId,
+            String content,
+            String wing,
+            String hall,
+            String room,
+            String source,
+            Integer importance,
+            String summary,
+            String[] tags,
+            String[] keyPoints,
+            String status,
+            String createdBy,
+            OffsetDateTime validFrom,
+            OffsetDateTime createdAt,
+            OffsetDateTime validUntil
+    ) {
+        dslContext.execute("""
+                INSERT INTO drawers (id, parent_id, content, wing, hall, room, source, importance,
+                                     summary, tags, key_points, status, created_by, valid_from, created_at, valid_until)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz, ?::timestamptz)
+                """, id, parentId, content, wing, hall, room, source, importance, summary, tags, keyPoints, status, createdBy, validFrom, createdAt, validUntil);
+    }
+
+    private void insertTunnel(
+            UUID id,
+            UUID fromDrawer,
+            UUID toDrawer,
+            String relation,
+            String note,
+            String status,
+            String createdBy,
+            OffsetDateTime validFrom,
+            OffsetDateTime createdAt,
+            OffsetDateTime validUntil
+    ) {
+        dslContext.execute("""
+                INSERT INTO tunnels (id, from_drawer, to_drawer, relation, note, status, created_by, valid_from, created_at, valid_until)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz, ?::timestamptz)
+                """, id, fromDrawer, toDrawer, relation, note, status, createdBy, validFrom, createdAt, validUntil);
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class TestConfig {
+
+        @Bean
+        TokenService tokenService() {
+            return token -> switch (token) {
+                case "writer-token" -> Optional.of(new AuthPrincipal("writer-1", AuthRole.WRITER));
+                case "agent-token" -> Optional.of(new AuthPrincipal("agent-1", AuthRole.AGENT));
+                case "admin-token" -> Optional.of(new AuthPrincipal("admin-1", AuthRole.ADMIN));
+                default -> Optional.empty();
+            };
+        }
+
+        @Bean
+        @org.springframework.context.annotation.Primary
+        EmbeddingClient embeddingClient() {
+            return new FixedEmbeddingClient();
+        }
+    }
+}
