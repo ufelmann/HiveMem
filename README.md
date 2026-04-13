@@ -60,6 +60,16 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 
 The Spring Boot implementation lives under `java-server/`. On branch `java-spring-boot-migration`, Java is the production runtime.
 
+## Java Test Parity
+
+The Java migration tracks parity against the original Python suites:
+
+- `HttpTokenLifecycleIntegrationTest` replaces the revoked/expired-token HTTP cases from `tests/test_http_integration.py`
+- `FlywayMigrationParityTest` replaces migration/schema idempotency cases from `tests/test_migrations.py` and `tests/test_edges_migration.py`
+- `ImportToolIntegrationTest` replaces file and directory mining cases from `tests/test_import.py`
+- `ConcurrencyIntegrationTest` replaces bounded parallel write/auth cases from `tests/test_concurrency.py`
+- `CrossFeatureParityIntegrationTest` replaces cross-tool regression cases from `tests/test_integration.py`
+
 ## Production Runtime
 
 The Spring Boot service is now the primary runtime in this branch.
