@@ -1,53 +1,7 @@
-#!/usr/bin/env python3
-"""Apply pending database migrations with automatic pre-migration backup."""
+#!/bin/sh
+set -eu
 
-import os
-import subprocess
-import sys
-
-
-def main():
-    from yoyo import get_backend, read_migrations
-
-    from hivemem.security import get_db_url
-
-    db_url = get_db_url()
-    # yoyo needs driver prefix for psycopg3
-    yoyo_url = db_url.replace("postgresql://", "postgresql+psycopg://")
-
-    migrations_dir = os.environ.get(
-        "HIVEMEM_MIGRATIONS_DIR",
-        os.path.join(os.path.dirname(__file__), "..", "migrations"),
-    )
-
-    backend = get_backend(yoyo_url)
-    all_migrations = read_migrations(migrations_dir)
-    pending = backend.to_apply(all_migrations)
-
-    if not pending:
-        print("Schema up to date.")
-        return
-
-    names = [m.id for m in pending]
-    print(f"{len(pending)} pending migration(s): {names}")
-
-    # Backup before applying (skip on first run — nothing to backup)
-    applied = list(backend.to_rollback(all_migrations))
-    if applied:
-        print("Backing up database before migration...")
-        result = subprocess.run(
-            ["hivemem-backup"], capture_output=True, text=True,
-        )
-        if result.returncode != 0:
-            print(f"Backup failed: {result.stderr}", file=sys.stderr)
-            sys.exit(1)
-        print(f"Backup complete: {result.stdout.strip()}")
-
-    with backend.lock():
-        backend.apply_migrations(pending)
-
-    print(f"Applied {len(pending)} migration(s) successfully.")
-
-
-if __name__ == "__main__":
-    main()
+echo "HiveMem Java applies Flyway migrations automatically at application startup."
+echo "There is no standalone migration command in the Java runtime image."
+echo "Start the service with the correct JDBC settings to apply pending migrations."
+exit 1
