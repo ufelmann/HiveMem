@@ -4,19 +4,9 @@ import com.hivemem.auth.AuthRole;
 import com.hivemem.auth.ToolPermissionService;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ParitySmokeTest {
-
-    private static final List<String> PARITY_SUITE_NAMES = List.of(
-            "HttpTokenLifecycleIntegrationTest",
-            "FlywayMigrationParityTest",
-            "ImportToolIntegrationTest",
-            "ConcurrencyIntegrationTest",
-            "CrossFeatureParityIntegrationTest"
-    );
 
     private final ToolPermissionService toolPermissionService = new ToolPermissionService();
 
@@ -37,12 +27,24 @@ class ParitySmokeTest {
 
     @Test
     void paritySuiteNamesStayRegistered() {
-        assertThat(PARITY_SUITE_NAMES).containsExactly(
-                "HttpTokenLifecycleIntegrationTest",
-                "FlywayMigrationParityTest",
-                "ImportToolIntegrationTest",
-                "ConcurrencyIntegrationTest",
-                "CrossFeatureParityIntegrationTest"
-        );
+        assertThat(ParityMatrix.suiteNames())
+                .hasSize(5)
+                .contains("HttpTokenLifecycleIntegrationTest", "CrossFeatureParityIntegrationTest");
+    }
+
+    @Test
+    void paritySuitesCarryPythonSourceMappings() {
+        assertThat(ParityMatrix.SUITES)
+                .hasSize(5)
+                .allSatisfy(suite -> assertThat(suite.pythonSources()).isNotEmpty());
+        assertThat(ParityMatrix.SUITES.stream()
+                .flatMap(suite -> suite.pythonSources().stream())
+                .toList())
+                .contains(
+                        "tests/test_http_integration.py",
+                        "tests/test_edges_migration.py",
+                        "tests/test_import.py",
+                        "tests/test_concurrency.py",
+                        "tests/test_integration.py");
     }
 }

@@ -62,7 +62,7 @@ The Spring Boot implementation lives under `java-server/`. On branch `java-sprin
 
 ## Java Test Parity
 
-The Java migration tracks parity against the original Python suites:
+The canonical parity matrix lives in `java-server/src/test/java/com/hivemem/parity/ParityMatrix.java`. The README mirrors that test-side source of truth so the mapping stays easy to scan:
 
 - `HttpTokenLifecycleIntegrationTest` replaces the revoked/expired-token HTTP cases from `tests/test_http_integration.py`
 - `FlywayMigrationParityTest` replaces migration/schema idempotency cases from `tests/test_migrations.py` and `tests/test_edges_migration.py`
