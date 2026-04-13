@@ -1,0 +1,81 @@
+package com.hivemem.tools.read;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.hivemem.auth.AuthPrincipal;
+import com.hivemem.mcp.ToolHandler;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
+
+import java.time.OffsetDateTime;
+
+@Component
+@Order(9)
+public class TimeMachineToolHandler implements ToolHandler {
+    private static final int DEFAULT_LIMIT = 100;
+    private static final int MAX_LIMIT = 100;
+
+    private final ReadToolService readToolService;
+
+    public TimeMachineToolHandler(ReadToolService readToolService) {
+        this.readToolService = readToolService;
+    }
+
+    @Override
+    public String name() {
+        return "hivemem_time_machine";
+    }
+
+    @Override
+    public String description() {
+        return "Historical knowledge retrieval.";
+    }
+
+    @Override
+    public Object call(AuthPrincipal principal, JsonNode arguments) {
+        String subject = requiredText(arguments, "subject");
+        OffsetDateTime asOf = offsetDateTimeValue(arguments, "as_of");
+        int limit = intValue(arguments, "limit");
+        return readToolService.timeMachine(subject, asOf, limit);
+    }
+
+    private static String requiredText(JsonNode arguments, String field) {
+        if (arguments == null || !arguments.hasNonNull(field)) {
+            throw new IllegalArgumentException("Missing " + field);
+        }
+        String value = arguments.get(field).asText();
+        if (value.isBlank()) {
+            throw new IllegalArgumentException("Missing " + field);
+        }
+        return value;
+    }
+
+    private static OffsetDateTime offsetDateTimeValue(JsonNode arguments, String field) {
+        if (arguments == null || !arguments.hasNonNull(field)) {
+            return null;
+        }
+        String value = arguments.get(field).asText();
+        if (value.isBlank()) {
+            return null;
+        }
+        try {
+            return OffsetDateTime.parse(value);
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException("Invalid as_of");
+        }
+    }
+
+    private static int intValue(JsonNode arguments, String field) {
+        if (arguments == null || !arguments.hasNonNull(field)) {
+            return DEFAULT_LIMIT;
+        }
+        JsonNode node = arguments.get(field);
+        if (!node.canConvertToInt()) {
+            throw new IllegalArgumentException("Invalid limit");
+        }
+        int value = node.intValue();
+        if (value <= 0 || value > MAX_LIMIT) {
+            throw new IllegalArgumentException("Invalid limit");
+        }
+        return value;
+    }
+}
