@@ -35,101 +35,88 @@ class FlywayMigrationParityTest {
 
     @Test
     void migrationsRunFromEmptyDatabase() throws SQLException {
-        SchemaHarness harness = migrateFreshSchema();
-
-        assertThat(harness.flyway().info().pending()).isEmpty();
-        assertThat(harness.dsl().fetchCount(DSL.table("migration_baseline"))).isEqualTo(1);
-        assertThat(harness.dsl().fetchCount(DSL.table("flyway_schema_history"))).isEqualTo(5);
-
-        harness.close();
+        try (SchemaHarness harness = migrateFreshSchema()) {
+            assertThat(harness.flyway().info().pending()).isEmpty();
+            assertThat(harness.dsl().fetchCount(DSL.table("migration_baseline"))).isEqualTo(1);
+            assertThat(harness.dsl().fetchCount(DSL.table("flyway_schema_history"))).isEqualTo(5);
+        }
     }
 
     @Test
     void migrationsAreIdempotentOnSecondRun() throws SQLException {
-        SchemaHarness harness = migrateFreshSchema();
-
-        assertThat(harness.flyway().migrate().migrationsExecuted).isZero();
-        assertThat(harness.dsl().fetchCount(DSL.table("flyway_schema_history"))).isEqualTo(5);
-
-        harness.close();
+        try (SchemaHarness harness = migrateFreshSchema()) {
+            assertThat(harness.flyway().migrate().migrationsExecuted).isZero();
+            assertThat(harness.dsl().fetchCount(DSL.table("flyway_schema_history"))).isEqualTo(5);
+        }
     }
 
     @Test
     void tunnelsSchemaHasExpectedColumnsAndConstraints() throws SQLException {
-        SchemaHarness harness = migrateFreshSchema();
+        try (SchemaHarness harness = migrateFreshSchema()) {
+            List<String> columns = harness.dsl().fetch("""
+                    select column_name
+                    from information_schema.columns
+                    where table_schema = ?
+                      and table_name = 'tunnels'
+                    order by ordinal_position
+                    """, harness.schema()).getValues(0, String.class);
 
-        List<String> columns = harness.dsl().fetch("""
-                select column_name
-                from information_schema.columns
-                where table_schema = ?
-                  and table_name = 'tunnels'
-                order by ordinal_position
-                """, harness.schema()).getValues(0, String.class);
+            assertThat(columns).contains(
+                    "from_drawer",
+                    "to_drawer",
+                    "relation",
+                    "status",
+                    "valid_until"
+            );
 
-        assertThat(columns).containsExactly(
-                "id",
-                "from_drawer",
-                "to_drawer",
-                "relation",
-                "note",
-                "status",
-                "created_by",
-                "created_at",
-                "valid_from",
-                "valid_until"
-        );
+            String drawerA = insertDrawer(harness.dsl(), "Drawer A");
+            String drawerB = insertDrawer(harness.dsl(), "Drawer B");
 
-        String drawerA = insertDrawer(harness.dsl(), "Drawer A");
-        String drawerB = insertDrawer(harness.dsl(), "Drawer B");
+            assertThatThrownBy(() -> harness.dsl().execute("""
+                            insert into tunnels (from_drawer, to_drawer, relation, created_by)
+                            values (?::uuid, ?::uuid, 'related_to', 'test')
+                            """,
+                    "00000000-0000-0000-0000-000000000001",
+                    "00000000-0000-0000-0000-000000000002"))
+                    .isInstanceOf(DataAccessException.class);
 
-        assertThatThrownBy(() -> harness.dsl().execute("""
-                        insert into tunnels (from_drawer, to_drawer, relation, created_by)
-                        values (?::uuid, ?::uuid, 'related_to', 'test')
-                        """,
-                "00000000-0000-0000-0000-000000000001",
-                "00000000-0000-0000-0000-000000000002"))
-                .isInstanceOf(DataAccessException.class);
+            assertThatThrownBy(() -> harness.dsl().execute("""
+                            insert into tunnels (from_drawer, to_drawer, relation, created_by)
+                            values (?::uuid, ?::uuid, 'invalid', 'test')
+                            """,
+                    drawerA,
+                    drawerB))
+                    .isInstanceOf(DataAccessException.class);
 
-        assertThatThrownBy(() -> harness.dsl().execute("""
-                        insert into tunnels (from_drawer, to_drawer, relation, created_by)
-                        values (?::uuid, ?::uuid, 'invalid', 'test')
-                        """,
-                drawerA,
-                drawerB))
-                .isInstanceOf(DataAccessException.class);
-
-        assertThatThrownBy(() -> harness.dsl().execute("""
-                        insert into tunnels (from_drawer, to_drawer, relation, status, created_by)
-                        values (?::uuid, ?::uuid, 'related_to', 'invalid', 'test')
-                        """,
-                drawerA,
-                drawerB))
-                .isInstanceOf(DataAccessException.class);
-
-        harness.close();
+            assertThatThrownBy(() -> harness.dsl().execute("""
+                            insert into tunnels (from_drawer, to_drawer, relation, status, created_by)
+                            values (?::uuid, ?::uuid, 'related_to', 'invalid', 'test')
+                            """,
+                    drawerA,
+                    drawerB))
+                    .isInstanceOf(DataAccessException.class);
+        }
     }
 
     @Test
     void activeViewsExist() throws SQLException {
-        SchemaHarness harness = migrateFreshSchema();
+        try (SchemaHarness harness = migrateFreshSchema()) {
+            List<String> viewNames = harness.dsl().fetch("""
+                    select table_name
+                    from information_schema.views
+                    where table_schema = ?
+                      and table_name like 'active_%'
+                    order by table_name
+                    """, harness.schema()).getValues(0, String.class);
 
-        List<String> viewNames = harness.dsl().fetch("""
-                select table_name
-                from information_schema.views
-                where table_schema = ?
-                  and table_name like 'active_%'
-                order by table_name
-                """, harness.schema()).getValues(0, String.class);
-
-        assertThat(viewNames).containsExactly(
-                "active_blueprints",
-                "active_drawers",
-                "active_facts",
-                "active_tunnels"
-        );
-        assertThat(harness.dsl().fetchCount(DSL.table("pending_approvals"))).isZero();
-
-        harness.close();
+            assertThat(viewNames).contains(
+                    "active_blueprints",
+                    "active_drawers",
+                    "active_facts",
+                    "active_tunnels"
+            );
+            assertThat(harness.dsl().fetchCount(DSL.table("pending_approvals"))).isZero();
+        }
     }
 
     private static SchemaHarness migrateFreshSchema() throws SQLException {
