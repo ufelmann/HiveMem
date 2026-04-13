@@ -64,11 +64,11 @@ The Spring Boot implementation lives under `java-server/`. On branch `java-sprin
 
 The canonical parity matrix lives in `java-server/src/test/java/com/hivemem/parity/ParityMatrix.java`. The README mirrors that test-side source of truth so the mapping stays easy to scan:
 
-- `HttpTokenLifecycleIntegrationTest` replaces the revoked/expired-token HTTP cases from `tests/test_http_integration.py`
-- `FlywayMigrationParityTest` replaces migration/schema idempotency cases from `tests/test_migrations.py` and `tests/test_edges_migration.py`
-- `ImportToolIntegrationTest` replaces file and directory mining cases from `tests/test_import.py`
-- `ConcurrencyIntegrationTest` replaces bounded parallel write/auth cases from `tests/test_concurrency.py`
-- `CrossFeatureParityIntegrationTest` replaces cross-tool regression cases from `tests/test_integration.py`
+- `HttpTokenLifecycleIntegrationTest` replaces the cases from `tests/test_http_integration.py`
+- `FlywayMigrationParityTest` replaces cases from `tests/test_migrations.py` and `tests/test_edges_migration.py`
+- `ImportToolIntegrationTest` replaces the cases from `tests/test_import.py`
+- `ConcurrencyIntegrationTest` replaces the cases from `tests/test_concurrency.py`
+- `CrossFeatureParityIntegrationTest` replaces the cases from `tests/test_integration.py`
 
 ## Production Runtime
 
