@@ -1,8 +1,0 @@
-/root/mempalace/java-server/src/test/java/com/hivemem/HiveMemApplicationTest.java
-/root/mempalace/java-server/src/test/java/com/hivemem/auth/AuthFilterTest.java
-/root/mempalace/java-server/src/test/java/com/hivemem/config/PostgresIntegrationTest.java
-/root/mempalace/java-server/src/test/java/com/hivemem/embedding/FixedEmbeddingClient.java
-/root/mempalace/java-server/src/test/java/com/hivemem/embedding/HttpEmbeddingClientTest.java
-/root/mempalace/java-server/src/test/java/com/hivemem/mcp/McpControllerTest.java
-/root/mempalace/java-server/src/test/java/com/hivemem/tools/read/ReadToolIntegrationTest.java
-/root/mempalace/java-server/src/test/java/com/hivemem/tools/write/WriteToolsIntegrationTest.java
