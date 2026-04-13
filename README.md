@@ -58,7 +58,19 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 
 ## Java Migration Track
 
-The Spring Boot implementation lives under `java-server/`. Python remains the production baseline until parity is reached.
+The Spring Boot implementation lives under `java-server/`. On branch `java-spring-boot-migration`, Java is the production runtime.
+
+## Production Runtime
+
+The Spring Boot service is now the primary runtime in this branch.
+Rollback happens by redeploying the previous 2.x Python-based release, not by switching runtimes inside this image.
+
+Required environment for the Java container:
+- `HIVEMEM_JDBC_URL`
+- `HIVEMEM_DB_USER`
+- `HIVEMEM_DB_PASSWORD`
+- `HIVEMEM_EMBEDDING_URL`
+- `HIVEMEM_API_TOKEN` for deployment smoke checks and MCP calls
 
 ## Features
 
@@ -71,7 +83,7 @@ The Spring Boot implementation lives under `java-server/`. Python remains the pr
 - **Agent fleet** with approval workflow -- agents write pending suggestions, only admins approve
 - **Blueprints** -- curated narrative overviews per wing, append-only versioned
 - **References & reading list** -- track sources, link to drawers, filter by type/status
-- **Single container deployment** -- PostgreSQL + MCP server in one `docker run`
+- **Java Spring Boot runtime** -- MCP server runs as a Java service with Flyway startup migrations
 - **216 tests** with testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
 
 ## Prerequisites
@@ -82,14 +94,15 @@ The Spring Boot implementation lives under `java-server/`. Python remains the pr
 
 ## Quick Start
 
-### Option A: Pre-built image (recommended)
+### Option A: Pre-built image (recommended on this branch)
 
 ```bash
 docker run -d --name hivemem \
   -p 8421:8421 \
-  -v hivemem_data:/data \
-  -v hivemem_models:/data/models \
-  --security-opt apparmor=unconfined \
+  -e HIVEMEM_JDBC_URL=jdbc:postgresql://postgres:5432/hivemem \
+  -e HIVEMEM_DB_USER=hivemem \
+  -e HIVEMEM_DB_PASSWORD=secret \
+  -e HIVEMEM_EMBEDDING_URL=http://embeddings:8081 \
   --restart unless-stopped \
   ghcr.io/ufelmann/hivemem:main
 ```
@@ -99,13 +112,13 @@ docker run -d --name hivemem \
 ```bash
 git clone https://github.com/ufelmann/HiveMem.git
 cd HiveMem
-docker build -f Dockerfile.base -t hivemem-base .  # once (~20 min)
-docker build -t hivemem .                           # fast (~5s)
+docker build -t hivemem .
 docker run -d --name hivemem \
   -p 8421:8421 \
-  -v hivemem_data:/data \
-  -v hivemem_models:/data/models \
-  --security-opt apparmor=unconfined \
+  -e HIVEMEM_JDBC_URL=jdbc:postgresql://postgres:5432/hivemem \
+  -e HIVEMEM_DB_USER=hivemem \
+  -e HIVEMEM_DB_PASSWORD=secret \
+  -e HIVEMEM_EMBEDDING_URL=http://embeddings:8081 \
   --restart unless-stopped \
   hivemem
 ```
@@ -119,46 +132,37 @@ services:
     container_name: hivemem
     ports:
       - "8421:8421"
-    volumes:
-      - hivemem_data:/data
-      - hivemem_models:/data/models
-    security_opt:
-      - apparmor=unconfined
+    environment:
+      HIVEMEM_JDBC_URL: jdbc:postgresql://postgres:5432/hivemem
+      HIVEMEM_DB_USER: hivemem
+      HIVEMEM_DB_PASSWORD: secret
+      HIVEMEM_EMBEDDING_URL: http://embeddings:8081
     restart: unless-stopped
-
-volumes:
-  hivemem_data:
-    name: hivemem_data
-  hivemem_models:
-    name: hivemem_models
 ```
 
 ```bash
 docker compose up -d
 ```
 
-First start initializes PostgreSQL and downloads the BGE-M3 embedding model (~2.2 GB). This takes 1-2 minutes. Check progress:
+At startup, the Java service runs Flyway migrations against the configured PostgreSQL database. Check progress:
 
 ```bash
 docker logs -f hivemem
 ```
 
-Wait for `Uvicorn running on http://0.0.0.0:8421` before proceeding.
+Wait for the Spring Boot startup log and a successful `/mcp` response before proceeding.
 
 ### Create an API token
 
-```bash
-docker exec hivemem hivemem-token create my-admin --role admin
-```
+Insert a SHA-256 token hash into `api_tokens`. Example:
 
-Save the token -- it is shown once and cannot be retrieved.
-
-```bash
-# More token examples
-docker exec hivemem hivemem-token create dashboard --role reader   # read-only (17 tools)
-docker exec hivemem hivemem-token create archivarius --role agent  # writes go to pending
-docker exec hivemem hivemem-token list
-docker exec hivemem hivemem-token revoke dashboard
+```sql
+insert into api_tokens (token_hash, name, role)
+values (
+  encode(digest('replace-with-plaintext-token', 'sha256'), 'hex'),
+  'my-admin',
+  'admin'
+);
 ```
 
 ### Connect to Claude Code
@@ -204,14 +208,6 @@ Add to `claude_desktop_config.json`:
     }
   }
 }
-```
-
-### Seed identity (optional)
-
-Customize `scripts/seed-identity.py` with your own profile, then:
-
-```bash
-docker exec hivemem python3 scripts/seed-identity.py
 ```
 
 ### Teach your agent to use HiveMem
