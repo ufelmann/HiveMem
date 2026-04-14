@@ -4,7 +4,6 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
@@ -21,10 +20,10 @@ public class AuthFilter extends OncePerRequestFilter {
     public static final String PRINCIPAL_ATTRIBUTE = AuthPrincipal.class.getName();
     private static final String BEARER_PREFIX = "Bearer ";
 
-    private final ObjectProvider<TokenService> tokenServiceProvider;
+    private final Optional<TokenService> tokenService;
 
-    public AuthFilter(ObjectProvider<TokenService> tokenServiceProvider) {
-        this.tokenServiceProvider = tokenServiceProvider;
+    public AuthFilter(Optional<TokenService> tokenService) {
+        this.tokenService = tokenService;
     }
 
     @Override
@@ -53,13 +52,12 @@ public class AuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        TokenService tokenService = tokenServiceProvider.getIfAvailable();
-        if (tokenService == null) {
+        if (tokenService.isEmpty()) {
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
             return;
         }
 
-        Optional<AuthPrincipal> principal = tokenService.validateToken(token);
+        Optional<AuthPrincipal> principal = tokenService.orElseThrow().validateToken(token);
         if (principal.isEmpty()) {
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
             return;
