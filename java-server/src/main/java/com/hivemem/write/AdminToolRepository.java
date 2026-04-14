@@ -51,7 +51,7 @@ public class AdminToolRepository {
     }
 
     public long refreshPopularity() {
-        dslContext.execute("REFRESH MATERIALIZED VIEW drawer_popularity");
+        dslContext.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY drawer_popularity");
         return count("SELECT count(*) AS cnt FROM drawer_popularity");
     }
 
@@ -62,7 +62,7 @@ public class AdminToolRepository {
 
     private static double diskFreeGb() {
         try {
-            FileStore fileStore = Files.getFileStore(Path.of("/root"));
+            FileStore fileStore = Files.getFileStore(Path.of("/"));
             return Math.round((fileStore.getUsableSpace() / (1024d * 1024d * 1024d)) * 100.0d) / 100.0d;
         } catch (IOException e) {
             return -1.0d;

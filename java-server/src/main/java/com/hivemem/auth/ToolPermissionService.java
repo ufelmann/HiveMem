@@ -43,8 +43,6 @@ public class ToolPermissionService {
             "hivemem_add_drawer",
             "hivemem_add_tunnel",
             "hivemem_check_duplicate",
-            "hivemem_mine_file",
-            "hivemem_mine_directory",
             "hivemem_kg_add",
             "hivemem_kg_invalidate",
             "hivemem_update_identity",
@@ -63,7 +61,9 @@ public class ToolPermissionService {
             "hivemem_approve_pending",
             "hivemem_health",
             "hivemem_log_access",
-            "hivemem_refresh_popularity"
+            "hivemem_refresh_popularity",
+            "hivemem_mine_file",
+            "hivemem_mine_directory"
     );
 
     private static final Set<String> WRITER_TOOLS = union(READ_TOOLS, WRITE_TOOLS);
