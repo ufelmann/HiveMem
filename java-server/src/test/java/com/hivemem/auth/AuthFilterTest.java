@@ -3,10 +3,10 @@ package com.hivemem.auth;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,16 +18,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(classes = {
-        com.hivemem.HiveMemApplication.class,
-        AuthFilterTest.AuthFilterTestConfig.class
-}, properties = {
-        "spring.autoconfigure.exclude="
-                + "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,"
-                + "org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration,"
-                + "org.springframework.boot.autoconfigure.jooq.JooqAutoConfiguration"
-})
-@AutoConfigureMockMvc
+@WebMvcTest(controllers = AuthFilterTest.TestMcpController.class)
+@Import({AuthFilter.class, AuthFilterTest.AuthFilterTestConfig.class})
 class AuthFilterTest {
 
     @Autowired
@@ -54,9 +46,11 @@ class AuthFilterTest {
     }
 
     @TestConfiguration(proxyBeanMethods = false)
+    @Import(AuthFilter.class)
     static class AuthFilterTestConfig {
 
         @Bean
+        @org.springframework.context.annotation.Primary
         TokenService tokenService() {
             return token -> "good-token".equals(token)
                     ? Optional.of(new AuthPrincipal("token-1", AuthRole.WRITER))

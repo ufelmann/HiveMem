@@ -173,6 +173,7 @@ class McpControllerTest {
     static class TestConfig {
 
         @Bean
+        @org.springframework.context.annotation.Primary
         TokenService tokenService() {
             return token -> switch (token) {
                 case "good-token" -> Optional.of(new AuthPrincipal("token-1", AuthRole.WRITER));
