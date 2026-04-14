@@ -1053,7 +1053,7 @@ class WriteToolsIntegrationTest {
                                   }
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Missing old_id"));
 
@@ -1074,7 +1074,7 @@ class WriteToolsIntegrationTest {
                                   }
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Fact 00000000-0000-0000-0000-000000000499 not found or already revised"));
     }
@@ -1161,7 +1161,7 @@ class WriteToolsIntegrationTest {
                                   }
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value(-32003))
                 .andExpect(jsonPath("$.error.message").value("Tool not permitted: hivemem_approve_pending"));
     }
@@ -1182,7 +1182,7 @@ class WriteToolsIntegrationTest {
                                   }
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Invalid decision 'maybe'. Must be 'committed' or 'rejected'."));
     }
@@ -1206,7 +1206,7 @@ class WriteToolsIntegrationTest {
                                   }
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Missing subject"));
 
@@ -1228,7 +1228,7 @@ class WriteToolsIntegrationTest {
                                   }
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Missing subject"));
     }

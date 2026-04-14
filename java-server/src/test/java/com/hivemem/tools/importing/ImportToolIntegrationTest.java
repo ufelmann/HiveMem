@@ -89,7 +89,7 @@ class ImportToolIntegrationTest {
 
         try {
             mockMvc.perform(post("/mcp")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {
@@ -99,7 +99,7 @@ class ImportToolIntegrationTest {
                                       "params":{
                                         "name":"hivemem_mine_file",
                                         "arguments":{
-                                          "path":"%s",
+                                          "file_path":"%s",
                                           "wing":"docs",
                                           "hall":"test"
                                         }
@@ -142,7 +142,7 @@ class ImportToolIntegrationTest {
 
         try {
             mockMvc.perform(post("/mcp")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {
@@ -152,7 +152,7 @@ class ImportToolIntegrationTest {
                                       "params":{
                                         "name":"hivemem_mine_directory",
                                         "arguments":{
-                                          "path":"%s",
+                                          "dir_path":"%s",
                                           "wing":"import-test"
                                         }
                                       }
@@ -181,7 +181,7 @@ class ImportToolIntegrationTest {
 
         try {
             mockMvc.perform(post("/mcp")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {
@@ -191,7 +191,7 @@ class ImportToolIntegrationTest {
                                       "params":{
                                         "name":"hivemem_mine_file",
                                         "arguments":{
-                                          "path":"%s"
+                                          "file_path":"%s"
                                         }
                                       }
                                     }
@@ -216,7 +216,7 @@ class ImportToolIntegrationTest {
 
         try {
             mockMvc.perform(post("/mcp")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {
@@ -226,7 +226,7 @@ class ImportToolIntegrationTest {
                                       "params":{
                                         "name":"hivemem_mine_directory",
                                         "arguments":{
-                                          "path":"%s",
+                                          "dir_path":"%s",
                                           "extensions":[".py"]
                                         }
                                       }
@@ -255,7 +255,7 @@ class ImportToolIntegrationTest {
 
         try {
             mockMvc.perform(post("/mcp")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {
@@ -265,7 +265,7 @@ class ImportToolIntegrationTest {
                                       "params":{
                                         "name":"hivemem_mine_directory",
                                         "arguments":{
-                                          "path":"%s",
+                                          "dir_path":"%s",
                                           "wing":"import-test"
                                         }
                                       }
@@ -294,7 +294,7 @@ class ImportToolIntegrationTest {
 
         try {
             mockMvc.perform(post("/mcp")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {
@@ -304,13 +304,13 @@ class ImportToolIntegrationTest {
                                       "params":{
                                         "name":"hivemem_mine_directory",
                                         "arguments":{
-                                          "path":"%s",
+                                          "dir_path":"%s",
                                           "extensions":[""]
                                         }
                                       }
                                     }
                                     """.formatted(json(directory))))
-                    .andExpect(status().isOk())
+                    .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.error.code").value(-32602))
                     .andExpect(jsonPath("$.error.message").value("Invalid extensions"));
         } finally {
@@ -335,12 +335,12 @@ class ImportToolIntegrationTest {
                                       "params":{
                                         "name":"hivemem_mine_file",
                                         "arguments":{
-                                          "path":"%s"
+                                          "file_path":"%s"
                                         }
                                       }
                                     }
                                     """.formatted(json(file))))
-                    .andExpect(status().isOk())
+                    .andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.error.code").value(-32003))
                     .andExpect(jsonPath("$.error.message").value("Tool not permitted: hivemem_mine_file"));
         } finally {
@@ -353,7 +353,7 @@ class ImportToolIntegrationTest {
         Path missingFile = Path.of("/tmp", "missing-import-" + System.nanoTime() + ".md");
 
         mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -363,12 +363,12 @@ class ImportToolIntegrationTest {
                                   "params":{
                                     "name":"hivemem_mine_file",
                                     "arguments":{
-                                      "path":"%s"
+                                      "file_path":"%s"
                                     }
                                   }
                                 }
                                 """.formatted(json(missingFile))))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Path is not a file"));
     }

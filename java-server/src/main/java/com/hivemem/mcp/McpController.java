@@ -5,7 +5,9 @@ import com.hivemem.auth.AuthFilter;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.ToolPermissionService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,49 +26,55 @@ public class McpController {
     }
 
     @PostMapping(value = "/mcp", produces = MediaType.APPLICATION_JSON_VALUE)
-    public McpResponse handle(@RequestBody McpRequest request, HttpServletRequest servletRequest) {
+    public ResponseEntity<McpResponse> handle(@RequestBody McpRequest request, HttpServletRequest servletRequest) {
         AuthPrincipal principal = (AuthPrincipal) servletRequest.getAttribute(AuthFilter.PRINCIPAL_ATTRIBUTE);
         if (principal == null) {
-            return McpResponse.invalidParams(request.id(), "Missing authenticated principal");
+            return ResponseEntity.badRequest().body(
+                    McpResponse.invalidParams(request.id(), "Missing authenticated principal"));
         }
 
         String method = request.method();
         if (method == null || method.isBlank()) {
-            return McpResponse.methodNotFound(request.id(), method);
+            return ResponseEntity.ok(McpResponse.methodNotFound(request.id(), method));
         }
 
         return switch (method) {
-            case "tools/list" -> McpResponse.success(
+            case "tools/list" -> ResponseEntity.ok(McpResponse.success(
                     request.id(),
                     Map.of("tools", toolRegistry.visibleTools(principal.role(), toolPermissionService))
-            );
+            ));
             case "tools/call" -> handleToolCall(request, principal);
-            default -> McpResponse.methodNotFound(request.id(), method);
+            default -> ResponseEntity.ok(McpResponse.methodNotFound(request.id(), method));
         };
     }
 
-    private McpResponse handleToolCall(McpRequest request, AuthPrincipal principal) {
+    private ResponseEntity<McpResponse> handleToolCall(McpRequest request, AuthPrincipal principal) {
         JsonNode params = request.params();
         if (params == null || !params.hasNonNull("name")) {
-            return McpResponse.invalidParams(request.id(), "Missing tool name");
+            return ResponseEntity.badRequest().body(
+                    McpResponse.invalidParams(request.id(), "Missing tool name"));
         }
 
         String toolName = params.get("name").asText();
         if (toolName.isBlank()) {
-            return McpResponse.invalidParams(request.id(), "Missing tool name");
+            return ResponseEntity.badRequest().body(
+                    McpResponse.invalidParams(request.id(), "Missing tool name"));
         }
         if (!toolPermissionService.isAllowed(principal.role(), toolName)) {
-            return McpResponse.forbidden(request.id(), toolName);
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
+                    McpResponse.forbidden(request.id(), toolName));
         }
 
         return toolRegistry.resolve(toolName)
                 .map(handler -> {
                     try {
-                        return McpResponse.toolResult(request.id(), handler.call(principal, params.path("arguments")));
+                        return ResponseEntity.ok(
+                                McpResponse.toolResult(request.id(), handler.call(principal, params.path("arguments"))));
                     } catch (IllegalArgumentException e) {
-                        return McpResponse.invalidParams(request.id(), e.getMessage());
+                        return ResponseEntity.badRequest().body(
+                                McpResponse.invalidParams(request.id(), e.getMessage()));
                     }
                 })
-                .orElseGet(() -> McpResponse.toolNotFound(request.id(), toolName));
+                .orElseGet(() -> ResponseEntity.ok(McpResponse.toolNotFound(request.id(), toolName)));
     }
 }
