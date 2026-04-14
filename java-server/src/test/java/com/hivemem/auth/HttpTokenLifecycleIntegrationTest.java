@@ -63,11 +63,15 @@ class HttpTokenLifecycleIntegrationTest {
     @Autowired
     private DSLContext dslContext;
 
+    @Autowired
+    private RateLimiter rateLimiter;
+
     @MockBean(name = "httpEmbeddingClient")
     private EmbeddingClient embeddingClient;
 
     @BeforeEach
     void resetTokens() {
+        rateLimiter.clearAll();
         dslContext.execute("TRUNCATE TABLE api_tokens");
     }
 

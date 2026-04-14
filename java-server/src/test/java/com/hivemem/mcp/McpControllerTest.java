@@ -166,6 +166,7 @@ class McpControllerTest {
     @EnableWebMvc
     @Import({
             AuthFilter.class,
+            com.hivemem.auth.RateLimiter.class,
             ToolPermissionService.class,
             ToolRegistry.class,
             McpController.class

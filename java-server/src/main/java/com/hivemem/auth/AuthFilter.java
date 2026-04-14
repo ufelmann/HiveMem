@@ -6,7 +6,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
-import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -21,9 +20,11 @@ public class AuthFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final Optional<TokenService> tokenService;
+    private final RateLimiter rateLimiter;
 
-    public AuthFilter(Optional<TokenService> tokenService) {
+    public AuthFilter(Optional<TokenService> tokenService, RateLimiter rateLimiter) {
         this.tokenService = tokenService;
+        this.rateLimiter = rateLimiter;
     }
 
     @Override
@@ -38,31 +39,45 @@ public class AuthFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
-        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String clientIp = request.getRemoteAddr();
+
+        long retryAfter = rateLimiter.checkRateLimit(clientIp);
+        if (retryAfter > 0) {
+            response.setIntHeader("Retry-After", (int) retryAfter);
+            response.sendError(429);
+            return;
+        }
+
+        String authorization = request.getHeader("Authorization");
         if (authorization == null
                 || authorization.length() < BEARER_PREFIX.length()
                 || !authorization.regionMatches(true, 0, BEARER_PREFIX, 0, BEARER_PREFIX.length())) {
+            rateLimiter.recordFailure(clientIp);
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
             return;
         }
 
         String token = authorization.substring(BEARER_PREFIX.length()).trim();
         if (token.isEmpty()) {
+            rateLimiter.recordFailure(clientIp);
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
             return;
         }
 
         if (tokenService.isEmpty()) {
+            rateLimiter.recordFailure(clientIp);
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
             return;
         }
 
         Optional<AuthPrincipal> principal = tokenService.orElseThrow().validateToken(token);
         if (principal.isEmpty()) {
+            rateLimiter.recordFailure(clientIp);
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
             return;
         }
 
+        rateLimiter.clearFailures(clientIp);
         request.setAttribute(PRINCIPAL_ATTRIBUTE, principal.get());
         filterChain.doFilter(request, response);
     }
