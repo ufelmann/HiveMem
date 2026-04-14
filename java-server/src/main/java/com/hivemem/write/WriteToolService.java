@@ -3,7 +3,6 @@ package com.hivemem.write;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
 import com.hivemem.embedding.EmbeddingClient;
-import com.hivemem.search.DrawerSearchRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
@@ -19,16 +18,13 @@ public class WriteToolService {
     private static final String STATUS_REJECTED = "rejected";
 
     private final WriteToolRepository writeToolRepository;
-    private final DrawerSearchRepository drawerSearchRepository;
     private final EmbeddingClient embeddingClient;
 
     public WriteToolService(
             WriteToolRepository writeToolRepository,
-            DrawerSearchRepository drawerSearchRepository,
             EmbeddingClient embeddingClient
     ) {
         this.writeToolRepository = writeToolRepository;
-        this.drawerSearchRepository = drawerSearchRepository;
         this.embeddingClient = embeddingClient;
     }
 
@@ -173,23 +169,8 @@ public class WriteToolService {
 
     public List<Map<String, Object>> checkDuplicate(String content, double threshold) {
         List<Float> queryVector = embeddingClient.encodeDocument(content);
-        return drawerSearchRepository.searchCandidates(null, null, null).stream()
-                .map(candidate -> {
-                    List<Float> existing = candidate.embedding();
-                    if (existing == null) {
-                        existing = embeddingClient.encodeDocument(candidate.content());
-                    }
-                    double similarity = cosineSimilarity(queryVector, existing);
-                    return Map.<String, Object>of(
-                            "id", candidate.id().toString(),
-                            "content", candidate.content(),
-                            "summary", candidate.summary(),
-                            "similarity", Math.round(similarity * 10_000.0d) / 10_000.0d
-                    );
-                })
-                .filter(row -> ((Number) row.get("similarity")).doubleValue() >= threshold)
-                .sorted(java.util.Comparator.comparing((Map<String, Object> row) -> ((Number) row.get("similarity")).doubleValue()).reversed())
-                .toList();
+        String vectorLiteral = queryVector.toString();
+        return writeToolRepository.checkDuplicateDrawer(vectorLiteral, threshold);
     }
 
     public List<Map<String, Object>> checkContradiction(String subject, String predicate, String newObject) {
@@ -212,26 +193,5 @@ public class WriteToolService {
             case STATUS_PENDING, STATUS_COMMITTED, STATUS_REJECTED -> requestedStatus;
             default -> throw new IllegalArgumentException("Invalid status");
         };
-    }
-
-    private static double cosineSimilarity(List<Float> left, List<Float> right) {
-        if (left == null || right == null || left.isEmpty() || right.isEmpty()) {
-            return 0.0d;
-        }
-        int size = Math.min(left.size(), right.size());
-        double dot = 0.0d;
-        double leftNorm = 0.0d;
-        double rightNorm = 0.0d;
-        for (int i = 0; i < size; i++) {
-            double a = left.get(i);
-            double b = right.get(i);
-            dot += a * b;
-            leftNorm += a * a;
-            rightNorm += b * b;
-        }
-        if (leftNorm == 0.0d || rightNorm == 0.0d) {
-            return 0.0d;
-        }
-        return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
     }
 }
