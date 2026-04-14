@@ -353,6 +353,20 @@ public class WriteToolRepository {
         });
     }
 
+    public List<Map<String, Object>> checkDuplicateDrawer(String vectorLiteral, double threshold) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (Record row : dslContext.fetch(
+                "SELECT * FROM check_duplicate_drawer(?::vector, ?::real)",
+                vectorLiteral, threshold)) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("id", uuidValue(row, "id"));
+            result.put("similarity", Math.round(row.get("similarity", Double.class) * 10_000.0d) / 10_000.0d);
+            result.put("summary", row.get("summary", String.class));
+            results.add(result);
+        }
+        return results;
+    }
+
     public List<Map<String, Object>> checkContradiction(String subject, String predicate, String newObject) {
         List<Map<String, Object>> results = new ArrayList<>();
         for (Record row : dslContext.fetch("""
