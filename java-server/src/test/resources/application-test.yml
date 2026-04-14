@@ -9,3 +9,7 @@ spring:
     locations: classpath:db/migration
   jooq:
     sql-dialect: POSTGRES
+
+hivemem:
+  token-cache:
+    enabled: false

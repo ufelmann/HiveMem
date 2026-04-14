@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
+import com.hivemem.auth.RateLimiter;
 import com.hivemem.auth.TokenService;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
@@ -76,11 +77,15 @@ class CrossFeatureParityIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private RateLimiter rateLimiter;
+
     @MockBean(name = "httpEmbeddingClient")
     private EmbeddingClient httpEmbeddingClient;
 
     @BeforeEach
     void resetDatabase() {
+        rateLimiter.clearAll();
         dslContext.execute("TRUNCATE TABLE access_log, agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
         dslContext.execute("REFRESH MATERIALIZED VIEW drawer_popularity");
         FixedEmbeddingClient fixedEmbeddingClient = new FixedEmbeddingClient();
