@@ -254,7 +254,7 @@ class ReadToolIntegrationTest {
                                   }
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Invalid limit"));
     }
@@ -979,7 +979,7 @@ class ReadToolIntegrationTest {
                                   "params":{"name":"hivemem_reading_list","arguments":{"limit":0}}
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Invalid limit"));
 
@@ -994,7 +994,7 @@ class ReadToolIntegrationTest {
                                   "params":{"name":"hivemem_reading_list","arguments":{"limit":101}}
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Invalid limit"));
 
@@ -1009,7 +1009,7 @@ class ReadToolIntegrationTest {
                                   "params":{"name":"hivemem_reading_list","arguments":{"limit":1.9}}
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Invalid limit"));
     }
@@ -1027,7 +1027,7 @@ class ReadToolIntegrationTest {
                                   "params":{"name":"hivemem_diary_read","arguments":{"agent":"alpha-agent","last_n":101}}
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Invalid last_n"));
 
@@ -1042,7 +1042,7 @@ class ReadToolIntegrationTest {
                                   "params":{"name":"hivemem_diary_read","arguments":{"agent":"alpha-agent","last_n":1.5}}
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Invalid last_n"));
     }
@@ -1060,7 +1060,7 @@ class ReadToolIntegrationTest {
                                   "params":{"name":"hivemem_diary_read","arguments":{}}
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Missing agent"));
 
@@ -1075,7 +1075,7 @@ class ReadToolIntegrationTest {
                                   "params":{"name":"hivemem_diary_read","arguments":{"agent":123}}
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Missing agent"));
     }

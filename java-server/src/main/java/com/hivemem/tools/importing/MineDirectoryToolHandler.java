@@ -31,7 +31,7 @@ public class MineDirectoryToolHandler implements ToolHandler {
     public Object call(AuthPrincipal principal, JsonNode arguments) {
         return importToolService.mineDirectory(
                 principal,
-                WriteArgumentParser.requiredText(arguments, "path"),
+                WriteArgumentParser.requiredText(arguments, "dir_path"),
                 WriteArgumentParser.optionalText(arguments, "wing"),
                 WriteArgumentParser.optionalText(arguments, "hall"),
                 WriteArgumentParser.optionalText(arguments, "room"),
