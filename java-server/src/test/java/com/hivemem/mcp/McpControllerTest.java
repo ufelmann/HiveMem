@@ -121,7 +121,7 @@ class McpControllerTest {
                                   "params":{"name":"hivemem_search","arguments":{}}
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Missing query"));
     }
@@ -139,7 +139,7 @@ class McpControllerTest {
                                   "params":{"name":"hivemem_add_drawer","arguments":{}}
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value(-32003))
                 .andExpect(jsonPath("$.error.message").value("Tool not permitted: hivemem_add_drawer"));
     }
@@ -157,7 +157,7 @@ class McpControllerTest {
                                   "params":{"name":"   ","arguments":{}}
                                 }
                                 """))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Missing tool name"));
     }

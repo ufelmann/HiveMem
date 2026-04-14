@@ -27,10 +27,10 @@ class ParitySmokeTest {
     @Test
     void writerPermissionSetContainsReadAndWriteToolsButNoAdminTools() {
         assertThat(toolPermissionService.allowedTools(AuthRole.WRITER))
-                .hasSize(34)
-                .contains("hivemem_search", "hivemem_add_drawer", "hivemem_revise_drawer",
-                        "hivemem_mine_file", "hivemem_mine_directory")
-                .doesNotContain("hivemem_health", "hivemem_log_access", "hivemem_refresh_popularity");
+                .hasSize(32)
+                .contains("hivemem_search", "hivemem_add_drawer", "hivemem_revise_drawer")
+                .doesNotContain("hivemem_health", "hivemem_log_access", "hivemem_refresh_popularity",
+                        "hivemem_mine_file", "hivemem_mine_directory");
     }
 
     @Test

@@ -31,7 +31,7 @@ public class MineFileToolHandler implements ToolHandler {
     public Object call(AuthPrincipal principal, JsonNode arguments) {
         return importToolService.mineFile(
                 principal,
-                WriteArgumentParser.requiredText(arguments, "path"),
+                WriteArgumentParser.requiredText(arguments, "file_path"),
                 WriteArgumentParser.optionalText(arguments, "wing"),
                 WriteArgumentParser.optionalText(arguments, "hall"),
                 WriteArgumentParser.optionalText(arguments, "room")
