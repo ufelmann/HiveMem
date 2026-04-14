@@ -72,7 +72,7 @@ public class WriteToolRepository {
         Record row = dslContext.fetchOne("""
                 INSERT INTO drawers (content, embedding, wing, hall, room, source, tags, importance,
                                      summary, key_points, insight, actionability, status, created_by, valid_from)
-                VALUES (?, ?::real[], ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?::timestamptz, now()))
+                VALUES (?, ?::vector, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?::timestamptz, now()))
                 RETURNING id, wing, hall, room, status
                 """,
                 content, embeddingArray, wing, hall, room, source, tagArray, importance,
@@ -326,7 +326,7 @@ public class WriteToolRepository {
             Record newRow = tx.fetchOne("""
                     INSERT INTO drawers (parent_id, content, embedding, wing, hall, room, source, tags, importance,
                                          summary, key_points, insight, actionability, status, created_by, valid_from)
-                    VALUES (?, ?, ?::real[], ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz)
+                    VALUES (?, ?, ?::vector, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz)
                     RETURNING id
                     """,
                     oldId,
