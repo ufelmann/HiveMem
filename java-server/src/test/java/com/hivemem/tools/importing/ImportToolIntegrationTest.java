@@ -2,6 +2,7 @@ package com.hivemem.tools.importing;
 
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
+import com.hivemem.auth.RateLimiter;
 import com.hivemem.auth.TokenService;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
@@ -74,11 +75,15 @@ class ImportToolIntegrationTest {
     @Autowired
     private DSLContext dslContext;
 
+    @Autowired
+    private RateLimiter rateLimiter;
+
     @MockBean(name = "httpEmbeddingClient")
     private EmbeddingClient httpEmbeddingClient;
 
     @BeforeEach
     void resetDatabase() {
+        rateLimiter.clearAll();
         dslContext.execute("TRUNCATE TABLE agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
     }
 

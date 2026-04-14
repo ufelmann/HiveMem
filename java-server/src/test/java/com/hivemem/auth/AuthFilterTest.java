@@ -14,12 +14,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(controllers = AuthFilterTest.TestMcpController.class)
-@Import({AuthFilter.class, AuthFilterTest.AuthFilterTestConfig.class})
+@Import({AuthFilter.class, RateLimiter.class, AuthFilterTest.AuthFilterTestConfig.class})
 class AuthFilterTest {
 
     @Autowired
@@ -43,6 +44,36 @@ class AuthFilterTest {
         mockMvc.perform(post("/mcp").header(HttpHeaders.AUTHORIZATION, "bearer good-token"))
                 .andExpect(status().isOk())
                 .andExpect(content().string("token-1:writer"));
+    }
+
+    @Test
+    void rateLimitBlocksAfterFiveFailedAttempts() {
+        RateLimiter limiter = new RateLimiter();
+        String ip = "192.168.1.100";
+
+        for (int i = 0; i < 5; i++) {
+            assertThat(limiter.checkRateLimit(ip)).isEqualTo(0L);
+            limiter.recordFailure(ip);
+        }
+
+        long remaining = limiter.checkRateLimit(ip);
+        assertThat(remaining).isGreaterThan(0L);
+        assertThat(remaining).isLessThanOrEqualTo(900L);
+    }
+
+    @Test
+    void rateLimitClearsOnSuccess() {
+        RateLimiter limiter = new RateLimiter();
+        String ip = "192.168.1.101";
+
+        for (int i = 0; i < 4; i++) {
+            limiter.recordFailure(ip);
+        }
+        limiter.clearFailures(ip);
+
+        // After clear, even adding one more failure should not trigger ban
+        limiter.recordFailure(ip);
+        assertThat(limiter.checkRateLimit(ip)).isEqualTo(0L);
     }
 
     @TestConfiguration(proxyBeanMethods = false)
