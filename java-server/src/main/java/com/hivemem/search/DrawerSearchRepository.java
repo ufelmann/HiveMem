@@ -24,7 +24,7 @@ public class DrawerSearchRepository {
         StringBuilder sql = new StringBuilder("""
                 SELECT d.id, d.content, d.summary, d.wing, d.hall, d.room, d.tags, d.importance, d.created_at,
                        d.valid_from,
-                       d.embedding,
+                       d.embedding::real[] AS embedding,
                        COALESCE(dp.access_count, 0) AS access_count
                 FROM drawers d
                 LEFT JOIN drawer_popularity dp ON dp.drawer_id = d.id

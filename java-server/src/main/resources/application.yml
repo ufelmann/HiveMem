@@ -1,6 +1,9 @@
 spring:
   application:
     name: hivemem-java
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: 0
  
 hivemem:
   embedding:
