@@ -62,11 +62,7 @@ public class ReadToolService {
         List<Float> queryVector = embeddingClient.encodeQuery(query);
         List<DrawerSearchRepository.SearchCandidate> candidates = drawerSearchRepository.searchCandidates(wing, hall, room);
         long maxAccessCount = candidates.stream().mapToLong(DrawerSearchRepository.SearchCandidate::accessCount).max().orElse(0L);
-        OffsetDateTime newest = candidates.stream()
-                .map(DrawerSearchRepository.SearchCandidate::createdAt)
-                .filter(java.util.Objects::nonNull)
-                .max(Comparator.naturalOrder())
-                .orElse(null);
+        OffsetDateTime now = OffsetDateTime.now();
 
         return candidates.stream()
                 .map(candidate -> scoredResult(
@@ -74,7 +70,7 @@ public class ReadToolService {
                         query,
                         queryVector,
                         candidate.embedding() == null ? embeddingClient.encodeDocument(candidate.content()) : candidate.embedding(),
-                        newest,
+                        now,
                         maxAccessCount,
                         weightSemantic,
                         weightKeyword,
@@ -175,6 +171,7 @@ public class ReadToolService {
         row.put("tags", candidate.tags());
         row.put("importance", candidate.importance());
         row.put("created_at", candidate.createdAt() == null ? null : candidate.createdAt().toString());
+        row.put("valid_from", candidate.validFrom() == null ? null : candidate.validFrom().toString());
         row.put("score_semantic", rounded(semantic));
         row.put("score_keyword", rounded(keyword));
         row.put("score_recency", rounded(recency));
@@ -220,21 +217,26 @@ public class ReadToolService {
         return (double) matches / (double) tokens.size();
     }
 
-    private static double recencyScore(OffsetDateTime createdAt, OffsetDateTime newest) {
-        if (createdAt == null || newest == null) {
+    private static double recencyScore(OffsetDateTime createdAt, OffsetDateTime reference) {
+        if (createdAt == null || reference == null) {
             return 0.0d;
         }
-        long ageHours = Math.max(0L, ChronoUnit.HOURS.between(createdAt, newest));
-        double days = ageHours / 24.0d;
-        return 1.0d / (1.0d + days);
+        long ageSeconds = Math.max(0L, ChronoUnit.SECONDS.between(createdAt, reference));
+        return Math.exp(-0.693d * ageSeconds / (90.0d * 86400.0d));
     }
 
     private static double importanceScore(Integer importance) {
         if (importance == null) {
-            return 0.0d;
+            return 0.6d;
         }
-        int clamped = Math.max(1, Math.min(5, importance));
-        return clamped / 5.0d;
+        return switch (importance) {
+            case 1 -> 1.0d;
+            case 2 -> 0.8d;
+            case 3 -> 0.6d;
+            case 4 -> 0.4d;
+            case 5 -> 0.2d;
+            default -> 0.6d;
+        };
     }
 
     private static double rounded(double value) {
