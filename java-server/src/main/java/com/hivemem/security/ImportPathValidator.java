@@ -43,7 +43,7 @@ public class ImportPathValidator {
         if (!allowed) {
             throw new IllegalArgumentException("Path is outside allowed import directories");
         }
-        return normalized;
+        return java.nio.file.Files.exists(normalized) ? effectivePath : normalized;
     }
 
     private static Path normalizeAllowedRoot(Path root) {
