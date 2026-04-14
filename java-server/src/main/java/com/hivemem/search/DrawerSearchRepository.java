@@ -23,6 +23,7 @@ public class DrawerSearchRepository {
         List<Object> params = new ArrayList<>();
         StringBuilder sql = new StringBuilder("""
                 SELECT d.id, d.content, d.summary, d.wing, d.hall, d.room, d.tags, d.importance, d.created_at,
+                       d.valid_from,
                        d.embedding,
                        COALESCE(dp.access_count, 0) AS access_count
                 FROM drawers d
@@ -56,6 +57,7 @@ public class DrawerSearchRepository {
                     textArray(row, "tags"),
                     row.get("importance", Integer.class),
                     row.get("created_at", OffsetDateTime.class),
+                    row.get("valid_from", OffsetDateTime.class),
                     floatArray(row, "embedding"),
                     longValue(row, "access_count")
             ));
@@ -73,6 +75,7 @@ public class DrawerSearchRepository {
             List<String> tags,
             Integer importance,
             OffsetDateTime createdAt,
+            OffsetDateTime validFrom,
             List<Float> embedding,
             long accessCount
     ) {
