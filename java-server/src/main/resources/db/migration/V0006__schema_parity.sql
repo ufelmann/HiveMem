@@ -62,6 +62,15 @@ CREATE INDEX IF NOT EXISTS idx_diary_agent ON agent_diary (agent, created_at DES
 CREATE INDEX IF NOT EXISTS idx_blueprints_wing ON blueprints (wing);
 CREATE INDEX IF NOT EXISTS idx_blueprints_temporal ON blueprints (valid_from, valid_until);
 
+-- Recreate active_drawers to pick up columns added after V0002 (embedding, tsv)
+DROP VIEW IF EXISTS wing_stats;
+DROP VIEW IF EXISTS active_drawers;
+CREATE VIEW active_drawers AS
+SELECT *
+FROM drawers
+WHERE (valid_until IS NULL OR valid_until > now())
+  AND status = 'committed';
+
 -- wing_stats view
 CREATE OR REPLACE VIEW wing_stats AS
 SELECT wing, hall, room,

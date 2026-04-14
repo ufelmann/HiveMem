@@ -213,7 +213,7 @@ class WriteToolsIntegrationTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.content[0].length()").value(1))
-                .andExpect(jsonPath("$.result.content[0][0].content").value("Duplicate oracle alpha"))
+                .andExpect(jsonPath("$.result.content[0][0].summary").value("Duplicate oracle alpha"))
                 .andExpect(jsonPath("$.result.content[0][0].similarity").isNumber());
     }
 
