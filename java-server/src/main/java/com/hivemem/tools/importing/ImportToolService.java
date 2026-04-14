@@ -56,12 +56,13 @@ public class ImportToolService {
         if (!Files.isDirectory(directory)) {
             throw new IllegalArgumentException("Path is not a directory");
         }
+        Path directoryRoot = realPath(directory);
         List<Path> files = fileWalker.walk(directory, extensions);
         int drawersCreated = 0;
         List<String> errors = new ArrayList<>();
         for (Path file : files) {
             try {
-                Map<String, Object> result = mineValidatedFile(principal, file, wing, hall, room);
+                Map<String, Object> result = mineValidatedFile(principal, file, wing, hall, room, directoryRoot);
                 drawersCreated += ((Number) result.get("drawers_created")).intValue();
             } catch (IllegalArgumentException e) {
                 errors.add(file + ": " + e.getMessage());
@@ -82,9 +83,27 @@ public class ImportToolService {
             String hall,
             String room
     ) {
-        String content = readContent(file);
+        return mineValidatedFile(principal, file, wing, hall, room, null);
+    }
+
+    private Map<String, Object> mineValidatedFile(
+            AuthPrincipal principal,
+            Path file,
+            String wing,
+            String hall,
+            String room,
+            Path directoryRoot
+    ) {
+        Path validatedFile = pathValidator.validate(file.toString());
+        if (!Files.isRegularFile(validatedFile)) {
+            throw new IllegalArgumentException("Path is not a file");
+        }
+        if (directoryRoot != null && !realPath(validatedFile).startsWith(directoryRoot)) {
+            throw new IllegalArgumentException("Path is outside import directory");
+        }
+        String content = readContent(validatedFile);
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("file", file.toString());
+        result.put("file", validatedFile.toString());
         if (content.isBlank()) {
             result.put("drawers_created", 0);
             result.put("drawer_id", null);
@@ -97,7 +116,7 @@ public class ImportToolService {
                 wing,
                 hall,
                 room,
-                file.toString(),
+                validatedFile.toString(),
                 null,
                 null,
                 null,
@@ -117,6 +136,14 @@ public class ImportToolService {
             return Files.readString(file);
         } catch (IOException e) {
             throw new IllegalArgumentException("Unable to read import file", e);
+        }
+    }
+
+    private static Path realPath(Path path) {
+        try {
+            return path.toRealPath();
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Unable to validate import path", e);
         }
     }
 }

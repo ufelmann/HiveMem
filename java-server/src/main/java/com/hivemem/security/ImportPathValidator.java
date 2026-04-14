@@ -2,6 +2,7 @@ package com.hivemem.security;
 
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -24,7 +25,7 @@ public class ImportPathValidator {
             throw new IllegalArgumentException("At least one allowed import directory is required");
         }
         this.allowedRoots = allowedRoots.stream()
-                .map(path -> path.toAbsolutePath().normalize())
+                .map(ImportPathValidator::normalizeAllowedRoot)
                 .toList();
     }
 
@@ -37,10 +38,36 @@ public class ImportPathValidator {
             throw new IllegalArgumentException("Missing path");
         }
         Path normalized = Path.of(rawPath).toAbsolutePath().normalize();
-        boolean allowed = allowedRoots.stream().anyMatch(normalized::startsWith);
+        Path effectivePath = resolveEffectivePath(normalized);
+        boolean allowed = allowedRoots.stream().anyMatch(effectivePath::startsWith);
         if (!allowed) {
             throw new IllegalArgumentException("Path is outside allowed import directories");
         }
         return normalized;
+    }
+
+    private static Path normalizeAllowedRoot(Path root) {
+        Path normalized = root.toAbsolutePath().normalize();
+        try {
+            return normalized.toRealPath();
+        } catch (IOException ignored) {
+            return normalized;
+        }
+    }
+
+    private static Path resolveEffectivePath(Path normalized) {
+        try {
+            if (java.nio.file.Files.exists(normalized)) {
+                return normalized.toRealPath();
+            }
+            Path parent = normalized.getParent();
+            if (parent == null) {
+                throw new IllegalArgumentException("Path is outside allowed import directories");
+            }
+            Path realParent = parent.toRealPath();
+            return realParent.resolve(normalized.getFileName()).normalize();
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Unable to validate import path", e);
+        }
     }
 }

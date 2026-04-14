@@ -30,6 +30,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.Optional;
 
 import static org.hamcrest.Matchers.hasSize;
@@ -244,6 +245,134 @@ class ImportToolIntegrationTest {
         }
     }
 
+    @Test
+    void mineDirectoryRejectsSymlinkEscapeTargets() throws Exception {
+        Path directory = Files.createTempDirectory("hivemem-import-safe");
+        Path outsideRoot = Files.createTempDirectory("hivemem-import-outside");
+        Path outsideFile = Files.writeString(outsideRoot.resolve("secret.md"), "# Secret\n\nDo not import.");
+        Path symlink = directory.resolve("escape.md");
+        Files.createSymbolicLink(symlink, outsideFile);
+
+        try {
+            mockMvc.perform(post("/mcp")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "jsonrpc":"2.0",
+                                      "id":5,
+                                      "method":"tools/call",
+                                      "params":{
+                                        "name":"hivemem_mine_directory",
+                                        "arguments":{
+                                          "path":"%s",
+                                          "wing":"import-test"
+                                        }
+                                      }
+                                    }
+                                    """.formatted(json(directory))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.result.content[0].files_processed").value(1))
+                    .andExpect(jsonPath("$.result.content[0].drawers_created").value(0))
+                    .andExpect(jsonPath("$.result.content[0].errors", hasSize(1)));
+
+            Number drawerCount = (Number) dslContext.fetchValue("SELECT count(*) FROM drawers");
+            assertNotNull(drawerCount);
+            assertEquals(0, drawerCount.intValue());
+        } finally {
+            Files.deleteIfExists(symlink);
+            Files.deleteIfExists(outsideFile);
+            Files.deleteIfExists(directory);
+            Files.deleteIfExists(outsideRoot);
+        }
+    }
+
+    @Test
+    void mineDirectoryRejectsBlankExtensionFilter() throws Exception {
+        Path directory = Files.createTempDirectory("hivemem-import-invalid-ext");
+        Files.writeString(directory.resolve("readme.md"), "# Readme");
+
+        try {
+            mockMvc.perform(post("/mcp")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "jsonrpc":"2.0",
+                                      "id":6,
+                                      "method":"tools/call",
+                                      "params":{
+                                        "name":"hivemem_mine_directory",
+                                        "arguments":{
+                                          "path":"%s",
+                                          "extensions":[""]
+                                        }
+                                      }
+                                    }
+                                    """.formatted(json(directory))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.error.code").value(-32602))
+                    .andExpect(jsonPath("$.error.message").value("Invalid extensions"));
+        } finally {
+            deleteTree(directory);
+        }
+    }
+
+    @Test
+    void readerCannotCallImportTools() throws Exception {
+        Path file = Files.createTempFile("hivemem-import-denied", ".md");
+        Files.writeString(file, "# Test");
+
+        try {
+            mockMvc.perform(post("/mcp")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer reader-token")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "jsonrpc":"2.0",
+                                      "id":7,
+                                      "method":"tools/call",
+                                      "params":{
+                                        "name":"hivemem_mine_file",
+                                        "arguments":{
+                                          "path":"%s"
+                                        }
+                                      }
+                                    }
+                                    """.formatted(json(file))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.error.code").value(-32003))
+                    .andExpect(jsonPath("$.error.message").value("Tool not permitted: hivemem_mine_file"));
+        } finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    @Test
+    void mineFileRejectsMissingFileInsideAllowedDirectory() throws Exception {
+        Path missingFile = Path.of("/tmp", "missing-import-" + System.nanoTime() + ".md");
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":8,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_mine_file",
+                                    "arguments":{
+                                      "path":"%s"
+                                    }
+                                  }
+                                }
+                                """.formatted(json(missingFile))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.error.code").value(-32602))
+                .andExpect(jsonPath("$.error.message").value("Path is not a file"));
+    }
+
     private static String json(Path path) {
         return path.toString().replace("\\", "\\\\").replace("\"", "\\\"");
     }
@@ -253,7 +382,7 @@ class ImportToolIntegrationTest {
             return;
         }
         try (var stream = Files.walk(root)) {
-            stream.sorted(java.util.Comparator.reverseOrder())
+            stream.sorted(Comparator.reverseOrder())
                     .forEach(path -> {
                         try {
                             Files.deleteIfExists(path);
@@ -274,6 +403,7 @@ class ImportToolIntegrationTest {
                 case "writer-token" -> Optional.of(new AuthPrincipal("writer-1", AuthRole.WRITER));
                 case "agent-token" -> Optional.of(new AuthPrincipal("agent-1", AuthRole.AGENT));
                 case "admin-token" -> Optional.of(new AuthPrincipal("admin-1", AuthRole.ADMIN));
+                case "reader-token" -> Optional.of(new AuthPrincipal("reader-1", AuthRole.READER));
                 default -> Optional.empty();
             };
         }
