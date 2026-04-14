@@ -2,6 +2,8 @@ package com.hivemem.security;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -31,13 +33,17 @@ class PathSafetyTest {
     }
 
     @Test
-    void allowsPathInsideConfiguredSafeDirectory() {
-        Path safeDirectory = Path.of("/tmp/hivemem-safe");
+    void allowsPathInsideConfiguredSafeDirectory() throws IOException {
+        Path safeDirectory = Files.createTempDirectory("hivemem-safe");
         ImportPathValidator validator = new ImportPathValidator(List.of(safeDirectory));
+        Path file = safeDirectory.resolve("test.md");
 
-        Path validated = validator.validate("/tmp/hivemem-safe/test.md");
-
-        assertEquals(Path.of("/tmp/hivemem-safe/test.md"), validated);
+        try {
+            Path validated = validator.validate(file.toString());
+            assertEquals(file, validated);
+        } finally {
+            Files.deleteIfExists(safeDirectory);
+        }
     }
 
     @Test
@@ -45,5 +51,25 @@ class PathSafetyTest {
         Path validated = ImportPathValidator.defaultValidator().validate("/tmp/test.txt");
 
         assertEquals(Path.of("/tmp/test.txt"), validated);
+    }
+
+    @Test
+    void rejectsSymlinkThatEscapesAllowedRoot() throws IOException {
+        Path allowedRoot = Files.createTempDirectory("hivemem-safe-root");
+        Path outsideRoot = Files.createTempDirectory("hivemem-outside-root");
+        Path target = Files.writeString(outsideRoot.resolve("secret.md"), "classified");
+        Path symlink = allowedRoot.resolve("escape.md");
+        Files.createSymbolicLink(symlink, target);
+
+        try {
+            ImportPathValidator validator = new ImportPathValidator(List.of(allowedRoot));
+
+            assertThrows(IllegalArgumentException.class, () -> validator.validate(symlink.toString()));
+        } finally {
+            Files.deleteIfExists(symlink);
+            Files.deleteIfExists(target);
+            Files.deleteIfExists(allowedRoot);
+            Files.deleteIfExists(outsideRoot);
+        }
     }
 }
