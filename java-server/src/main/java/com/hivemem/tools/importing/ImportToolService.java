@@ -98,12 +98,13 @@ public class ImportToolService {
         if (!Files.isRegularFile(validatedFile)) {
             throw new IllegalArgumentException("Path is not a file");
         }
-        if (directoryRoot != null && !realPath(validatedFile).startsWith(directoryRoot)) {
+        Path openedFile = realPath(validatedFile);
+        if (directoryRoot != null && !openedFile.startsWith(directoryRoot)) {
             throw new IllegalArgumentException("Path is outside import directory");
         }
-        String content = readContent(validatedFile);
+        String content = readContent(openedFile);
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("file", validatedFile.toString());
+        result.put("file", openedFile.toString());
         if (content.isBlank()) {
             result.put("drawers_created", 0);
             result.put("drawer_id", null);
@@ -116,7 +117,7 @@ public class ImportToolService {
                 wing,
                 hall,
                 room,
-                validatedFile.toString(),
+                openedFile.toString(),
                 null,
                 null,
                 null,
