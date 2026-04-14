@@ -2,6 +2,7 @@ package com.hivemem.embedding;
 
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -12,6 +13,7 @@ public class HttpEmbeddingClient implements EmbeddingClient {
 
     private final RestClient restClient;
 
+    @Autowired
     public HttpEmbeddingClient(RestClient.Builder builder, EmbeddingProperties properties) {
         this(builder, properties, true);
     }
