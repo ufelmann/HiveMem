@@ -209,7 +209,7 @@ class ReadToolIntegrationTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0][0].id").value("00000000-0000-0000-0000-000000000502"));
+                .andExpect(jsonPath("$.result.content[0][0].id").value("00000000-0000-0000-0000-000000000501"));
     }
 
     @Test
