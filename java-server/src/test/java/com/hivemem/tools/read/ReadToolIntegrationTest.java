@@ -1456,10 +1456,10 @@ class ReadToolIntegrationTest {
 
         @Bean
         TokenService tokenService() {
-            return token -> switch (token) {
+            return new com.hivemem.auth.support.FixedTokenService(token -> switch (token) {
                 case "good-token" -> Optional.of(new AuthPrincipal("token-1", AuthRole.WRITER));
                 default -> Optional.empty();
-            };
+            });
         }
 
         @Bean

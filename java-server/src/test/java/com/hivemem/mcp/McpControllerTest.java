@@ -176,11 +176,11 @@ class McpControllerTest {
         @Bean
         @org.springframework.context.annotation.Primary
         TokenService tokenService() {
-            return token -> switch (token) {
+            return new com.hivemem.auth.support.FixedTokenService(token -> switch (token) {
                 case "good-token" -> Optional.of(new AuthPrincipal("token-1", AuthRole.WRITER));
                 case "reader-token" -> Optional.of(new AuthPrincipal("token-2", AuthRole.READER));
                 default -> Optional.empty();
-            };
+            });
         }
 
         @Bean
