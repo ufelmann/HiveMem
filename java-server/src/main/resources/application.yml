@@ -1,14 +1,23 @@
 spring:
   application:
     name: hivemem-java
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: ${HIVEMEM_JDBC_URL}
+    username: ${HIVEMEM_DB_USER}
+    password: ${HIVEMEM_DB_PASSWORD}
   flyway:
+    enabled: true
+    locations: classpath:db/migration
     baseline-on-migrate: true
     baseline-version: 0
- 
+  jooq:
+    sql-dialect: POSTGRES
+
 hivemem:
   embedding:
     base-url: ${HIVEMEM_EMBEDDING_URL:http://localhost:8081}
     timeout: ${HIVEMEM_EMBEDDING_TIMEOUT:PT5S}
 
 server:
-  port: 8421
+  port: ${SERVER_PORT:8421}
