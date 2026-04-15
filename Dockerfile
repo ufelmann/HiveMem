@@ -10,7 +10,7 @@ RUN chmod +x mvnw && ./mvnw -q -DskipTests package
 FROM eclipse-temurin:21-jre
 
 WORKDIR /app
-COPY --from=build /workspace/target/hivemem-java-0.0.1-SNAPSHOT.jar /app/app.jar
+COPY --from=build /workspace/target/app.jar /app/app.jar
 COPY entrypoint.sh /app/entrypoint.sh
 COPY scripts/hivemem-migrate /usr/local/bin/hivemem-migrate
 
