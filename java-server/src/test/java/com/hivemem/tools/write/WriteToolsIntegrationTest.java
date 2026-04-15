@@ -1307,12 +1307,12 @@ class WriteToolsIntegrationTest {
 
         @Bean
         TokenService tokenService() {
-            return token -> switch (token) {
+            return new com.hivemem.auth.support.FixedTokenService(token -> switch (token) {
                 case "writer-token" -> Optional.of(new AuthPrincipal("writer-1", AuthRole.WRITER));
                 case "agent-token" -> Optional.of(new AuthPrincipal("agent-1", AuthRole.AGENT));
                 case "admin-token" -> Optional.of(new AuthPrincipal("admin-1", AuthRole.ADMIN));
                 default -> Optional.empty();
-            };
+            });
         }
 
         @Bean
