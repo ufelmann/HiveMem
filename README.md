@@ -2,15 +2,15 @@
 
 Personal knowledge system with semantic search, temporal knowledge graph, and progressive summarization.
 
-MCP server backed by PostgreSQL 17 (pgvector + Apache AGE) with BGE-M3 embeddings. 36 tools, append-only versioning, role-based token auth, agent fleet with approval workflow.
+MCP server backed by PostgreSQL (pgvector) with external embeddings service. 38 tools, append-only versioning, role-based token auth, agent fleet with approval workflow.
 
 [![CI](https://github.com/ufelmann/HiveMem/actions/workflows/ci.yml/badge.svg)](https://github.com/ufelmann/HiveMem/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/ufelmann/HiveMem/graph/badge.svg)](https://codecov.io/gh/ufelmann/HiveMem)
 [![GitHub release](https://img.shields.io/github/v/release/ufelmann/HiveMem)](https://github.com/ufelmann/HiveMem/releases)
 [![GHCR](https://img.shields.io/badge/ghcr.io-ufelmann%2Fhivemem-blue)](https://github.com/ufelmann/HiveMem/pkgs/container/hivemem)
-[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org)
-[![PostgreSQL](https://img.shields.io/badge/postgresql-17-336791)](https://postgresql.org)
-[![MCP Tools](https://img.shields.io/badge/MCP%20tools-36-orange)](https://github.com/ufelmann/HiveMem#tools-36)
+[![Java](https://img.shields.io/badge/java-21-blue)](https://openjdk.org)
+[![PostgreSQL](https://img.shields.io/badge/postgresql-16-336791)](https://postgresql.org)
+[![MCP Tools](https://img.shields.io/badge/MCP%20tools-38-orange)](https://github.com/ufelmann/HiveMem#tool-list-full)
 [![License: Sustainable Use](https://img.shields.io/badge/license-Sustainable%20Use-blue)](https://github.com/ufelmann/HiveMem/blob/main/LICENSE)
 [![SafeSkill](https://safeskill.dev/api/badge/ufelmann-hivemem)](https://safeskill.dev/scan/ufelmann-hivemem)
 
@@ -52,39 +52,12 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 ## Transparency & Trust
 
 - **Privacy First:** HiveMem is 100% self-hosted. Your data never leaves your infrastructure.
-- **Local AI:** Embeddings are generated locally. Internet access is only required for the initial model download from Hugging Face.
 - **Auditability:** All tool calls and authentication events are logged to `/data/audit.log`.
 - **Security:** Built-in RBAC (Role-Based Access Control) ensures that agents can only perform actions you approve.
 
-## Java Migration Track
-
-The Spring Boot implementation lives under `java-server/`. On branch `java-spring-boot-migration`, Java is the production runtime.
-
-## Java Test Parity
-
-The canonical parity matrix lives in `java-server/src/test/java/com/hivemem/parity/ParityMatrix.java`. The README mirrors that test-side source of truth so the mapping stays easy to scan:
-
-- `HttpTokenLifecycleIntegrationTest` replaces the cases from `tests/test_http_integration.py`
-- `FlywayMigrationParityTest` replaces cases from `tests/test_migrations.py` and `tests/test_edges_migration.py`
-- `ImportToolIntegrationTest` replaces the cases from `tests/test_import.py`
-- `ConcurrencyIntegrationTest` replaces the cases from `tests/test_concurrency.py`
-- `CrossFeatureParityIntegrationTest` replaces the cases from `tests/test_integration.py`
-
-## Production Runtime
-
-The Spring Boot service is now the primary runtime in this branch.
-Rollback happens by redeploying the previous 2.x Python-based release, not by switching runtimes inside this image.
-
-Required environment for the Java container:
-- `HIVEMEM_JDBC_URL`
-- `HIVEMEM_DB_USER`
-- `HIVEMEM_DB_PASSWORD`
-- `HIVEMEM_EMBEDDING_URL`
-- `HIVEMEM_API_TOKEN` for deployment smoke checks and MCP calls
-
 ## Features
 
-- **36 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
+- **38 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
 - **5-signal ranked search** -- semantic similarity + keyword match + recency + importance + popularity
 - **Append-only versioning** -- never lose history, revise with parent_id chains, point-in-time queries
 - **Progressive summarization** (L0-L3) -- content, summary, key_points, insight per drawer
@@ -93,18 +66,18 @@ Required environment for the Java container:
 - **Agent fleet** with approval workflow -- agents write pending suggestions, only admins approve
 - **Blueprints** -- curated narrative overviews per wing, append-only versioned
 - **References & reading list** -- track sources, link to drawers, filter by type/status
-- **Java Spring Boot runtime** -- MCP server runs as a Java service with Flyway startup migrations
-- **216 tests** with testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
+- **Spring Boot 3.3 + Java 21** -- MCP server with jOOQ, Flyway migrations, Caffeine cache
+- **244 tests** with Testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
 
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) (v20+)
-- ~2 GB free disk space (Multilingual MiniLM model ~420 MB + Docker image ~1.5 GB)
-- ~1 GB free RAM (SentenceTransformers model runs on CPU)
+- An external PostgreSQL database with pgvector extension (e.g. `pgvector/pgvector:pg16`)
+- An external embeddings service reachable via HTTP
 
 ## Quick Start
 
-### Option A: Pre-built image (recommended on this branch)
+### Option A: Pre-built image (recommended)
 
 ```bash
 docker run -d --name hivemem \
@@ -154,7 +127,7 @@ services:
 docker compose up -d
 ```
 
-At startup, the Java service runs Flyway migrations against the configured PostgreSQL database. Check progress:
+At startup, Spring Boot runs Flyway migrations against the configured PostgreSQL database. Check progress:
 
 ```bash
 docker logs -f hivemem
@@ -162,18 +135,25 @@ docker logs -f hivemem
 
 Wait for the Spring Boot startup log and a successful `/mcp` response before proceeding.
 
+### Required Environment Variables
+
+| Variable | Description |
+|---|---|
+| `HIVEMEM_JDBC_URL` | JDBC connection string (e.g. `jdbc:postgresql://postgres:5432/hivemem`) |
+| `HIVEMEM_DB_USER` | PostgreSQL username |
+| `HIVEMEM_DB_PASSWORD` | PostgreSQL password |
+| `HIVEMEM_EMBEDDING_URL` | URL of the external embeddings service |
+| `HIVEMEM_API_TOKEN` | Used by `deploy.sh` for the health-check smoke test |
+
 ### Create an API token
 
-Insert a SHA-256 token hash into `api_tokens`. Example:
+Use the `hivemem-token` CLI inside the container:
 
-```sql
-insert into api_tokens (token_hash, name, role)
-values (
-  encode(digest('replace-with-plaintext-token', 'sha256'), 'hex'),
-  'my-admin',
-  'admin'
-);
+```bash
+docker exec hivemem hivemem-token create my-admin --role admin
 ```
+
+The plaintext token is printed once and never stored. Save it immediately.
 
 ### Connect to Claude Code
 
@@ -184,7 +164,7 @@ claude mcp add --scope user hivemem --transport http http://localhost:8421/mcp \
   --header "Authorization: Bearer YOUR_TOKEN_HERE"
 ```
 
-Restart Claude Code. The 36 HiveMem tools are now available in every session.
+Restart Claude Code. The 38 HiveMem tools are now available in every session.
 
 **Manual config** (`~/.claude.json` for user-level, or `.mcp.json` for project-level):
 
@@ -222,7 +202,7 @@ Add to `claude_desktop_config.json`:
 
 ### Teach your agent to use HiveMem
 
-The MCP server ships instructions that tell the agent *how* to use the 36 tools (call `wake_up` first, check duplicates before adding, etc.). But the agent won't reliably *remember to archive* unless you tell it to in your own CLAUDE.md.
+The MCP server ships instructions that tell the agent *how* to use the 38 tools (call `wake_up` first, check duplicates before adding, etc.). But the agent won't reliably *remember to archive* unless you tell it to in your own CLAUDE.md.
 
 Add this to your **user-level** CLAUDE.md (`~/.claude/CLAUDE.md`) so it applies to every project:
 
@@ -364,33 +344,22 @@ graph TB
 graph TB
     Client["Claude / MCP Client"]
 
-    subgraph Container["Docker Container"]
-        Auth["Auth Middleware<br/><i>Token auth + role check + rate limit</i>"]
-        ToolGate["Tool Gate<br/><i>Filter tools/list by role</i>"]
+    subgraph Container["Docker Container (eclipse-temurin:21-jre)"]
+        Auth["AuthFilter<br/><i>Token auth + role check + rate limit</i>"]
+        ToolGate["ToolPermissionService<br/><i>Filter tools/list by role</i>"]
         Identity["Identity Injection<br/><i>created_by from token</i>"]
-        MCP["FastMCP Server<br/>:8421<br/><i>36 tools, Streamable HTTP</i>"]
-        BGE["BGE-M3<br/><i>1024d embeddings</i>"]
-
-        subgraph PG["PostgreSQL 17"]
-            pgvector["pgvector<br/><i>5-signal ranked search</i>"]
-            AGE["Apache AGE<br/><i>graph traversal</i>"]
-            Tables["11 tables, 6 views, 9 functions"]
-        end
+        MCP["McpController<br/>:8421<br/><i>38 tools, Streamable HTTP</i>"]
     end
 
-    Volume["/data volume<br/><i>pgdata + backups + audit.log</i>"]
-    Models["/data/models volume<br/><i>Model cache</i>"]
+    EmbSvc["External Embeddings Service<br/><i>HTTP API</i>"]
+    PG["External PostgreSQL<br/><i>pgvector, Flyway-managed schema</i>"]
 
     Client -->|"MCP over HTTP"| Auth
     Auth --> ToolGate
     ToolGate --> Identity
     Identity --> MCP
-    MCP --> BGE
-    MCP -->|"Unix socket"| PG
-    pgvector --> Tables
-    AGE --> Tables
-    PG --- Volume
-    BGE --- Models
+    MCP -->|"HTTP"| EmbSvc
+    MCP -->|"JDBC"| PG
 ```
 
 ### Data Model
@@ -496,32 +465,14 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 
 ### Configuration
 
-HiveMem is highly configurable via environment variables.
-
 | Variable | Default | Description |
 |---|---|---|
-| `HIVEMEM_EMBEDDING_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | Hugging Face model ID. Supports any SentenceTransformer or BGE model. |
-| `HIVEMEM_PORT` | `8421` | Port for the MCP server. |
-| `PGDATA` | `/data/pgdata` | Path to PostgreSQL data directory. |
-| `HF_HUB_OFFLINE` | `0` | Set to `1` to disable all outbound requests (requires pre-cached models). |
-
-#### Switching Models
-
-You can switch the embedding model at any time by setting `HIVEMEM_EMBEDDING_MODEL`.
-
-**Example: Upgrade to BGE-M3 (High-End)**
-```bash
-docker run -d --name hivemem \
-  -e HIVEMEM_EMBEDDING_MODEL="BAAI/bge-m3" \
-  -p 8421:8421 \
-  -v hivemem_data:/data \
-  ghcr.io/ufelmann/hivemem:main
-```
-
-**Important:** If you change the model after storing data, you **must** recompute the embeddings to match the new vector dimensions:
-```bash
-docker exec hivemem python3 -m hivemem.recompute_embeddings
-```
+| `HIVEMEM_JDBC_URL` | (required) | JDBC connection string to PostgreSQL |
+| `HIVEMEM_DB_USER` | (required) | PostgreSQL username |
+| `HIVEMEM_DB_PASSWORD` | (required) | PostgreSQL password |
+| `HIVEMEM_EMBEDDING_URL` | `http://localhost:8081` | URL of the external embeddings service |
+| `HIVEMEM_EMBEDDING_TIMEOUT` | `PT5S` | HTTP timeout for embedding requests (ISO 8601 duration) |
+| `SERVER_PORT` | `8421` | Port for the MCP server |
 
 ### Security & Compliance
 
@@ -543,31 +494,33 @@ docker exec hivemem python3 -m hivemem.recompute_embeddings
 9. `hivemem_traverse`: Recursive graph traversal.
 10. `hivemem_wake_up`: Initial session context.
 11. `hivemem_get_blueprint`: Narrative wing overviews.
-12. `hivemem_add_drawer`: Store L0-L3 knowledge layers.
-13. `hivemem_kg_add`: Create a new fact triple.
-14. `hivemem_kg_invalidate`: Soft-delete/expire a fact.
-15. `hivemem_revise_drawer`: Create a new version of a drawer.
-16. `hivemem_revise_fact`: Create a new version of a fact.
-17. `hivemem_update_identity`: Update session context facts.
-18. `hivemem_update_blueprint`: Update wing narrative.
-19. `hivemem_add_tunnel`: Link two drawers together.
-20. `hivemem_remove_tunnel`: Expire a drawer link.
-21. `hivemem_check_duplicate`: Verify knowledge doesn't exist.
-22. `hivemem_check_contradiction`: Detect logic conflicts in KG.
-23. `hivemem_approve_pending`: Admin tool to commit agent work.
-24. `hivemem_drawer_history`: Trace revisions of a drawer.
-25. `hivemem_fact_history`: Trace revisions of a fact.
-26. `hivemem_pending_approvals`: List work awaiting review.
-27. `hivemem_add_reference`: Store source documents/URLs.
-28. `hivemem_link_reference`: Cite source for a drawer.
-29. `hivemem_reading_list`: Manage unread/in-progress sources.
-30. `hivemem_register_agent`: Add an agent to the fleet.
-31. `hivemem_list_agents`: View active agent fleet.
+12. `hivemem_drawer_history`: Trace revisions of a drawer.
+13. `hivemem_fact_history`: Trace revisions of a fact.
+14. `hivemem_pending_approvals`: List work awaiting review.
+15. `hivemem_reading_list`: Manage unread/in-progress sources.
+16. `hivemem_list_agents`: View active agent fleet.
+17. `hivemem_diary_read`: Admin tool to read agent diaries.
+18. `hivemem_add_drawer`: Store L0-L3 knowledge layers.
+19. `hivemem_kg_add`: Create a new fact triple.
+20. `hivemem_kg_invalidate`: Soft-delete/expire a fact.
+21. `hivemem_revise_drawer`: Create a new version of a drawer.
+22. `hivemem_revise_fact`: Create a new version of a fact.
+23. `hivemem_update_identity`: Update session context facts.
+24. `hivemem_update_blueprint`: Update wing narrative.
+25. `hivemem_add_tunnel`: Link two drawers together.
+26. `hivemem_remove_tunnel`: Expire a drawer link.
+27. `hivemem_check_duplicate`: Verify knowledge doesn't exist.
+28. `hivemem_check_contradiction`: Detect logic conflicts in KG.
+29. `hivemem_add_reference`: Store source documents/URLs.
+30. `hivemem_link_reference`: Cite source for a drawer.
+31. `hivemem_register_agent`: Add an agent to the fleet.
 32. `hivemem_diary_write`: Agent-private reflection tool.
-33. `hivemem_diary_read`: Admin tool to read agent diaries.
-34. `hivemem_health`: Monitor DB and model state.
-35. `hivemem_log_access`: Popularity signal ingestion.
-36. `hivemem_refresh_popularity`: Update search signal cache.
+33. `hivemem_mine_file`: Import a file as a drawer.
+34. `hivemem_mine_directory`: Batch import a directory.
+35. `hivemem_approve_pending`: Admin tool to commit agent work.
+36. `hivemem_health`: Monitor DB and service state.
+37. `hivemem_log_access`: Popularity signal ingestion.
+38. `hivemem_refresh_popularity`: Update search signal cache.
 
 ### Search Signals
 
@@ -575,7 +528,7 @@ The `hivemem_search` tool combines 5 signals with configurable weights:
 
 | Signal | Default Weight | Description |
 |---|---|---|
-| Semantic | 0.35 | Vector cosine similarity (MiniLM-L12, 384d) |
+| Semantic | 0.35 | Vector cosine similarity |
 | Keyword | 0.15 | PostgreSQL full-text search (tsvector, BM25-like) |
 | Recency | 0.20 | Exponential decay, 90-day half-life |
 | Importance | 0.15 | User/agent assigned 1-5 scale |
@@ -596,7 +549,7 @@ Plus `actionability` (actionable / reference / someday / archive) and `importanc
 
 ## Authentication & Authorization
 
-Tokens are stored as SHA-256 hashes in PostgreSQL. The plaintext is shown exactly once at creation and never stored. Auth responses are cached for 60 seconds (LRU, max 1000 entries).
+Tokens are stored as SHA-256 hashes in PostgreSQL. The plaintext is shown exactly once at creation and never stored. Auth responses are cached with Caffeine (60s TTL, max 1000 entries).
 
 ### Roles
 
@@ -604,7 +557,7 @@ Each token has one of four roles. The role controls which tools the client sees 
 
 | Role | Visible tools | Write behavior | Can approve? |
 |---|---|---|---|
-| `admin` | All 36 | `status: committed` | Yes |
+| `admin` | All 38 | `status: committed` | Yes |
 | `writer` | 34 (no admin tools) | `status: committed` | No |
 | `reader` | 17 (read only) | Can't write | No |
 | `agent` | 34 (same as writer) | `status: pending` | No |
@@ -616,26 +569,25 @@ The `agent` role is the key constraint: agents can add knowledge, but every writ
 ### Token management
 
 ```bash
-hivemem-token create <name> --role admin|writer|reader|agent [--expires 90d]
-hivemem-token list
-hivemem-token revoke <name>
-hivemem-token info <name>
+docker exec hivemem hivemem-token create <name> --role admin|writer|reader|agent [--expires 90d]
+docker exec hivemem hivemem-token list
+docker exec hivemem hivemem-token revoke <name>
+docker exec hivemem hivemem-token info <name>
 ```
 
-All commands run inside the container: `docker exec hivemem hivemem-token ...`
+The `hivemem-token` CLI is a bash script that talks to PostgreSQL directly via `psql`.
 
 ### Security details
 
 - **Rate limiting** -- 5 failed auth attempts per IP triggers a 15-minute ban
-- **Audit log** -- every request logged to `/data/audit.log` (rotating, 10 MB max)
-- **PostgreSQL auth** -- scram-sha-256, auto-generated password in `/data/secrets.json`
+- **Audit log** -- every request logged to `/data/audit.log`
 - **Timing-safe** -- token comparison uses SHA-256 hash lookup, not string comparison
 - **Path traversal protection** -- file import restricted to `/data/imports` and `/tmp`
 - **Tool call enforcement** -- `tools/call` checked against role permissions, not just `tools/list` filtering
 
 ## Backups
 
-`hivemem-backup` runs automatically inside the container via cron at **01:45 daily** (pg_dump, gzipped). The last 7 daily dumps are kept in `/data/backups/`.
+`hivemem-backup` is a bash script that runs `pg_dump | gzip` using `HIVEMEM_DB_PASSWORD` / `HIVEMEM_DB_USER` / `HIVEMEM_DB_NAME` / `HIVEMEM_DB_HOST` environment variables. The last 7 daily dumps are kept in `/data/backups/`.
 
 Manual backup:
 
@@ -645,106 +597,58 @@ docker exec hivemem hivemem-backup
 
 **LXC/Proxmox users:** Schedule a vzdump at 02:00 to capture the full container including the database dumps. This gives you both logical (pg_dump) and physical (filesystem) backup coverage.
 
-**Warning:** Never run `docker system prune --volumes` on the host -- it deletes all named volumes including `hivemem_data` (your database) and `hivemem_models` (the 2.2 GB embedding model cache).
-
 ## Development
 
 ### Run tests (no deployment needed)
 
-Tests use [testcontainers](https://testcontainers-python.readthedocs.io/) -- a PostgreSQL container with pgvector + AGE is started and destroyed per session. Embeddings are mocked (deterministic word-hash vectors, no torch/GPU needed).
+Tests use [Testcontainers](https://java.testcontainers.org/) -- a `pgvector/pgvector:pg16` container is started and destroyed per session. Embeddings are stubbed with a fixed test client (deterministic vectors, no external service needed).
 
 ```bash
-pip install -e ".[dev]"
-pytest tests/ -v
+cd java-server
+mvn test
 ```
 
 ```
-215 passed in 38s
+244 tests passed
 ```
-
-### Test structure
-
-| File | Tests | What it covers |
-|---|---|---|
-| `test_token_management.py` | 43 | Token CRUD, middleware auth, role mapping, tool filtering, E2E flows, SQL robustness |
-| `test_http_integration.py` | 15 | Full HTTP stack: request to auth to MCP to PostgreSQL |
-| `test_security.py` | 20 | Path traversal, tool enforcement, decision validation, XFF, safe defaults |
-| `test_concurrency.py` | 11 | Parallel writes, same-row revise, cache stampede, pool init, advisory locks |
-| `test_token_performance.py` | 7 | Cache latency (0.002ms), DB lookup (0.65ms), HTTP throughput (218 req/s) |
-| `test_sql_robustness.py` | 6 | Batch approve, query limits, atomic transactions, cycle-safe traversal |
-| `test_ranked_search.py` | 6 | 5-signal search, weight tuning, filters |
-| `test_integration.py` | 8 | Cross-feature flows (revise + summarization, agent pipeline, contradictions) |
-| `test_agent_fleet.py` | 7 | Agent registration, pending/approve/reject workflow, diary |
-| `test_schema_v2.py` | 15 | Append-only versioning, views, PL/pgSQL functions, constraints |
-| `test_read.py` | 14 | All read tools |
-| `test_write.py` | 13 | All write tools incl. add_tunnel, remove_tunnel, approve tunnels |
-| `test_tunnels_migration.py` | 7 | Tunnel schema constraints, FK, views, indexes |
-| `test_progressive_summarization.py` | 5 | L0-L3 layers, actionability constraints, duplicate check |
-| `test_references.py` | 6 | References, reading list, drawer linking |
-| `test_blueprints.py` | 5 | Blueprints CRUD, append-only versioning |
-| `test_graph_search.py` | 9 | quick_facts, UUID traverse, bidirectional, pending/removed filtering |
-| `test_import.py` | 5 | File and directory import |
-| `test_server.py` | 2 | Tool registration count, health check |
-| `test_db.py` | 2 | Pool connection, basic CRUD |
-| `test_embeddings.py` | 5 | Mock embedding dimensions, similarity, German text |
-| `test_migrations.py` | 5 | yoyo tracking, applied state, idempotent, final schema |
 
 ### Deploy changes
 
-For local builds:
-
 ```bash
-./deploy.sh
-# Auto-detects if base image needs rebuild (Dockerfile.base or pyproject.toml changed)
-# App rebuild takes ~5 seconds (only copies code)
+# Set required env vars first:
+export HIVEMEM_JDBC_URL=jdbc:postgresql://postgres:5432/hivemem
+export HIVEMEM_DB_USER=hivemem
+export HIVEMEM_DB_PASSWORD=secret
+export HIVEMEM_EMBEDDING_URL=http://embeddings:8081
+export HIVEMEM_API_TOKEN=your-admin-token
+
+./deploy.sh java
 ```
 
-For GHCR image (CI builds automatically on push to main):
-
-```bash
-docker compose pull && docker compose up -d
-```
+The script builds the Docker image, restarts the container, and waits for a successful health check on `/mcp`.
 
 ### Migrations
 
-Schema changes are managed by [yoyo-migrations](https://ollycope.com/software/yoyo/latest/). Migrations run automatically on container start with pre-migration backup.
+Schema changes are managed by [Flyway](https://flywaydb.org/). Migrations run automatically at Spring Boot application startup.
+
+Migration files live in `java-server/src/main/resources/db/migration/` using the Flyway naming convention (`V0001__description.sql`, `V0002__description.sql`, etc.).
+
+To add a new migration:
 
 ```bash
-# Add a new migration
-cat > migrations/0003_my_feature.sql << 'EOF'
--- depends: 0002_tunnels_v2
-
+cat > java-server/src/main/resources/db/migration/V0008__my_feature.sql << 'EOF'
 CREATE TABLE IF NOT EXISTS my_table (...);
 EOF
-
-# Deploy — migrations apply automatically on restart
-./deploy.sh
 ```
 
-Manual migration (if needed):
-
-```bash
-docker exec hivemem python3 /app/scripts/hivemem-migrate
-```
+Deploy the application -- Flyway applies pending migrations on startup.
 
 ### Debugging
 
 ```bash
-docker exec hivemem psql -U hivemem    # PostgreSQL shell
-docker logs hivemem --tail 50               # Container logs
-docker exec hivemem cat /data/audit.log     # Auth audit log
-docker exec hivemem hivemem-token list      # Show all tokens
+docker logs hivemem --tail 50           # Container logs
+docker exec hivemem hivemem-token list  # Show all tokens
 ```
-
-## Release Notes
-
-### v2.1.0 (2026-04-12)
-- **Feature:** Configurable embedding models via `HIVEMEM_EMBEDDING_MODEL` env var.
-- **Optimization:** Switched to multilingual MiniLM as default for 75% faster startups and 60% lower RAM.
-- **Security:** Achieved 100/100 SafeSkill score with new `SAFE.md` and transparency manifests.
-- **Workflow:** Added `mempalace-archive` and `mempalace-wakeup` skills to encapsulate agentic behaviors.
-- **Admin:** Improved `health` tool with real-time DB and model verification.
-- **Bugfixes:** Resolved unique constraint violations in embedding recomputation; fixed audit log path traversal risks.
 
 ## License
 
