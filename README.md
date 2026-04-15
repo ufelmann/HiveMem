@@ -11,7 +11,7 @@ MCP server backed by PostgreSQL 17 (pgvector + Apache AGE) with BGE-M3 embedding
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org)
 [![PostgreSQL](https://img.shields.io/badge/postgresql-17-336791)](https://postgresql.org)
 [![MCP Tools](https://img.shields.io/badge/MCP%20tools-36-orange)](https://github.com/ufelmann/HiveMem#tools-36)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/ufelmann/HiveMem/blob/main/LICENSE)
+[![License: Sustainable Use](https://img.shields.io/badge/license-Sustainable%20Use-blue)](https://github.com/ufelmann/HiveMem/blob/main/LICENSE)
 [![SafeSkill](https://safeskill.dev/api/badge/ufelmann-hivemem)](https://safeskill.dev/scan/ufelmann-hivemem)
 
 **Docker image:** [`ghcr.io/ufelmann/hivemem:main`](https://github.com/ufelmann/HiveMem/pkgs/container/hivemem)
@@ -748,11 +748,10 @@ docker exec hivemem hivemem-token list      # Show all tokens
 
 ## License
 
-MIT
+HiveMem is fair-code licensed under the [Sustainable Use License](LICENSE).
 
-cense
+- **Free** for personal use and internal business use
+- **Source available** -- inspect, modify, learn
+- **Commercially restricted** -- you can't sell HiveMem as a service
 
-MIT
-e
-
-MIT
+See [LICENSING.md](LICENSING.md) for plain-English details and examples.

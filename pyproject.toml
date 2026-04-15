@@ -2,7 +2,7 @@
 name = "hivemem"
 version = "2.1.0"
 description = "Personal knowledge system — MCP server with PostgreSQL"
-license = "MIT"
+license = {text = "Sustainable Use License"}
 readme = "README.md"
 authors = [{name = "Viktor Ufelmann"}]
 requires-python = ">=3.11"
