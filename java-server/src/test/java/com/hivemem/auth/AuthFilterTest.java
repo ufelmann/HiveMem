@@ -83,9 +83,10 @@ class AuthFilterTest {
         @Bean
         @org.springframework.context.annotation.Primary
         TokenService tokenService() {
-            return token -> "good-token".equals(token)
-                    ? Optional.of(new AuthPrincipal("token-1", AuthRole.WRITER))
-                    : Optional.empty();
+            return new com.hivemem.auth.support.FixedTokenService(token ->
+                    "good-token".equals(token)
+                            ? Optional.of(new AuthPrincipal("token-1", AuthRole.WRITER))
+                            : Optional.empty());
         }
 
         @Bean
