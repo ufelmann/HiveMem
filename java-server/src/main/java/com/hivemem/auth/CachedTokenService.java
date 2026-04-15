@@ -4,6 +4,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 
 public class CachedTokenService implements TokenService {
@@ -25,5 +26,28 @@ public class CachedTokenService implements TokenService {
     @Override
     public Optional<AuthPrincipal> validateToken(String token) {
         return cache.get(token, delegate::validateToken);
+    }
+
+    @Override
+    public String createToken(String name, AuthRole role, Integer expiresInDays) {
+        return delegate.createToken(name, role, expiresInDays);
+    }
+
+    @Override
+    public List<TokenSummary> listTokens(boolean includeRevoked, int limit) {
+        return delegate.listTokens(includeRevoked, limit);
+    }
+
+    @Override
+    public void revokeToken(String name) {
+        delegate.revokeToken(name);
+        // Invalidate the full cache: we don't know which plaintext maps to the revoked name,
+        // and the cache is keyed by plaintext, not by name. Simpler and safer than partial invalidation.
+        cache.invalidateAll();
+    }
+
+    @Override
+    public Optional<TokenSummary> getTokenInfo(String name) {
+        return delegate.getTokenInfo(name);
     }
 }
