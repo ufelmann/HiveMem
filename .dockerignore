@@ -1,12 +1,6 @@
-.venv/
 .git/
-__pycache__/
-*.py[cod]
-*.egg-info/
-dist/
-.pytest_cache/
 .env
 backups/
 docs/
 .base-hash
-tests/
+java-server/target/

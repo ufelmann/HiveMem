@@ -1,1 +1,0 @@
-"""HiveMem — Personal knowledge system."""
