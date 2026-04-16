@@ -9,4 +9,6 @@ public interface EmbeddingClient {
     default List<Float> encodeQuery(String text) {
         return encodeDocument(text);
     }
+
+    EmbeddingInfo getInfo();
 }
