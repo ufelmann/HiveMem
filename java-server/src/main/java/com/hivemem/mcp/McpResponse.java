@@ -1,9 +1,12 @@
 package com.hivemem.mcp;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Map;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record McpResponse(
         String jsonrpc,
         Object id,
