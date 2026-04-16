@@ -3,13 +3,9 @@ services:
     build: .
     ports:
       - "8421:8421"
-    volumes:
-      - hivemem_data:/data
-      - hivemem_models:/data/models
+    environment:
+      HIVEMEM_JDBC_URL: ${HIVEMEM_JDBC_URL}
+      HIVEMEM_DB_USER: ${HIVEMEM_DB_USER}
+      HIVEMEM_DB_PASSWORD: ${HIVEMEM_DB_PASSWORD}
+      HIVEMEM_EMBEDDING_URL: ${HIVEMEM_EMBEDDING_URL}
     restart: unless-stopped
-
-volumes:
-  hivemem_data:
-    name: hivemem_data
-  hivemem_models:
-    name: hivemem_models
