@@ -1,6 +1,6 @@
 package com.hivemem.tools.read;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.mcp.ToolHandler;
 import com.hivemem.write.WriteArgumentParser;

@@ -40,10 +40,12 @@ public class HttpEmbeddingClient implements EmbeddingClient {
     }
 
     private List<Float> encode(String text, String mode) {
+        String jsonBody = "{\"text\":" + toJsonString(text) + ",\"mode\":\"" + mode + "\"}";
         EmbeddingResponse response = restClient.post()
                 .uri("/embeddings")
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(new EmbeddingRequest(text, mode))
+                .accept(MediaType.APPLICATION_JSON)
+                .body(jsonBody)
                 .retrieve()
                 .body(EmbeddingResponse.class);
         if (response == null || response.vector() == null) {
@@ -52,9 +54,10 @@ public class HttpEmbeddingClient implements EmbeddingClient {
         return List.copyOf(response.vector());
     }
 
-    private record EmbeddingRequest(String text, String mode) {
+    private static String toJsonString(String s) {
+        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "\"";
     }
 
-    private record EmbeddingResponse(List<Float> vector) {
+    record EmbeddingResponse(List<Float> vector) {
     }
 }
