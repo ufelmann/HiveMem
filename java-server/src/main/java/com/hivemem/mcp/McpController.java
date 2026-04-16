@@ -63,7 +63,7 @@ public class McpController {
     }
 
     @PostMapping(value = "/mcp")
-    public ResponseEntity<McpResponse> handle(@RequestBody McpRequest request, HttpServletRequest servletRequest) {
+    public ResponseEntity<?> handle(@RequestBody McpRequest request, HttpServletRequest servletRequest) {
         log.info("MCP request: method={} id={} accept={} content-type={}",
                 request.method(), request.id(),
                 servletRequest.getHeader("Accept"),
@@ -79,6 +79,11 @@ public class McpController {
             return ResponseEntity.ok(McpResponse.methodNotFound(request.id(), method));
         }
 
+        // Notifications (no id) get 202 Accepted with no body per MCP Streamable HTTP spec.
+        if (method.startsWith("notifications/")) {
+            return ResponseEntity.accepted().build();
+        }
+
         return switch (method) {
             case "initialize" -> ResponseEntity.ok()
                     .header(SESSION_HEADER, UUID.randomUUID().toString())
@@ -90,8 +95,6 @@ public class McpController {
                                     "serverInfo", Map.of("name", "hivemem", "version", "3.0.2")
                             )
                     ));
-            case "notifications/initialized", "notifications/cancelled" ->
-                    ResponseEntity.ok(McpResponse.success(request.id(), Map.of()));
             case "ping" -> ResponseEntity.ok(McpResponse.success(request.id(), Map.of()));
             case "tools/list" -> ResponseEntity.ok(McpResponse.success(
                     request.id(),
