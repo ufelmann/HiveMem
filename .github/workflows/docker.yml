@@ -2,7 +2,7 @@ name: Docker
 
 on:
   push:
-    branches: [main, java-spring-boot-migration]
+    branches: [main, java25-springboot4-migration]
     tags: ["v*"]
 
 env:
