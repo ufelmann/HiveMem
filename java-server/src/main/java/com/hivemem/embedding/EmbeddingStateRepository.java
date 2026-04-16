@@ -79,11 +79,10 @@ public class EmbeddingStateRepository {
         dslContext.execute("DROP INDEX IF EXISTS idx_drawers_embedding");
     }
 
-    public void createEmbeddingIndex() {
-        dslContext.execute("""
-                CREATE INDEX IF NOT EXISTS idx_drawers_embedding
-                ON drawers USING hnsw (embedding vector_cosine_ops)
-                """);
+    public void createEmbeddingIndex(int dimension) {
+        dslContext.execute(
+                "CREATE INDEX IF NOT EXISTS idx_drawers_embedding " +
+                "ON drawers USING hnsw ((embedding::vector(" + dimension + ")) vector_cosine_ops)");
     }
 
     public boolean tryAdvisoryLock(long lockId) {
