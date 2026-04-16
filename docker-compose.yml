@@ -1,11 +1,49 @@
 services:
+  hivemem-db:
+    image: pgvector/pgvector:pg17
+    container_name: hivemem-db
+    environment:
+      POSTGRES_DB: hivemem
+      POSTGRES_USER: hivemem
+      POSTGRES_PASSWORD: ${HIVEMEM_DB_PASSWORD:-secret}
+    volumes:
+      - hivemem-pgdata:/var/lib/postgresql/data
+    networks:
+      - hivemem-net
+    restart: unless-stopped
+    # Proxmox LXC: uncomment the next line
+    # security_opt: [apparmor=unconfined]
+
+  hivemem-embeddings:
+    build: /tmp/embedding-service
+    container_name: hivemem-embeddings
+    networks:
+      - hivemem-net
+    restart: unless-stopped
+    # Proxmox LXC: uncomment the next line
+    # security_opt: [apparmor=unconfined]
+
   hivemem:
-    build: .
+    image: ghcr.io/ufelmann/hivemem:main
+    container_name: hivemem
     ports:
       - "8421:8421"
     environment:
-      HIVEMEM_JDBC_URL: ${HIVEMEM_JDBC_URL}
-      HIVEMEM_DB_USER: ${HIVEMEM_DB_USER}
-      HIVEMEM_DB_PASSWORD: ${HIVEMEM_DB_PASSWORD}
-      HIVEMEM_EMBEDDING_URL: ${HIVEMEM_EMBEDDING_URL}
+      HIVEMEM_JDBC_URL: jdbc:postgresql://hivemem-db:5432/hivemem
+      HIVEMEM_DB_USER: hivemem
+      HIVEMEM_DB_PASSWORD: ${HIVEMEM_DB_PASSWORD:-secret}
+      HIVEMEM_EMBEDDING_URL: http://hivemem-embeddings:80
+    depends_on:
+      - hivemem-db
+      - hivemem-embeddings
+    networks:
+      - hivemem-net
     restart: unless-stopped
+    # Proxmox LXC: uncomment the next line
+    # security_opt: [apparmor=unconfined]
+
+networks:
+  hivemem-net:
+
+volumes:
+  hivemem-pgdata:

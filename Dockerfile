@@ -13,8 +13,10 @@ WORKDIR /app
 COPY --from=build /workspace/target/app.jar /app/app.jar
 COPY entrypoint.sh /app/entrypoint.sh
 COPY scripts/hivemem-migrate /usr/local/bin/hivemem-migrate
+COPY scripts/hivemem-backup /usr/local/bin/hivemem-backup
+COPY scripts/hivemem-token /usr/local/bin/hivemem-token
 
-RUN chmod +x /app/entrypoint.sh /usr/local/bin/hivemem-migrate
+RUN chmod +x /app/entrypoint.sh /usr/local/bin/hivemem-migrate /usr/local/bin/hivemem-backup /usr/local/bin/hivemem-token
 
 EXPOSE 8421
 ENTRYPOINT ["/app/entrypoint.sh"]
