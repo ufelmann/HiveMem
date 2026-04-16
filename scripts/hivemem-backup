@@ -15,7 +15,11 @@ fi
 
 DB_USER="${HIVEMEM_DB_USER:-hivemem}"
 DB_NAME="${HIVEMEM_DB_NAME:-hivemem}"
-DB_HOST="${HIVEMEM_DB_HOST:-/var/run/postgresql}"
+# Parse host from JDBC URL if DB_HOST not set (jdbc:postgresql://host:port/db)
+if [ -z "${HIVEMEM_DB_HOST:-}" ] && [ -n "${HIVEMEM_JDBC_URL:-}" ]; then
+    HIVEMEM_DB_HOST=$(echo "$HIVEMEM_JDBC_URL" | sed 's|.*://||;s|:.*||;s|/.*||')
+fi
+DB_HOST="${HIVEMEM_DB_HOST:-localhost}"
 
 pg_dump -U "$DB_USER" -h "$DB_HOST" "$DB_NAME" | gzip > "$DUMP_FILE"
 
