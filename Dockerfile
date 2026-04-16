@@ -1,4 +1,4 @@
-FROM maven:3.9.9-eclipse-temurin-21 AS build
+FROM maven:3.9.13-eclipse-temurin-25 AS build
 
 WORKDIR /workspace
 COPY java-server/pom.xml java-server/mvnw java-server/mvnw.cmd ./
