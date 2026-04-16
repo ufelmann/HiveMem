@@ -110,7 +110,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
                 log.info("Reencoding progress: {}/{}", done, total);
             }
 
-            stateRepository.createEmbeddingIndex();
+            stateRepository.createEmbeddingIndex(to.dimension());
             log.info("Recreated HNSW index");
 
             stateRepository.saveInfo(to);
