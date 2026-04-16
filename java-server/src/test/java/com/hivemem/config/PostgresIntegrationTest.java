@@ -1,8 +1,14 @@
 package com.hivemem.config;
 
+import com.hivemem.embedding.EmbeddingClient;
+import com.hivemem.embedding.FixedEmbeddingClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -17,7 +23,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Testcontainers
 @ActiveProfiles("test")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@Import(PostgresIntegrationTest.TestConfig.class)
 class PostgresIntegrationTest {
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class TestConfig {
+        @Bean
+        @Primary
+        EmbeddingClient testEmbeddingClient() {
+            return new FixedEmbeddingClient();
+        }
+    }
+
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("pgvector/pgvector:pg17")

@@ -2,12 +2,17 @@ package com.hivemem.auth;
 
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.EmbeddingInfo;
+import com.hivemem.embedding.FixedEmbeddingClient;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -27,7 +32,18 @@ import static org.mockito.Mockito.when;
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
+@Import(DbTokenServiceTest.TestConfig.class)
 class DbTokenServiceTest {
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class TestConfig {
+        @Bean
+        @Primary
+        EmbeddingClient testEmbeddingClient() {
+            return new FixedEmbeddingClient();
+        }
+    }
+
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("pgvector/pgvector:pg17")

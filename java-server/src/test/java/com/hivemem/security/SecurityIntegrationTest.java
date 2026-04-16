@@ -5,6 +5,7 @@ import com.hivemem.auth.RateLimiter;
 import com.hivemem.auth.ToolPermissionService;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.EmbeddingInfo;
+import com.hivemem.embedding.FixedEmbeddingClient;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -14,6 +15,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -52,7 +57,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
+@Import(SecurityIntegrationTest.TestConfig.class)
 class SecurityIntegrationTest {
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class TestConfig {
+        @Bean
+        @Primary
+        EmbeddingClient testEmbeddingClient() {
+            return new FixedEmbeddingClient();
+        }
+    }
+
 
     private static final String TOOLS_LIST_REQUEST = """
             {"jsonrpc":"2.0","id":1,"method":"tools/list"}
