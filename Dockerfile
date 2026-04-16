@@ -9,6 +9,8 @@ RUN chmod +x mvnw && ./mvnw -q -DskipTests package
 
 FROM eclipse-temurin:25-jre
 
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY --from=build /workspace/target/app.jar /app/app.jar
 COPY entrypoint.sh /app/entrypoint.sh
