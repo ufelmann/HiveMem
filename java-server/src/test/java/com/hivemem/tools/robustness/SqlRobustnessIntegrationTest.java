@@ -52,7 +52,7 @@ class SqlRobustnessIntegrationTest {
     private static final OffsetDateTime BASE_TIME = OffsetDateTime.parse("2026-04-14T09:00:00Z");
 
     @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("pgvector/pgvector:pg16")
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("pgvector/pgvector:pg17")
             .withDatabaseName("hivemem")
             .withUsername("hivemem")
             .withPassword("hivemem")
