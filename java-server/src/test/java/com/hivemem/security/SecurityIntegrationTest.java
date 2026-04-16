@@ -4,6 +4,7 @@ import com.hivemem.auth.AuthRole;
 import com.hivemem.auth.RateLimiter;
 import com.hivemem.auth.ToolPermissionService;
 import com.hivemem.embedding.EmbeddingClient;
+import com.hivemem.embedding.EmbeddingInfo;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -32,6 +33,7 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -91,6 +93,7 @@ class SecurityIntegrationTest {
     void resetState() {
         rateLimiter.clearAll();
         dslContext.execute("TRUNCATE TABLE api_tokens");
+        when(embeddingClient.getInfo()).thenReturn(new EmbeddingInfo("test-model", 1024));
     }
 
     // ---- Helpers ----

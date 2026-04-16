@@ -7,6 +7,7 @@ import com.hivemem.auth.AuthRole;
 import com.hivemem.auth.RateLimiter;
 import com.hivemem.auth.TokenService;
 import com.hivemem.embedding.EmbeddingClient;
+import com.hivemem.embedding.EmbeddingInfo;
 import com.hivemem.embedding.FixedEmbeddingClient;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
@@ -93,6 +94,7 @@ class CrossFeatureParityIntegrationTest {
                 .thenAnswer(invocation -> fixedEmbeddingClient.encodeQuery(invocation.getArgument(0, String.class)));
         when(httpEmbeddingClient.encodeDocument(org.mockito.ArgumentMatchers.anyString()))
                 .thenAnswer(invocation -> fixedEmbeddingClient.encodeDocument(invocation.getArgument(0, String.class)));
+        when(httpEmbeddingClient.getInfo()).thenReturn(new EmbeddingInfo("test-model", 1024));
     }
 
     @Test

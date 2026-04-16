@@ -1,6 +1,7 @@
 package com.hivemem.auth;
 
 import com.hivemem.embedding.EmbeddingClient;
+import com.hivemem.embedding.EmbeddingInfo;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,6 +22,7 @@ import java.time.OffsetDateTime;
 import java.util.HexFormat;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -59,6 +61,7 @@ class DbTokenServiceTest {
     @BeforeEach
     void resetDatabase() {
         dslContext.execute("TRUNCATE TABLE api_tokens");
+        when(embeddingClient.getInfo()).thenReturn(new EmbeddingInfo("test-model", 1024));
     }
 
     @Test
