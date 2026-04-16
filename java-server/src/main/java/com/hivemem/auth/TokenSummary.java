@@ -1,6 +1,7 @@
 package com.hivemem.auth;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 /**
  * Public metadata about a token for list/info views. Never includes the plaintext or hash.
@@ -25,7 +26,7 @@ public record TokenSummary(
             if (revokedAt != null) {
                 return REVOKED;
             }
-            if (expiresAt != null && expiresAt.isBefore(OffsetDateTime.now())) {
+            if (expiresAt != null && expiresAt.isBefore(OffsetDateTime.now(ZoneOffset.UTC))) {
                 return EXPIRED;
             }
             return ACTIVE;

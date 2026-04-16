@@ -280,7 +280,7 @@ class CrossFeatureParityIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
-        assertThat(body.path("error").isNull()).isTrue();
+        assertThat(body.has("error")).as("Unexpected error in response: %s", body).isFalse();
         return body.path("result").path("content").get(0);
     }
 

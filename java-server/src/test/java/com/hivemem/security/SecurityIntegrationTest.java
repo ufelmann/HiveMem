@@ -143,7 +143,7 @@ class SecurityIntegrationTest {
         }
 
         @Test
-        void writerSees32Tools() throws Exception {
+        void writerSees34Tools() throws Exception {
             insertToken("writer-user", "writer-token", "writer");
 
             mockMvc.perform(post("/mcp")
@@ -151,11 +151,11 @@ class SecurityIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(TOOLS_LIST_REQUEST))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.tools", hasSize(32)));
+                    .andExpect(jsonPath("$.result.tools", hasSize(34)));
         }
 
         @Test
-        void agentSees32Tools() throws Exception {
+        void agentSees34Tools() throws Exception {
             insertToken("agent-user", "agent-token", "agent");
 
             mockMvc.perform(post("/mcp")
@@ -163,7 +163,7 @@ class SecurityIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(TOOLS_LIST_REQUEST))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.tools", hasSize(32)));
+                    .andExpect(jsonPath("$.result.tools", hasSize(34)));
         }
 
         @Test
@@ -397,7 +397,7 @@ class SecurityIntegrationTest {
     class PathTraversalViaHttp {
 
         /**
-         * mine_file is admin-only. Calling it with /etc/passwd should return
+         * mine_file is a write tool (accessible to writer/agent/admin). Calling it with /etc/passwd should return
          * a -32602 (InvalidParams) error because ImportPathValidator rejects
          * the path. This tests the full HTTP stack, unlike PathSafetyTest
          * which tests the validator in isolation.
@@ -513,8 +513,7 @@ class SecurityIntegrationTest {
 
             for (String adminTool : Set.of(
                     "hivemem_approve_pending", "hivemem_health",
-                    "hivemem_log_access", "hivemem_refresh_popularity",
-                    "hivemem_mine_file", "hivemem_mine_directory")) {
+                    "hivemem_log_access", "hivemem_refresh_popularity")) {
                 assertThat(writerTools)
                         .as("Admin tool %s must not appear in writer role", adminTool)
                         .doesNotContain(adminTool);
