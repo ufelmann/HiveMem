@@ -54,16 +54,16 @@ public class ToolPermissionService {
             "hivemem_check_contradiction",
             "hivemem_register_agent",
             "hivemem_diary_write",
-            "hivemem_update_blueprint"
+            "hivemem_update_blueprint",
+            "hivemem_mine_file",
+            "hivemem_mine_directory"
     );
 
     private static final Set<String> ADMIN_TOOLS = tools(
             "hivemem_approve_pending",
             "hivemem_health",
             "hivemem_log_access",
-            "hivemem_refresh_popularity",
-            "hivemem_mine_file",
-            "hivemem_mine_directory"
+            "hivemem_refresh_popularity"
     );
 
     private static final Set<String> WRITER_TOOLS = union(READ_TOOLS, WRITE_TOOLS);

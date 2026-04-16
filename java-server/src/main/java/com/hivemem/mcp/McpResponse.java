@@ -39,6 +39,7 @@ public record McpResponse(
         return success(id, Map.of("content", payload));
     }
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record McpError(int code, String message, Object data) {
     }
 }
