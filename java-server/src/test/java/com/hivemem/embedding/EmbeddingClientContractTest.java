@@ -9,11 +9,14 @@ import java.net.URI;
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.http.HttpMethod.GET;
 import static org.springframework.http.HttpMethod.POST;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import java.util.List;
 
 class EmbeddingClientContractTest {
 
@@ -84,6 +87,85 @@ class EmbeddingClientContractTest {
                         """, MediaType.APPLICATION_JSON));
 
         assertThat(client.encodeDocument("drawer content")).containsExactly(0.9f, 0.8f, 0.7f);
+        server.verify();
+    }
+
+    @Test
+    void getInfoReturnsModelAndDimension() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        HttpEmbeddingClient client = new HttpEmbeddingClient(
+                builder,
+                new EmbeddingProperties(URI.create("https://embeddings.local"), Duration.ofSeconds(2)),
+                false
+        );
+
+        server.expect(requestTo("https://embeddings.local/info"))
+                .andExpect(method(GET))
+                .andRespond(withSuccess("""
+                        {"model":"bge-m3","dimension":1024}
+                        """, MediaType.APPLICATION_JSON));
+
+        EmbeddingInfo info = client.getInfo();
+        assertThat(info.model()).isEqualTo("bge-m3");
+        assertThat(info.dimension()).isEqualTo(1024);
+        server.verify();
+    }
+
+    @Test
+    void encodeDocumentValidatesDimensionFromResponse() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        HttpEmbeddingClient client = new HttpEmbeddingClient(
+                builder,
+                new EmbeddingProperties(URI.create("https://embeddings.local"), Duration.ofSeconds(2)),
+                false
+        );
+
+        // Register all expectations before making any calls
+        server.expect(requestTo("https://embeddings.local/info"))
+                .andExpect(method(GET))
+                .andRespond(withSuccess("""
+                        {"model":"bge-m3","dimension":3}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://embeddings.local/embeddings"))
+                .andExpect(method(POST))
+                .andRespond(withSuccess("""
+                        {"vector":[0.1,0.2,0.3],"model":"bge-m3","dimension":3}
+                        """, MediaType.APPLICATION_JSON));
+
+        client.getInfo();
+        List<Float> result = client.encodeDocument("test");
+        assertThat(result).hasSize(3);
+        server.verify();
+    }
+
+    @Test
+    void encodeDocumentThrowsOnDimensionMismatch() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        HttpEmbeddingClient client = new HttpEmbeddingClient(
+                builder,
+                new EmbeddingProperties(URI.create("https://embeddings.local"), Duration.ofSeconds(2)),
+                false
+        );
+
+        // Register all expectations before making any calls
+        server.expect(requestTo("https://embeddings.local/info"))
+                .andExpect(method(GET))
+                .andRespond(withSuccess("""
+                        {"model":"bge-m3","dimension":1024}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://embeddings.local/embeddings"))
+                .andExpect(method(POST))
+                .andRespond(withSuccess("""
+                        {"vector":[0.1,0.2,0.3],"model":"bge-m3","dimension":3}
+                        """, MediaType.APPLICATION_JSON));
+
+        client.getInfo();
+        assertThatThrownBy(() -> client.encodeDocument("test"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("dimension");
         server.verify();
     }
 }
