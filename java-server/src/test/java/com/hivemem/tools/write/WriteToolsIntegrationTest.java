@@ -1,5 +1,7 @@
 package com.hivemem.tools.write;
 
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.hivemem.auth.AuthFilter;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
@@ -25,14 +27,19 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.matchesPattern;
@@ -77,6 +84,9 @@ class WriteToolsIntegrationTest {
     @Autowired
     private RateLimiter rateLimiter;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @BeforeEach
     void resetDatabase() {
         rateLimiter.clearAll();
@@ -85,33 +95,18 @@ class WriteToolsIntegrationTest {
 
     @Test
     void writerCanAddCommittedFactAndSeeItInActiveFacts() throws Exception {
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":1,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_kg_add",
-                                    "arguments":{
-                                      "subject":"HiveMem",
-                                      "predicate":"runs on",
-                                      "object_":"Java",
-                                      "confidence":0.75,
-                                      "source_id":null,
-                                      "valid_from":"2026-04-03T12:00:00Z"
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].id").isString())
-                .andExpect(jsonPath("$.result.content[0].subject").value("HiveMem"))
-                .andExpect(jsonPath("$.result.content[0].predicate").value("runs on"))
-                .andExpect(jsonPath("$.result.content[0].object").value("Java"))
-                .andExpect(jsonPath("$.result.content[0].status").value("committed"));
+        JsonNode content = callToolContent("writer-token", "hivemem_kg_add", Map.of(
+                "subject", "HiveMem",
+                "predicate", "runs on",
+                "object_", "Java",
+                "confidence", 0.75,
+                "valid_from", "2026-04-03T12:00:00Z"
+        ));
+        assertThat(content.path("id").asText()).isNotBlank();
+        assertThat(content.path("subject").asText()).isEqualTo("HiveMem");
+        assertThat(content.path("predicate").asText()).isEqualTo("runs on");
+        assertThat(content.path("object").asText()).isEqualTo("Java");
+        assertThat(content.path("status").asText()).isEqualTo("committed");
 
         Record row = dslContext.fetchOne("""
                 SELECT subject, predicate, "object", status, created_by
@@ -125,37 +120,23 @@ class WriteToolsIntegrationTest {
 
     @Test
     void writerCanAddDrawerWithEmbeddingAndProgressiveLayers() throws Exception {
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":11,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_add_drawer",
-                                    "arguments":{
-                                      "content":"Semantic oracle drawer",
-                                      "wing":"alpha",
-                                      "hall":"facts",
-                                      "room":"search",
-                                      "source":"system",
-                                      "tags":["semantic","oracle"],
-                                      "importance":2,
-                                      "summary":"Semantic oracle summary",
-                                      "key_points":["semantic","oracle"],
-                                      "insight":"Used for semantic search",
-                                      "actionability":"reference",
-                                      "valid_from":"2026-04-03T12:00:00Z"
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].status").value("committed"))
-                .andExpect(jsonPath("$.result.content[0].wing").value("alpha"))
-                .andExpect(jsonPath("$.result.content[0].hall").value("facts"));
+        JsonNode content = callToolContent("writer-token", "hivemem_add_drawer", Map.ofEntries(
+                Map.entry("content", "Semantic oracle drawer"),
+                Map.entry("wing", "alpha"),
+                Map.entry("hall", "facts"),
+                Map.entry("room", "search"),
+                Map.entry("source", "system"),
+                Map.entry("tags", List.of("semantic", "oracle")),
+                Map.entry("importance", 2),
+                Map.entry("summary", "Semantic oracle summary"),
+                Map.entry("key_points", List.of("semantic", "oracle")),
+                Map.entry("insight", "Used for semantic search"),
+                Map.entry("actionability", "reference"),
+                Map.entry("valid_from", "2026-04-03T12:00:00Z")
+        ));
+        assertThat(content.path("status").asText()).isEqualTo("committed");
+        assertThat(content.path("wing").asText()).isEqualTo("alpha");
+        assertThat(content.path("hall").asText()).isEqualTo("facts");
 
         Record row = dslContext.fetchOne("""
                 SELECT content, wing, hall, room, source, tags, importance, summary, key_points, insight, actionability, status, created_by, embedding
@@ -177,89 +158,36 @@ class WriteToolsIntegrationTest {
 
     @Test
     void checkDuplicateFindsNearDuplicateDrawers() throws Exception {
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":12,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_add_drawer",
-                                    "arguments":{
-                                      "content":"Duplicate oracle alpha",
-                                      "wing":"alpha",
-                                      "hall":"facts",
-                                      "room":"search",
-                                      "summary":"Duplicate oracle alpha"
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk());
+        callToolContent("writer-token", "hivemem_add_drawer", Map.of(
+                "content", "Duplicate oracle alpha",
+                "wing", "alpha",
+                "hall", "facts",
+                "room", "search",
+                "summary", "Duplicate oracle alpha"
+        ));
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":13,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_check_duplicate",
-                                    "arguments":{
-                                      "content":"Duplicate oracle beta",
-                                      "threshold":0.95
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(1))
-                .andExpect(jsonPath("$.result.content[0][0].summary").value("Duplicate oracle alpha"))
-                .andExpect(jsonPath("$.result.content[0][0].similarity").isNumber());
+        JsonNode content = callToolContent("admin-token", "hivemem_check_duplicate", Map.of(
+                "content", "Duplicate oracle beta",
+                "threshold", 0.95
+        ));
+        assertThat(content).hasSize(1);
+        assertThat(content.get(0).path("summary").asText()).isEqualTo("Duplicate oracle alpha");
+        assertThat(content.get(0).path("similarity").isNumber()).isTrue();
     }
 
     @Test
     void agentKgAddForcesPendingAndShowsInPendingApprovals() throws Exception {
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer agent-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":2,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_kg_add",
-                                    "arguments":{
-                                      "subject":"Agentic fact",
-                                      "predicate":"needs review",
-                                      "object_":"yes",
-                                      "status":"committed"
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].status").value("pending"));
+        JsonNode factContent = callToolContent("agent-token", "hivemem_kg_add", Map.of(
+                "subject", "Agentic fact",
+                "predicate", "needs review",
+                "object_", "yes",
+                "status", "committed"
+        ));
+        assertThat(factContent.path("status").asText()).isEqualTo("pending");
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":3,
-                                  "method":"tools/call",
-                                  "params":{"name":"hivemem_pending_approvals","arguments":{}}
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0][0].type").value("fact"))
-                .andExpect(jsonPath("$.result.content[0][0].description").value("Agentic fact -> needs review -> yes"));
+        JsonNode pending = callToolContent("writer-token", "hivemem_pending_approvals", Map.of());
+        assertThat(pending.get(0).path("type").asText()).isEqualTo("fact");
+        assertThat(pending.get(0).path("description").asText()).isEqualTo("Agentic fact -> needs review -> yes");
 
         Record row = dslContext.fetchOne("""
                 SELECT status, created_by
@@ -316,30 +244,20 @@ class WriteToolsIntegrationTest {
                 null
         );
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":4,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_check_contradiction",
-                                    "arguments":{
-                                      "subject":"HiveMem",
-                                      "predicate":"runs on",
-                                      "new_object":"Spring Boot"
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(2))
-                .andExpect(jsonPath("$.result.content[0][*].existing_object",
-                        containsInAnyOrder("PostgreSQL", "Java")))
-                .andExpect(jsonPath("$.result.content[0][*].valid_from",
-                        everyItem(matchesPattern("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?[+-]\\d{2}:\\d{2}"))));
+        JsonNode content = callToolContent("writer-token", "hivemem_check_contradiction", Map.of(
+                "subject", "HiveMem",
+                "predicate", "runs on",
+                "new_object", "Spring Boot"
+        ));
+        assertThat(content).hasSize(2);
+        List<String> existingObjects = new ArrayList<>();
+        for (JsonNode row : content) {
+            existingObjects.add(row.path("existing_object").asText());
+        }
+        assertThat(existingObjects).containsExactlyInAnyOrder("PostgreSQL", "Java");
+        for (JsonNode row : content) {
+            assertThat(row.path("valid_from").asText()).matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?[+-]\\d{2}:\\d{2}");
+        }
     }
 
     @Test
@@ -360,39 +278,15 @@ class WriteToolsIntegrationTest {
                 null
         );
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":5,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_kg_invalidate",
-                                    "arguments":{"fact_id":"00000000-0000-0000-0000-000000000201"}
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].invalidated").value(true));
+        JsonNode invalidateContent = callToolContent("writer-token", "hivemem_kg_invalidate", Map.of(
+                "fact_id", "00000000-0000-0000-0000-000000000201"
+        ));
+        assertThat(invalidateContent.path("invalidated").asBoolean()).isTrue();
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":6,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_search_kg",
-                                    "arguments":{"subject":"Transient fact"}
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(0));
+        JsonNode searchContent = callToolContent("writer-token", "hivemem_search_kg", Map.of(
+                "subject", "Transient fact"
+        ));
+        assertThat(searchContent).isEmpty();
 
         org.junit.jupiter.api.Assertions.assertNull(dslContext.fetchOne("""
                 SELECT id
@@ -425,26 +319,12 @@ class WriteToolsIntegrationTest {
                 null
         );
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":12,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_revise_fact",
-                                    "arguments":{
-                                      "old_id":"00000000-0000-0000-0000-000000000401",
-                                      "new_object":"Spring Boot"
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].old_id").value(oldId.toString()))
-                .andExpect(jsonPath("$.result.content[0].new_id").isString());
+        JsonNode reviseContent = callToolContent("writer-token", "hivemem_revise_fact", Map.of(
+                "old_id", "00000000-0000-0000-0000-000000000401",
+                "new_object", "Spring Boot"
+        ));
+        assertThat(reviseContent.path("old_id").asText()).isEqualTo(oldId.toString());
+        assertThat(reviseContent.path("new_id").asText()).isNotBlank();
 
         Record oldRow = dslContext.fetchOne("""
                 SELECT id, valid_until, subject, predicate, "object", confidence, source_id, status, created_by
@@ -471,24 +351,12 @@ class WriteToolsIntegrationTest {
         org.junit.jupiter.api.Assertions.assertEquals("writer-1", newRow.get("created_by", String.class));
 
         UUID newId = newRow.get("id", UUID.class);
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":13,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_fact_history",
-                                    "arguments":{"fact_id":"%s"}
-                                  }
-                                }
-                                """.formatted(newId)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(2))
-                .andExpect(jsonPath("$.result.content[0][0].id").value(oldId.toString()))
-                .andExpect(jsonPath("$.result.content[0][1].id").value(newId.toString()));
+        JsonNode history = callToolContent("writer-token", "hivemem_fact_history", Map.of(
+                "fact_id", newId.toString()
+        ));
+        assertThat(history).hasSize(2);
+        assertThat(history.get(0).path("id").asText()).isEqualTo(oldId.toString());
+        assertThat(history.get(1).path("id").asText()).isEqualTo(newId.toString());
     }
 
     @Test
@@ -509,26 +377,12 @@ class WriteToolsIntegrationTest {
                 null
         );
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer agent-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":14,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_revise_fact",
-                                    "arguments":{
-                                      "old_id":"00000000-0000-0000-0000-000000000403",
-                                      "new_object":"closed"
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].old_id").value(oldId.toString()))
-                .andExpect(jsonPath("$.result.content[0].new_id").isString());
+        JsonNode reviseContent = callToolContent("agent-token", "hivemem_revise_fact", Map.of(
+                "old_id", "00000000-0000-0000-0000-000000000403",
+                "new_object", "closed"
+        ));
+        assertThat(reviseContent.path("old_id").asText()).isEqualTo(oldId.toString());
+        assertThat(reviseContent.path("new_id").asText()).isNotBlank();
 
         Record newRow = dslContext.fetchOne("""
                 SELECT parent_id, "object", status, created_by
@@ -558,69 +412,27 @@ class WriteToolsIntegrationTest {
                 null
         );
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":15,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_revise_fact",
-                                    "arguments":{
-                                      "old_id":"00000000-0000-0000-0000-000000000404",
-                                      "new_object":"Spring Boot"
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk());
+        callToolContent("writer-token", "hivemem_revise_fact", Map.of(
+                "old_id", "00000000-0000-0000-0000-000000000404",
+                "new_object", "Spring Boot"
+        ));
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":16,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_check_contradiction",
-                                    "arguments":{
-                                      "subject":"HiveMem",
-                                      "predicate":"runs on",
-                                      "new_object":"Spring Boot"
-                                    }
-                                  }
-                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(0));
+        JsonNode content = callToolContent("writer-token", "hivemem_check_contradiction", Map.of(
+                "subject", "HiveMem",
+                "predicate", "runs on",
+                "new_object", "Spring Boot"
+        ));
+        assertThat(content).isEmpty();
     }
 
     @Test
     void writerCanUpsertIdentityAndPersistTokenCount() throws Exception {
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":19,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_update_identity",
-                                    "arguments":{
-                                      "key":"l0_identity",
-                                      "content":"I am HiveMem."
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].key").value("l0_identity"))
-                .andExpect(jsonPath("$.result.content[0].token_count").value(3));
+        JsonNode content = callToolContent("writer-token", "hivemem_update_identity", Map.of(
+                "key", "l0_identity",
+                "content", "I am HiveMem."
+        ));
+        assertThat(content.path("key").asText()).isEqualTo("l0_identity");
+        assertThat(content.path("token_count").asInt()).isEqualTo(3);
 
         Record row = dslContext.fetchOne("""
                 SELECT content, token_count
@@ -641,37 +453,20 @@ class WriteToolsIntegrationTest {
                 OffsetDateTime.parse("2026-04-05T13:00:00Z"),
                 null);
 
-        String referenceId = mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":20,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_add_reference",
-                                    "arguments":{
-                                      "title":"GraphRAG Survey 2024",
-                                      "url":"https://example.com/graphrag",
-                                      "author":"Zhang et al.",
-                                      "ref_type":"paper",
-                                      "status":"unread",
-                                      "notes":"Worth reading",
-                                      "tags":["graph","rag"],
-                                      "importance":2
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].title").value("GraphRAG Survey 2024"))
-                .andExpect(jsonPath("$.result.content[0].status").value("unread"))
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
+        JsonNode refContent = callToolContent("writer-token", "hivemem_add_reference", Map.of(
+                "title", "GraphRAG Survey 2024",
+                "url", "https://example.com/graphrag",
+                "author", "Zhang et al.",
+                "ref_type", "paper",
+                "status", "unread",
+                "notes", "Worth reading",
+                "tags", List.of("graph", "rag"),
+                "importance", 2
+        ));
+        assertThat(refContent.path("title").asText()).isEqualTo("GraphRAG Survey 2024");
+        assertThat(refContent.path("status").asText()).isEqualTo("unread");
 
-        String refId = com.jayway.jsonpath.JsonPath.read(referenceId, "$.result.content[0].id");
+        String refId = refContent.path("id").asText();
         Record referenceRow = dslContext.fetchOne("""
                 SELECT title, url, author, ref_type, status, notes, tags, importance
                 FROM references_
@@ -681,28 +476,14 @@ class WriteToolsIntegrationTest {
         org.junit.jupiter.api.Assertions.assertEquals("GraphRAG Survey 2024", referenceRow.get("title", String.class));
         org.junit.jupiter.api.Assertions.assertEquals("unread", referenceRow.get("status", String.class));
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":21,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_link_reference",
-                                    "arguments":{
-                                      "drawer_id":"00000000-0000-0000-0000-000000000501",
-                                      "reference_id":"%s",
-                                      "relation":"source"
-                                    }
-                                  }
-                                }
-                                """.formatted(refId)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].drawer_id").value(drawerId.toString()))
-                .andExpect(jsonPath("$.result.content[0].reference_id").value(refId))
-                .andExpect(jsonPath("$.result.content[0].relation").value("source"));
+        JsonNode linkContent = callToolContent("writer-token", "hivemem_link_reference", Map.of(
+                "drawer_id", "00000000-0000-0000-0000-000000000501",
+                "reference_id", refId,
+                "relation", "source"
+        ));
+        assertThat(linkContent.path("drawer_id").asText()).isEqualTo(drawerId.toString());
+        assertThat(linkContent.path("reference_id").asText()).isEqualTo(refId);
+        assertThat(linkContent.path("relation").asText()).isEqualTo("source");
 
         Record linkRow = dslContext.fetchOne("""
                 SELECT drawer_id, reference_id, relation
@@ -715,27 +496,13 @@ class WriteToolsIntegrationTest {
 
     @Test
     void writerCanRegisterAgentAndWriteDiaryEntries() throws Exception {
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":22,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_register_agent",
-                                    "arguments":{
-                                      "name":"classifier",
-                                      "focus":"Classify incoming drawers",
-                                      "schedule":"nightly"
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].name").value("classifier"))
-                .andExpect(jsonPath("$.result.content[0].focus").value("Classify incoming drawers"));
+        JsonNode agentContent = callToolContent("writer-token", "hivemem_register_agent", Map.of(
+                "name", "classifier",
+                "focus", "Classify incoming drawers",
+                "schedule", "nightly"
+        ));
+        assertThat(agentContent.path("name").asText()).isEqualTo("classifier");
+        assertThat(agentContent.path("focus").asText()).isEqualTo("Classify incoming drawers");
 
         Record agentRow = dslContext.fetchOne("""
                 SELECT focus, schedule
@@ -746,26 +513,12 @@ class WriteToolsIntegrationTest {
         org.junit.jupiter.api.Assertions.assertEquals("Classify incoming drawers", agentRow.get("focus", String.class));
         org.junit.jupiter.api.Assertions.assertEquals("nightly", agentRow.get("schedule", String.class));
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":23,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_diary_write",
-                                    "arguments":{
-                                      "agent":"classifier",
-                                      "entry":"Merged duplicates, kept most recent"
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].agent").value("classifier"))
-                .andExpect(jsonPath("$.result.content[0].id").isString());
+        JsonNode diaryContent = callToolContent("writer-token", "hivemem_diary_write", Map.of(
+                "agent", "classifier",
+                "entry", "Merged duplicates, kept most recent"
+        ));
+        assertThat(diaryContent.path("agent").asText()).isEqualTo("classifier");
+        assertThat(diaryContent.path("id").asText()).isNotBlank();
 
         Record diaryRow = dslContext.fetchOne("""
                 SELECT agent, entry
@@ -780,50 +533,22 @@ class WriteToolsIntegrationTest {
 
     @Test
     void writerCanAppendBlueprintsAndClosePreviousVersion() throws Exception {
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":24,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_update_blueprint",
-                                    "arguments":{
-                                      "wing":"eng",
-                                      "title":"V1",
-                                      "narrative":"First version",
-                                      "hall_order":["auth","search"]
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].wing").value("eng"))
-                .andExpect(jsonPath("$.result.content[0].title").value("V1"));
+        JsonNode v1 = callToolContent("writer-token", "hivemem_update_blueprint", Map.of(
+                "wing", "eng",
+                "title", "V1",
+                "narrative", "First version",
+                "hall_order", List.of("auth", "search")
+        ));
+        assertThat(v1.path("wing").asText()).isEqualTo("eng");
+        assertThat(v1.path("title").asText()).isEqualTo("V1");
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":25,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_update_blueprint",
-                                    "arguments":{
-                                      "wing":"eng",
-                                      "title":"V2",
-                                      "narrative":"Updated version",
-                                      "hall_order":["auth","search","infra"]
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].title").value("V2"));
+        JsonNode v2 = callToolContent("writer-token", "hivemem_update_blueprint", Map.of(
+                "wing", "eng",
+                "title", "V2",
+                "narrative", "Updated version",
+                "hall_order", List.of("auth", "search", "infra")
+        ));
+        assertThat(v2.path("title").asText()).isEqualTo("V2");
 
         Record activeRow = dslContext.fetchOne("""
                 SELECT title, valid_until, created_by
@@ -850,31 +575,14 @@ class WriteToolsIntegrationTest {
                 OffsetDateTime.parse("2026-04-05T13:30:00Z"),
                 null);
 
-        String response = mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":251,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_revise_drawer",
-                                    "arguments":{
-                                      "old_id":"00000000-0000-0000-0000-000000000550",
-                                      "new_content":"Drawer V2",
-                                      "new_summary":"Summary V2"
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].old_id").value(drawerId.toString()))
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
+        JsonNode reviseContent = callToolContent("writer-token", "hivemem_revise_drawer", Map.of(
+                "old_id", "00000000-0000-0000-0000-000000000550",
+                "new_content", "Drawer V2",
+                "new_summary", "Summary V2"
+        ));
+        assertThat(reviseContent.path("old_id").asText()).isEqualTo(drawerId.toString());
 
-        String newId = com.jayway.jsonpath.JsonPath.read(response, "$.result.content[0].new_id");
+        String newId = reviseContent.path("new_id").asText();
         Record oldRow = dslContext.fetchOne("""
                 SELECT valid_until
                 FROM drawers
@@ -912,33 +620,16 @@ class WriteToolsIntegrationTest {
                 OffsetDateTime.parse("2026-04-05T14:00:00Z"),
                 null);
 
-        String tunnelResponse = mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer agent-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":26,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_add_tunnel",
-                                    "arguments":{
-                                      "from_drawer":"00000000-0000-0000-0000-000000000601",
-                                      "to_drawer":"00000000-0000-0000-0000-000000000602",
-                                      "relation":"related_to",
-                                      "note":"context link",
-                                      "status":"committed"
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].status").value("pending"))
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
+        JsonNode tunnelContent = callToolContent("agent-token", "hivemem_add_tunnel", Map.of(
+                "from_drawer", "00000000-0000-0000-0000-000000000601",
+                "to_drawer", "00000000-0000-0000-0000-000000000602",
+                "relation", "related_to",
+                "note", "context link",
+                "status", "committed"
+        ));
+        assertThat(tunnelContent.path("status").asText()).isEqualTo("pending");
 
-        String tunnelId = com.jayway.jsonpath.JsonPath.read(tunnelResponse, "$.result.content[0].id");
+        String tunnelId = tunnelContent.path("id").asText();
         Record tunnelRow = dslContext.fetchOne("""
                 SELECT from_drawer, to_drawer, relation, note, status, created_by, valid_until
                 FROM tunnels
@@ -948,22 +639,10 @@ class WriteToolsIntegrationTest {
         org.junit.jupiter.api.Assertions.assertEquals("pending", tunnelRow.get("status", String.class));
         org.junit.jupiter.api.Assertions.assertEquals("agent-1", tunnelRow.get("created_by", String.class));
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":27,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_remove_tunnel",
-                                    "arguments":{"tunnel_id":"%s"}
-                                  }
-                                }
-                                """.formatted(tunnelId)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].removed").value(true));
+        JsonNode removeContent = callToolContent("writer-token", "hivemem_remove_tunnel", Map.of(
+                "tunnel_id", tunnelId
+        ));
+        assertThat(removeContent.path("removed").asBoolean()).isTrue();
 
         Record removedRow = dslContext.fetchOne("""
                 SELECT valid_until
@@ -982,53 +661,19 @@ class WriteToolsIntegrationTest {
                 OffsetDateTime.parse("2026-04-05T15:00:00Z"),
                 null);
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":261,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_log_access",
-                                    "arguments":{"drawer_id":"00000000-0000-0000-0000-000000000701"}
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].logged").value(true));
+        JsonNode logContent = callToolContent("admin-token", "hivemem_log_access", Map.of(
+                "drawer_id", "00000000-0000-0000-0000-000000000701"
+        ));
+        assertThat(logContent.path("logged").asBoolean()).isTrue();
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":262,
-                                  "method":"tools/call",
-                                  "params":{"name":"hivemem_refresh_popularity","arguments":{}}
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].refreshed").value(true))
-                .andExpect(jsonPath("$.result.content[0].drawer_count").isNumber());
+        JsonNode refreshContent = callToolContent("admin-token", "hivemem_refresh_popularity", Map.of());
+        assertThat(refreshContent.path("refreshed").asBoolean()).isTrue();
+        assertThat(refreshContent.path("drawer_count").isNumber()).isTrue();
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":263,
-                                  "method":"tools/call",
-                                  "params":{"name":"hivemem_health","arguments":{}}
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].db_connected").value(true))
-                .andExpect(jsonPath("$.result.content[0].drawers").value(1))
-                .andExpect(jsonPath("$.result.content[0].facts").value(0));
+        JsonNode healthContent = callToolContent("admin-token", "hivemem_health", Map.of());
+        assertThat(healthContent.path("db_connected").asBoolean()).isTrue();
+        assertThat(healthContent.path("drawers").asInt()).isEqualTo(1);
+        assertThat(healthContent.path("facts").asInt()).isEqualTo(0);
 
         org.junit.jupiter.api.Assertions.assertEquals(1L, dslContext.fetchOne("""
                 SELECT count(*) AS cnt
@@ -1116,30 +761,16 @@ class WriteToolsIntegrationTest {
                 OffsetDateTime.parse("2026-04-01T09:00:00Z"),
                 null);
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":7,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_approve_pending",
-                                    "arguments":{
-                                      "ids":[
-                                        "00000000-0000-0000-0000-000000000301",
-                                        "00000000-0000-0000-0000-000000000302",
-                                        "00000000-0000-0000-0000-000000000305"
-                                      ],
-                                      "decision":"committed"
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].decision").value("committed"))
-                .andExpect(jsonPath("$.result.content[0].count").value(3));
+        JsonNode approveContent = callToolContent("admin-token", "hivemem_approve_pending", Map.of(
+                "ids", List.of(
+                        "00000000-0000-0000-0000-000000000301",
+                        "00000000-0000-0000-0000-000000000302",
+                        "00000000-0000-0000-0000-000000000305"
+                ),
+                "decision", "committed"
+        ));
+        assertThat(approveContent.path("decision").asText()).isEqualTo("committed");
+        assertThat(approveContent.path("count").asInt()).isEqualTo(3);
 
         org.junit.jupiter.api.Assertions.assertEquals("committed", dslContext.fetchOne("""
                 SELECT status FROM drawers WHERE id = ?
@@ -1300,6 +931,26 @@ class WriteToolsIntegrationTest {
                 INSERT INTO tunnels (id, from_drawer, to_drawer, relation, note, status, created_by, valid_from, created_at, valid_until)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz, ?::timestamptz)
                 """, id, fromDrawer, toDrawer, relation, note, status, createdBy, validFrom, createdAt, validUntil);
+    }
+
+    private JsonNode callToolContent(String token, String toolName, Map<String, Object> arguments) throws Exception {
+        MvcResult result = mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "jsonrpc", "2.0",
+                                "id", 1,
+                                "method", "tools/call",
+                                "params", Map.of(
+                                        "name", toolName,
+                                        "arguments", arguments
+                                )
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        String textContent = body.path("result").path("content").get(0).path("text").asText();
+        return objectMapper.readTree(textContent);
     }
 
     @TestConfiguration(proxyBeanMethods = false)

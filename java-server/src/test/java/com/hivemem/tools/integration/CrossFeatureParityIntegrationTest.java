@@ -281,7 +281,8 @@ class CrossFeatureParityIntegrationTest {
                 .andReturn();
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
         assertThat(body.has("error")).as("Unexpected error in response: %s", body).isFalse();
-        return body.path("result").path("content").get(0);
+        String textContent = body.path("result").path("content").get(0).path("text").asText();
+        return objectMapper.readTree(textContent);
     }
 
     private static JsonNode findById(JsonNode results, String id) {

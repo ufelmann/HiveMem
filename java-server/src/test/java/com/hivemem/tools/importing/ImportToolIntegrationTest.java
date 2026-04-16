@@ -1,5 +1,7 @@
 package com.hivemem.tools.importing;
 
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
 import com.hivemem.auth.RateLimiter;
@@ -24,6 +26,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -32,8 +35,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.Map;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -78,6 +83,9 @@ class ImportToolIntegrationTest {
     @Autowired
     private RateLimiter rateLimiter;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @MockitoBean(name = "httpEmbeddingClient")
     private EmbeddingClient httpEmbeddingClient;
 
@@ -93,28 +101,14 @@ class ImportToolIntegrationTest {
         Files.writeString(file, "# Test Document\n\nThis is a test file for mining.");
 
         try {
-            mockMvc.perform(post("/mcp")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("""
-                                    {
-                                      "jsonrpc":"2.0",
-                                      "id":1,
-                                      "method":"tools/call",
-                                      "params":{
-                                        "name":"hivemem_mine_file",
-                                        "arguments":{
-                                          "file_path":"%s",
-                                          "wing":"docs",
-                                          "hall":"test"
-                                        }
-                                      }
-                                    }
-                                    """.formatted(json(file))))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.content[0].drawers_created").value(1))
-                    .andExpect(jsonPath("$.result.content[0].drawer_id").isString())
-                    .andExpect(jsonPath("$.result.content[0].file").value(file.toString()));
+            JsonNode content = callToolContent("admin-token", "hivemem_mine_file", Map.of(
+                    "file_path", file.toString(),
+                    "wing", "docs",
+                    "hall", "test"
+            ));
+            assertThat(content.path("drawers_created").asInt()).isEqualTo(1);
+            assertThat(content.path("drawer_id").asText()).isNotBlank();
+            assertThat(content.path("file").asText()).isEqualTo(file.toString());
 
             Number drawerCount = (Number) dslContext.fetchValue("SELECT count(*) FROM drawers");
             assertNotNull(drawerCount);
@@ -146,27 +140,13 @@ class ImportToolIntegrationTest {
         Files.writeString(directory.resolve("skip.py"), "print('skip me')");
 
         try {
-            mockMvc.perform(post("/mcp")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("""
-                                    {
-                                      "jsonrpc":"2.0",
-                                      "id":2,
-                                      "method":"tools/call",
-                                      "params":{
-                                        "name":"hivemem_mine_directory",
-                                        "arguments":{
-                                          "dir_path":"%s",
-                                          "wing":"import-test"
-                                        }
-                                      }
-                                    }
-                                    """.formatted(json(directory))))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.content[0].files_processed").value(4))
-                    .andExpect(jsonPath("$.result.content[0].drawers_created").value(4))
-                    .andExpect(jsonPath("$.result.content[0].errors", hasSize(0)));
+            JsonNode content = callToolContent("admin-token", "hivemem_mine_directory", Map.of(
+                    "dir_path", directory.toString(),
+                    "wing", "import-test"
+            ));
+            assertThat(content.path("files_processed").asInt()).isEqualTo(4);
+            assertThat(content.path("drawers_created").asInt()).isEqualTo(4);
+            assertThat(content.path("errors")).isEmpty();
 
             Number drawerCount = (Number) dslContext.fetchValue(
                     "SELECT count(*) FROM drawers WHERE wing = ?",
@@ -185,25 +165,11 @@ class ImportToolIntegrationTest {
         Files.writeString(file, "");
 
         try {
-            mockMvc.perform(post("/mcp")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("""
-                                    {
-                                      "jsonrpc":"2.0",
-                                      "id":3,
-                                      "method":"tools/call",
-                                      "params":{
-                                        "name":"hivemem_mine_file",
-                                        "arguments":{
-                                          "file_path":"%s"
-                                        }
-                                      }
-                                    }
-                                    """.formatted(json(file))))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.content[0].drawers_created").value(0))
-                    .andExpect(jsonPath("$.result.content[0].drawer_id").value(nullValue()));
+            JsonNode content = callToolContent("admin-token", "hivemem_mine_file", Map.of(
+                    "file_path", file.toString()
+            ));
+            assertThat(content.path("drawers_created").asInt()).isEqualTo(0);
+            assertThat(content.path("drawer_id").isNull()).isTrue();
 
             Number drawerCount = (Number) dslContext.fetchValue("SELECT count(*) FROM drawers");
             assertNotNull(drawerCount);
@@ -220,27 +186,13 @@ class ImportToolIntegrationTest {
         Files.writeString(directory.resolve("readme.md"), "# Readme");
 
         try {
-            mockMvc.perform(post("/mcp")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("""
-                                    {
-                                      "jsonrpc":"2.0",
-                                      "id":4,
-                                      "method":"tools/call",
-                                      "params":{
-                                        "name":"hivemem_mine_directory",
-                                        "arguments":{
-                                          "dir_path":"%s",
-                                          "extensions":[".py"]
-                                        }
-                                      }
-                                    }
-                                    """.formatted(json(directory))))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.content[0].files_processed").value(1))
-                    .andExpect(jsonPath("$.result.content[0].drawers_created").value(1))
-                    .andExpect(jsonPath("$.result.content[0].errors", hasSize(0)));
+            JsonNode content = callToolContent("admin-token", "hivemem_mine_directory", Map.of(
+                    "dir_path", directory.toString(),
+                    "extensions", java.util.List.of(".py")
+            ));
+            assertThat(content.path("files_processed").asInt()).isEqualTo(1);
+            assertThat(content.path("drawers_created").asInt()).isEqualTo(1);
+            assertThat(content.path("errors")).isEmpty();
 
             org.jooq.Record row = dslContext.fetchOne("SELECT source FROM drawers");
             assertNotNull(row);
@@ -259,27 +211,13 @@ class ImportToolIntegrationTest {
         Files.createSymbolicLink(symlink, outsideFile);
 
         try {
-            mockMvc.perform(post("/mcp")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("""
-                                    {
-                                      "jsonrpc":"2.0",
-                                      "id":5,
-                                      "method":"tools/call",
-                                      "params":{
-                                        "name":"hivemem_mine_directory",
-                                        "arguments":{
-                                          "dir_path":"%s",
-                                          "wing":"import-test"
-                                        }
-                                      }
-                                    }
-                                    """.formatted(json(directory))))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.content[0].files_processed").value(1))
-                    .andExpect(jsonPath("$.result.content[0].drawers_created").value(0))
-                    .andExpect(jsonPath("$.result.content[0].errors", hasSize(1)));
+            JsonNode content = callToolContent("admin-token", "hivemem_mine_directory", Map.of(
+                    "dir_path", directory.toString(),
+                    "wing", "import-test"
+            ));
+            assertThat(content.path("files_processed").asInt()).isEqualTo(1);
+            assertThat(content.path("drawers_created").asInt()).isEqualTo(0);
+            assertThat(content.path("errors")).hasSize(1);
 
             Number drawerCount = (Number) dslContext.fetchValue("SELECT count(*) FROM drawers");
             assertNotNull(drawerCount);
@@ -376,6 +314,26 @@ class ImportToolIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Path is not a file"));
+    }
+
+    private JsonNode callToolContent(String token, String toolName, Map<String, Object> arguments) throws Exception {
+        MvcResult result = mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "jsonrpc", "2.0",
+                                "id", 1,
+                                "method", "tools/call",
+                                "params", Map.of(
+                                        "name", toolName,
+                                        "arguments", arguments
+                                )
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        String textContent = body.path("result").path("content").get(0).path("text").asText();
+        return objectMapper.readTree(textContent);
     }
 
     private static String json(Path path) {
