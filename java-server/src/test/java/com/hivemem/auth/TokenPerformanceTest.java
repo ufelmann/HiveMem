@@ -1,6 +1,7 @@
 package com.hivemem.auth;
 
 import com.hivemem.embedding.EmbeddingClient;
+import com.hivemem.embedding.EmbeddingInfo;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -29,6 +30,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -107,6 +109,7 @@ class TokenPerformanceTest {
     void resetDatabase() {
         rateLimiter.clearAll();
         dslContext.execute("TRUNCATE TABLE api_tokens");
+        when(embeddingClient.getInfo()).thenReturn(new EmbeddingInfo("test-model", 1024));
     }
 
     // ── 1. Cached Validation Performance ─────────────────────────────────────
