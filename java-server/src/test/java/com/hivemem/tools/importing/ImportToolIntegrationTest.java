@@ -7,6 +7,7 @@ import com.hivemem.auth.AuthRole;
 import com.hivemem.auth.RateLimiter;
 import com.hivemem.auth.TokenService;
 import com.hivemem.embedding.EmbeddingClient;
+import com.hivemem.embedding.EmbeddingInfo;
 import com.hivemem.embedding.FixedEmbeddingClient;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +40,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -93,6 +95,7 @@ class ImportToolIntegrationTest {
     void resetDatabase() {
         rateLimiter.clearAll();
         dslContext.execute("TRUNCATE TABLE agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
+        when(httpEmbeddingClient.getInfo()).thenReturn(new EmbeddingInfo("test-model", 1024));
     }
 
     @Test
