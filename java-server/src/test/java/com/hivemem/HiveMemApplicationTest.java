@@ -3,7 +3,7 @@ package com.hivemem;
 import com.hivemem.auth.TokenService;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @SpringBootTest(properties = {
         "spring.main.lazy-initialization=true",
@@ -14,7 +14,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 })
 class HiveMemApplicationTest {
 
-    @MockBean(name = "dbTokenService")
+    @MockitoBean(name = "dbTokenService")
     private TokenService tokenService;
 
     @Test

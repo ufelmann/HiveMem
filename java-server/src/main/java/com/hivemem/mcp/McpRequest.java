@@ -1,6 +1,6 @@
 package com.hivemem.mcp;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 public record McpRequest(
         String jsonrpc,

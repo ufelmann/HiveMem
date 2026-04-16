@@ -15,8 +15,27 @@ if [ -z "${HIVEMEM_JDBC_URL:-}" ] || [ -z "${HIVEMEM_DB_USER:-}" ] || [ -z "${HI
     exit 1
 fi
 
+echo "Building jar with JDK 25..."
+docker run --rm --security-opt apparmor=unconfined \
+    -v "$(pwd)":/workspace -w /workspace/java-server \
+    -v "$HOME/.m2":/root/.m2 \
+    maven:3.9.13-eclipse-temurin-25 \
+    mvn -q -DskipTests package
+
 echo "Building app image..."
-docker build -t "$IMAGE_NAME:latest" .
+cp java-server/target/app.jar /tmp/hivemem-app.jar
+cp entrypoint.sh /tmp/hivemem-entrypoint.sh
+cp scripts/hivemem-migrate /tmp/hivemem-migrate
+docker build -f - -t "$IMAGE_NAME:latest" /tmp <<'DOCKERFILE'
+FROM eclipse-temurin:25-jre
+WORKDIR /app
+COPY hivemem-app.jar /app/app.jar
+COPY hivemem-entrypoint.sh /app/entrypoint.sh
+COPY hivemem-migrate /usr/local/bin/hivemem-migrate
+RUN chmod +x /app/entrypoint.sh /usr/local/bin/hivemem-migrate
+EXPOSE 8421
+ENTRYPOINT ["/app/entrypoint.sh"]
+DOCKERFILE
 
 # Restart container
 echo "Restarting container..."

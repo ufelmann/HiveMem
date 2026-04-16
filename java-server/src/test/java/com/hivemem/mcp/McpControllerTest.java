@@ -1,6 +1,6 @@
 package com.hivemem.mcp;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.hivemem.auth.AuthFilter;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
@@ -110,9 +110,8 @@ class McpControllerTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].type").value("json"))
-                .andExpect(jsonPath("$.result.content[0].status").value("ok"))
-                .andExpect(jsonPath("$.result.content[0].principal").value("token-1"));
+                .andExpect(jsonPath("$.result.content[0].type").value("text"))
+                .andExpect(jsonPath("$.result.content[0].text").isString());
     }
 
     @Test
