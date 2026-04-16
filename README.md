@@ -8,8 +8,8 @@ MCP server backed by PostgreSQL (pgvector) with external embeddings service. 38 
 [![codecov](https://codecov.io/gh/ufelmann/HiveMem/graph/badge.svg)](https://codecov.io/gh/ufelmann/HiveMem)
 [![GitHub release](https://img.shields.io/github/v/tag/ufelmann/HiveMem?label=release)](https://github.com/ufelmann/HiveMem/releases)
 [![GHCR](https://img.shields.io/badge/ghcr.io-ufelmann%2Fhivemem-blue)](https://github.com/ufelmann/HiveMem/pkgs/container/hivemem)
-[![Java](https://img.shields.io/badge/java-21-blue)](https://openjdk.org)
-[![Spring Boot](https://img.shields.io/badge/spring%20boot-3.3-6DB33F)](https://spring.io/projects/spring-boot)
+[![Java](https://img.shields.io/badge/java-25-blue)](https://openjdk.org)
+[![Spring Boot](https://img.shields.io/badge/spring%20boot-4.0.5-6DB33F)](https://spring.io/projects/spring-boot)
 [![PostgreSQL](https://img.shields.io/badge/postgresql-17-336791)](https://postgresql.org)
 [![Tests](https://img.shields.io/badge/tests-250%20passed-brightgreen)](https://github.com/ufelmann/HiveMem/actions/workflows/ci.yml)
 [![MCP Tools](https://img.shields.io/badge/MCP%20tools-38-orange)](https://github.com/ufelmann/HiveMem#tool-list-full)
@@ -68,8 +68,8 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 - **Agent fleet** with approval workflow -- agents write pending suggestions, only admins approve
 - **Blueprints** -- curated narrative overviews per wing, append-only versioned
 - **References & reading list** -- track sources, link to drawers, filter by type/status
-- **Spring Boot 3.3 + Java 21** -- MCP server with jOOQ, Flyway migrations, Caffeine cache
-- **244 tests** with Testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
+- **Spring Boot 4.0.5 + Java 25** -- MCP server with jOOQ, Flyway migrations, Caffeine cache
+- **250 tests** with Testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
 
 ## Prerequisites
 
@@ -346,7 +346,7 @@ graph TB
 graph TB
     Client["Claude / MCP Client"]
 
-    subgraph Container["Docker Container (eclipse-temurin:21-jre)"]
+    subgraph Container["Docker Container (eclipse-temurin:25-jre)"]
         Auth["AuthFilter<br/><i>Token auth + role check + rate limit</i>"]
         ToolGate["ToolPermissionService<br/><i>Filter tools/list by role</i>"]
         Identity["Identity Injection<br/><i>created_by from token</i>"]
@@ -611,7 +611,7 @@ mvn test
 ```
 
 ```
-244 tests passed
+250 tests passed
 ```
 
 ### Deploy changes
