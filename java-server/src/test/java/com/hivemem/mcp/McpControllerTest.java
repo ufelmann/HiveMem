@@ -31,9 +31,16 @@ import org.springframework.http.MediaType;
 
 import java.util.Optional;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.startsWith;
+import org.springframework.test.web.servlet.MvcResult;
 
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(classes = McpControllerTest.TestConfig.class)
@@ -160,6 +167,104 @@ class McpControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value(-32602))
                 .andExpect(jsonPath("$.error.message").value("Missing tool name"));
+    }
+
+    // --- MCP Protocol Compliance Tests ---
+
+    @Test
+    void initializeReturnsProtocolVersionAndSessionHeader() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"jsonrpc":"2.0","id":10,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.protocolVersion").value("2025-03-26"))
+                .andExpect(jsonPath("$.result.capabilities.tools").exists())
+                .andExpect(jsonPath("$.result.serverInfo.name").value("hivemem"))
+                .andExpect(header().exists("Mcp-Session-Id"))
+                .andExpect(header().string("Mcp-Session-Id", org.hamcrest.Matchers.not(org.hamcrest.Matchers.emptyOrNullString())));
+    }
+
+    @Test
+    void initializeResponseOmitsErrorField() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"jsonrpc":"2.0","id":11,"method":"initialize","params":{}}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.error").doesNotExist());
+    }
+
+    @Test
+    void notificationInitializedReturns202WithEmptyBody() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"jsonrpc":"2.0","method":"notifications/initialized"}
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(content().string(""));
+    }
+
+    @Test
+    void notificationCancelledReturns202() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":99,"reason":"user cancelled"}}
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(content().string(""));
+    }
+
+    @Test
+    void getSseEndpointReturns200WithEventStream() throws Exception {
+        // SseEmitter is async; MockMvc starts the async request.
+        // We only verify that the endpoint accepts GET and starts an async response
+        // (not 405 like before the fix).
+        mockMvc.perform(get("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
+                        .accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(request().asyncStarted());
+    }
+
+    @Test
+    void deleteMcpReturns200() throws Exception {
+        mockMvc.perform(delete("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void pingReturnsEmptyResult() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"jsonrpc":"2.0","id":12,"method":"ping"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result").isMap())
+                .andExpect(jsonPath("$.result").isEmpty())
+                .andExpect(jsonPath("$.error").doesNotExist());
+    }
+
+    @Test
+    void unknownMethodReturnsMethodNotFound() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"jsonrpc":"2.0","id":13,"method":"foo/bar"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.error.code").value(-32601));
     }
 
     @Configuration(proxyBeanMethods = false)
