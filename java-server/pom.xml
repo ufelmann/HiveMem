@@ -17,7 +17,7 @@
 
     <groupId>com.hivemem</groupId>
     <artifactId>hivemem-java</artifactId>
-    <version>3.0.1</version>
+    <version>3.0.2</version>
     <name>hivemem-java</name>
     <description>HiveMem Java MCP server</description>
 
