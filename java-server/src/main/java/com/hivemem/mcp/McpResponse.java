@@ -3,7 +3,6 @@ package com.hivemem.mcp;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.util.List;
-import java.util.ArrayList;
 import java.util.Map;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -33,10 +32,12 @@ public record McpResponse(
         return new McpResponse("2.0", id, null, new McpError(-32003, "Tool not permitted: " + toolName, null));
     }
 
-    public static McpResponse toolResult(Object id, Object content) {
-        List<Object> payload = new ArrayList<>(1);
-        payload.add(content);
-        return success(id, Map.of("content", payload));
+    public static McpResponse toolResult(Object id, String textContent) {
+        return success(id, Map.of("content", List.of(Map.of("type", "text", "text", textContent))));
+    }
+
+    public static McpResponse internalError(Object id, String message) {
+        return new McpResponse("2.0", id, null, new McpError(-32603, message, null));
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
