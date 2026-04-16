@@ -6,9 +6,11 @@ import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
 import com.hivemem.auth.TokenService;
 import com.hivemem.auth.ToolPermissionService;
+import com.hivemem.embedding.EmbeddingMigrationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -276,6 +278,11 @@ class McpControllerTest {
             McpController.class
     })
     static class TestConfig {
+
+        @Bean
+        EmbeddingMigrationService embeddingMigrationService() {
+            return Mockito.mock(EmbeddingMigrationService.class);
+        }
 
         @Bean
         @org.springframework.context.annotation.Primary
