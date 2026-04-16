@@ -5,6 +5,8 @@ import tools.jackson.databind.ObjectMapper;
 import com.hivemem.auth.AuthFilter;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.ToolPermissionService;
+import com.hivemem.embedding.EmbeddingMigrationService;
+import java.util.Set;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -29,14 +31,19 @@ public class McpController {
 
     private static final String SESSION_HEADER = "Mcp-Session-Id";
 
+    private static final Set<String> SEARCH_TOOLS = Set.of("hivemem_search", "hivemem_check_duplicate");
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final ToolRegistry toolRegistry;
     private final ToolPermissionService toolPermissionService;
+    private final EmbeddingMigrationService embeddingMigrationService;
 
-    public McpController(ToolRegistry toolRegistry, ToolPermissionService toolPermissionService) {
+    public McpController(ToolRegistry toolRegistry, ToolPermissionService toolPermissionService,
+                         EmbeddingMigrationService embeddingMigrationService) {
         this.toolRegistry = toolRegistry;
         this.toolPermissionService = toolPermissionService;
+        this.embeddingMigrationService = embeddingMigrationService;
     }
 
     /**
@@ -123,6 +130,13 @@ public class McpController {
         if (!toolPermissionService.isAllowed(principal.role(), toolName)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
                     McpResponse.forbidden(request.id(), toolName));
+        }
+
+        if (SEARCH_TOOLS.contains(toolName) && embeddingMigrationService.isReencodingActive()) {
+            String progress = embeddingMigrationService.getProgress().orElse("unknown");
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(
+                    McpResponse.internalError(request.id(),
+                            "Embedding re-encoding in progress (" + progress + "). Search is temporarily unavailable."));
         }
 
         return toolRegistry.resolve(toolName)
