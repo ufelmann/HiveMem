@@ -1,5 +1,7 @@
 package com.hivemem.tools.read;
 
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
 import com.hivemem.auth.RateLimiter;
@@ -23,14 +25,17 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -72,6 +77,9 @@ class ReadToolIntegrationTest {
     @Autowired
     private RateLimiter rateLimiter;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @BeforeEach
     void resetDatabase() {
         rateLimiter.clearAll();
@@ -110,25 +118,14 @@ class ReadToolIntegrationTest {
     void statusToolReturnsCountsAndWingsFromSql() throws Exception {
         seedStatusRows();
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":2,
-                                  "method":"tools/call",
-                                  "params":{"name":"hivemem_status","arguments":{}}
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].drawers").value(2))
-                .andExpect(jsonPath("$.result.content[0].facts").value(2))
-                .andExpect(jsonPath("$.result.content[0].tunnels").value(1))
-                .andExpect(jsonPath("$.result.content[0].pending").value(3))
-                .andExpect(jsonPath("$.result.content[0].last_activity").value("2026-04-03T12:00:00Z"))
-                .andExpect(jsonPath("$.result.content[0].wings[0]").value("alpha"))
-                .andExpect(jsonPath("$.result.content[0].wings[1]").value("beta"));
+        JsonNode content = callToolContent("hivemem_status", Map.of());
+        assertThat(content.path("drawers").asInt()).isEqualTo(2);
+        assertThat(content.path("facts").asInt()).isEqualTo(2);
+        assertThat(content.path("tunnels").asInt()).isEqualTo(1);
+        assertThat(content.path("pending").asInt()).isEqualTo(3);
+        assertThat(content.path("last_activity").asText()).isEqualTo("2026-04-03T12:00:00Z");
+        assertThat(content.path("wings").get(0).asText()).isEqualTo("alpha");
+        assertThat(content.path("wings").get(1).asText()).isEqualTo("beta");
     }
 
     @Test
@@ -170,77 +167,35 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":17,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_search",
-                                    "arguments":{"query":"semantic oracle","limit":10}
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0][0].id").value("00000000-0000-0000-0000-000000000501"))
-                .andExpect(jsonPath("$.result.content[0][0].score_total").isNumber())
-                .andExpect(jsonPath("$.result.content[0][0].score_semantic").isNumber())
-                .andExpect(jsonPath("$.result.content[0][0].score_keyword").isNumber())
-                .andExpect(jsonPath("$.result.content[0].length()").value(2));
+        JsonNode results = callToolContent("hivemem_search", Map.of("query", "semantic oracle", "limit", 10));
+        assertThat(results.get(0).path("id").asText()).isEqualTo("00000000-0000-0000-0000-000000000501");
+        assertThat(results.get(0).path("score_total").isNumber()).isTrue();
+        assertThat(results.get(0).path("score_semantic").isNumber()).isTrue();
+        assertThat(results.get(0).path("score_keyword").isNumber()).isTrue();
+        assertThat(results).hasSize(2);
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":18,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_search",
-                                    "arguments":{
-                                      "query":"semantic oracle",
-                                      "limit":10,
-                                      "weight_semantic":0.05,
-                                      "weight_keyword":0.05,
-                                      "weight_recency":0.05,
-                                      "weight_importance":0.75,
-                                      "weight_popularity":0.1
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0][0].id").value("00000000-0000-0000-0000-000000000501"));
+        JsonNode weightedResults = callToolContent("hivemem_search", Map.of(
+                "query", "semantic oracle",
+                "limit", 10,
+                "weight_semantic", 0.05,
+                "weight_keyword", 0.05,
+                "weight_recency", 0.05,
+                "weight_importance", 0.75,
+                "weight_popularity", 0.1
+        ));
+        assertThat(weightedResults.get(0).path("id").asText()).isEqualTo("00000000-0000-0000-0000-000000000501");
     }
 
     @Test
     void searchKgToolReturnsCommittedFactsOnly() throws Exception {
         seedStatusRows();
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":3,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_search_kg",
-                                    "arguments":{"subject":"HiveMem","limit":10}
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0][0].subject").value("HiveMem"))
-                .andExpect(jsonPath("$.result.content[0][0].predicate").value("runs on"))
-                .andExpect(jsonPath("$.result.content[0][0].object").value("PostgreSQL"))
-                .andExpect(jsonPath("$.result.content[0][1].object").value("Java"))
-                .andExpect(jsonPath("$.result.content[0].length()").value(2));
+        JsonNode content = callToolContent("hivemem_search_kg", Map.of("subject", "HiveMem", "limit", 10));
+        assertThat(content.get(0).path("subject").asText()).isEqualTo("HiveMem");
+        assertThat(content.get(0).path("predicate").asText()).isEqualTo("runs on");
+        assertThat(content.get(0).path("object").asText()).isEqualTo("PostgreSQL");
+        assertThat(content.get(1).path("object").asText()).isEqualTo("Java");
+        assertThat(content).hasSize(2);
     }
 
     @Test
@@ -286,49 +241,21 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":4,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_get_drawer",
-                                    "arguments":{"drawer_id":"00000000-0000-0000-0000-000000000111"}
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].id").value("00000000-0000-0000-0000-000000000111"))
-                .andExpect(jsonPath("$.result.content[0].parent_id").value(nullValue()))
-                .andExpect(jsonPath("$.result.content[0].content").value("The JVM migration plan"))
-                .andExpect(jsonPath("$.result.content[0].tags").isArray())
-                .andExpect(jsonPath("$.result.content[0].tags.length()").value(0))
-                .andExpect(jsonPath("$.result.content[0].key_points").isArray())
-                .andExpect(jsonPath("$.result.content[0].key_points.length()").value(0))
-                .andExpect(jsonPath("$.result.content[0].created_by").value("writer"));
+        JsonNode content = callToolContent("hivemem_get_drawer", Map.of("drawer_id", "00000000-0000-0000-0000-000000000111"));
+        assertThat(content.path("id").asText()).isEqualTo("00000000-0000-0000-0000-000000000111");
+        assertThat(content.path("parent_id").isNull()).isTrue();
+        assertThat(content.path("content").asText()).isEqualTo("The JVM migration plan");
+        assertThat(content.path("tags").isArray()).isTrue();
+        assertThat(content.path("tags")).isEmpty();
+        assertThat(content.path("key_points").isArray()).isTrue();
+        assertThat(content.path("key_points")).isEmpty();
+        assertThat(content.path("created_by").asText()).isEqualTo("writer");
     }
 
     @Test
     void getDrawerToolReturnsNullWhenDrawerDoesNotExist() throws Exception {
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":5,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_get_drawer",
-                                    "arguments":{"drawer_id":"00000000-0000-0000-0000-000000000999"}
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0]").value(nullValue()));
+        JsonNode content = callToolContent("hivemem_get_drawer", Map.of("drawer_id", "00000000-0000-0000-0000-000000000999"));
+        assertThat(content.isNull()).isTrue();
     }
 
     @Test
@@ -353,23 +280,12 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":6,
-                                  "method":"tools/call",
-                                  "params":{"name":"hivemem_list_wings","arguments":{}}
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0][0].wing").value("alpha"))
-                .andExpect(jsonPath("$.result.content[0][0].hall_count").value(2))
-                .andExpect(jsonPath("$.result.content[0][0].drawer_count").value(2))
-                .andExpect(jsonPath("$.result.content[0][1].wing").value("beta"))
-                .andExpect(jsonPath("$.result.content[0].length()").value(2));
+        JsonNode content = callToolContent("hivemem_list_wings", Map.of());
+        assertThat(content.get(0).path("wing").asText()).isEqualTo("alpha");
+        assertThat(content.get(0).path("hall_count").asInt()).isEqualTo(2);
+        assertThat(content.get(0).path("drawer_count").asInt()).isEqualTo(2);
+        assertThat(content.get(1).path("wing").asText()).isEqualTo("beta");
+        assertThat(content).hasSize(2);
     }
 
     @Test
@@ -394,22 +310,11 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":7,
-                                  "method":"tools/call",
-                                  "params":{"name":"hivemem_list_halls","arguments":{"wing":"alpha"}}
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0][0].hall").value("planning"))
-                .andExpect(jsonPath("$.result.content[0][0].drawer_count").value(1))
-                .andExpect(jsonPath("$.result.content[0][1].hall").value("strategy"))
-                .andExpect(jsonPath("$.result.content[0][1].drawer_count").value(1));
+        JsonNode content = callToolContent("hivemem_list_halls", Map.of("wing", "alpha"));
+        assertThat(content.get(0).path("hall").asText()).isEqualTo("planning");
+        assertThat(content.get(0).path("drawer_count").asInt()).isEqualTo(1);
+        assertThat(content.get(1).path("hall").asText()).isEqualTo("strategy");
+        assertThat(content.get(1).path("drawer_count").asInt()).isEqualTo(1);
     }
 
     @Test
@@ -447,28 +352,14 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":8,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_traverse",
-                                    "arguments":{"drawer_id":"00000000-0000-0000-0000-000000000002","max_depth":1}
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0][0].from_drawer").value("00000000-0000-0000-0000-000000000001"))
-                .andExpect(jsonPath("$.result.content[0][0].to_drawer").value("00000000-0000-0000-0000-000000000002"))
-                .andExpect(jsonPath("$.result.content[0][0].relation").value("related_to"))
-                .andExpect(jsonPath("$.result.content[0][0].depth").value(1))
-                .andExpect(jsonPath("$.result.content[0][1].from_drawer").value("00000000-0000-0000-0000-000000000002"))
-                .andExpect(jsonPath("$.result.content[0][1].to_drawer").value("00000000-0000-0000-0000-000000000004"))
-                .andExpect(jsonPath("$.result.content[0].length()").value(2));
+        JsonNode content = callToolContent("hivemem_traverse", Map.of("drawer_id", "00000000-0000-0000-0000-000000000002", "max_depth", 1));
+        assertThat(content.get(0).path("from_drawer").asText()).isEqualTo("00000000-0000-0000-0000-000000000001");
+        assertThat(content.get(0).path("to_drawer").asText()).isEqualTo("00000000-0000-0000-0000-000000000002");
+        assertThat(content.get(0).path("relation").asText()).isEqualTo("related_to");
+        assertThat(content.get(0).path("depth").asInt()).isEqualTo(1);
+        assertThat(content.get(1).path("from_drawer").asText()).isEqualTo("00000000-0000-0000-0000-000000000002");
+        assertThat(content.get(1).path("to_drawer").asText()).isEqualTo("00000000-0000-0000-0000-000000000004");
+        assertThat(content).hasSize(2);
     }
 
     @Test
@@ -489,73 +380,31 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":9,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_quick_facts",
-                                    "arguments":{"entity":"HiveMem"}
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(3))
-                .andExpect(jsonPath("$.result.content[0][0].subject").value("Viktor"))
-                .andExpect(jsonPath("$.result.content[0][0].object").value("HiveMem"))
-                .andExpect(jsonPath("$.result.content[0][1].object").value("PostgreSQL"))
-                .andExpect(jsonPath("$.result.content[0][2].object").value("Java"));
+        JsonNode content = callToolContent("hivemem_quick_facts", Map.of("entity", "HiveMem"));
+        assertThat(content).hasSize(3);
+        assertThat(content.get(0).path("subject").asText()).isEqualTo("Viktor");
+        assertThat(content.get(0).path("object").asText()).isEqualTo("HiveMem");
+        assertThat(content.get(1).path("object").asText()).isEqualTo("PostgreSQL");
+        assertThat(content.get(2).path("object").asText()).isEqualTo("Java");
     }
 
     @Test
     void timeMachineToolReturnsCurrentAndHistoricalSnapshots() throws Exception {
         seedAliceHistoryRows();
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":10,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_time_machine",
-                                    "arguments":{"subject":"Alice","limit":10}
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(2))
-                .andExpect(jsonPath("$.result.content[0][0].object").value("New City"))
-                .andExpect(jsonPath("$.result.content[0][1].object").value("Acme"));
+        JsonNode current = callToolContent("hivemem_time_machine", Map.of("subject", "Alice", "limit", 10));
+        assertThat(current).hasSize(2);
+        assertThat(current.get(0).path("object").asText()).isEqualTo("New City");
+        assertThat(current.get(1).path("object").asText()).isEqualTo("Acme");
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":11,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_time_machine",
-                                    "arguments":{
-                                      "subject":"Alice",
-                                      "as_of":"2025-09-01T00:00:00Z",
-                                      "limit":10
-                                    }
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(2))
-                .andExpect(jsonPath("$.result.content[0][0].object").value("Old City"))
-                .andExpect(jsonPath("$.result.content[0][1].object").value("Acme"));
+        JsonNode historical = callToolContent("hivemem_time_machine", Map.of(
+                "subject", "Alice",
+                "as_of", "2025-09-01T00:00:00Z",
+                "limit", 10
+        ));
+        assertThat(historical).hasSize(2);
+        assertThat(historical.get(0).path("object").asText()).isEqualTo("Old City");
+        assertThat(historical.get(1).path("object").asText()).isEqualTo("Acme");
     }
 
     @Test
@@ -599,26 +448,12 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":12,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_drawer_history",
-                                    "arguments":{"drawer_id":"00000000-0000-0000-0000-000000000302"}
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(2))
-                .andExpect(jsonPath("$.result.content[0][0].summary").value("Drawer V1"))
-                .andExpect(jsonPath("$.result.content[0][1].summary").value("Drawer V2"))
-                .andExpect(jsonPath("$.result.content[0][0].parent_id").value(nullValue()))
-                .andExpect(jsonPath("$.result.content[0][1].parent_id").value("00000000-0000-0000-0000-000000000301"));
+        JsonNode content = callToolContent("hivemem_drawer_history", Map.of("drawer_id", "00000000-0000-0000-0000-000000000302"));
+        assertThat(content).hasSize(2);
+        assertThat(content.get(0).path("summary").asText()).isEqualTo("Drawer V1");
+        assertThat(content.get(1).path("summary").asText()).isEqualTo("Drawer V2");
+        assertThat(content.get(0).path("parent_id").isNull()).isTrue();
+        assertThat(content.get(1).path("parent_id").asText()).isEqualTo("00000000-0000-0000-0000-000000000301");
     }
 
     @Test
@@ -654,51 +489,26 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":13,
-                                  "method":"tools/call",
-                                  "params":{
-                                    "name":"hivemem_fact_history",
-                                    "arguments":{"fact_id":"00000000-0000-0000-0000-000000000402"}
-                                  }
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(2))
-                .andExpect(jsonPath("$.result.content[0][0].object").value("Camunda7"))
-                .andExpect(jsonPath("$.result.content[0][1].object").value("Temporal"))
-                .andExpect(jsonPath("$.result.content[0][0].parent_id").value(nullValue()))
-                .andExpect(jsonPath("$.result.content[0][1].parent_id").value("00000000-0000-0000-0000-000000000401"));
+        JsonNode content = callToolContent("hivemem_fact_history", Map.of("fact_id", "00000000-0000-0000-0000-000000000402"));
+        assertThat(content).hasSize(2);
+        assertThat(content.get(0).path("object").asText()).isEqualTo("Camunda7");
+        assertThat(content.get(1).path("object").asText()).isEqualTo("Temporal");
+        assertThat(content.get(0).path("parent_id").isNull()).isTrue();
+        assertThat(content.get(1).path("parent_id").asText()).isEqualTo("00000000-0000-0000-0000-000000000401");
     }
 
     @Test
     void pendingApprovalsToolReturnsPendingRowsFromView() throws Exception {
         seedStatusRows();
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":14,
-                                  "method":"tools/call",
-                                  "params":{"name":"hivemem_pending_approvals","arguments":{}}
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(3))
-                .andExpect(jsonPath("$.result.content[0][0].type").value("drawer"))
-                .andExpect(jsonPath("$.result.content[0][0].description").value("Pending summary"))
-                .andExpect(jsonPath("$.result.content[0][1].type").value("fact"))
-                .andExpect(jsonPath("$.result.content[0][1].description").value("HiveMem -> runs on -> Python"))
-                .andExpect(jsonPath("$.result.content[0][2].type").value("tunnel"))
-                .andExpect(jsonPath("$.result.content[0][2].description").value("00000000-0000-0000-0000-000000000002 -[refines]-> 00000000-0000-0000-0000-000000000001"));
+        JsonNode content = callToolContent("hivemem_pending_approvals", Map.of());
+        assertThat(content).hasSize(3);
+        assertThat(content.get(0).path("type").asText()).isEqualTo("drawer");
+        assertThat(content.get(0).path("description").asText()).isEqualTo("Pending summary");
+        assertThat(content.get(1).path("type").asText()).isEqualTo("fact");
+        assertThat(content.get(1).path("description").asText()).isEqualTo("HiveMem -> runs on -> Python");
+        assertThat(content.get(2).path("type").asText()).isEqualTo("tunnel");
+        assertThat(content.get(2).path("description").asText()).isEqualTo("00000000-0000-0000-0000-000000000002 -[refines]-> 00000000-0000-0000-0000-000000000001");
     }
 
     @Test
@@ -765,41 +575,19 @@ class ReadToolIntegrationTest {
                 OffsetDateTime.parse("2026-04-06T13:40:00Z")
         );
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":15,
-                                  "method":"tools/call",
-                                  "params":{"name":"hivemem_reading_list","arguments":{}}
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(2))
-                .andExpect(jsonPath("$.result.content[0][0].title").value("PostgreSQL guide"))
-                .andExpect(jsonPath("$.result.content[0][0].linked_drawers").value(1))
-                .andExpect(jsonPath("$.result.content[0][0].status").value("unread"))
-                .andExpect(jsonPath("$.result.content[0][1].title").value("Java migration notes"))
-                .andExpect(jsonPath("$.result.content[0][1].linked_drawers").value(2))
-                .andExpect(jsonPath("$.result.content[0][1].status").value("reading"));
+        JsonNode content = callToolContent("hivemem_reading_list", Map.of());
+        assertThat(content).hasSize(2);
+        assertThat(content.get(0).path("title").asText()).isEqualTo("PostgreSQL guide");
+        assertThat(content.get(0).path("linked_drawers").asInt()).isEqualTo(1);
+        assertThat(content.get(0).path("status").asText()).isEqualTo("unread");
+        assertThat(content.get(1).path("title").asText()).isEqualTo("Java migration notes");
+        assertThat(content.get(1).path("linked_drawers").asInt()).isEqualTo(2);
+        assertThat(content.get(1).path("status").asText()).isEqualTo("reading");
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":151,
-                                  "method":"tools/call",
-                                  "params":{"name":"hivemem_reading_list","arguments":{"ref_type":"article"}}
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(1))
-                .andExpect(jsonPath("$.result.content[0][0].title").value("Java migration notes"))
-                .andExpect(jsonPath("$.result.content[0][0].ref_type").value("article"));
+        JsonNode filtered = callToolContent("hivemem_reading_list", Map.of("ref_type", "article"));
+        assertThat(filtered).hasSize(1);
+        assertThat(filtered.get(0).path("title").asText()).isEqualTo("Java migration notes");
+        assertThat(filtered.get(0).path("ref_type").asText()).isEqualTo("article");
     }
 
     @Test
@@ -870,105 +658,39 @@ class ReadToolIntegrationTest {
         insertIdentity("l0_identity", "You are Alice.", 3, OffsetDateTime.parse("2026-04-07T14:00:00Z"));
         insertIdentity("l1_critical", "Remember the migration plan.", 4, OffsetDateTime.parse("2026-04-07T14:05:00Z"));
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":16,
-                                  "method":"tools/call",
-                                  "params":{"name":"hivemem_list_agents","arguments":{}}
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(2))
-                .andExpect(jsonPath("$.result.content[0][0].name").value("alpha-agent"))
-                .andExpect(jsonPath("$.result.content[0][1].name").value("beta-agent"));
+        JsonNode agents = callToolContent("hivemem_list_agents", Map.of());
+        assertThat(agents).hasSize(2);
+        assertThat(agents.get(0).path("name").asText()).isEqualTo("alpha-agent");
+        assertThat(agents.get(1).path("name").asText()).isEqualTo("beta-agent");
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":17,
-                                  "method":"tools/call",
-                                  "params":{"name":"hivemem_diary_read","arguments":{"agent":"alpha-agent"}}
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(2))
-                .andExpect(jsonPath("$.result.content[0][0].entry").value("Second diary entry"))
-                .andExpect(jsonPath("$.result.content[0][1].entry").value("First diary entry"));
+        JsonNode diary = callToolContent("hivemem_diary_read", Map.of("agent", "alpha-agent"));
+        assertThat(diary).hasSize(2);
+        assertThat(diary.get(0).path("entry").asText()).isEqualTo("Second diary entry");
+        assertThat(diary.get(1).path("entry").asText()).isEqualTo("First diary entry");
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":171,
-                                  "method":"tools/call",
-                                  "params":{"name":"hivemem_diary_read","arguments":{"agent":"alpha-agent","last_n":1}}
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(1))
-                .andExpect(jsonPath("$.result.content[0][0].entry").value("Second diary entry"));
+        JsonNode diaryLimited = callToolContent("hivemem_diary_read", Map.of("agent", "alpha-agent", "last_n", 1));
+        assertThat(diaryLimited).hasSize(1);
+        assertThat(diaryLimited.get(0).path("entry").asText()).isEqualTo("Second diary entry");
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":18,
-                                  "method":"tools/call",
-                                  "params":{"name":"hivemem_get_blueprint","arguments":{"wing":"alpha"}}
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(2))
-                .andExpect(jsonPath("$.result.content[0][0].id").value(blueprintTwo.toString()))
-                .andExpect(jsonPath("$.result.content[0][0].hall_order[2]").value("archive"))
-                .andExpect(jsonPath("$.result.content[0][1].id").value(blueprintOne.toString()))
-                .andExpect(jsonPath("$.result.content[0][1].key_drawers[0]").value("00000000-0000-0000-0000-000000000001"));
+        JsonNode blueprint = callToolContent("hivemem_get_blueprint", Map.of("wing", "alpha"));
+        assertThat(blueprint).hasSize(2);
+        assertThat(blueprint.get(0).path("id").asText()).isEqualTo(blueprintTwo.toString());
+        assertThat(blueprint.get(0).path("hall_order").get(2).asText()).isEqualTo("archive");
+        assertThat(blueprint.get(1).path("id").asText()).isEqualTo(blueprintOne.toString());
+        assertThat(blueprint.get(1).path("key_drawers").get(0).asText()).isEqualTo("00000000-0000-0000-0000-000000000001");
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":181,
-                                  "method":"tools/call",
-                                  "params":{"name":"hivemem_get_blueprint","arguments":{}}
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].length()").value(3))
-                .andExpect(jsonPath("$.result.content[0][0].id").value(blueprintTwo.toString()))
-                .andExpect(jsonPath("$.result.content[0][1].id").value(blueprintOne.toString()))
-                .andExpect(jsonPath("$.result.content[0][2].id").value(blueprintThree.toString()))
-                .andExpect(jsonPath("$.result.content[0][2].wing").value("beta"));
+        JsonNode allBlueprints = callToolContent("hivemem_get_blueprint", Map.of());
+        assertThat(allBlueprints).hasSize(3);
+        assertThat(allBlueprints.get(0).path("id").asText()).isEqualTo(blueprintTwo.toString());
+        assertThat(allBlueprints.get(1).path("id").asText()).isEqualTo(blueprintOne.toString());
+        assertThat(allBlueprints.get(2).path("id").asText()).isEqualTo(blueprintThree.toString());
+        assertThat(allBlueprints.get(2).path("wing").asText()).isEqualTo("beta");
 
-        mockMvc.perform(post("/mcp")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "jsonrpc":"2.0",
-                                  "id":19,
-                                  "method":"tools/call",
-                                  "params":{"name":"hivemem_wake_up","arguments":{}}
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.content[0].l0_identity.content").value("You are Alice."))
-                .andExpect(jsonPath("$.result.content[0].l0_identity.token_count").value(3))
-                .andExpect(jsonPath("$.result.content[0].l1_critical.content").value("Remember the migration plan."))
-                .andExpect(jsonPath("$.result.content[0].l1_critical.token_count").value(4));
+        JsonNode wakeUp = callToolContent("hivemem_wake_up", Map.of());
+        assertThat(wakeUp.path("l0_identity").path("content").asText()).isEqualTo("You are Alice.");
+        assertThat(wakeUp.path("l0_identity").path("token_count").asInt()).isEqualTo(3);
+        assertThat(wakeUp.path("l1_critical").path("content").asText()).isEqualTo("Remember the migration plan.");
+        assertThat(wakeUp.path("l1_critical").path("token_count").asInt()).isEqualTo(4);
     }
 
     @Test
@@ -1449,6 +1171,26 @@ class ReadToolIntegrationTest {
                 """,
                 key, content, tokenCount, updatedAt
         );
+    }
+
+    private JsonNode callToolContent(String toolName, Map<String, Object> arguments) throws Exception {
+        MvcResult result = mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "jsonrpc", "2.0",
+                                "id", 1,
+                                "method", "tools/call",
+                                "params", Map.of(
+                                        "name", toolName,
+                                        "arguments", arguments
+                                )
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        String textContent = body.path("result").path("content").get(0).path("text").asText();
+        return objectMapper.readTree(textContent);
     }
 
     @TestConfiguration(proxyBeanMethods = false)

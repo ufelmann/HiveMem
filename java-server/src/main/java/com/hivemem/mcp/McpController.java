@@ -1,6 +1,7 @@
 package com.hivemem.mcp;
 
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.hivemem.auth.AuthFilter;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.ToolPermissionService;
@@ -27,6 +28,8 @@ public class McpController {
     private static final Logger log = LoggerFactory.getLogger(McpController.class);
 
     private static final String SESSION_HEADER = "Mcp-Session-Id";
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final ToolRegistry toolRegistry;
     private final ToolPermissionService toolPermissionService;
@@ -92,7 +95,7 @@ public class McpController {
                             Map.of(
                                     "protocolVersion", "2025-03-26",
                                     "capabilities", Map.of("tools", Map.of()),
-                                    "serverInfo", Map.of("name", "hivemem", "version", "3.0.2")
+                                    "serverInfo", Map.of("name", "hivemem", "version", "4.0.0")
                             )
                     ));
             case "ping" -> ResponseEntity.ok(McpResponse.success(request.id(), Map.of()));
@@ -125,11 +128,17 @@ public class McpController {
         return toolRegistry.resolve(toolName)
                 .map(handler -> {
                     try {
+                        Object result = handler.call(principal, params.path("arguments"));
+                        String json = MAPPER.writeValueAsString(result);
                         return ResponseEntity.ok(
-                                McpResponse.toolResult(request.id(), handler.call(principal, params.path("arguments"))));
+                                McpResponse.toolResult(request.id(), json));
                     } catch (IllegalArgumentException e) {
                         return ResponseEntity.badRequest().body(
                                 McpResponse.invalidParams(request.id(), e.getMessage()));
+                    } catch (Exception e) {
+                        log.error("Tool call failed: {}", toolName, e);
+                        return ResponseEntity.ok(
+                                McpResponse.internalError(request.id(), e.getMessage()));
                     }
                 })
                 .orElseGet(() -> ResponseEntity.ok(McpResponse.toolNotFound(request.id(), toolName)));
