@@ -72,7 +72,7 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) (v20+)
-- An external PostgreSQL database with pgvector extension (e.g. `pgvector/pgvector:pg16`)
+- An external PostgreSQL database with pgvector extension (e.g. `pgvector/pgvector:pg17`)
 - An external embeddings service reachable via HTTP
 
 ## Quick Start
@@ -601,7 +601,7 @@ docker exec hivemem hivemem-backup
 
 ### Run tests (no deployment needed)
 
-Tests use [Testcontainers](https://java.testcontainers.org/) -- a `pgvector/pgvector:pg16` container is started and destroyed per session. Embeddings are stubbed with a fixed test client (deterministic vectors, no external service needed).
+Tests use [Testcontainers](https://java.testcontainers.org/) -- a `pgvector/pgvector:pg17` container is started and destroyed per session. Embeddings are stubbed with a fixed test client (deterministic vectors, no external service needed).
 
 ```bash
 cd java-server
