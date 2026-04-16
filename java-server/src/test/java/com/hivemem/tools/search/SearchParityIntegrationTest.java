@@ -298,7 +298,8 @@ class SearchParityIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
-        return body.path("result").path("content").get(0);
+        String textContent = body.path("result").path("content").get(0).path("text").asText();
+        return objectMapper.readTree(textContent);
     }
 
     private List<String> textValues(JsonNode results, String field) {
