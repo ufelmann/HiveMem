@@ -1,6 +1,6 @@
 {
   "name": "hivemem",
-  "version": "2.1.0",
+  "version": "3.0.2",
   "description": "Personal knowledge system - MCP server with PostgreSQL",
   "repository": {
     "type": "git",

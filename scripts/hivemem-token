@@ -1,103 +1,167 @@
-#!/usr/bin/env python3
-"""HiveMem token management CLI."""
+#!/bin/bash
+# hivemem-token -- token management CLI for the Java runtime.
+# Talks to PostgreSQL directly via psql. Mirrors the Java DbTokenService semantics:
+#   * plaintext is a 32-byte URL-safe random string
+#   * token_hash is its SHA-256 hex
+#   * role is one of admin|writer|reader|agent
+#   * expires_at is interval-based (e.g. 90d)
+set -euo pipefail
 
-import argparse
-import asyncio
-import sys
+if [ -n "${HIVEMEM_DB_PASSWORD:-}" ]; then
+    export PGPASSWORD="$HIVEMEM_DB_PASSWORD"
+fi
+DB_USER="${HIVEMEM_DB_USER:-hivemem}"
+DB_NAME="${HIVEMEM_DB_NAME:-hivemem}"
+DB_HOST="${HIVEMEM_DB_HOST:-/var/run/postgresql}"
+PSQL=(psql -U "$DB_USER" -h "$DB_HOST" -d "$DB_NAME" -v ON_ERROR_STOP=1 -q -t -A)
 
-from hivemem.db import get_pool
-from hivemem.security import (
-    create_token,
-    get_db_url,
-    get_token_info,
-    list_tokens,
-    revoke_token,
-    VALID_ROLES,
+usage() {
+    cat >&2 <<'EOF'
+Usage:
+  hivemem-token create <name> --role <admin|writer|reader|agent> [--expires <Nd>]
+  hivemem-token list
+  hivemem-token revoke <name>
+  hivemem-token info <name>
+EOF
+    exit 2
+}
+
+valid_role() {
+    case "$1" in
+        admin|writer|reader|agent) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+cmd_create() {
+    local name="${1:-}"; shift || true
+    local role=""
+    local expires=""
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --role) role="${2:-}"; shift 2 ;;
+            --expires) expires="${2:-}"; shift 2 ;;
+            *) usage ;;
+        esac
+    done
+    [ -n "$name" ] || usage
+    [ -n "$role" ] || usage
+    valid_role "$role" || { echo "Error: role must be admin|writer|reader|agent" >&2; exit 1; }
+
+    # 32-byte URL-safe plaintext (base64url, no padding) -- same shape as the Java service.
+    local plaintext
+    plaintext=$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n')
+    local token_hash
+    token_hash=$(printf %s "$plaintext" | openssl dgst -sha256 | awk '{print $NF}')
+
+    local expires_expr="NULL"
+    if [ -n "$expires" ]; then
+        local days="${expires%d}"
+        case "$days" in
+            ''|*[!0-9]*) echo "Error: --expires must look like 90d" >&2; exit 1 ;;
+        esac
+        expires_expr="now() + interval '${days} days'"
+    fi
+
+    "${PSQL[@]}" -v "tok_hash=${token_hash}" -v "tok_name=${name}" -v "tok_role=${role}" <<'SQL' >/dev/null
+INSERT INTO api_tokens (token_hash, name, role, expires_at)
+VALUES (:'tok_hash', :'tok_name', :'tok_role', NULL);
+SQL
+    if [ "$expires_expr" != "NULL" ]; then
+        "${PSQL[@]}" -v "tok_name=${name}" <<SQL >/dev/null
+UPDATE api_tokens SET expires_at = ${expires_expr} WHERE name = :'tok_name';
+SQL
+    fi
+
+    cat <<EOF
+
+============================================================
+  Token created: ${name} (role: ${role})
+  API token: ${plaintext}
+  Save this now -- it cannot be retrieved later.
+============================================================
+EOF
+}
+
+cmd_list() {
+    "${PSQL[@]}" -F $'\t' <<'SQL' | awk -F'\t' '
+BEGIN { printf "%-20s %-10s %-10s %-20s %-20s\n", "Name", "Role", "Status", "Created", "Expires";
+        printf "%s\n", "--------------------------------------------------------------------------------" }
+{
+    name=$1; role=$2; status=$3; created=substr($4,1,10); expires=$5;
+    if (expires == "" || expires == "\\N") expires="never"; else expires=substr(expires,1,10);
+    printf "%-20s %-10s %-10s %-20s %-20s\n", name, role, status, created, expires
+}'
+SELECT
+    name,
+    role,
+    CASE
+        WHEN revoked_at IS NOT NULL THEN 'revoked'
+        WHEN expires_at IS NOT NULL AND expires_at < now() THEN 'expired'
+        ELSE 'active'
+    END AS status,
+    created_at::text,
+    coalesce(expires_at::text, '')
+FROM api_tokens
+ORDER BY created_at;
+SQL
+}
+
+cmd_revoke() {
+    local name="${1:-}"
+    [ -n "$name" ] || usage
+    local updated
+    updated=$("${PSQL[@]}" -v "tok_name=${name}" <<'SQL'
+UPDATE api_tokens SET revoked_at = now()
+WHERE name = :'tok_name' AND revoked_at IS NULL
+RETURNING 1;
+SQL
 )
+    if [ -z "$updated" ]; then
+        echo "Error: Token '${name}' not found or already revoked" >&2
+        exit 1
+    fi
+    echo "Token '${name}' revoked."
+}
 
+cmd_info() {
+    local name="${1:-}"
+    [ -n "$name" ] || usage
+    local row
+    row=$("${PSQL[@]}" -F $'\t' -v "tok_name=${name}" <<'SQL'
+SELECT name,
+       role,
+       created_at::text,
+       coalesce(expires_at::text, ''),
+       coalesce(revoked_at::text, '')
+FROM api_tokens
+WHERE name = :'tok_name';
+SQL
+)
+    if [ -z "$row" ]; then
+        echo "Token '${name}' not found." >&2
+        exit 1
+    fi
+    local IFS=$'\t'
+    # shellcheck disable=SC2162
+    read -r n r c e rv <<<"$row"
+    [ -z "$e" ] && e="never"
+    [ -z "$rv" ] && rv="no"
+    printf "Name:       %s\nRole:       %s\nCreated:    %s\nExpires:    %s\nRevoked:    %s\n" \
+        "$n" "$r" "$c" "$e" "$rv"
+}
 
-async def cmd_create(args):
-    pool = await get_pool(get_db_url())
-    expires = None
-    if args.expires:
-        val = args.expires.rstrip("d")
-        expires = int(val)
-    try:
-        plaintext = await create_token(pool, args.name, args.role, expires_in_days=expires)
-    except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-    print(f"\n{'=' * 60}")
-    print(f"  Token created: {args.name} (role: {args.role})")
-    print(f"  API token: {plaintext}")
-    print(f"  Save this now — it cannot be retrieved later.")
-    print(f"{'=' * 60}\n")
+main() {
+    [ "$#" -ge 1 ] || usage
+    local cmd="$1"; shift
+    case "$cmd" in
+        create) cmd_create "$@" ;;
+        list)   cmd_list "$@" ;;
+        revoke) cmd_revoke "$@" ;;
+        info)   cmd_info "$@" ;;
+        -h|--help) usage ;;
+        *) usage ;;
+    esac
+}
 
-
-async def cmd_list(args):
-    pool = await get_pool(get_db_url())
-    tokens = await list_tokens(pool)
-    if not tokens:
-        print("No tokens found.")
-        return
-    print(f"{'Name':<20} {'Role':<10} {'Status':<10} {'Created':<20} {'Expires':<20}")
-    print("-" * 80)
-    for t in tokens:
-        expires = t["expires_at"][:10] if t["expires_at"] else "never"
-        print(f"{t['name']:<20} {t['role']:<10} {t['status']:<10} {t['created_at'][:10]:<20} {expires:<20}")
-
-
-async def cmd_revoke(args):
-    pool = await get_pool(get_db_url())
-    try:
-        await revoke_token(pool, args.name)
-    except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-    print(f"Token '{args.name}' revoked.")
-
-
-async def cmd_info(args):
-    pool = await get_pool(get_db_url())
-    info = await get_token_info(pool, args.name)
-    if info is None:
-        print(f"Token '{args.name}' not found.", file=sys.stderr)
-        sys.exit(1)
-    print(f"Name:       {info['name']}")
-    print(f"Role:       {info['role']}")
-    print(f"Created:    {info['created_at']}")
-    print(f"Expires:    {info['expires_at'] or 'never'}")
-    print(f"Revoked:    {info['revoked_at'] or 'no'}")
-
-
-def main():
-    parser = argparse.ArgumentParser(description="HiveMem token management")
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    p_create = sub.add_parser("create", help="Create a new API token")
-    p_create.add_argument("name", help="Token name (unique identifier)")
-    p_create.add_argument("--role", required=True, choices=sorted(VALID_ROLES), help="Token role")
-    p_create.add_argument("--expires", help="Expiry in days, e.g. 90d", default=None)
-
-    sub.add_parser("list", help="List all tokens")
-
-    p_revoke = sub.add_parser("revoke", help="Revoke a token")
-    p_revoke.add_argument("name", help="Token name to revoke")
-
-    p_info = sub.add_parser("info", help="Show token details")
-    p_info.add_argument("name", help="Token name")
-
-    args = parser.parse_args()
-
-    commands = {
-        "create": cmd_create,
-        "list": cmd_list,
-        "revoke": cmd_revoke,
-        "info": cmd_info,
-    }
-
-    asyncio.run(commands[args.command](args))
-
-
-if __name__ == "__main__":
-    main()
+main "$@"

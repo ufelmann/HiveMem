@@ -1,20 +1,20 @@
-ARG BASE_IMAGE=hivemem-base:latest
-FROM ${BASE_IMAGE}
+FROM maven:3.9.9-eclipse-temurin-21 AS build
 
-USER root
+WORKDIR /workspace
+COPY java-server/pom.xml java-server/mvnw java-server/mvnw.cmd ./
+COPY java-server/.mvn .mvn
+COPY java-server/src src
+
+RUN chmod +x mvnw && ./mvnw -q -DskipTests package
+
+FROM eclipse-temurin:21-jre
+
 WORKDIR /app
-COPY hivemem/ hivemem/
-COPY migrations/ migrations/
-COPY scripts/ scripts/
-COPY entrypoint.sh .
+COPY --from=build /workspace/target/app.jar /app/app.jar
+COPY entrypoint.sh /app/entrypoint.sh
+COPY scripts/hivemem-migrate /usr/local/bin/hivemem-migrate
 
-RUN cp scripts/hivemem-backup /usr/local/bin/hivemem-backup \
-    && cp scripts/hivemem-token /usr/local/bin/hivemem-token \
-    && chmod +x /usr/local/bin/hivemem-backup \
-    && chmod +x /usr/local/bin/hivemem-token \
-    && chmod +x scripts/hivemem-migrate \
-    && mkdir -p /data/models && chown postgres:postgres /data/models
+RUN chmod +x /app/entrypoint.sh /usr/local/bin/hivemem-migrate
 
-USER postgres
 EXPOSE 8421
 ENTRYPOINT ["/app/entrypoint.sh"]

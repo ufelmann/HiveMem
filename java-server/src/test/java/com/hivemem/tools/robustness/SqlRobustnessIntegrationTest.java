@@ -1,0 +1,251 @@
+package com.hivemem.tools.robustness;
+
+import com.hivemem.auth.AuthPrincipal;
+import com.hivemem.auth.AuthRole;
+import com.hivemem.drawers.DrawerReadRepository;
+import com.hivemem.embedding.EmbeddingClient;
+import com.hivemem.embedding.FixedEmbeddingClient;
+import com.hivemem.search.DrawerSearchRepository;
+import com.hivemem.search.KgSearchRepository;
+import com.hivemem.tools.read.ReadToolService;
+import com.hivemem.write.WriteToolRepository;
+import com.hivemem.write.WriteToolService;
+import org.jooq.DSLContext;
+import org.jooq.Record;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.SpringBootConfiguration;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@SpringBootTest(
+        classes = SqlRobustnessIntegrationTest.TestApplication.class,
+        webEnvironment = SpringBootTest.WebEnvironment.NONE
+)
+@ActiveProfiles("test")
+@Testcontainers
+class SqlRobustnessIntegrationTest {
+
+    private static final AuthPrincipal WRITER = new AuthPrincipal("writer-1", AuthRole.WRITER);
+    private static final AuthPrincipal ADMIN = new AuthPrincipal("admin-1", AuthRole.ADMIN);
+    private static final OffsetDateTime BASE_TIME = OffsetDateTime.parse("2026-04-14T09:00:00Z");
+
+    @Container
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("pgvector/pgvector:pg17")
+            .withDatabaseName("hivemem")
+            .withUsername("hivemem")
+            .withPassword("hivemem")
+            .withCreateContainerCmdModifier(cmd -> cmd.withHostConfig(
+                    (cmd.getHostConfig() == null
+                            ? new com.github.dockerjava.api.model.HostConfig()
+                            : cmd.getHostConfig())
+                            .withSecurityOpts(java.util.List.of("apparmor=unconfined"))));
+
+    @DynamicPropertySource
+    static void registerProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", POSTGRES::getUsername);
+        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        registry.add("spring.datasource.driver-class-name", POSTGRES::getDriverClassName);
+    }
+
+    @Autowired
+    private WriteToolService writeToolService;
+
+    @Autowired
+    private ReadToolService readToolService;
+
+    @Autowired
+    private DSLContext dslContext;
+
+    @BeforeEach
+    void resetDatabase() {
+        dslContext.execute("TRUNCATE TABLE agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
+    }
+
+    @Test
+    void approvePendingBatchHandlesAllIdsInSingleStatement() {
+        List<UUID> ids = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            Map<String, Object> result = writeToolService.addDrawer(
+                    WRITER,
+                    "Pending " + i,
+                    "test",
+                    "batch",
+                    "facts",
+                    "system",
+                    List.of(),
+                    1,
+                    null,
+                    List.of(),
+                    null,
+                    null,
+                    "pending",
+                    BASE_TIME.plusSeconds(i)
+            );
+            ids.add(UUID.fromString((String) result.get("id")));
+        }
+
+        Map<String, Object> approveResult = writeToolService.approvePending(ids, "committed");
+        assertThat(((Number) approveResult.get("count")).intValue()).isEqualTo(5);
+
+        for (UUID id : ids) {
+            Record row = dslContext.fetchOne("SELECT status FROM drawers WHERE id = ?", id);
+            assertThat(row).isNotNull();
+            assertThat(row.get("status", String.class)).isEqualTo("committed");
+        }
+    }
+
+    @Test
+    void searchKgRespectsLimit() {
+        for (int i = 0; i < 10; i++) {
+            writeToolService.kgAdd(
+                    WRITER,
+                    "Entity" + i,
+                    "has",
+                    "value",
+                    1.0d,
+                    null,
+                    "committed",
+                    BASE_TIME.plusSeconds(i)
+            );
+        }
+
+        List<Map<String, Object>> results = readToolService.searchKg("Entity", null, null, 3);
+        assertThat(results).hasSizeLessThanOrEqualTo(3);
+    }
+
+    @Test
+    void timeMachineRespectsLimit() {
+        for (int i = 0; i < 10; i++) {
+            writeToolService.kgAdd(
+                    WRITER,
+                    "TimeMachine",
+                    "fact" + i,
+                    "val",
+                    1.0d,
+                    null,
+                    "committed",
+                    BASE_TIME.plusSeconds(i)
+            );
+        }
+
+        List<Map<String, Object>> results = readToolService.timeMachine("TimeMachine", null, 3);
+        assertThat(results).hasSizeLessThanOrEqualTo(3);
+    }
+
+    @Test
+    void traverseDoesNotBlowUpOnDiamond() {
+        // Build diamond: A -> B, A -> C, B -> D, C -> D
+        Map<String, Object> dA = writeToolService.addDrawer(
+                WRITER, "Diamond A", "test", "graph", null, "system",
+                List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME);
+        Map<String, Object> dB = writeToolService.addDrawer(
+                WRITER, "Diamond B", "test", "graph", null, "system",
+                List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(1));
+        Map<String, Object> dC = writeToolService.addDrawer(
+                WRITER, "Diamond C", "test", "graph", null, "system",
+                List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(2));
+        Map<String, Object> dD = writeToolService.addDrawer(
+                WRITER, "Diamond D", "test", "graph", null, "system",
+                List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(3));
+
+        UUID idA = UUID.fromString((String) dA.get("id"));
+        UUID idB = UUID.fromString((String) dB.get("id"));
+        UUID idC = UUID.fromString((String) dC.get("id"));
+        UUID idD = UUID.fromString((String) dD.get("id"));
+
+        writeToolService.addTunnel(WRITER, idA, idB, "related_to", null, "committed");
+        writeToolService.addTunnel(WRITER, idA, idC, "related_to", null, "committed");
+        writeToolService.addTunnel(WRITER, idB, idD, "related_to", null, "committed");
+        writeToolService.addTunnel(WRITER, idC, idD, "related_to", null, "committed");
+
+        List<Map<String, Object>> results = readToolService.traverse(idA, 3, null);
+
+        Set<UUID> found = new HashSet<>();
+        for (Map<String, Object> row : results) {
+            found.add(UUID.fromString((String) row.get("from_drawer")));
+            found.add(UUID.fromString((String) row.get("to_drawer")));
+        }
+        assertThat(found).contains(idA, idB, idC, idD);
+        // UNION deduplicates -- bounded: 4 tunnels x 2 directions x up to 3 depths
+        assertThat(results).hasSizeLessThanOrEqualTo(16);
+    }
+
+    @Test
+    void statusReturnsConsolidatedCounts() {
+        Map<String, Object> result = readToolService.status();
+
+        assertThat(result).containsKeys("drawers", "facts", "tunnels", "pending", "wings");
+        assertThat(result.get("drawers")).isInstanceOf(Number.class);
+        assertThat(result.get("facts")).isInstanceOf(Number.class);
+        assertThat(result.get("tunnels")).isInstanceOf(Number.class);
+        assertThat(result.get("pending")).isInstanceOf(Number.class);
+    }
+
+    @Test
+    void updateBlueprintIsAtomic() {
+        Map<String, Object> r1 = writeToolService.updateBlueprint(
+                WRITER, "test-wing", "Map v1", "First version", List.of(), List.of());
+        Map<String, Object> r2 = writeToolService.updateBlueprint(
+                WRITER, "test-wing", "Map v2", "Second version", List.of(), List.of());
+
+        UUID id1 = UUID.fromString((String) r1.get("id"));
+        UUID id2 = UUID.fromString((String) r2.get("id"));
+
+        // Old blueprint should be closed
+        Record oldRow = dslContext.fetchOne("SELECT valid_until FROM blueprints WHERE id = ?", id1);
+        assertThat(oldRow).isNotNull();
+        assertThat(oldRow.get("valid_until")).isNotNull();
+
+        // New blueprint should be active
+        Record newRow = dslContext.fetchOne("SELECT valid_until FROM blueprints WHERE id = ?", id2);
+        assertThat(newRow).isNotNull();
+        assertThat(newRow.get("valid_until")).isNull();
+    }
+
+    @SpringBootConfiguration
+    @EnableAutoConfiguration
+    @Import({
+            WriteToolService.class,
+            WriteToolRepository.class,
+            ReadToolService.class,
+            DrawerReadRepository.class,
+            DrawerSearchRepository.class,
+            KgSearchRepository.class,
+            TestConfig.class
+    })
+    static class TestApplication {
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class TestConfig {
+
+        @Bean
+        @Primary
+        EmbeddingClient embeddingClient() {
+            return new FixedEmbeddingClient();
+        }
+    }
+}
