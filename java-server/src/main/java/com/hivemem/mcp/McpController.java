@@ -39,6 +39,17 @@ public class McpController {
         }
 
         return switch (method) {
+            case "initialize" -> ResponseEntity.ok(McpResponse.success(
+                    request.id(),
+                    Map.of(
+                            "protocolVersion", "2025-03-26",
+                            "capabilities", Map.of("tools", Map.of()),
+                            "serverInfo", Map.of("name", "hivemem", "version", "3.0.2")
+                    )
+            ));
+            case "notifications/initialized", "notifications/cancelled" ->
+                    ResponseEntity.ok(McpResponse.success(request.id(), Map.of()));
+            case "ping" -> ResponseEntity.ok(McpResponse.success(request.id(), Map.of()));
             case "tools/list" -> ResponseEntity.ok(McpResponse.success(
                     request.id(),
                     Map.of("tools", toolRegistry.visibleTools(principal.role(), toolPermissionService))
