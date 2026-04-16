@@ -13,9 +13,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 public class McpController {
+
+    private static final String SESSION_HEADER = "Mcp-Session-Id";
 
     private final ToolRegistry toolRegistry;
     private final ToolPermissionService toolPermissionService;
@@ -39,14 +42,16 @@ public class McpController {
         }
 
         return switch (method) {
-            case "initialize" -> ResponseEntity.ok(McpResponse.success(
-                    request.id(),
-                    Map.of(
-                            "protocolVersion", "2025-03-26",
-                            "capabilities", Map.of("tools", Map.of()),
-                            "serverInfo", Map.of("name", "hivemem", "version", "3.0.2")
-                    )
-            ));
+            case "initialize" -> ResponseEntity.ok()
+                    .header(SESSION_HEADER, UUID.randomUUID().toString())
+                    .body(McpResponse.success(
+                            request.id(),
+                            Map.of(
+                                    "protocolVersion", "2025-03-26",
+                                    "capabilities", Map.of("tools", Map.of()),
+                                    "serverInfo", Map.of("name", "hivemem", "version", "3.0.2")
+                            )
+                    ));
             case "notifications/initialized", "notifications/cancelled" ->
                     ResponseEntity.ok(McpResponse.success(request.id(), Map.of()));
             case "ping" -> ResponseEntity.ok(McpResponse.success(request.id(), Map.of()));
