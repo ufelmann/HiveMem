@@ -63,10 +63,15 @@ cmd_create() {
         expires_expr="now() + interval '${days} days'"
     fi
 
-    "${PSQL[@]}" <<SQL >/dev/null
+    "${PSQL[@]}" -v "tok_hash=${token_hash}" -v "tok_name=${name}" -v "tok_role=${role}" <<'SQL' >/dev/null
 INSERT INTO api_tokens (token_hash, name, role, expires_at)
-VALUES ('${token_hash}', '${name}', '${role}', ${expires_expr});
+VALUES (:'tok_hash', :'tok_name', :'tok_role', NULL);
 SQL
+    if [ "$expires_expr" != "NULL" ]; then
+        "${PSQL[@]}" -v "tok_name=${name}" <<SQL >/dev/null
+UPDATE api_tokens SET expires_at = ${expires_expr} WHERE name = :'tok_name';
+SQL
+    fi
 
     cat <<EOF
 
@@ -106,9 +111,9 @@ cmd_revoke() {
     local name="${1:-}"
     [ -n "$name" ] || usage
     local updated
-    updated=$("${PSQL[@]}" <<SQL
+    updated=$("${PSQL[@]}" -v "tok_name=${name}" <<'SQL'
 UPDATE api_tokens SET revoked_at = now()
-WHERE name = '${name}' AND revoked_at IS NULL
+WHERE name = :'tok_name' AND revoked_at IS NULL
 RETURNING 1;
 SQL
 )
@@ -123,14 +128,14 @@ cmd_info() {
     local name="${1:-}"
     [ -n "$name" ] || usage
     local row
-    row=$("${PSQL[@]}" -F $'\t' <<SQL
+    row=$("${PSQL[@]}" -F $'\t' -v "tok_name=${name}" <<'SQL'
 SELECT name,
        role,
        created_at::text,
        coalesce(expires_at::text, ''),
        coalesce(revoked_at::text, '')
 FROM api_tokens
-WHERE name = '${name}';
+WHERE name = :'tok_name';
 SQL
 )
     if [ -z "$row" ]; then
