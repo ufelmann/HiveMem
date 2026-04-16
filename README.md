@@ -75,7 +75,26 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 
 - [Docker](https://docs.docker.com/get-docker/) (v20+)
 - An external PostgreSQL database with pgvector extension (e.g. `pgvector/pgvector:pg17`)
-- An external embeddings service reachable via HTTP
+- An external embeddings service reachable via HTTP (see below)
+
+**Proxmox LXC users:** Docker containers running JDK 25 inside unprivileged LXC containers require `--security-opt apparmor=unconfined` (or `security_opt: [apparmor=unconfined]` in Compose). This applies to all services, not just HiveMem.
+
+## Embedding Service
+
+HiveMem requires an external embedding service that exposes a `POST /embeddings` endpoint. The service must use the same model as your existing data. The default model is `paraphrase-multilingual-MiniLM-L12-v2` (384 dimensions).
+
+**Important:** The embedding service image is NOT published to GHCR. You need to build it yourself or use an alternative like [HuggingFace TEI](https://huggingface.co/docs/text-embeddings-inference/en/index).
+
+To build the ONNX-based embedding service:
+
+```bash
+# The embedding service source is not part of this repository.
+# Build it from your local copy:
+cd /path/to/embedding-service
+docker build -t hivemem-embeddings .
+```
+
+The service listens on port 80 by default and accepts POST requests with a JSON body `{"texts": ["your text"]}`, returning `{"embeddings": [[0.1, 0.2, ...]]}`.
 
 ## Quick Start
 
@@ -108,21 +127,54 @@ docker run -d --name hivemem \
   hivemem
 ```
 
-### Option C: Docker Compose
+### Option C: Docker Compose (recommended for full setup)
+
+This starts all three services -- database, embedding service, and HiveMem:
 
 ```yaml
 services:
+  hivemem-db:
+    image: pgvector/pgvector:pg17
+    container_name: hivemem-db
+    environment:
+      POSTGRES_DB: hivemem
+      POSTGRES_USER: hivemem
+      POSTGRES_PASSWORD: secret
+    volumes:
+      - hivemem-pgdata:/var/lib/postgresql/data
+    networks:
+      - hivemem-net
+    restart: unless-stopped
+
+  hivemem-embeddings:
+    image: hivemem-embeddings  # build locally, see "Embedding Service" above
+    container_name: hivemem-embeddings
+    networks:
+      - hivemem-net
+    restart: unless-stopped
+
   hivemem:
     image: ghcr.io/ufelmann/hivemem:main
     container_name: hivemem
     ports:
       - "8421:8421"
     environment:
-      HIVEMEM_JDBC_URL: jdbc:postgresql://postgres:5432/hivemem
+      HIVEMEM_JDBC_URL: jdbc:postgresql://hivemem-db:5432/hivemem
       HIVEMEM_DB_USER: hivemem
       HIVEMEM_DB_PASSWORD: secret
-      HIVEMEM_EMBEDDING_URL: http://embeddings:8081
+      HIVEMEM_EMBEDDING_URL: http://hivemem-embeddings:80
+    depends_on:
+      - hivemem-db
+      - hivemem-embeddings
+    networks:
+      - hivemem-net
     restart: unless-stopped
+
+networks:
+  hivemem-net:
+
+volumes:
+  hivemem-pgdata:
 ```
 
 ```bash
@@ -149,9 +201,10 @@ Wait for the Spring Boot startup log and a successful `/mcp` response before pro
 
 ### Create an API token
 
-Use the `hivemem-token` CLI inside the container:
+Use the `hivemem-token` CLI (copy it into the container first, see [Token management](#token-management) below):
 
 ```bash
+docker cp scripts/hivemem-token hivemem:/usr/local/bin/hivemem-token
 docker exec hivemem hivemem-token create my-admin --role admin
 ```
 
@@ -570,14 +623,25 @@ The `agent` role is the key constraint: agents can add knowledge, but every writ
 
 ### Token management
 
+The `hivemem-token` CLI is a bash script in `scripts/` that talks to PostgreSQL directly via `psql`. It is **not** included in the v4.0.0 Docker image. Copy it into the HiveMem container or run it from the DB container:
+
 ```bash
+# Option 1: Copy the script into the running container
+docker cp scripts/hivemem-token hivemem:/usr/local/bin/hivemem-token
 docker exec hivemem hivemem-token create <name> --role admin|writer|reader|agent [--expires 90d]
-docker exec hivemem hivemem-token list
-docker exec hivemem hivemem-token revoke <name>
-docker exec hivemem hivemem-token info <name>
+
+# Option 2: Run psql directly on the DB container (see scripts/hivemem-token for SQL)
+docker exec -it hivemem-db psql -U hivemem hivemem
 ```
 
-The `hivemem-token` CLI is a bash script that talks to PostgreSQL directly via `psql`.
+Available commands (when the script is available):
+
+```bash
+hivemem-token create <name> --role admin|writer|reader|agent [--expires 90d]
+hivemem-token list
+hivemem-token revoke <name>
+hivemem-token info <name>
+```
 
 ### Security details
 
@@ -589,12 +653,18 @@ The `hivemem-token` CLI is a bash script that talks to PostgreSQL directly via `
 
 ## Backups
 
-`hivemem-backup` is a bash script that runs `pg_dump | gzip` using `HIVEMEM_DB_PASSWORD` / `HIVEMEM_DB_USER` / `HIVEMEM_DB_NAME` / `HIVEMEM_DB_HOST` environment variables. The last 7 daily dumps are kept in `/data/backups/`.
-
-Manual backup:
+The `hivemem-backup` script is available in `scripts/` but is **not** included in the v4.0.0 Docker image. Run `pg_dump` directly against the database container instead:
 
 ```bash
-docker exec hivemem hivemem-backup
+# Manual backup (adjust container name if needed)
+docker exec hivemem-db pg_dump -U hivemem hivemem | gzip > "hivemem-$(date +%Y%m%d).sql.gz"
+```
+
+To automate daily backups:
+
+```bash
+# crontab -e
+45 1 * * * docker exec hivemem-db pg_dump -U hivemem hivemem | gzip > /path/to/backups/hivemem-$(date +\%Y\%m\%d).sql.gz
 ```
 
 **LXC/Proxmox users:** Schedule a vzdump at 02:00 to capture the full container including the database dumps. This gives you both logical (pg_dump) and physical (filesystem) backup coverage.
@@ -648,8 +718,7 @@ Deploy the application -- Flyway applies pending migrations on startup.
 ### Debugging
 
 ```bash
-docker logs hivemem --tail 50           # Container logs
-docker exec hivemem hivemem-token list  # Show all tokens
+docker logs hivemem --tail 50  # Container logs
 ```
 
 ## License
