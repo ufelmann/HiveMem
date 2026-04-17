@@ -1,15 +1,22 @@
 import json
+import os
 import numpy as np
 import onnxruntime as ort
 from tokenizers import Tokenizer
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
+MODEL_DIR = "/app/model"
 
-tokenizer = Tokenizer.from_file("/app/model/tokenizer.json")
+tokenizer = Tokenizer.from_file(os.path.join(MODEL_DIR, "tokenizer.json"))
 tokenizer.enable_padding(length=128)
 tokenizer.enable_truncation(max_length=128)
-session = ort.InferenceSession("/app/model/model_quantized.onnx")
+
+# Support both model.onnx (from optimum export) and model_quantized.onnx (pre-quantized)
+onnx_path = os.path.join(MODEL_DIR, "model_quantized.onnx")
+if not os.path.exists(onnx_path):
+    onnx_path = os.path.join(MODEL_DIR, "model.onnx")
+session = ort.InferenceSession(onnx_path)
 
 def mean_pooling(token_embeddings, attention_mask):
     mask_expanded = np.expand_dims(attention_mask, axis=-1)
