@@ -20,7 +20,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -39,7 +38,6 @@ import java.util.UUID;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -82,19 +80,11 @@ class SearchParityIntegrationTest {
     @Autowired
     private RateLimiter rateLimiter;
 
-    @MockitoBean(name = "httpEmbeddingClient")
-    private EmbeddingClient httpEmbeddingClient;
-
     @BeforeEach
     void resetDatabase() {
         rateLimiter.clearAll();
         dslContext.execute("TRUNCATE TABLE access_log, agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
         dslContext.execute("REFRESH MATERIALIZED VIEW drawer_popularity");
-        FixedEmbeddingClient fixedEmbeddingClient = new FixedEmbeddingClient();
-        when(httpEmbeddingClient.encodeQuery(org.mockito.ArgumentMatchers.anyString()))
-                .thenAnswer(invocation -> fixedEmbeddingClient.encodeQuery(invocation.getArgument(0, String.class)));
-        when(httpEmbeddingClient.encodeDocument(org.mockito.ArgumentMatchers.anyString()))
-                .thenAnswer(invocation -> fixedEmbeddingClient.encodeDocument(invocation.getArgument(0, String.class)));
     }
 
     @Test
@@ -342,6 +332,12 @@ class SearchParityIntegrationTest {
                 case "admin-token" -> Optional.of(new AuthPrincipal("admin-1", AuthRole.ADMIN));
                 default -> Optional.empty();
             });
+        }
+
+        @Bean
+        @org.springframework.context.annotation.Primary
+        EmbeddingClient embeddingClient() {
+            return new FixedEmbeddingClient();
         }
 
     }

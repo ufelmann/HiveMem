@@ -12,6 +12,7 @@ import java.util.List;
 public class HttpEmbeddingClient implements EmbeddingClient {
 
     private final RestClient restClient;
+    private volatile int expectedDimension = -1;
 
     @Autowired
     public HttpEmbeddingClient(RestClient.Builder builder, EmbeddingProperties properties) {
@@ -27,6 +28,20 @@ public class HttpEmbeddingClient implements EmbeddingClient {
             builder = builder.requestFactory(requestFactory);
         }
         this.restClient = builder.baseUrl(properties.getBaseUrl().toString()).build();
+    }
+
+    @Override
+    public EmbeddingInfo getInfo() {
+        InfoResponse response = restClient.get()
+                .uri("/info")
+                .accept(MediaType.APPLICATION_JSON)
+                .retrieve()
+                .body(InfoResponse.class);
+        if (response == null || response.model() == null) {
+            throw new IllegalStateException("Embedding service /info returned invalid response");
+        }
+        this.expectedDimension = response.dimension();
+        return new EmbeddingInfo(response.model(), response.dimension());
     }
 
     @Override
@@ -51,6 +66,11 @@ public class HttpEmbeddingClient implements EmbeddingClient {
         if (response == null || response.vector() == null) {
             throw new IllegalStateException("Missing embedding vector");
         }
+        if (expectedDimension > 0 && response.vector().size() != expectedDimension) {
+            throw new IllegalStateException(
+                    "Embedding dimension mismatch: expected " + expectedDimension
+                            + " but got " + response.vector().size());
+        }
         return List.copyOf(response.vector());
     }
 
@@ -58,6 +78,9 @@ public class HttpEmbeddingClient implements EmbeddingClient {
         return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "\"";
     }
 
-    record EmbeddingResponse(List<Float> vector) {
+    record InfoResponse(String model, int dimension) {
+    }
+
+    record EmbeddingResponse(List<Float> vector, String model, Integer dimension) {
     }
 }
