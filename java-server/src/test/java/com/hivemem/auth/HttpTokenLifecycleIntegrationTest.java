@@ -1,12 +1,18 @@
 package com.hivemem.auth;
 
 import com.hivemem.embedding.EmbeddingClient;
+import com.hivemem.embedding.EmbeddingInfo;
+import com.hivemem.embedding.FixedEmbeddingClient;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -24,6 +30,7 @@ import java.time.OffsetDateTime;
 import java.util.HexFormat;
 
 import static org.hamcrest.Matchers.hasItem;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -32,7 +39,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
+@Import(HttpTokenLifecycleIntegrationTest.TestConfig.class)
 class HttpTokenLifecycleIntegrationTest {
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class TestConfig {
+        @Bean
+        @Primary
+        EmbeddingClient testEmbeddingClient() {
+            return new FixedEmbeddingClient();
+        }
+    }
+
 
     private static final String TOOLS_LIST_REQUEST = """
             {"jsonrpc":"2.0","id":1,"method":"tools/list"}
@@ -73,6 +91,7 @@ class HttpTokenLifecycleIntegrationTest {
     void resetTokens() {
         rateLimiter.clearAll();
         dslContext.execute("TRUNCATE TABLE api_tokens");
+        when(embeddingClient.getInfo()).thenReturn(new EmbeddingInfo("test-model", 1024));
     }
 
     @Test
