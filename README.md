@@ -100,38 +100,7 @@ docker build -t hivemem-embeddings .
 
 ## Quick Start
 
-### Option A: Pre-built image (recommended)
-
-```bash
-docker run -d --name hivemem \
-  -p 8421:8421 \
-  -e HIVEMEM_JDBC_URL=jdbc:postgresql://postgres:5432/hivemem \
-  -e HIVEMEM_DB_USER=hivemem \
-  -e HIVEMEM_DB_PASSWORD=secret \
-  -e HIVEMEM_EMBEDDING_URL=http://embeddings:8081 \
-  --restart unless-stopped \
-  ghcr.io/ufelmann/hivemem:main
-```
-
-### Option B: Build from source
-
-```bash
-git clone https://github.com/ufelmann/HiveMem.git
-cd HiveMem
-docker build -t hivemem .
-docker run -d --name hivemem \
-  -p 8421:8421 \
-  -e HIVEMEM_JDBC_URL=jdbc:postgresql://postgres:5432/hivemem \
-  -e HIVEMEM_DB_USER=hivemem \
-  -e HIVEMEM_DB_PASSWORD=secret \
-  -e HIVEMEM_EMBEDDING_URL=http://embeddings:8081 \
-  --restart unless-stopped \
-  hivemem
-```
-
-### Option C: Docker Compose (recommended for full setup)
-
-This starts all three services -- database, embedding service, and HiveMem:
+No clone needed. Save this as `docker-compose.yml` and run `docker compose up -d`:
 
 ```yaml
 services:
@@ -141,7 +110,7 @@ services:
     environment:
       POSTGRES_DB: hivemem
       POSTGRES_USER: hivemem
-      POSTGRES_PASSWORD: secret
+      POSTGRES_PASSWORD: ${HIVEMEM_DB_PASSWORD:-changeme}
     volumes:
       - hivemem-pgdata:/var/lib/postgresql/data
     networks:
@@ -163,7 +132,7 @@ services:
     environment:
       HIVEMEM_JDBC_URL: jdbc:postgresql://hivemem-db:5432/hivemem
       HIVEMEM_DB_USER: hivemem
-      HIVEMEM_DB_PASSWORD: secret
+      HIVEMEM_DB_PASSWORD: ${HIVEMEM_DB_PASSWORD:-changeme}
       HIVEMEM_EMBEDDING_URL: http://hivemem-embeddings:80
     depends_on:
       - hivemem-db
@@ -180,7 +149,28 @@ volumes:
 ```
 
 ```bash
+# Set a password (or it defaults to "changeme")
+export HIVEMEM_DB_PASSWORD=your-secret-here
+
+# Start everything
 docker compose up -d
+
+# Wait for startup (Flyway migrations run automatically)
+docker logs -f hivemem
+
+# Create your first API token
+docker exec hivemem hivemem-token create my-admin --role admin
+# Save the printed token — it's shown once and never stored
+```
+
+That's it. Three containers, all images from GHCR, no build needed.
+
+### Build from source (optional)
+
+```bash
+git clone https://github.com/ufelmann/HiveMem.git
+cd HiveMem
+docker build -t hivemem .
 ```
 
 At startup, Spring Boot runs Flyway migrations against the configured PostgreSQL database. Check progress:
