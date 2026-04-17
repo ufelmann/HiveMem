@@ -149,7 +149,7 @@ services:
     restart: unless-stopped
 
   hivemem-embeddings:
-    build: embedding-service  # or use pre-built: image: hivemem-embeddings
+    image: ghcr.io/ufelmann/hivemem-embeddings:main
     container_name: hivemem-embeddings
     networks:
       - hivemem-net
