@@ -40,7 +40,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha
 
-      - name: Build and push
+      - name: Build and push hivemem
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -50,3 +50,23 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Embedding service metadata
+        id: emb-meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/hivemem-embeddings
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha
+
+      - name: Build and push embedding service
+        uses: docker/build-push-action@v7
+        with:
+          context: embedding-service
+          push: true
+          tags: ${{ steps.emb-meta.outputs.tags }}
+          labels: ${{ steps.emb-meta.outputs.labels }}
+          cache-from: type=gha,scope=embeddings
+          cache-to: type=gha,mode=max,scope=embeddings
