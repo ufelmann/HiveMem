@@ -11,7 +11,7 @@ MCP server backed by PostgreSQL (pgvector) with external embeddings service. 38 
 [![Java](https://img.shields.io/badge/java-25-blue)](https://openjdk.org)
 [![Spring Boot](https://img.shields.io/badge/spring%20boot-4.0.5-6DB33F)](https://spring.io/projects/spring-boot)
 [![PostgreSQL](https://img.shields.io/badge/postgresql-17-336791)](https://postgresql.org)
-[![Tests](https://img.shields.io/badge/tests-250%20passed-brightgreen)](https://github.com/ufelmann/HiveMem/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-264%20passed-brightgreen)](https://github.com/ufelmann/HiveMem/actions/workflows/ci.yml)
 [![MCP Tools](https://img.shields.io/badge/MCP%20tools-38-orange)](https://github.com/ufelmann/HiveMem#tool-list-full)
 [![License: Sustainable Use](https://img.shields.io/badge/license-Sustainable%20Use-blue)](https://github.com/ufelmann/HiveMem/blob/main/LICENSE)
 [![SafeSkill](https://safeskill.dev/api/badge/ufelmann-hivemem)](https://safeskill.dev/scan/ufelmann-hivemem)
@@ -69,7 +69,8 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 - **Blueprints** -- curated narrative overviews per wing, append-only versioned
 - **References & reading list** -- track sources, link to drawers, filter by type/status
 - **Spring Boot 4.0.5 + Java 25** -- MCP server with jOOQ, Flyway migrations, Caffeine cache
-- **250 tests** with Testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
+- **Automatic embedding reencoding** -- detects model changes at startup, re-encodes all vectors with backup and progress tracking
+- **264 tests** with Testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
 
 ## Prerequisites
 
@@ -81,20 +82,21 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 
 ## Embedding Service
 
-HiveMem requires an external embedding service that exposes a `POST /embeddings` endpoint. The service must use the same model as your existing data. The default model is `paraphrase-multilingual-MiniLM-L12-v2` (384 dimensions).
+HiveMem requires an external embedding service. The default model is `paraphrase-multilingual-MiniLM-L12-v2` (384 dimensions). An ONNX-based service is included in `embedding-service/`.
 
-**Important:** The embedding service image is NOT published to GHCR. You need to build it yourself or use an alternative like [HuggingFace TEI](https://huggingface.co/docs/text-embeddings-inference/en/index).
+The service must expose:
+- `POST /embeddings` — `{"text": "...", "mode": "document"}` → `{"vector": [...], "model": "...", "dimension": N}`
+- `GET /info` — `{"model": "...", "dimension": N}` (used by HiveMem for model change detection)
 
-To build the ONNX-based embedding service:
+**Automatic reencoding:** When HiveMem detects a model change at startup (different model name or dimension), it automatically backs up the database, re-encodes all drawers, and rebuilds the HNSW index. Search is blocked (503) during reencoding.
+
+To build the embedding service:
 
 ```bash
-# The embedding service source is not part of this repository.
-# Build it from your local copy:
-cd /path/to/embedding-service
+cd embedding-service
+# You need model files (tokenizer.json + model_quantized.onnx) in slim-model/
 docker build -t hivemem-embeddings .
 ```
-
-The service listens on port 80 by default and accepts POST requests with a JSON body `{"texts": ["your text"]}`, returning `{"embeddings": [[0.1, 0.2, ...]]}`.
 
 ## Quick Start
 
@@ -147,7 +149,7 @@ services:
     restart: unless-stopped
 
   hivemem-embeddings:
-    image: hivemem-embeddings  # build locally, see "Embedding Service" above
+    build: embedding-service  # or use pre-built: image: hivemem-embeddings
     container_name: hivemem-embeddings
     networks:
       - hivemem-net
@@ -623,15 +625,10 @@ The `agent` role is the key constraint: agents can add knowledge, but every writ
 
 ### Token management
 
-The `hivemem-token` CLI is a bash script in `scripts/` that talks to PostgreSQL directly via `psql`. It is **not** included in the v4.0.0 Docker image. Copy it into the HiveMem container or run it from the DB container:
+The `hivemem-token` CLI is included in the Docker image:
 
 ```bash
-# Option 1: Copy the script into the running container
-docker cp scripts/hivemem-token hivemem:/usr/local/bin/hivemem-token
 docker exec hivemem hivemem-token create <name> --role admin|writer|reader|agent [--expires 90d]
-
-# Option 2: Run psql directly on the DB container (see scripts/hivemem-token for SQL)
-docker exec -it hivemem-db psql -U hivemem hivemem
 ```
 
 Available commands (when the script is available):
@@ -653,7 +650,7 @@ hivemem-token info <name>
 
 ## Backups
 
-The `hivemem-backup` script is available in `scripts/` but is **not** included in the v4.0.0 Docker image. Run `pg_dump` directly against the database container instead:
+The `hivemem-backup` script is included in the Docker image. It is also called automatically before embedding reencoding.
 
 ```bash
 # Manual backup (adjust container name if needed)
@@ -681,7 +678,7 @@ mvn test
 ```
 
 ```
-250 tests passed
+264 tests passed
 ```
 
 ### Deploy changes
@@ -708,7 +705,7 @@ Migration files live in `java-server/src/main/resources/db/migration/` using the
 To add a new migration:
 
 ```bash
-cat > java-server/src/main/resources/db/migration/V0008__my_feature.sql << 'EOF'
+cat > java-server/src/main/resources/db/migration/V0009__my_feature.sql << 'EOF'
 CREATE TABLE IF NOT EXISTS my_table (...);
 EOF
 ```
