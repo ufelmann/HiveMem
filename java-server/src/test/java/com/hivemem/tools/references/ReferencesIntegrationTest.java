@@ -9,6 +9,8 @@ import com.hivemem.search.DrawerSearchRepository;
 import com.hivemem.search.KgSearchRepository;
 import com.hivemem.tools.read.ReadToolService;
 import com.hivemem.write.WriteToolRepository;
+import com.hivemem.write.AdminToolRepository;
+import com.hivemem.write.AdminToolService;
 import com.hivemem.write.WriteToolService;
 import org.jooq.DSLContext;
 import org.jooq.Record;
@@ -233,6 +235,7 @@ class ReferencesIntegrationTest {
             DrawerReadRepository.class,
             DrawerSearchRepository.class,
             KgSearchRepository.class,
+            AdminToolRepository.class,
             TestConfig.class
     })
     static class TestApplication {
@@ -245,6 +248,15 @@ class ReferencesIntegrationTest {
         @Primary
         EmbeddingClient embeddingClient() {
             return new FixedEmbeddingClient();
+        }
+
+        @Bean
+        AdminToolService adminToolService(AdminToolRepository adminToolRepository) {
+            return new AdminToolService(adminToolRepository, new com.hivemem.embedding.EmbeddingMigrationService(
+                    new FixedEmbeddingClient(), null) {
+                @Override
+                public void run(org.springframework.boot.ApplicationArguments args) {}
+            });
         }
     }
 }
