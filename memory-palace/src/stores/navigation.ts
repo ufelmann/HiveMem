@@ -17,6 +17,7 @@ interface State {
   selectedDrawerId: string | null
   focusedDrawerId: string | null
   currentCardIndex: number
+  hoveredWing: string | null
   palace: Palace
   drawersById: Record<string, Drawer>
   isTransitioning: boolean
@@ -32,6 +33,7 @@ export const useNavigationStore = defineStore('navigation', {
     selectedDrawerId: null,
     focusedDrawerId: null,
     currentCardIndex: 0,
+    hoveredWing: null,
     palace: { wings: [] },
     drawersById: {},
     isTransitioning: false,
@@ -63,6 +65,17 @@ export const useNavigationStore = defineStore('navigation', {
       if (this.selectedDrawer) items.push({ title: this.selectedDrawer.title, level: 'drawer', payload: { drawerId: this.selectedDrawer.id } })
       return items
     },
+    factCount(): number {
+      let total = 0
+      for (const d of Object.values(this.drawersById)) total += d.facts?.length ?? 0
+      return total
+    },
+    drawerCount(): number {
+      return Object.keys(this.drawersById).length
+    },
+    wingCount(): number {
+      return this.palace.wings.length
+    },
   },
   actions: {
     async loadPalace() {
@@ -81,6 +94,7 @@ export const useNavigationStore = defineStore('navigation', {
       this.loaded = true
     },
     enterWing(wing: string) {
+      this.hoveredWing = null
       this.currentWing = wing
       this.currentHall = null
       this.currentRoom = null
@@ -88,23 +102,27 @@ export const useNavigationStore = defineStore('navigation', {
       this.level = 'wing'
     },
     enterHall(hall: string) {
+      this.hoveredWing = null
       this.currentHall = hall
       this.currentRoom = null
       this.selectedDrawerId = null
       this.level = 'hall'
     },
     enterRoom(room: string) {
+      this.hoveredWing = null
       this.currentRoom = room
       this.selectedDrawerId = null
       this.level = 'room'
     },
     selectDrawer(id: string) {
+      this.hoveredWing = null
       this.selectedDrawerId = id
       this.focusedDrawerId = id
       this.currentCardIndex = 0
       this.level = 'drawer'
     },
     closeDrawer() {
+      this.hoveredWing = null
       this.selectedDrawerId = null
       this.focusedDrawerId = null
       this.currentCardIndex = 0
@@ -122,6 +140,7 @@ export const useNavigationStore = defineStore('navigation', {
       this.level = 'drawer'
     },
     goBack() {
+      this.hoveredWing = null
       if (this.level === 'drawer') {
         if (this.currentCardIndex > 0) { this.currentCardIndex--; return }
         this.level = 'room'
@@ -146,6 +165,7 @@ export const useNavigationStore = defineStore('navigation', {
       if (this.currentCardIndex > 0) this.currentCardIndex--
     },
     goToLevel(item: BreadcrumbItem) {
+      this.hoveredWing = null
       this.currentCardIndex = 0
       if (item.level !== 'drawer') this.focusedDrawerId = null
       switch (item.level) {
@@ -185,5 +205,8 @@ export const useNavigationStore = defineStore('navigation', {
       }
     },
     setTransitioning(flag: boolean) { this.isTransitioning = flag },
+    setHoveredWing(name: string | null) {
+      this.hoveredWing = name
+    },
   },
 })
