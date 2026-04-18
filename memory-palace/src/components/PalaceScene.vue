@@ -8,6 +8,7 @@ import WingInteriorView from './WingInteriorView.vue'
 import HallTunnelView from './HallTunnelView.vue'
 import RoomCellView from './RoomCellView.vue'
 import CameraController from './CameraController.vue'
+import DrawerSheet from './DrawerSheet.vue'
 
 const store = useNavigationStore()
 
@@ -58,5 +59,7 @@ const orbitOptions = computed<OrbitOpts>(() => {
     <WingInteriorView v-else-if="store.level === 'wing'" />
     <HallTunnelView v-else-if="store.level === 'hall'" />
     <RoomCellView v-else />
+
+    <DrawerSheet v-if="store.level === 'drawer' && store.selectedDrawer" />
   </TresCanvas>
 </template>
