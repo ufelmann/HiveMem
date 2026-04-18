@@ -8,16 +8,13 @@ const PI = Math.PI
 
 const store = useNavigationStore()
 
-const R_T = 2.2
-const APOTHEM = R_T * Math.cos(PI / 6)
-const EDGE = R_T
+const R = 6
 
-const rooms = computed(() => store.hallObj?.rooms ?? [])
+const floorTexture = makeStoneFloorTextureWithRepeat(3, 3)
+const domeTexture  = makeHexWallTextureWithRepeat(8, 4)
+
 const wingColor = computed(() => store.wingObj?.color ?? '#00BFFF')
-const tunnelLength = computed(() => Math.max(12, rooms.value.length * 3))
-
-const floorTexture = computed(() => makeStoneFloorTextureWithRepeat(tunnelLength.value / 4, 1))
-const wallTexture  = computed(() => makeHexWallTextureWithRepeat(tunnelLength.value / 3, 1))
+const rooms = computed(() => store.hallObj?.rooms ?? [])
 
 const labelTextures = new Map<string, THREE.CanvasTexture>()
 function buildRoomLabelCanvas(room: string, count: number): HTMLCanvasElement {
@@ -52,25 +49,23 @@ onBeforeUnmount(() => {
   labelTextures.clear()
 })
 
+// Each room portal sits on the equator ring, evenly distributed around the sphere
 const portalSlots = computed(() =>
   rooms.value.map((room: any, i: number) => {
-    const side = i % 2 === 0 ? -1 : 1
-    const pairIdx = Math.floor(i / 2)
-    const x = -tunnelLength.value / 2 + 1.5 + pairIdx * 3 + 1.5
-    const z = side * (APOTHEM - 0.02)
-    const rotationY = side === -1 ? 0 : PI
-    return { room, position: [x, 1.3, z] as [number, number, number], rotationY }
+    const N = rooms.value.length
+    const theta = (i / Math.max(N, 1)) * 2 * PI + PI / 6
+    const px = R * Math.cos(theta)
+    const pz = R * Math.sin(theta)
+    const py = 2.0
+    // Rotation-y so the portal's +Z normal points toward the origin
+    const rotY = -theta + PI / 2
+    return {
+      room,
+      position: [px, py, pz] as [number, number, number],
+      rotationY: rotY,
+    }
   })
 )
-
-const ceilingLights = computed(() => {
-  const L = tunnelLength.value
-  const count = Math.min(5, Math.max(2, Math.floor(L / 4)))
-  const step = L / (count + 1)
-  return Array.from({ length: count }, (_, i) => ({
-    position: [-L / 2 + step * (i + 1), R_T * 0.8, 0] as [number, number, number],
-  }))
-})
 
 function onPortalClick(name: string) {
   if (store.isTransitioning) return
@@ -80,43 +75,30 @@ function onPortalClick(name: string) {
 
 <template>
   <TresGroup>
-    <!-- Floor -->
-    <TresMesh :rotation-x="-PI / 2" :position-y="-APOTHEM">
-      <TresPlaneGeometry :args="[tunnelLength, EDGE]" />
-      <TresMeshStandardMaterial :color="'#ffffff'" :map="floorTexture" :roughness="0.7" />
+    <!-- Inner dome sphere — BackSide so we see the inside -->
+    <TresMesh>
+      <TresSphereGeometry :args="[R, 32, 16]" />
+      <TresMeshStandardMaterial
+        :color="'#ffffff'"
+        :map="domeTexture"
+        :roughness="0.7"
+        :side="THREE.BackSide"
+      />
     </TresMesh>
 
-    <!-- Ceiling -->
-    <TresMesh :rotation-x="PI / 2" :position-y="APOTHEM * 2">
-      <TresPlaneGeometry :args="[tunnelLength, EDGE]" />
-      <TresMeshStandardMaterial :color="'#06060f'" :emissive="wingColor" :emissive-intensity="0.05" />
+    <!-- Floor disk -->
+    <TresMesh :position-y="0">
+      <TresCylinderGeometry :args="[R, R, 0.1, 48]" />
+      <TresMeshStandardMaterial :color="'#ffffff'" :map="floorTexture" :roughness="0.85" />
     </TresMesh>
 
-    <!-- Upper-left slanted -->
-    <TresMesh :position="[0, APOTHEM, -APOTHEM / 2]" :rotation-x="PI / 3">
-      <TresPlaneGeometry :args="[tunnelLength, EDGE]" />
-      <TresMeshStandardMaterial :color="'#ffffff'" :map="wallTexture" :side="THREE.DoubleSide" />
+    <!-- Reactor beam — thin cyan cylinder from y=0 to y=R -->
+    <TresMesh :position="[0, R / 2, 0]">
+      <TresCylinderGeometry :args="[0.08, 0.08, R, 16]" />
+      <TresMeshBasicMaterial :color="'#00BFFF'" :transparent="true" :opacity="0.55" />
     </TresMesh>
 
-    <!-- Upper-right slanted -->
-    <TresMesh :position="[0, APOTHEM, APOTHEM / 2]" :rotation-x="-PI / 3">
-      <TresPlaneGeometry :args="[tunnelLength, EDGE]" />
-      <TresMeshStandardMaterial :color="'#ffffff'" :map="wallTexture" :side="THREE.DoubleSide" />
-    </TresMesh>
-
-    <!-- Lower-left vertical (portal wall) -->
-    <TresMesh :position="[0, 0.4, -APOTHEM]" :rotation-y="0">
-      <TresPlaneGeometry :args="[tunnelLength, APOTHEM * 1.4]" />
-      <TresMeshStandardMaterial :color="'#ffffff'" :map="wallTexture" :side="THREE.DoubleSide" />
-    </TresMesh>
-
-    <!-- Lower-right vertical (portal wall) -->
-    <TresMesh :position="[0, 0.4, APOTHEM]" :rotation-y="PI">
-      <TresPlaneGeometry :args="[tunnelLength, APOTHEM * 1.4]" />
-      <TresMeshStandardMaterial :color="'#ffffff'" :map="wallTexture" :side="THREE.DoubleSide" />
-    </TresMesh>
-
-    <!-- Room portals -->
+    <!-- Room portals on equator ring -->
     <TresGroup
       v-for="slot in portalSlots"
       :key="slot.room.name"
@@ -124,28 +106,32 @@ function onPortalClick(name: string) {
       :rotation-y="slot.rotationY"
       @click="onPortalClick(slot.room.name)"
     >
+      <!-- Dark inset hex -->
       <TresMesh :position-z="0.02">
-        <TresCircleGeometry :args="[0.8, 6]" />
+        <TresCircleGeometry :args="[0.9, 6]" />
         <TresMeshBasicMaterial :color="'#06060f'" :transparent="true" :opacity="0.95" />
       </TresMesh>
+      <!-- Cyan glow rim -->
       <TresMesh :position-z="0.03">
-        <TresRingGeometry :args="[0.8, 0.95, 6, 1]" />
+        <TresRingGeometry :args="[0.9, 1.05, 6, 1]" />
         <TresMeshBasicMaterial :color="wingColor" :transparent="true" :opacity="0.85" />
       </TresMesh>
-      <TresMesh :position="[0, 1.2, 0.04]">
+      <!-- Room label -->
+      <TresMesh :position="[0, 1.25, 0.04]">
         <TresPlaneGeometry :args="[1.8, 0.45]" />
         <TresMeshBasicMaterial :map="getRoomLabel(slot.room.name, slot.room.drawerCount)" :transparent="true" />
       </TresMesh>
     </TresGroup>
 
     <!-- Lighting -->
-    <TresAmbientLight :intensity="0.5" :color="'#ffeecf'" />
-    <TresPointLight
-      v-for="(light, i) in ceilingLights"
-      :key="`light-${i}`"
-      :position="light.position"
-      :intensity="0.9"
-      :color="'#ffeecf'"
-    />
+    <TresAmbientLight :intensity="0.55" :color="'#ffeecf'" />
+    <TresPointLight :position="[0, R - 0.3, 0]" :intensity="1.3" :color="'#ffeecf'" />
+    <template v-for="slot in portalSlots" :key="`light-${slot.room.name}`">
+      <TresPointLight
+        :position="[slot.position[0] * 0.5, 1.8, slot.position[2] * 0.5]"
+        :intensity="0.35"
+        :color="wingColor"
+      />
+    </template>
   </TresGroup>
 </template>

@@ -11,6 +11,7 @@ import CameraController from './CameraController.vue'
 import DrawerCardStack from './DrawerCardStack.vue'
 
 const store = useNavigationStore()
+const R = 6 // sphere radius used by HallTunnelView
 
 interface OrbitOpts {
   enableZoom?: boolean
@@ -29,7 +30,7 @@ const orbitOptions = computed<OrbitOpts>(() => {
     case 'wing':
       return { enableZoom: true, enablePan: true, enableRotate: true, minDistance: 1.2, maxDistance: 14, minPolarAngle: 0.15, maxPolarAngle: 1.55 }
     case 'hall':
-      return { enableZoom: true, enablePan: true, enableRotate: true, minPolarAngle: 1.1, maxPolarAngle: 1.7 }
+      return { enableZoom: true, enablePan: true, enableRotate: true, minDistance: 0.5, maxDistance: R - 0.5, minPolarAngle: 0.2, maxPolarAngle: 1.5 }
     case 'room':
       return { enableZoom: true, enablePan: true, enableRotate: true, minDistance: 1.5, maxDistance: 8, minPolarAngle: 0.2, maxPolarAngle: 1.55 }
     case 'drawer':

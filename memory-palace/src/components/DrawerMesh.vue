@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
+import * as THREE from 'three'
 import gsap from 'gsap'
 import type { Drawer } from '../types/palace'
 import { useNavigationStore } from '../stores/navigation'
@@ -16,7 +17,7 @@ const hovered = ref(false)
 const canHover = typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches
 
 const sizeY = computed(() => 0.3 + props.drawer.importance * 0.08)
-const baseIntensity = computed(() => 0.2 + props.drawer.importance * 0.12)
+const baseIntensity = computed(() => 0.05 + props.drawer.importance * 0.05)
 
 const emissiveColor = computed(() => (props.drawer.status === 'pending' ? '#FF8C00' : '#00BFFF'))
 const drawerTexture = getDrawerFrontTexture()
@@ -58,6 +59,36 @@ watch(
   },
   { immediate: false },
 )
+
+// --- Title label texture ---
+let titleTex: THREE.CanvasTexture | null = null
+function buildTitleCanvas(): HTMLCanvasElement {
+  const W = 512, H = 96
+  const c = document.createElement('canvas'); c.width = W; c.height = H
+  const ctx = c.getContext('2d')!
+  ctx.clearRect(0, 0, W, H)
+  ctx.fillStyle = 'rgba(10,10,26,0.9)'
+  ctx.strokeStyle = 'rgba(0,191,255,0.75)'
+  ctx.lineWidth = 3
+  ctx.beginPath(); ctx.roundRect(6, 6, W - 12, H - 12, 12); ctx.fill(); ctx.stroke()
+  ctx.fillStyle = '#00BFFF'
+  ctx.font = 'bold 38px "Segoe UI", Arial, sans-serif'
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+  const title = props.drawer.title.length > 28
+    ? props.drawer.title.slice(0, 27) + '\u2026'
+    : props.drawer.title
+  ctx.fillText(title, W / 2, H / 2)
+  return c
+}
+function ensureTitleTex(): THREE.CanvasTexture {
+  if (titleTex) return titleTex
+  titleTex = new THREE.CanvasTexture(buildTitleCanvas())
+  titleTex.needsUpdate = true
+  return titleTex
+}
+onBeforeUnmount(() => {
+  if (titleTex) { titleTex.dispose(); titleTex = null }
+})
 </script>
 
 <template>
@@ -74,9 +105,9 @@ watch(
           :roughness="0.4"
           :metalness="0.3" />
       </TresMesh>
-      <TresMesh :scale-y="sizeY" :position-z="0.001">
-        <TresBoxGeometry :args="[0.62, 1.02, 0.51]" />
-        <TresMeshBasicMaterial :color="emissiveColor" :wireframe="true" :transparent="true" :opacity="0.35" />
+      <TresMesh :position="[0, 0.5 * sizeY + 0.15, 0.26]">
+        <TresPlaneGeometry :args="[0.9, 0.17]" />
+        <TresMeshBasicMaterial :map="ensureTitleTex()" :transparent="true" />
       </TresMesh>
     </TresGroup>
   </TresGroup>

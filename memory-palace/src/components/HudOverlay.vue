@@ -24,13 +24,30 @@ function onFullscreenChange() {
   isFullscreen.value = !!document.fullscreenElement
 }
 
+let lastTapAt = 0
+function onPointerUp(e: PointerEvent) {
+  const target = e.target as HTMLElement | null
+  if (!target) return
+  // Only count taps on the 3D canvas
+  if (target.tagName !== 'CANVAS') return
+  const now = performance.now()
+  if (now - lastTapAt < 350) {
+    lastTapAt = 0
+    store.goBack()
+  } else {
+    lastTapAt = now
+  }
+}
+
 onMounted(() => {
   window.addEventListener('keydown', onKey)
   document.addEventListener('fullscreenchange', onFullscreenChange)
+  document.addEventListener('pointerup', onPointerUp)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
+  document.removeEventListener('pointerup', onPointerUp)
 })
 </script>
 
