@@ -271,7 +271,7 @@ class ReadToolIntegrationTest {
                 new AuthPrincipal("fixture-writer", AuthRole.WRITER),
                 "test drawer for auto-log",
                 "testing", "autolog", "base",
-                null, null, null, null, null, null, null, null, null
+                null, null, null, null, null, null, null, null, null, null
             ).get("id"));
 
         long beforeCount = dslContext.fetchCount(

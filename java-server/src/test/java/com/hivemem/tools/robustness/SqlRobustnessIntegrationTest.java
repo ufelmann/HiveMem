@@ -104,7 +104,8 @@ class SqlRobustnessIntegrationTest {
                     null,
                     null,
                     "pending",
-                    BASE_TIME.plusSeconds(i)
+                    BASE_TIME.plusSeconds(i),
+                    null
             );
             ids.add(UUID.fromString((String) result.get("id")));
         }
@@ -162,16 +163,16 @@ class SqlRobustnessIntegrationTest {
         // Build diamond: A -> B, A -> C, B -> D, C -> D
         Map<String, Object> dA = writeToolService.addDrawer(
                 WRITER, "Diamond A", "test", "graph", null, "system",
-                List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME);
+                List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME, null);
         Map<String, Object> dB = writeToolService.addDrawer(
                 WRITER, "Diamond B", "test", "graph", null, "system",
-                List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(1));
+                List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(1), null);
         Map<String, Object> dC = writeToolService.addDrawer(
                 WRITER, "Diamond C", "test", "graph", null, "system",
-                List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(2));
+                List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(2), null);
         Map<String, Object> dD = writeToolService.addDrawer(
                 WRITER, "Diamond D", "test", "graph", null, "system",
-                List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(3));
+                List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(3), null);
 
         UUID idA = UUID.fromString((String) dA.get("id"));
         UUID idB = UUID.fromString((String) dB.get("id"));

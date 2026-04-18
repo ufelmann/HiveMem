@@ -91,6 +91,9 @@ class WriteToolsIntegrationTest {
     @Autowired
     private AdminToolService adminToolService;
 
+    @Autowired
+    private EmbeddingClient embeddingClient;
+
     @BeforeEach
     void resetDatabase() {
         rateLimiter.clearAll();
@@ -161,7 +164,33 @@ class WriteToolsIntegrationTest {
     }
 
     @Test
-    void checkDuplicateFindsNearDuplicateDrawers() throws Exception {
+    void addDrawerWithoutDedupeThresholdAlwaysInserts() throws Exception {
+        JsonNode content = callToolContent("writer-token", "hivemem_add_drawer", Map.of(
+                "content", "Unique drawer content without dedupe",
+                "wing", "alpha",
+                "hall", "facts",
+                "room", "search"
+        ));
+        assertThat(content.path("inserted").asBoolean()).isTrue();
+        assertThat(content.path("id").asText()).isNotBlank();
+    }
+
+    @Test
+    void addDrawerWithDedupeThresholdInsertsWhenNoMatch() throws Exception {
+        JsonNode content = callToolContent("writer-token", "hivemem_add_drawer", Map.of(
+                "content", "Unique content with no near duplicates xyz987",
+                "wing", "alpha",
+                "hall", "facts",
+                "room", "search",
+                "dedupe_threshold", 0.99
+        ));
+        assertThat(content.path("inserted").asBoolean()).isTrue();
+        assertThat(content.path("id").asText()).isNotBlank();
+    }
+
+    @Test
+    void addDrawerWithDedupeThresholdSkipsInsertWhenDuplicateExists() throws Exception {
+        // First insert
         callToolContent("writer-token", "hivemem_add_drawer", Map.of(
                 "content", "Duplicate oracle alpha",
                 "wing", "alpha",
@@ -170,13 +199,38 @@ class WriteToolsIntegrationTest {
                 "summary", "Duplicate oracle alpha"
         ));
 
-        JsonNode content = callToolContent("admin-token", "hivemem_check_duplicate", Map.of(
+        // Second attempt with dedupe_threshold should detect duplicate and skip
+        JsonNode content = callToolContent("writer-token", "hivemem_add_drawer", Map.of(
                 "content", "Duplicate oracle beta",
-                "threshold", 0.95
+                "wing", "alpha",
+                "hall", "facts",
+                "room", "search",
+                "dedupe_threshold", 0.80
         ));
-        assertThat(content).hasSize(1);
-        assertThat(content.get(0).path("summary").asText()).isEqualTo("Duplicate oracle alpha");
-        assertThat(content.get(0).path("similarity").isNumber()).isTrue();
+        assertThat(content.path("inserted").asBoolean()).isFalse();
+        assertThat(content.has("id")).isFalse();
+        assertThat(content.path("duplicates").isArray()).isTrue();
+        assertThat(content.path("duplicates")).isNotEmpty();
+        assertThat(content.path("duplicates").get(0).path("summary").asText()).isEqualTo("Duplicate oracle alpha");
+        assertThat(content.path("duplicates").get(0).path("similarity").isNumber()).isTrue();
+    }
+
+    @Test
+    void addDrawerEmbedsExactlyOnceWithDedupeThreshold() throws Exception {
+        FixedEmbeddingClient fixedClient = (FixedEmbeddingClient) embeddingClient;
+        int countBefore = fixedClient.getEncodeDocumentCallCount();
+
+        callToolContent("writer-token", "hivemem_add_drawer", Map.of(
+                "content", "Duplicate oracle alpha",
+                "wing", "alpha",
+                "hall", "facts",
+                "room", "search",
+                "dedupe_threshold", 0.5
+        ));
+
+        int countAfter = fixedClient.getEncodeDocumentCallCount();
+        // Exactly one encodeDocument call for add_drawer with dedupe_threshold
+        assertThat(countAfter - countBefore).isEqualTo(1);
     }
 
     @Test
