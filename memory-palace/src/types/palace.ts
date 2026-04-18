@@ -56,4 +56,4 @@ export interface Palace {
   wings: Wing[]
 }
 
-export type NavigationLevel = 'building' | 'corridor' | 'room' | 'drawer'
+export type NavigationLevel = 'building' | 'wing' | 'hall' | 'room' | 'drawer'
