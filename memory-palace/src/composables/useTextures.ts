@@ -208,3 +208,123 @@ export function getDrawerFrontTexture(): THREE.CanvasTexture {
   drawerFrontTexture = makeCanvasTexture(buildDrawerFrontCanvas())
   return drawerFrontTexture
 }
+
+// Section A — Drawer Interior
+let drawerInteriorTexture: THREE.CanvasTexture | null = null
+function buildDrawerInteriorCanvas(): HTMLCanvasElement {
+  const SIZE = 512
+  const canvas = document.createElement('canvas')
+  canvas.width = SIZE; canvas.height = SIZE
+  const ctx = canvas.getContext('2d')!
+
+  const base = ctx.createLinearGradient(0, 0, 0, SIZE)
+  base.addColorStop(0, '#2a2217')
+  base.addColorStop(1, '#1a1410')
+  ctx.fillStyle = base
+  ctx.fillRect(0, 0, SIZE, SIZE)
+
+  ctx.fillStyle = 'rgba(10,8,5,0.55)'
+  const rails = [0.15, 0.32, 0.48, 0.65, 0.82]
+  for (const y of rails) {
+    ctx.fillRect(0, y * SIZE - 3, SIZE, 6)
+  }
+
+  for (let i = 0; i < 400; i++) {
+    const x = Math.random() * SIZE
+    const y = Math.random() * SIZE
+    const a = 0.02 + Math.random() * 0.03
+    ctx.fillStyle = `rgba(210,180,140,${a})`
+    ctx.fillRect(x, y, 1, 1 + Math.random() * 2)
+  }
+  return canvas
+}
+export function getDrawerInteriorTexture(): THREE.CanvasTexture {
+  if (drawerInteriorTexture) return drawerInteriorTexture
+  drawerInteriorTexture = makeCanvasTexture(buildDrawerInteriorCanvas())
+  return drawerInteriorTexture
+}
+
+// Section B — Card Paper (exposed as both canvas factory + cached texture)
+const cardPaperCache = new Map<string, THREE.CanvasTexture>()
+function buildCardPaperCanvas(accentHex: string): HTMLCanvasElement {
+  const W = 768, H = 1086
+  const canvas = document.createElement('canvas')
+  canvas.width = W; canvas.height = H
+  const ctx = canvas.getContext('2d')!
+
+  ctx.fillStyle = '#f4efe5'
+  ctx.fillRect(0, 0, W, H)
+
+  for (let i = 0; i < 800; i++) {
+    const x = Math.random() * W
+    const y = Math.random() * H
+    const len = 3 + Math.random() * 5
+    const ang = (Math.random() * 12 - 6) * Math.PI / 180
+    const a = 0.03 + Math.random() * 0.03
+    ctx.strokeStyle = `rgba(150,130,90,${a})`
+    ctx.lineWidth = 0.8
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len)
+    ctx.stroke()
+  }
+
+  ctx.fillStyle = accentHex
+  ctx.fillRect(0, 0, W, H * 0.08)
+
+  const gL = ctx.createLinearGradient(0, 0, 16, 0)
+  gL.addColorStop(0, 'rgba(0,191,255,0.55)'); gL.addColorStop(1, 'rgba(0,191,255,0)')
+  ctx.fillStyle = gL; ctx.fillRect(0, 0, 16, H)
+  const gR = ctx.createLinearGradient(W - 16, 0, W, 0)
+  gR.addColorStop(0, 'rgba(0,191,255,0)'); gR.addColorStop(1, 'rgba(0,191,255,0.55)')
+  ctx.fillStyle = gR; ctx.fillRect(W - 16, 0, 16, H)
+
+  const gB = ctx.createLinearGradient(0, H - 32, 0, H)
+  gB.addColorStop(0, 'rgba(0,0,0,0)'); gB.addColorStop(1, 'rgba(0,0,0,0.18)')
+  ctx.fillStyle = gB; ctx.fillRect(0, H - 32, W, 32)
+
+  return canvas
+}
+export function getCardPaperCanvas(accentHex: string): HTMLCanvasElement {
+  return buildCardPaperCanvas(accentHex)
+}
+export function getCardPaperTexture(accentHex: string): THREE.CanvasTexture {
+  const cached = cardPaperCache.get(accentHex)
+  if (cached) return cached
+  const tex = makeCanvasTexture(buildCardPaperCanvas(accentHex))
+  cardPaperCache.set(accentHex, tex)
+  return tex
+}
+
+// Section C — Card Back
+let cardBackTexture: THREE.CanvasTexture | null = null
+function buildCardBackCanvas(): HTMLCanvasElement {
+  const W = 768, H = 1086
+  const canvas = document.createElement('canvas')
+  canvas.width = W; canvas.height = H
+  const ctx = canvas.getContext('2d')!
+
+  ctx.fillStyle = '#1a1a2e'
+  ctx.fillRect(0, 0, W, H)
+
+  const cx = W / 2, cy = H / 2, r = 140
+  ctx.strokeStyle = 'rgba(0,191,255,0.08)'
+  ctx.lineWidth = 2
+  const drawHex = (rad: number) => {
+    ctx.beginPath()
+    for (let i = 0; i < 6; i++) {
+      const a = i * Math.PI / 3
+      const x = cx + rad * Math.cos(a)
+      const y = cy + rad * Math.sin(a)
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
+    }
+    ctx.closePath(); ctx.stroke()
+  }
+  drawHex(r); drawHex(r * 0.75); drawHex(r * 0.5)
+  return canvas
+}
+export function getCardBackTexture(): THREE.CanvasTexture {
+  if (cardBackTexture) return cardBackTexture
+  cardBackTexture = makeCanvasTexture(buildCardBackCanvas())
+  return cardBackTexture
+}
