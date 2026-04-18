@@ -2,7 +2,7 @@
 
 Personal knowledge system with semantic search, temporal knowledge graph, and progressive summarization.
 
-MCP server backed by PostgreSQL (pgvector) with external embeddings service. 38 tools, append-only versioning, role-based token auth, agent fleet with approval workflow.
+MCP server backed by PostgreSQL (pgvector) with external embeddings service. 30 tools, append-only versioning, role-based token auth, agent fleet with approval workflow.
 
 [![CI](https://github.com/ufelmann/HiveMem/actions/workflows/ci.yml/badge.svg)](https://github.com/ufelmann/HiveMem/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/ufelmann/HiveMem/graph/badge.svg)](https://codecov.io/gh/ufelmann/HiveMem)
@@ -12,7 +12,7 @@ MCP server backed by PostgreSQL (pgvector) with external embeddings service. 38 
 [![Spring Boot](https://img.shields.io/badge/spring%20boot-4.0.5-6DB33F)](https://spring.io/projects/spring-boot)
 [![PostgreSQL](https://img.shields.io/badge/postgresql-17-336791)](https://postgresql.org)
 [![Tests](https://img.shields.io/badge/tests-264%20passed-brightgreen)](https://github.com/ufelmann/HiveMem/actions/workflows/ci.yml)
-[![MCP Tools](https://img.shields.io/badge/MCP%20tools-38-orange)](https://github.com/ufelmann/HiveMem#tool-list-full)
+[![MCP Tools](https://img.shields.io/badge/MCP%20tools-30-orange)](https://github.com/ufelmann/HiveMem#tool-list-full)
 [![License: Sustainable Use](https://img.shields.io/badge/license-Sustainable%20Use-blue)](https://github.com/ufelmann/HiveMem/blob/main/LICENSE)
 [![SafeSkill](https://safeskill.dev/api/badge/ufelmann-hivemem)](https://safeskill.dev/scan/ufelmann-hivemem)
 
@@ -59,7 +59,7 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 
 ## Features
 
-- **38 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
+- **30 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
 - **5-signal ranked search** -- semantic similarity + keyword match + recency + importance + popularity
 - **Append-only versioning** -- never lose history, revise with parent_id chains, point-in-time queries
 - **Progressive summarization** (L0-L3) -- content, summary, key_points, insight per drawer
@@ -211,7 +211,7 @@ claude mcp add --scope user hivemem --transport http http://localhost:8421/mcp \
   --header "Authorization: Bearer YOUR_TOKEN_HERE"
 ```
 
-Restart Claude Code. The 38 HiveMem tools are now available in every session.
+Restart Claude Code. The 30 HiveMem tools are now available in every session.
 
 **Manual config** (`~/.claude.json` for user-level, or `.mcp.json` for project-level):
 
@@ -249,7 +249,7 @@ Add to `claude_desktop_config.json`:
 
 ### Teach your agent to use HiveMem
 
-The MCP server ships instructions that tell the agent *how* to use the 38 tools (call `wake_up` first, check duplicates before adding, etc.). But the agent won't reliably *remember to archive* unless you tell it to in your own CLAUDE.md.
+The MCP server ships instructions that tell the agent *how* to use the 30 tools (call `wake_up` first, optionally pass `dedupe_threshold` to `add_drawer` for duplicate detection, etc.). But the agent won't reliably *remember to archive* unless you tell it to in your own CLAUDE.md.
 
 Add this to your **user-level** CLAUDE.md (`~/.claude/CLAUDE.md`) so it applies to every project:
 
@@ -265,7 +265,7 @@ You have access to HiveMem via MCP. It is your long-term memory. Use it.
 ### During work
 - After completing a significant action (bug fix, feature, design decision, deployment, investigation):
   archive it immediately. Do not batch, do not wait for session end.
-- Archiving means: `check_duplicate` → `add_drawer` (all L0-L3 layers) → extract facts (`check_contradiction` → `kg_add`) → link related drawers (`search` → `add_tunnel` for top 2-3 matches).
+- Archiving means: `add_drawer` with `dedupe_threshold` (one embedding call handles the dedupe gate) → extract facts (`kg_add` with `on_conflict=return` to catch contradictions) → link related drawers (`search` → `add_tunnel` for top 2-3 matches).
 - When facts change: `kg_invalidate` the old fact first, then `kg_add` the new one.
 
 ### Session end
@@ -273,7 +273,7 @@ You have access to HiveMem via MCP. It is your long-term memory. Use it.
 - When the user says "archive", "save", or "persist": archive the full session.
 
 ### Classification
-- Use existing wings and halls. Call `list_wings`/`list_halls` before inventing new ones.
+- Use existing wings and halls. Call `list_wings` before inventing new ones (pass the `wing` param to get halls within a specific wing).
 - Wing = major life area, Hall = broad category, Room = specific topic.
 - One drawer per topic. Fill ALL layers: content (L0), summary (L1), key_points (L2), insight (L3).
 - Every fact needs `valid_from`. Knowledge without timestamps is useless.
@@ -395,7 +395,7 @@ graph TB
         Auth["AuthFilter<br/><i>Token auth + role check + rate limit</i>"]
         ToolGate["ToolPermissionService<br/><i>Filter tools/list by role</i>"]
         Identity["Identity Injection<br/><i>created_by from token</i>"]
-        MCP["McpController<br/>:8421<br/><i>38 tools, Streamable HTTP</i>"]
+        MCP["McpController<br/>:8421<br/><i>30 tools, Streamable HTTP</i>"]
     end
 
     EmbSvc["External Embeddings Service<br/><i>HTTP API</i>"]
@@ -502,13 +502,13 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 | Category | Tools | Access Role | Data Flow | HITL Required? | Description |
 |---|---|---|---|---|---|
 | **Search** | `search`, `search_kg`, `quick_facts`, `time_machine` | `reader` | Read Only | No | 5-signal semantic & keyword search. |
-| **Read** | `status`, `get_drawer`, `list_wings`, `list_halls`, `traverse`, `wake_up`, `get_blueprint` | `reader` | Read Only | No | Navigation and context retrieval. |
+| **Read** | `status`, `get_drawer`, `list_wings`, `traverse`, `wake_up`, `get_blueprint`, `history` | `reader` | Read Only | No | Navigation and context retrieval. |
 | **Write** | `add_drawer`, `kg_add`, `kg_invalidate`, `revise_drawer`, `revise_fact`, `update_identity`, `update_blueprint` | `agent` | Propose Change | Yes (for Agents) | Append-only knowledge capture. |
 | **Tunnels** | `add_tunnel`, `remove_tunnel` | `agent` | Link Discovery | Yes | Drawer-to-drawer semantic linking. |
-| **Integrity** | `check_duplicate`, `check_contradiction`, `approve_pending` | `admin` | Commit Change | Yes | Verification and commit workflow. |
+| **Approval** | `approve_pending` | `admin` | Commit Change | Yes | Batch approve or reject pending agent writes. |
 | **Agent** | `register_agent`, `list_agents`, `diary_write`, `diary_read` | `admin` | Fleet Management | Yes | Autonomous fleet orchestration. |
 | **References** | `add_reference`, `link_reference`, `reading_list` | `agent` | Metadata | No | Source and citation tracking. |
-| **Admin** | `health`, `log_access`, `refresh_popularity` | `admin` | System Management | Yes | Audit and performance monitoring. |
+| **Admin** | `health` | `admin` | System Management | Yes | DB connection, extensions, counts, disk. |
 
 ### Configuration
 
@@ -530,44 +530,44 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 
 ### Tool List (Full)
 
-1. `hivemem_search`: Semantic similarity + keyword search.
-2. `hivemem_search_kg`: Knowledge graph triple lookup.
-3. `hivemem_quick_facts`: Context-aware facts about an entity.
-4. `hivemem_time_machine`: Historical knowledge retrieval.
-5. `hivemem_status`: System overview and counts.
-6. `hivemem_get_drawer`: Read single knowledge item.
-7. `hivemem_list_wings`: List top-level categories.
-8. `hivemem_list_halls`: List mid-level categories.
-9. `hivemem_traverse`: Recursive graph traversal.
-10. `hivemem_wake_up`: Initial session context.
-11. `hivemem_get_blueprint`: Narrative wing overviews.
-12. `hivemem_drawer_history`: Trace revisions of a drawer.
-13. `hivemem_fact_history`: Trace revisions of a fact.
-14. `hivemem_pending_approvals`: List work awaiting review.
-15. `hivemem_reading_list`: Manage unread/in-progress sources.
-16. `hivemem_list_agents`: View active agent fleet.
-17. `hivemem_diary_read`: Admin tool to read agent diaries.
-18. `hivemem_add_drawer`: Store L0-L3 knowledge layers.
-19. `hivemem_kg_add`: Create a new fact triple.
-20. `hivemem_kg_invalidate`: Soft-delete/expire a fact.
-21. `hivemem_revise_drawer`: Create a new version of a drawer.
-22. `hivemem_revise_fact`: Create a new version of a fact.
-23. `hivemem_update_identity`: Update session context facts.
-24. `hivemem_update_blueprint`: Update wing narrative.
-25. `hivemem_add_tunnel`: Link two drawers together.
-26. `hivemem_remove_tunnel`: Expire a drawer link.
-27. `hivemem_check_duplicate`: Verify knowledge doesn't exist.
-28. `hivemem_check_contradiction`: Detect logic conflicts in KG.
-29. `hivemem_add_reference`: Store source documents/URLs.
-30. `hivemem_link_reference`: Cite source for a drawer.
-31. `hivemem_register_agent`: Add an agent to the fleet.
-32. `hivemem_diary_write`: Agent-private reflection tool.
-33. `hivemem_mine_file`: Import a file as a drawer.
-34. `hivemem_mine_directory`: Batch import a directory.
-35. `hivemem_approve_pending`: Admin tool to commit agent work.
-36. `hivemem_health`: Monitor DB and service state.
-37. `hivemem_log_access`: Popularity signal ingestion.
-38. `hivemem_refresh_popularity`: Update search signal cache.
+**Read (15):**
+
+1. `hivemem_status`: System overview and counts.
+2. `hivemem_search`: Semantic similarity + keyword search.
+3. `hivemem_search_kg`: Knowledge graph triple lookup.
+4. `hivemem_get_drawer`: Read single knowledge item (logs access automatically).
+5. `hivemem_list_wings`: Wings with counts; halls of one wing when `wing` is provided.
+6. `hivemem_traverse`: Recursive graph traversal.
+7. `hivemem_quick_facts`: Context-aware facts about an entity.
+8. `hivemem_time_machine`: Historical knowledge retrieval.
+9. `hivemem_wake_up`: Initial session context.
+10. `hivemem_history`: Trace revisions of a drawer or fact (type-dispatched, recursive CTE depth cap 100).
+11. `hivemem_pending_approvals`: List work awaiting review.
+12. `hivemem_get_blueprint`: Narrative wing overviews.
+13. `hivemem_reading_list`: Manage unread/in-progress sources.
+14. `hivemem_list_agents`: View active agent fleet.
+15. `hivemem_diary_read`: Read agent diary entries.
+
+**Write (13):**
+
+16. `hivemem_add_drawer`: Store with L0-L3; optional `dedupe_threshold` runs an embedding-based dedupe gate in one call.
+17. `hivemem_add_tunnel`: Link two drawers together.
+18. `hivemem_kg_add`: Fact triple; optional `on_conflict` (`insert`|`return`|`reject`) gates against active conflicts.
+19. `hivemem_kg_invalidate`: Soft-delete/expire a fact.
+20. `hivemem_update_identity`: Update session context facts.
+21. `hivemem_add_reference`: Store source documents/URLs.
+22. `hivemem_link_reference`: Cite source for a drawer.
+23. `hivemem_remove_tunnel`: Expire a drawer link.
+24. `hivemem_revise_drawer`: Create a new version of a drawer.
+25. `hivemem_revise_fact`: Create a new version of a fact.
+26. `hivemem_register_agent`: Add an agent to the fleet.
+27. `hivemem_diary_write`: Agent-private reflection tool.
+28. `hivemem_update_blueprint`: Update wing narrative.
+
+**Admin (2):**
+
+29. `hivemem_approve_pending`: Admin tool to batch approve or reject agent writes.
+30. `hivemem_health`: Monitor DB and service state.
 
 ### Search Signals
 
@@ -604,10 +604,10 @@ Each token has one of four roles. The role controls which tools the client sees 
 
 | Role | Visible tools | Write behavior | Can approve? |
 |---|---|---|---|
-| `admin` | All 38 | `status: committed` | Yes |
-| `writer` | 34 (no admin tools) | `status: committed` | No |
-| `reader` | 17 (read only) | Can't write | No |
-| `agent` | 34 (same as writer) | `status: pending` | No |
+| `admin` | All 30 | `status: committed` | Yes |
+| `writer` | 28 (no admin tools) | `status: committed` | No |
+| `reader` | 15 (read only) | Can't write | No |
+| `agent` | 28 (same as writer) | `status: pending` | No |
 
 The `agent` role is the key constraint: agents can add knowledge, but every write goes into a pending queue. Only an admin can approve or reject it. This prevents any agent from writing and self-approving in the same session.
 
