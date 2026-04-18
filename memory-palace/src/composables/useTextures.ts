@@ -328,3 +328,23 @@ export function getCardBackTexture(): THREE.CanvasTexture {
   cardBackTexture = makeCanvasTexture(buildCardBackCanvas())
   return cardBackTexture
 }
+
+let goldParticleTex: THREE.CanvasTexture | null = null
+function buildGoldParticleCanvas(): HTMLCanvasElement {
+  const S = 64
+  const canvas = document.createElement('canvas')
+  canvas.width = S; canvas.height = S
+  const ctx = canvas.getContext('2d')!
+  const grad = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2)
+  grad.addColorStop(0, 'rgba(255, 220, 140, 1)')
+  grad.addColorStop(0.4, 'rgba(212, 175, 55, 0.7)')
+  grad.addColorStop(1, 'rgba(212, 175, 55, 0)')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, S, S)
+  return canvas
+}
+export function getGoldParticleTexture(): THREE.CanvasTexture {
+  if (goldParticleTex) return goldParticleTex
+  goldParticleTex = makeCanvasTexture(buildGoldParticleCanvas())
+  return goldParticleTex
+}
