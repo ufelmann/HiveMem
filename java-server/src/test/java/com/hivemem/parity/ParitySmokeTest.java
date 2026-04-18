@@ -18,7 +18,7 @@ class ParitySmokeTest {
     @Test
     void adminPermissionSetContainsFullExpectedToolCount() {
         assertThat(toolPermissionService.allowedTools(AuthRole.ADMIN))
-                .hasSize(36)
+                .hasSize(35)
                 .contains("hivemem_search", "hivemem_add_drawer", "hivemem_refresh_popularity");
     }
 
@@ -27,7 +27,7 @@ class ParitySmokeTest {
         assertThat(toolPermissionService.allowedTools(AuthRole.WRITER))
                 .hasSize(32)
                 .contains("hivemem_search", "hivemem_add_drawer", "hivemem_revise_drawer")
-                .doesNotContain("hivemem_health", "hivemem_log_access", "hivemem_refresh_popularity",
+                .doesNotContain("hivemem_health", "hivemem_refresh_popularity",
                         "hivemem_approve_pending");
     }
 }

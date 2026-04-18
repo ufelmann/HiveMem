@@ -1,9 +1,11 @@
 package com.hivemem.tools.read;
 
+import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.drawers.DrawerReadRepository;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.search.DrawerSearchRepository;
 import com.hivemem.search.KgSearchRepository;
+import com.hivemem.write.AdminToolService;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
@@ -22,17 +24,20 @@ public class ReadToolService {
     private final KgSearchRepository kgSearchRepository;
     private final DrawerSearchRepository drawerSearchRepository;
     private final EmbeddingClient embeddingClient;
+    private final AdminToolService adminToolService;
 
     public ReadToolService(
             DrawerReadRepository drawerReadRepository,
             KgSearchRepository kgSearchRepository,
             DrawerSearchRepository drawerSearchRepository,
-            EmbeddingClient embeddingClient
+            EmbeddingClient embeddingClient,
+            AdminToolService adminToolService
     ) {
         this.drawerReadRepository = drawerReadRepository;
         this.kgSearchRepository = kgSearchRepository;
         this.drawerSearchRepository = drawerSearchRepository;
         this.embeddingClient = embeddingClient;
+        this.adminToolService = adminToolService;
     }
 
     public Map<String, Object> status() {
@@ -88,8 +93,9 @@ public class ReadToolService {
         return kgSearchRepository.search(subject, predicate, object_, limit);
     }
 
-    public Map<String, Object> getDrawer(UUID drawerId) {
+    public Map<String, Object> getDrawer(AuthPrincipal principal, UUID drawerId) {
         Optional<Map<String, Object>> drawer = drawerReadRepository.findDrawer(drawerId);
+        drawer.ifPresent(d -> adminToolService.logAccess(drawerId, null, principal.name()));
         return drawer.orElse(null);
     }
 

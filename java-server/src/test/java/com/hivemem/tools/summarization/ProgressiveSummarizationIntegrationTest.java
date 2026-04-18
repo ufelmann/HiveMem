@@ -8,6 +8,8 @@ import com.hivemem.embedding.FixedEmbeddingClient;
 import com.hivemem.search.DrawerSearchRepository;
 import com.hivemem.search.KgSearchRepository;
 import com.hivemem.tools.read.ReadToolService;
+import com.hivemem.write.AdminToolRepository;
+import com.hivemem.write.AdminToolService;
 import com.hivemem.write.WriteToolRepository;
 import com.hivemem.write.WriteToolService;
 import org.jooq.DSLContext;
@@ -114,7 +116,7 @@ class ProgressiveSummarizationIntegrationTest {
         String drawerId = (String) created.get("id");
         assertThat(drawerId).isNotNull();
 
-        Map<String, Object> drawer = readToolService.getDrawer(UUID.fromString(drawerId));
+        Map<String, Object> drawer = readToolService.getDrawer(WRITER,UUID.fromString(drawerId));
         assertThat(drawer).isNotNull();
         assertThat(drawer.get("content")).isEqualTo(
                 "We decided to migrate BOGIS from Camunda 7 to Temporal. Better DX and native Go support.");
@@ -148,7 +150,7 @@ class ProgressiveSummarizationIntegrationTest {
                 BASE_TIME
         );
 
-        Map<String, Object> drawer = readToolService.getDrawer(
+        Map<String, Object> drawer = readToolService.getDrawer(WRITER,
                 UUID.fromString((String) created.get("id")));
         assertThat(drawer).isNotNull();
         assertThat(drawer.get("content")).isEqualTo("Minimal drawer without progressive layers");
@@ -179,7 +181,7 @@ class ProgressiveSummarizationIntegrationTest {
                 "actionable",
                 "committed", BASE_TIME
         );
-        Map<String, Object> drawer = readToolService.getDrawer(
+        Map<String, Object> drawer = readToolService.getDrawer(WRITER,
                 UUID.fromString((String) created.get("id")));
         assertThat(drawer.get("actionability")).isEqualTo("actionable");
     }
@@ -194,7 +196,7 @@ class ProgressiveSummarizationIntegrationTest {
                 "reference",
                 "committed", BASE_TIME
         );
-        Map<String, Object> drawer = readToolService.getDrawer(
+        Map<String, Object> drawer = readToolService.getDrawer(WRITER,
                 UUID.fromString((String) created.get("id")));
         assertThat(drawer.get("actionability")).isEqualTo("reference");
     }
@@ -209,7 +211,7 @@ class ProgressiveSummarizationIntegrationTest {
                 "someday",
                 "committed", BASE_TIME
         );
-        Map<String, Object> drawer = readToolService.getDrawer(
+        Map<String, Object> drawer = readToolService.getDrawer(WRITER,
                 UUID.fromString((String) created.get("id")));
         assertThat(drawer.get("actionability")).isEqualTo("someday");
     }
@@ -224,7 +226,7 @@ class ProgressiveSummarizationIntegrationTest {
                 "archive",
                 "committed", BASE_TIME
         );
-        Map<String, Object> drawer = readToolService.getDrawer(
+        Map<String, Object> drawer = readToolService.getDrawer(WRITER,
                 UUID.fromString((String) created.get("id")));
         assertThat(drawer.get("actionability")).isEqualTo("archive");
     }
@@ -256,7 +258,7 @@ class ProgressiveSummarizationIntegrationTest {
                 null,
                 "committed", BASE_TIME
         );
-        Map<String, Object> drawer = readToolService.getDrawer(
+        Map<String, Object> drawer = readToolService.getDrawer(WRITER,
                 UUID.fromString((String) created.get("id")));
         assertThat(drawer.get("actionability")).isNull();
     }
@@ -358,7 +360,7 @@ class ProgressiveSummarizationIntegrationTest {
                 WRITER, originalId, "Updated content about auth migration complete", null);
 
         UUID newId = UUID.fromString((String) revision.get("new_id"));
-        Map<String, Object> revised = readToolService.getDrawer(newId);
+        Map<String, Object> revised = readToolService.getDrawer(WRITER,newId);
 
         assertThat(revised).isNotNull();
         // L0 updated
@@ -398,7 +400,7 @@ class ProgressiveSummarizationIntegrationTest {
                 WRITER, originalId, "Revised DB optimization content", "DB optimization v2");
 
         UUID newId = UUID.fromString((String) revision.get("new_id"));
-        Map<String, Object> revised = readToolService.getDrawer(newId);
+        Map<String, Object> revised = readToolService.getDrawer(WRITER,newId);
 
         assertThat(revised).isNotNull();
         assertThat(revised.get("content")).isEqualTo("Revised DB optimization content");
@@ -435,12 +437,12 @@ class ProgressiveSummarizationIntegrationTest {
         assertThat(newId).isNotEqualTo(originalId);
 
         // Old row is closed (valid_until is set)
-        Map<String, Object> oldDrawer = readToolService.getDrawer(originalId);
+        Map<String, Object> oldDrawer = readToolService.getDrawer(WRITER,originalId);
         assertThat(oldDrawer).isNotNull();
         assertThat(oldDrawer.get("valid_until")).isNotNull();
 
         // New row points to old via parent_id
-        Map<String, Object> newDrawer = readToolService.getDrawer(newId);
+        Map<String, Object> newDrawer = readToolService.getDrawer(WRITER,newId);
         assertThat(newDrawer).isNotNull();
         assertThat(newDrawer.get("parent_id")).isEqualTo(originalId.toString());
         assertThat(newDrawer.get("valid_until")).isNull();
@@ -465,7 +467,7 @@ class ProgressiveSummarizationIntegrationTest {
                 BASE_TIME
         );
 
-        Map<String, Object> drawer = readToolService.getDrawer(
+        Map<String, Object> drawer = readToolService.getDrawer(WRITER,
                 UUID.fromString((String) created.get("id")));
         assertThat(drawer.get("summary")).isEqualTo("Has a summary");
         assertThat((List<?>) drawer.get("key_points")).isEmpty();
@@ -502,22 +504,22 @@ class ProgressiveSummarizationIntegrationTest {
                 "committed", BASE_TIME.plusSeconds(3));
 
         // Verify each round-trips correctly
-        Map<String, Object> d0 = readToolService.getDrawer(UUID.fromString((String) l0Only.get("id")));
+        Map<String, Object> d0 = readToolService.getDrawer(WRITER,UUID.fromString((String) l0Only.get("id")));
         assertThat(d0.get("summary")).isNull();
         assertThat((List<?>) d0.get("key_points")).isEmpty();
         assertThat(d0.get("insight")).isNull();
 
-        Map<String, Object> d1 = readToolService.getDrawer(UUID.fromString((String) l0l1.get("id")));
+        Map<String, Object> d1 = readToolService.getDrawer(WRITER,UUID.fromString((String) l0l1.get("id")));
         assertThat(d1.get("summary")).isEqualTo("Has summary only");
         assertThat((List<?>) d1.get("key_points")).isEmpty();
         assertThat(d1.get("insight")).isNull();
 
-        Map<String, Object> d2 = readToolService.getDrawer(UUID.fromString((String) l0l1l2.get("id")));
+        Map<String, Object> d2 = readToolService.getDrawer(WRITER,UUID.fromString((String) l0l1l2.get("id")));
         assertThat(d2.get("summary")).isEqualTo("Summary present");
         assertThat((List<String>) d2.get("key_points")).containsExactly("point-1", "point-2");
         assertThat(d2.get("insight")).isNull();
 
-        Map<String, Object> d3 = readToolService.getDrawer(UUID.fromString((String) allLayers.get("id")));
+        Map<String, Object> d3 = readToolService.getDrawer(WRITER,UUID.fromString((String) allLayers.get("id")));
         assertThat(d3.get("summary")).isEqualTo("Full summary");
         assertThat((List<String>) d3.get("key_points")).containsExactly("key-a", "key-b", "key-c");
         assertThat(d3.get("insight")).isEqualTo("Deep insight");
@@ -537,6 +539,7 @@ class ProgressiveSummarizationIntegrationTest {
             DrawerReadRepository.class,
             DrawerSearchRepository.class,
             KgSearchRepository.class,
+            AdminToolRepository.class,
             TestConfig.class
     })
     static class TestApplication {
@@ -549,6 +552,22 @@ class ProgressiveSummarizationIntegrationTest {
         @Primary
         EmbeddingClient embeddingClient() {
             return new FixedEmbeddingClient();
+        }
+
+        @Bean
+        AdminToolService adminToolService(AdminToolRepository adminToolRepository) {
+            // EmbeddingMigrationService is not loaded in this slim context;
+            // provide AdminToolService with a no-op migration stub since
+            // ReadToolService needs it only to call logAccess.
+            return new AdminToolService(adminToolRepository, new com.hivemem.embedding.EmbeddingMigrationService(
+                    new FixedEmbeddingClient(),
+                    null
+            ) {
+                @Override
+                public void run(org.springframework.boot.ApplicationArguments args) {
+                    // no-op: skip migration in unit test context
+                }
+            });
         }
     }
 }
