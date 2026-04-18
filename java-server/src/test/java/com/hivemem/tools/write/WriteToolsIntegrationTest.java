@@ -355,8 +355,8 @@ class WriteToolsIntegrationTest {
         org.junit.jupiter.api.Assertions.assertEquals("writer-1", newRow.get("created_by", String.class));
 
         UUID newId = newRow.get("id", UUID.class);
-        JsonNode history = callToolContent("writer-token", "hivemem_fact_history", Map.of(
-                "fact_id", newId.toString()
+        JsonNode history = callToolContent("writer-token", "hivemem_history", Map.of(
+                "type", "fact", "id", newId.toString()
         ));
         assertThat(history).hasSize(2);
         assertThat(history.get(0).path("id").asText()).isEqualTo(oldId.toString());
