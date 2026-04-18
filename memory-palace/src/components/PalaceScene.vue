@@ -14,8 +14,8 @@ const store = useNavigationStore()
 const orbitOptions = computed(() => {
   switch (store.level) {
     case 'building': return { enableZoom: true, enablePan: false, minDistance: 12, maxDistance: 32, maxPolarAngle: 1.4 }
-    case 'corridor': return { enableZoom: false, enablePan: false, minPolarAngle: 1.2, maxPolarAngle: 1.6 }
-    case 'room': return { enableZoom: true, enablePan: false, minDistance: 2, maxDistance: 6, minPolarAngle: 0.3, maxPolarAngle: 1.4 }
+    case 'corridor': return { enableZoom: true, enablePan: true, enableRotate: true, minPolarAngle: 0.2, maxPolarAngle: 1.7 }
+    case 'room': return { enableZoom: true, enablePan: true, enableRotate: true, minPolarAngle: 0.1, maxPolarAngle: 1.6, minDistance: 1.5, maxDistance: 12 }
     case 'drawer': return { enableZoom: true, enablePan: true, enableRotate: false, minDistance: 1.5, maxDistance: 8 }
   }
 })
@@ -32,7 +32,8 @@ const orbitOptions = computed(() => {
       :min-distance="orbitOptions.minDistance ?? 1"
       :max-distance="orbitOptions.maxDistance ?? 50"
       :min-polar-angle="orbitOptions.minPolarAngle ?? 0.05"
-      :max-polar-angle="orbitOptions.maxPolarAngle ?? 1.5" />
+      :max-polar-angle="orbitOptions.maxPolarAngle ?? 1.5"
+      :screen-space-panning="true" />
     <CameraController />
 
     <BuildingView v-if="store.level === 'building'" />

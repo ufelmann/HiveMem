@@ -1,11 +1,51 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount } from 'vue'
+import * as THREE from 'three'
 import { useNavigationStore } from '../stores/navigation'
 import { makeHexWallTextureWithRepeat, makeStoneFloorTextureWithRepeat } from '../composables/useTextures'
 
 const PI = Math.PI
 
 const store = useNavigationStore()
+
+// ─── Door label canvas textures ─────────────────────────────────────────────
+
+function buildDoorLabelCanvas(text: string): HTMLCanvasElement {
+  const W = 512, H = 128
+  const canvas = document.createElement('canvas')
+  canvas.width = W; canvas.height = H
+  const ctx = canvas.getContext('2d')!
+  ctx.clearRect(0, 0, W, H)
+  // Dark rounded-rect background with cyan glow border
+  ctx.fillStyle = 'rgba(10,10,26,0.9)'
+  ctx.strokeStyle = 'rgba(0,191,255,0.75)'
+  ctx.lineWidth = 4
+  ctx.beginPath()
+  ctx.roundRect(8, 8, W - 16, H - 16, 16)
+  ctx.fill(); ctx.stroke()
+  // Centered cyan text
+  ctx.fillStyle = '#00BFFF'
+  ctx.font = 'bold 56px "Segoe UI", Arial, sans-serif'
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+  ctx.fillText(text, W / 2, H / 2)
+  return canvas
+}
+
+const labelTextures = new Map<string, THREE.CanvasTexture>()
+
+function getDoorLabel(name: string): THREE.CanvasTexture {
+  const cached = labelTextures.get(name)
+  if (cached) return cached
+  const tex = new THREE.CanvasTexture(buildDoorLabelCanvas(name))
+  tex.needsUpdate = true
+  labelTextures.set(name, tex)
+  return tex
+}
+
+onBeforeUnmount(() => {
+  for (const tex of labelTextures.values()) tex.dispose()
+  labelTextures.clear()
+})
 
 const floorTexture = makeStoneFloorTextureWithRepeat(4, 1)
 const wallTexture = makeHexWallTextureWithRepeat(8, 2)
@@ -85,6 +125,11 @@ function onHallClick(name: string) {
       <TresMesh :position-y="1.2">
         <TresBoxGeometry :args="[1.3, 0.1, 0.1]" />
         <TresMeshBasicMaterial :color="wingColor" />
+      </TresMesh>
+      <!-- Door label above door -->
+      <TresMesh :position="[0, 1.55, 0.06]">
+        <TresPlaneGeometry :args="[1.4, 0.35]" />
+        <TresMeshBasicMaterial :map="getDoorLabel(door.room.name)" :transparent="true" />
       </TresMesh>
     </TresGroup>
 

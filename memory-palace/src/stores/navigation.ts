@@ -15,6 +15,7 @@ interface State {
   currentHall: string | null
   currentRoom: string | null
   selectedDrawerId: string | null
+  focusedSheet: 0 | 1 | 2 | null
   palace: Palace
   drawersById: Record<string, Drawer>
   isTransitioning: boolean
@@ -28,6 +29,7 @@ export const useNavigationStore = defineStore('navigation', {
     currentHall: null,
     currentRoom: null,
     selectedDrawerId: null,
+    focusedSheet: null,
     palace: { wings: [] },
     drawersById: {},
     isTransitioning: false,
@@ -82,25 +84,30 @@ export const useNavigationStore = defineStore('navigation', {
       this.currentHall = w?.halls[0]?.name ?? null
       this.currentRoom = null
       this.selectedDrawerId = null
+      this.focusedSheet = null
       this.level = 'corridor'
     },
     enterHall(hall: string) {
       this.currentHall = hall
       this.currentRoom = null
       this.selectedDrawerId = null
+      this.focusedSheet = null
       this.level = 'corridor'
     },
     enterRoom(room: string) {
       this.currentRoom = room
       this.selectedDrawerId = null
+      this.focusedSheet = null
       this.level = 'room'
     },
     selectDrawer(id: string) {
       this.selectedDrawerId = id
+      this.focusedSheet = null
       this.level = 'drawer'
     },
     closeDrawer() {
       this.selectedDrawerId = null
+      this.focusedSheet = null
       this.level = 'room'
     },
     goToTunnelTarget(drawerId: string) {
@@ -110,10 +117,14 @@ export const useNavigationStore = defineStore('navigation', {
       this.currentHall = target.hall
       this.currentRoom = target.room
       this.selectedDrawerId = target.id
+      this.focusedSheet = null
       this.level = 'drawer'
     },
     goBack() {
-      if (this.level === 'drawer') { this.level = 'room'; this.selectedDrawerId = null; return }
+      if (this.level === 'drawer') {
+        if (this.focusedSheet !== null) { this.focusedSheet = null; return }
+        this.level = 'room'; this.selectedDrawerId = null; return
+      }
       if (this.level === 'room') { this.level = 'corridor'; this.currentRoom = null; return }
       if (this.level === 'corridor') {
         this.level = 'building'
@@ -121,6 +132,8 @@ export const useNavigationStore = defineStore('navigation', {
         this.currentHall = null
       }
     },
+    focusSheet(idx: 0 | 1 | 2) { this.focusedSheet = idx },
+    unfocusSheet() { this.focusedSheet = null },
     goToLevel(item: BreadcrumbItem) {
       switch (item.level) {
         case 'building':
