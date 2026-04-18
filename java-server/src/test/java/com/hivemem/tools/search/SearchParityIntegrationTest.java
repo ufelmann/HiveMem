@@ -8,6 +8,7 @@ import com.hivemem.auth.RateLimiter;
 import com.hivemem.auth.TokenService;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
+import com.hivemem.write.AdminToolService;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -79,6 +80,9 @@ class SearchParityIntegrationTest {
 
     @Autowired
     private RateLimiter rateLimiter;
+
+    @Autowired
+    private AdminToolService adminToolService;
 
     @BeforeEach
     void resetDatabase() {
@@ -213,9 +217,7 @@ class SearchParityIntegrationTest {
         );
 
         for (int i = 0; i < 5; i++) {
-            callTool("admin-token", "hivemem_log_access", Map.of(
-                    "drawer_id", popularDrawerId.toString()
-            ));
+            adminToolService.logAccess(popularDrawerId, null, "admin");
         }
         callTool("admin-token", "hivemem_refresh_popularity", Map.of());
 

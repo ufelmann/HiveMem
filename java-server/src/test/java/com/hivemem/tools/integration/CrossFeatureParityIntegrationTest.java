@@ -8,6 +8,7 @@ import com.hivemem.auth.RateLimiter;
 import com.hivemem.auth.TokenService;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
+import com.hivemem.write.AdminToolService;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -77,6 +78,9 @@ class CrossFeatureParityIntegrationTest {
 
     @Autowired
     private RateLimiter rateLimiter;
+
+    @Autowired
+    private AdminToolService adminToolService;
 
     @BeforeEach
     void resetDatabase() {
@@ -153,10 +157,9 @@ class CrossFeatureParityIntegrationTest {
                 "summary", "Docker orchestration"
         ));
 
+        UUID drawerUuid = UUID.fromString(drawer.path("id").asText());
         for (int i = 0; i < 5; i++) {
-            callTool("admin-token", "hivemem_log_access", Map.of(
-                    "drawer_id", drawer.path("id").asText()
-            ));
+            adminToolService.logAccess(drawerUuid, null, "admin");
         }
 
         JsonNode results = callTool("writer-token", "hivemem_search", Map.of(

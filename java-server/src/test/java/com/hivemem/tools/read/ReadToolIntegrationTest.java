@@ -8,7 +8,9 @@ import com.hivemem.auth.RateLimiter;
 import com.hivemem.auth.TokenService;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
+import com.hivemem.write.WriteToolService;
 import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -79,6 +81,12 @@ class ReadToolIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private ReadToolService readToolService;
+
+    @Autowired
+    private WriteToolService writeToolService;
 
     @BeforeEach
     void resetDatabase() {
@@ -256,6 +264,42 @@ class ReadToolIntegrationTest {
     void getDrawerToolReturnsNullWhenDrawerDoesNotExist() throws Exception {
         JsonNode content = callToolContent("hivemem_get_drawer", Map.of("drawer_id", "00000000-0000-0000-0000-000000000999"));
         assertThat(content.isNull()).isTrue();
+    }
+
+    @Test
+    void getDrawerLogsAccessAutomatically() {
+        UUID drawerId = UUID.fromString(
+            (String) writeToolService.addDrawer(
+                new AuthPrincipal("fixture-writer", AuthRole.WRITER),
+                "test drawer for auto-log",
+                "testing", "autolog", "base",
+                null, null, null, null, null, null, null, null, null
+            ).get("id"));
+
+        long beforeCount = dslContext.fetchCount(
+            DSL.table("access_log"),
+            DSL.field("drawer_id").eq(drawerId)
+        );
+
+        readToolService.getDrawer(
+            new AuthPrincipal("test-writer", AuthRole.WRITER),
+            drawerId
+        );
+
+        long afterCount = dslContext.fetchCount(
+            DSL.table("access_log"),
+            DSL.field("drawer_id").eq(drawerId)
+        );
+        org.junit.jupiter.api.Assertions.assertEquals(beforeCount + 1, afterCount);
+
+        String accessedBy = dslContext
+            .select(DSL.field("accessed_by", String.class))
+            .from("access_log")
+            .where(DSL.field("drawer_id").eq(drawerId))
+            .orderBy(DSL.field("accessed_at").desc())
+            .limit(1)
+            .fetchOne(DSL.field("accessed_by", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("test-writer", accessedBy);
     }
 
     @Test

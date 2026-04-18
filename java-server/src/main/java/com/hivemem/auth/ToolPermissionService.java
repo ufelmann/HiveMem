@@ -60,7 +60,6 @@ public class ToolPermissionService {
     private static final Set<String> ADMIN_TOOLS = tools(
             "hivemem_approve_pending",
             "hivemem_health",
-            "hivemem_log_access",
             "hivemem_refresh_popularity"
     );
 
