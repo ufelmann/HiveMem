@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useNavigationStore } from '../stores/navigation'
+import { makeStoneFloorTextureWithRepeat } from '../composables/useTextures'
 
 const store = useNavigationStore()
 
 const PI = Math.PI
+
+const floorTexture = makeStoneFloorTextureWithRepeat(8, 8)
 
 const wingPositions = computed(() =>
   store.palace.wings.map((wing, i) => {
@@ -25,7 +28,7 @@ function onWingClick(name: string) {
     <!-- Ground -->
     <TresMesh :rotation-x="-PI / 2" :position-y="0">
       <TresPlaneGeometry :args="[40, 40]" />
-      <TresMeshStandardMaterial :color="'#1a1a2e'" :roughness="0.8" :metalness="0.1" />
+      <TresMeshStandardMaterial :color="'#1a1a2e'" :roughness="0.8" :metalness="0.1" :map="floorTexture" />
     </TresMesh>
 
     <!-- Wings -->

@@ -3,10 +3,14 @@ import { computed } from 'vue'
 import { useNavigationStore } from '../stores/navigation'
 import DrawerMesh from './DrawerMesh.vue'
 import TunnelLines from './TunnelLines.vue'
+import { makeHexWallTextureWithRepeat, makeStoneFloorTextureWithRepeat } from '../composables/useTextures'
 
 const PI = Math.PI
 
 const store = useNavigationStore()
+
+const floorTexture = makeStoneFloorTextureWithRepeat(2, 2)
+const wallTexture = makeHexWallTextureWithRepeat(3, 1.5)
 
 const ROOM_W = 6
 const ROOM_D = 6
@@ -59,7 +63,7 @@ const wingColor = computed(() => store.wingObj?.color ?? '#00BFFF')
     <!-- Floor -->
     <TresMesh :rotation-x="-PI / 2">
       <TresPlaneGeometry :args="[ROOM_W, ROOM_D]" />
-      <TresMeshStandardMaterial :color="'#1a1a2e'" :roughness="0.6" :metalness="0.2" />
+      <TresMeshStandardMaterial :color="'#1a1a2e'" :roughness="0.6" :metalness="0.2" :map="floorTexture" />
     </TresMesh>
     <!-- Ceiling -->
     <TresMesh :rotation-x="PI / 2" :position-y="ROOM_H">
@@ -69,17 +73,17 @@ const wingColor = computed(() => store.wingObj?.color ?? '#00BFFF')
     <!-- Back wall -->
     <TresMesh :position="[0, ROOM_H / 2, -ROOM_D / 2]">
       <TresPlaneGeometry :args="[ROOM_W, ROOM_H]" />
-      <TresMeshStandardMaterial :color="'#2a2520'" :emissive="wingColor" :emissive-intensity="0.08" />
+      <TresMeshStandardMaterial :color="'#2a2520'" :emissive="wingColor" :emissive-intensity="0.08" :map="wallTexture" />
     </TresMesh>
     <!-- Left wall -->
     <TresMesh :rotation-y="PI / 2" :position="[-ROOM_W / 2, ROOM_H / 2, 0]">
       <TresPlaneGeometry :args="[ROOM_D, ROOM_H]" />
-      <TresMeshStandardMaterial :color="'#2a2520'" :emissive="wingColor" :emissive-intensity="0.08" />
+      <TresMeshStandardMaterial :color="'#2a2520'" :emissive="wingColor" :emissive-intensity="0.08" :map="wallTexture" />
     </TresMesh>
     <!-- Right wall -->
     <TresMesh :rotation-y="-PI / 2" :position="[ROOM_W / 2, ROOM_H / 2, 0]">
       <TresPlaneGeometry :args="[ROOM_D, ROOM_H]" />
-      <TresMeshStandardMaterial :color="'#2a2520'" :emissive="wingColor" :emissive-intensity="0.05" />
+      <TresMeshStandardMaterial :color="'#2a2520'" :emissive="wingColor" :emissive-intensity="0.05" :map="wallTexture" />
     </TresMesh>
 
     <!-- Drawers -->

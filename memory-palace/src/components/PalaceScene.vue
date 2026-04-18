@@ -6,6 +6,7 @@ import { useNavigationStore } from '../stores/navigation'
 import BuildingView from './BuildingView.vue'
 import CorridorView from './CorridorView.vue'
 import RoomView from './RoomView.vue'
+import DrawerSheet from './DrawerSheet.vue'
 import CameraController from './CameraController.vue'
 
 const store = useNavigationStore()
@@ -37,5 +38,6 @@ const orbitOptions = computed(() => {
     <BuildingView v-if="store.level === 'building'" />
     <CorridorView v-else-if="store.level === 'corridor'" />
     <RoomView v-else />
+    <DrawerSheet v-if="store.level === 'drawer' && store.selectedDrawer" />
   </TresCanvas>
 </template>

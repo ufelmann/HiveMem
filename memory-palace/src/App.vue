@@ -3,7 +3,6 @@ import { onMounted } from 'vue'
 import { useNavigationStore } from './stores/navigation'
 import PalaceScene from './components/PalaceScene.vue'
 import HudOverlay from './components/HudOverlay.vue'
-import DrawerDetail from './components/DrawerDetail.vue'
 
 const store = useNavigationStore()
 
@@ -19,7 +18,6 @@ onMounted(async () => {
       <div v-else class="splash">Loading palace…</div>
     </div>
     <HudOverlay v-if="store.loaded" />
-    <DrawerDetail v-if="store.loaded" />
   </v-app>
 </template>
 

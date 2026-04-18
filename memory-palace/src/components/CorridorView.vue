@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useNavigationStore } from '../stores/navigation'
+import { makeHexWallTextureWithRepeat, makeStoneFloorTextureWithRepeat } from '../composables/useTextures'
 
 const PI = Math.PI
 
 const store = useNavigationStore()
+
+const floorTexture = makeStoneFloorTextureWithRepeat(4, 1)
+const wallTexture = makeHexWallTextureWithRepeat(8, 2)
 
 const rooms = computed(() => store.hallObj?.rooms ?? [])
 const halls = computed(() => store.wingObj?.halls ?? [])
@@ -51,7 +55,7 @@ function onHallClick(name: string) {
     <!-- Floor -->
     <TresMesh :rotation-x="-PI / 2">
       <TresPlaneGeometry :args="[CORRIDOR_LENGTH, CORRIDOR_WIDTH]" />
-      <TresMeshStandardMaterial :color="'#1a1a2e'" :roughness="0.5" :metalness="0.3" />
+      <TresMeshStandardMaterial :color="'#1a1a2e'" :roughness="0.5" :metalness="0.3" :map="floorTexture" />
     </TresMesh>
     <!-- Ceiling -->
     <TresMesh :rotation-x="PI / 2" :position-y="CORRIDOR_HEIGHT">
@@ -61,12 +65,12 @@ function onHallClick(name: string) {
     <!-- Left wall -->
     <TresMesh :position="[0, CORRIDOR_HEIGHT / 2, -CORRIDOR_WIDTH / 2]">
       <TresBoxGeometry :args="[CORRIDOR_LENGTH, CORRIDOR_HEIGHT, 0.1]" />
-      <TresMeshStandardMaterial :color="'#2a2520'" :emissive="wingColor" :emissive-intensity="0.08" :roughness="0.7" />
+      <TresMeshStandardMaterial :color="'#2a2520'" :emissive="wingColor" :emissive-intensity="0.08" :roughness="0.7" :map="wallTexture" />
     </TresMesh>
     <!-- Right wall -->
     <TresMesh :position="[0, CORRIDOR_HEIGHT / 2, CORRIDOR_WIDTH / 2]">
       <TresBoxGeometry :args="[CORRIDOR_LENGTH, CORRIDOR_HEIGHT, 0.1]" />
-      <TresMeshStandardMaterial :color="'#2a2520'" :emissive="wingColor" :emissive-intensity="0.08" :roughness="0.7" />
+      <TresMeshStandardMaterial :color="'#2a2520'" :emissive="wingColor" :emissive-intensity="0.08" :roughness="0.7" :map="wallTexture" />
     </TresMesh>
 
     <!-- Doors -->
