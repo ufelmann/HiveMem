@@ -54,9 +54,7 @@ public class ToolPermissionService {
             "hivemem_check_contradiction",
             "hivemem_register_agent",
             "hivemem_diary_write",
-            "hivemem_update_blueprint",
-            "hivemem_mine_file",
-            "hivemem_mine_directory"
+            "hivemem_update_blueprint"
     );
 
     private static final Set<String> ADMIN_TOOLS = tools(
