@@ -91,10 +91,41 @@ public class WriteToolService {
             double confidence,
             UUID sourceId,
             String requestedStatus,
-            OffsetDateTime validFrom
+            OffsetDateTime validFrom,
+            String onConflict
     ) {
         String status = effectiveStatus(principal.role(), requestedStatus);
-        return writeToolRepository.addFact(subject, predicate, object, confidence, sourceId, status, principal.name(), validFrom);
+
+        String conflictMode = onConflict == null ? "insert" : onConflict;
+        if (!conflictMode.equals("insert")
+                && !conflictMode.equals("return")
+                && !conflictMode.equals("reject")) {
+            throw new IllegalArgumentException("Invalid on_conflict");
+        }
+
+        if (!conflictMode.equals("insert")) {
+            List<Map<String, Object>> conflicts =
+                    writeToolRepository.checkContradiction(subject, predicate, object);
+            if (!conflicts.isEmpty()) {
+                if (conflictMode.equals("reject")) {
+                    throw new IllegalStateException(
+                            "kg_add rejected: conflicting active fact exists");
+                }
+                Map<String, Object> rejection = new java.util.LinkedHashMap<>();
+                rejection.put("inserted", false);
+                rejection.put("conflicts", conflicts);
+                return rejection;
+            }
+        }
+
+        Map<String, Object> inserted = writeToolRepository.addFact(
+                subject, predicate, object, confidence,
+                sourceId, status, principal.name(), validFrom);
+
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("inserted", true);
+        result.putAll(inserted);
+        return result;
     }
 
     public Map<String, Object> kgInvalidate(UUID factId) {
@@ -183,10 +214,6 @@ public class WriteToolService {
     public Map<String, Object> removeTunnel(UUID tunnelId) {
         writeToolRepository.removeTunnel(tunnelId);
         return Map.of("id", tunnelId.toString(), "removed", true);
-    }
-
-    public List<Map<String, Object>> checkContradiction(String subject, String predicate, String newObject) {
-        return writeToolRepository.checkContradiction(subject, predicate, newObject);
     }
 
     public Map<String, Object> approvePending(List<UUID> ids, String decision) {

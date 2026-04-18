@@ -48,7 +48,6 @@ public class ToolPermissionService {
             "hivemem_remove_tunnel",
             "hivemem_revise_drawer",
             "hivemem_revise_fact",
-            "hivemem_check_contradiction",
             "hivemem_register_agent",
             "hivemem_diary_write",
             "hivemem_update_blueprint"
