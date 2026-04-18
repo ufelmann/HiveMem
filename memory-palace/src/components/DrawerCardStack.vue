@@ -50,6 +50,10 @@ function onTunnelClick(targetId: string) {
   store.goToTunnelTarget(targetId)
 }
 
+function onClose() {
+  store.closeDrawer()
+}
+
 const drawer = computed(() => store.selectedDrawer)
 </script>
 
@@ -65,6 +69,7 @@ const drawer = computed(() => store.selectedDrawer)
         @top-click="onTopClick"
         @direct-click="onDirectClick(c.idx)"
         @tunnel-click="(id: string) => onTunnelClick(id)"
+        @close="onClose"
       />
     </template>
   </TresGroup>

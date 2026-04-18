@@ -54,17 +54,18 @@ const portalSlots = computed(() =>
   rooms.value.map((room: any, i: number) => {
     const N = rooms.value.length
     const theta = (i / Math.max(N, 1)) * 2 * PI + PI / 6
-    const py = 2.0
-    // Portal sits on sphere surface at y=py, so radial distance = sqrt(R² - py²)
+    const py = 1.8
     const rEq = Math.sqrt(Math.max(0, R * R - py * py))
     const px = rEq * Math.cos(theta)
     const pz = rEq * Math.sin(theta)
-    // Rotation-y so the portal's +Z normal points toward the origin (inside of sphere)
+    // Face the origin: yaw aligns azimuth, pitch accounts for elevation
     const rotY = -theta - PI / 2
+    const rotX = Math.asin(py / R)
     return {
       room,
       position: [px, py, pz] as [number, number, number],
       rotationY: rotY,
+      rotationX: rotX,
     }
   })
 )
@@ -77,9 +78,9 @@ function onPortalClick(name: string) {
 
 <template>
   <TresGroup>
-    <!-- Inner dome sphere — BackSide so we see the inside -->
+    <!-- Upper hemisphere dome — BackSide so we see the inside -->
     <TresMesh>
-      <TresSphereGeometry :args="[R, 32, 16]" />
+      <TresSphereGeometry :args="[R, 48, 24, 0, 2 * PI, 0, PI / 2]" />
       <TresMeshStandardMaterial
         :color="'#ffffff'"
         :map="domeTexture"
@@ -105,6 +106,7 @@ function onPortalClick(name: string) {
       v-for="slot in portalSlots"
       :key="slot.room.name"
       :position="slot.position"
+      :rotation-x="slot.rotationX"
       :rotation-y="slot.rotationY"
       @click="onPortalClick(slot.room.name)"
     >

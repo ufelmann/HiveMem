@@ -26,6 +26,7 @@ const emit = defineEmits<{
   (e: 'topClick'): void
   (e: 'directClick'): void
   (e: 'tunnelClick', targetId: string): void
+  (e: 'close'): void
 }>()
 
 const CARD_W = 768
@@ -221,8 +222,16 @@ onBeforeUnmount(() => {
   if (texture.value) texture.value.dispose()
 })
 
+let lastClickAt = 0
 function onMainClick(e: any) {
   e.stopPropagation?.()
+  const now = performance.now()
+  if (now - lastClickAt < 350) {
+    lastClickAt = 0
+    emit('close')
+    return
+  }
+  lastClickAt = now
   if (props.isTop) emit('topClick')
   else emit('directClick')
 }
