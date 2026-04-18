@@ -1,4 +1,5 @@
 # HiveMem
+<img width="1637" height="811" alt="image" src="https://github.com/user-attachments/assets/b9ceda91-0678-4d9b-bae8-2b5ba69d53d4" />
 
 Personal knowledge system with semantic search, temporal knowledge graph, and progressive summarization.
 
