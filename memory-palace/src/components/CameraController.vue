@@ -22,13 +22,12 @@ function poseForLevel(): { pos: THREE.Vector3; look: THREE.Vector3 } {
       pos.set(-5, 1.8, 0); look.set(1, 1.8, 0); break
     case 'room':
       pos.set(-2, 1.8, -2); look.set(2 * Math.cos(Math.PI / 3), 1.8, 2 * Math.sin(Math.PI / 3)); break
-    case 'drawer':
-      if (store.focusedSheet !== null) {
-        pos.set(0, 1.6, 3.2); look.set(0, 1.6, 0)
-      } else {
-        pos.set(0, 1.6, 6.0); look.set(0, 1.6, 0)
-      }
+    case 'drawer': {
+      const cardIdx = store.currentCardIndex
+      const z = 3.5 - cardIdx * 0.05
+      pos.set(0, 1.8, z); look.set(0, 1.8, 0)
       break
+    }
   }
   return { pos, look }
 }
@@ -71,7 +70,14 @@ function apply() {
 }
 
 watch(
-  () => [store.level, store.currentWing, store.currentHall, store.currentRoom, store.selectedDrawerId, store.focusedSheet],
+  () => [
+    store.level,
+    store.currentWing,
+    store.currentHall,
+    store.currentRoom,
+    store.selectedDrawerId,
+    store.currentCardIndex,
+  ],
   apply,
   { immediate: false },
 )
