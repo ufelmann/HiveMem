@@ -23,11 +23,21 @@ public class ListWingsToolHandler implements ToolHandler {
 
     @Override
     public String description() {
-        return "Wings with hall and drawer counts.";
+        return "Wings with counts, or halls of a specific wing when 'wing' is provided.";
     }
 
     @Override
     public Object call(AuthPrincipal principal, JsonNode arguments) {
-        return readToolService.listWings();
+        String wing = null;
+        if (arguments != null && arguments.hasNonNull("wing")) {
+            String value = arguments.get("wing").asText();
+            if (!value.isBlank()) {
+                wing = value;
+            }
+        }
+        if (wing == null) {
+            return readToolService.listWings();
+        }
+        return readToolService.listHalls(wing);
     }
 }
