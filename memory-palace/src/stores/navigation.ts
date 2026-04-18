@@ -15,7 +15,8 @@ interface State {
   currentHall: string | null
   currentRoom: string | null
   selectedDrawerId: string | null
-  focusedSheet: 0 | 1 | 2 | null
+  focusedDrawerId: string | null
+  currentCardIndex: number
   palace: Palace
   drawersById: Record<string, Drawer>
   isTransitioning: boolean
@@ -29,7 +30,8 @@ export const useNavigationStore = defineStore('navigation', {
     currentHall: null,
     currentRoom: null,
     selectedDrawerId: null,
-    focusedSheet: null,
+    focusedDrawerId: null,
+    currentCardIndex: 0,
     palace: { wings: [] },
     drawersById: {},
     isTransitioning: false,
@@ -83,30 +85,29 @@ export const useNavigationStore = defineStore('navigation', {
       this.currentHall = null
       this.currentRoom = null
       this.selectedDrawerId = null
-      this.focusedSheet = null
       this.level = 'wing'
     },
     enterHall(hall: string) {
       this.currentHall = hall
       this.currentRoom = null
       this.selectedDrawerId = null
-      this.focusedSheet = null
       this.level = 'hall'
     },
     enterRoom(room: string) {
       this.currentRoom = room
       this.selectedDrawerId = null
-      this.focusedSheet = null
       this.level = 'room'
     },
     selectDrawer(id: string) {
       this.selectedDrawerId = id
-      this.focusedSheet = null
+      this.focusedDrawerId = id
+      this.currentCardIndex = 0
       this.level = 'drawer'
     },
     closeDrawer() {
       this.selectedDrawerId = null
-      this.focusedSheet = null
+      this.focusedDrawerId = null
+      this.currentCardIndex = 0
       this.level = 'room'
     },
     goToTunnelTarget(drawerId: string) {
@@ -116,12 +117,18 @@ export const useNavigationStore = defineStore('navigation', {
       this.currentHall = target.hall
       this.currentRoom = target.room
       this.selectedDrawerId = target.id
-      this.focusedSheet = null
+      this.focusedDrawerId = target.id
+      this.currentCardIndex = 0
       this.level = 'drawer'
     },
     goBack() {
-      if (this.focusedSheet !== null) { this.focusedSheet = null; return }
-      if (this.level === 'drawer') { this.level = 'room'; this.selectedDrawerId = null; return }
+      if (this.level === 'drawer') {
+        if (this.currentCardIndex > 0) { this.currentCardIndex--; return }
+        this.level = 'room'
+        this.selectedDrawerId = null
+        this.focusedDrawerId = null
+        return
+      }
       if (this.level === 'room') { this.level = 'hall'; this.currentRoom = null; return }
       if (this.level === 'hall') { this.level = 'wing'; this.currentHall = null; return }
       if (this.level === 'wing') {
@@ -129,10 +136,18 @@ export const useNavigationStore = defineStore('navigation', {
         this.currentWing = null
       }
     },
-    focusSheet(idx: 0 | 1 | 2) { this.focusedSheet = idx },
-    unfocusSheet() { this.focusedSheet = null },
+    setCurrentCard(idx: number) {
+      this.currentCardIndex = Math.max(0, Math.min(5, idx))
+    },
+    nextCard() {
+      if (this.currentCardIndex < 5) this.currentCardIndex++
+    },
+    prevCard() {
+      if (this.currentCardIndex > 0) this.currentCardIndex--
+    },
     goToLevel(item: BreadcrumbItem) {
-      this.focusedSheet = null
+      this.currentCardIndex = 0
+      if (item.level !== 'drawer') this.focusedDrawerId = null
       switch (item.level) {
         case 'building':
           this.level = 'building'
@@ -161,7 +176,10 @@ export const useNavigationStore = defineStore('navigation', {
           this.level = 'room'
           break
         case 'drawer':
-          if (item.payload?.drawerId) this.selectedDrawerId = item.payload.drawerId
+          if (item.payload?.drawerId) {
+            this.selectedDrawerId = item.payload.drawerId
+            this.focusedDrawerId = item.payload.drawerId
+          }
           this.level = 'drawer'
           break
       }
