@@ -3,11 +3,13 @@ package com.hivemem.embedding;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class FixedEmbeddingClient implements EmbeddingClient {
 
     private final int dims;
     private final String model;
+    private final AtomicInteger encodeDocumentCallCount = new AtomicInteger(0);
 
     public FixedEmbeddingClient() {
         this(1024, "test-model");
@@ -18,8 +20,13 @@ public final class FixedEmbeddingClient implements EmbeddingClient {
         this.model = model;
     }
 
+    public int getEncodeDocumentCallCount() {
+        return encodeDocumentCallCount.get();
+    }
+
     @Override
     public List<Float> encodeDocument(String text) {
+        encodeDocumentCallCount.incrementAndGet();
         return encode(text);
     }
 

@@ -244,11 +244,11 @@ class AgentFleetIntegrationTest {
         // Create 2 pending drawers from agent
         Map<String, Object> drawer1 = writeToolService.addDrawer(
                 AGENT, "Agent suggestion 1", "eng", "test", "facts", "system",
-                List.of(), 1, "Summary 1", List.of(), null, null, "committed", BASE_TIME
+                List.of(), 1, "Summary 1", List.of(), null, null, "committed", BASE_TIME, null
         );
         Map<String, Object> drawer2 = writeToolService.addDrawer(
                 AGENT, "Agent suggestion 2", "eng", "test", "facts", "system",
-                List.of(), 1, "Summary 2", List.of(), null, null, "committed", BASE_TIME.plusSeconds(1)
+                List.of(), 1, "Summary 2", List.of(), null, null, "committed", BASE_TIME.plusSeconds(1), null
         );
 
         // Create 2 pending facts from agent

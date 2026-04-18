@@ -296,7 +296,8 @@ class GraphSearchIntegrationTest {
                 null,
                 null,
                 "committed",
-                BASE_TIME
+                BASE_TIME,
+                null
         );
     }
 

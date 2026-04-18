@@ -110,7 +110,8 @@ class ProgressiveSummarizationIntegrationTest {
                 "This unblocks the Go rewrite of the orchestration layer",
                 "actionable",
                 "committed",
-                BASE_TIME
+                BASE_TIME,
+                null
         );
 
         String drawerId = (String) created.get("id");
@@ -147,7 +148,8 @@ class ProgressiveSummarizationIntegrationTest {
                 null,           // no insight
                 null,           // no actionability
                 "committed",
-                BASE_TIME
+                BASE_TIME,
+                null
         );
 
         Map<String, Object> drawer = readToolService.getDrawer(WRITER,
@@ -179,7 +181,7 @@ class ProgressiveSummarizationIntegrationTest {
                 "test", "test", "facts",
                 null, List.of(), null, "summary", List.of(), null,
                 "actionable",
-                "committed", BASE_TIME
+                "committed", BASE_TIME, null
         );
         Map<String, Object> drawer = readToolService.getDrawer(WRITER,
                 UUID.fromString((String) created.get("id")));
@@ -194,7 +196,7 @@ class ProgressiveSummarizationIntegrationTest {
                 "test", "test", "facts",
                 null, List.of(), null, "summary", List.of(), null,
                 "reference",
-                "committed", BASE_TIME
+                "committed", BASE_TIME, null
         );
         Map<String, Object> drawer = readToolService.getDrawer(WRITER,
                 UUID.fromString((String) created.get("id")));
@@ -209,7 +211,7 @@ class ProgressiveSummarizationIntegrationTest {
                 "test", "test", "facts",
                 null, List.of(), null, "summary", List.of(), null,
                 "someday",
-                "committed", BASE_TIME
+                "committed", BASE_TIME, null
         );
         Map<String, Object> drawer = readToolService.getDrawer(WRITER,
                 UUID.fromString((String) created.get("id")));
@@ -224,7 +226,7 @@ class ProgressiveSummarizationIntegrationTest {
                 "test", "test", "facts",
                 null, List.of(), null, "summary", List.of(), null,
                 "archive",
-                "committed", BASE_TIME
+                "committed", BASE_TIME, null
         );
         Map<String, Object> drawer = readToolService.getDrawer(WRITER,
                 UUID.fromString((String) created.get("id")));
@@ -244,7 +246,7 @@ class ProgressiveSummarizationIntegrationTest {
                 "test", "test", "facts",
                 null, List.of(), null, "summary", List.of(), null,
                 "invalid_value",
-                "committed", BASE_TIME
+                "committed", BASE_TIME, null
         )).hasMessageContaining("drawers_actionability_check");
     }
 
@@ -256,7 +258,7 @@ class ProgressiveSummarizationIntegrationTest {
                 "test", "test", "facts",
                 null, List.of(), null, "summary", List.of(), null,
                 null,
-                "committed", BASE_TIME
+                "committed", BASE_TIME, null
         );
         Map<String, Object> drawer = readToolService.getDrawer(WRITER,
                 UUID.fromString((String) created.get("id")));
@@ -272,7 +274,7 @@ class ProgressiveSummarizationIntegrationTest {
     // -----------------------------------------------------------------------
 
     @Test
-    void checkDuplicateLowThresholdFindsMoreMatches() {
+    void addDrawerWithDedupeThresholdSkipsInsertWhenDuplicateExists() {
         writeToolService.addDrawer(
                 WRITER,
                 "Duplicate oracle alpha",
@@ -280,18 +282,27 @@ class ProgressiveSummarizationIntegrationTest {
                 null, List.of(), null,
                 "Duplicate oracle alpha",
                 List.of(), null, null,
-                "committed", BASE_TIME
+                "committed", BASE_TIME, null
         );
 
         // Same "duplicate oracle" prefix -> identical embedding -> similarity ~1.0
-        List<Map<String, Object>> dupes = writeToolService.checkDuplicate(
-                "Duplicate oracle beta", 0.5);
+        // A low threshold (0.5) should detect the duplicate and skip insert.
+        Map<String, Object> result = writeToolService.addDrawer(
+                WRITER,
+                "Duplicate oracle beta",
+                "test", "dup", "facts",
+                null, List.of(), null, null,
+                List.of(), null, null,
+                "committed", BASE_TIME.plusSeconds(1), 0.5);
+        assertThat(result.get("inserted")).isEqualTo(false);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> dupes = (List<Map<String, Object>>) result.get("duplicates");
         assertThat(dupes).isNotEmpty();
         assertThat((Double) dupes.get(0).get("similarity")).isGreaterThan(0.5);
     }
 
     @Test
-    void checkDuplicateHighThresholdReturnsFewerMatches() {
+    void addDrawerWithDedupeThresholdInsertsWhenNoMatch() {
         writeToolService.addDrawer(
                 WRITER,
                 "Duplicate oracle alpha",
@@ -299,39 +310,57 @@ class ProgressiveSummarizationIntegrationTest {
                 null, List.of(), null,
                 "Duplicate oracle alpha",
                 List.of(), null, null,
-                "committed", BASE_TIME
+                "committed", BASE_TIME, null
         );
 
         // FixedEmbeddingClient: "duplicate oracle alpha" and "duplicate oracle beta"
         // both map to the same vector (0.9, 0.9, 0.0, ...) -> similarity 1.0.
-        // A threshold of 0.99 should still match (similarity rounds to 1.0).
-        List<Map<String, Object>> highThreshold = writeToolService.checkDuplicate(
-                "Duplicate oracle beta", 0.99);
-        assertThat(highThreshold).isNotEmpty();
+        // A threshold of 0.99 should still catch the duplicate.
+        Map<String, Object> highThresholdResult = writeToolService.addDrawer(
+                WRITER,
+                "Duplicate oracle beta",
+                "test", "dup", "facts",
+                null, List.of(), null, null,
+                List.of(), null, null,
+                "committed", BASE_TIME.plusSeconds(1), 0.99);
+        assertThat(highThresholdResult.get("inserted")).isEqualTo(false);
 
         // Completely different content should not match at a strict threshold.
         // Note: FixedEmbeddingClient is word-hash based, so unrelated content still has
         // low-but-nonzero cosine similarity (~0.56). A strict threshold (0.9) correctly
-        // excludes it.
-        List<Map<String, Object>> noMatch = writeToolService.checkDuplicate(
-                "Cooking Italian pasta recipes for dinner tonight", 0.9);
-        assertThat(noMatch).isEmpty();
+        // allows the insert.
+        Map<String, Object> noMatchResult = writeToolService.addDrawer(
+                WRITER,
+                "Cooking Italian pasta recipes for dinner tonight",
+                "test", "dup", "facts",
+                null, List.of(), null, null,
+                List.of(), null, null,
+                "committed", BASE_TIME.plusSeconds(2), 0.9);
+        assertThat(noMatchResult.get("inserted")).isEqualTo(true);
+        assertThat(noMatchResult.get("id")).isNotNull();
     }
 
     @Test
-    void checkDuplicateNoMatchForDifferentContent() {
+    void addDrawerWithoutDedupeThresholdAlwaysInserts() {
         writeToolService.addDrawer(
                 WRITER,
                 "PostgreSQL vector search with pgvector",
                 "eng", "db", "facts",
                 null, List.of(), null, "pgvector search",
                 List.of(), null, null,
-                "committed", BASE_TIME
+                "committed", BASE_TIME, null
         );
 
-        List<Map<String, Object>> dupes = writeToolService.checkDuplicate(
-                "Cooking Italian pasta recipes for dinner tonight", 0.9);
-        assertThat(dupes).isEmpty();
+        // Without dedupe_threshold, always inserts even for similar content.
+        Map<String, Object> result = writeToolService.addDrawer(
+                WRITER,
+                "PostgreSQL vector search with pgvector",
+                "eng", "db", "facts",
+                null, List.of(), null, "pgvector search",
+                List.of(), null, null,
+                "committed", BASE_TIME.plusSeconds(1), null);
+        assertThat(result.get("inserted")).isEqualTo(true);
+        assertThat(result.get("id")).isNotNull();
     }
 
     // -----------------------------------------------------------------------
@@ -352,7 +381,8 @@ class ProgressiveSummarizationIntegrationTest {
                 "This unblocks the Go rewrite",
                 "actionable",
                 "committed",
-                BASE_TIME
+                BASE_TIME,
+                null
         );
         UUID originalId = UUID.fromString((String) original.get("id"));
 
@@ -392,7 +422,8 @@ class ProgressiveSummarizationIntegrationTest {
                 "HNSW index is the bottleneck",
                 "reference",
                 "committed",
-                BASE_TIME
+                BASE_TIME,
+                null
         );
         UUID originalId = UUID.fromString((String) original.get("id"));
 
@@ -426,7 +457,8 @@ class ProgressiveSummarizationIntegrationTest {
                 "insight-v1",
                 "someday",
                 "committed",
-                BASE_TIME
+                BASE_TIME,
+                null
         );
         UUID originalId = UUID.fromString((String) original.get("id"));
 
@@ -464,7 +496,8 @@ class ProgressiveSummarizationIntegrationTest {
                 null,         // null insight
                 null,         // null actionability
                 "committed",
-                BASE_TIME
+                BASE_TIME,
+                null
         );
 
         Map<String, Object> drawer = readToolService.getDrawer(WRITER,
@@ -481,27 +514,27 @@ class ProgressiveSummarizationIntegrationTest {
         Map<String, Object> l0Only = writeToolService.addDrawer(
                 WRITER, "L0 only content", "test", "layers", "facts",
                 null, List.of(), null, null, List.of(), null, null,
-                "committed", BASE_TIME);
+                "committed", BASE_TIME, null);
 
         // L0 + L1
         Map<String, Object> l0l1 = writeToolService.addDrawer(
                 WRITER, "L0 plus L1 content", "test", "layers", "facts",
                 null, List.of(), null, "Has summary only", List.of(), null, null,
-                "committed", BASE_TIME.plusSeconds(1));
+                "committed", BASE_TIME.plusSeconds(1), null);
 
         // L0 + L1 + L2
         Map<String, Object> l0l1l2 = writeToolService.addDrawer(
                 WRITER, "L0 plus L1 plus L2 content", "test", "layers", "facts",
                 null, List.of(), null, "Summary present",
                 List.of("point-1", "point-2"), null, null,
-                "committed", BASE_TIME.plusSeconds(2));
+                "committed", BASE_TIME.plusSeconds(2), null);
 
         // L0 + L1 + L2 + L3 (all layers)
         Map<String, Object> allLayers = writeToolService.addDrawer(
                 WRITER, "All layers present", "test", "layers", "facts",
                 null, List.of(), null, "Full summary",
                 List.of("key-a", "key-b", "key-c"), "Deep insight", "actionable",
-                "committed", BASE_TIME.plusSeconds(3));
+                "committed", BASE_TIME.plusSeconds(3), null);
 
         // Verify each round-trips correctly
         Map<String, Object> d0 = readToolService.getDrawer(WRITER,UUID.fromString((String) l0Only.get("id")));

@@ -162,11 +162,11 @@ class ReferencesIntegrationTest {
         Map<String, Object> drawerA = writeToolService.addDrawer(
                 WRITER, "Drawer A content", "eng", "search", "refs", "system",
                 List.of(), 1, "Drawer A", List.of(), null, null, "committed",
-                OffsetDateTime.parse("2026-04-10T10:00:00Z"));
+                OffsetDateTime.parse("2026-04-10T10:00:00Z"), null);
         Map<String, Object> drawerB = writeToolService.addDrawer(
                 WRITER, "Drawer B content", "eng", "search", "refs", "system",
                 List.of(), 1, "Drawer B", List.of(), null, null, "committed",
-                OffsetDateTime.parse("2026-04-10T10:01:00Z"));
+                OffsetDateTime.parse("2026-04-10T10:01:00Z"), null);
 
         Map<String, Object> ref = writeToolService.addReference(
                 "Shared Reference", "https://example.com", null, "paper", "unread", null, List.of(), 2);

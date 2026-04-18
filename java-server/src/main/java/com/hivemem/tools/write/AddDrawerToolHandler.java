@@ -46,6 +46,7 @@ public class AddDrawerToolHandler implements ToolHandler {
         String actionability = WriteArgumentParser.optionalText(arguments, "actionability");
         String status = WriteArgumentParser.optionalText(arguments, "status");
         OffsetDateTime validFrom = WriteArgumentParser.optionalTimestamp(arguments, "valid_from");
+        Double dedupeThreshold = optionalDedupeThreshold(arguments);
         return writeToolService.addDrawer(
                 principal,
                 content,
@@ -60,7 +61,24 @@ public class AddDrawerToolHandler implements ToolHandler {
                 insight,
                 actionability,
                 status,
-                validFrom
+                validFrom,
+                dedupeThreshold
         );
+    }
+
+    private static Double optionalDedupeThreshold(JsonNode arguments) {
+        if (arguments == null || !arguments.has("dedupe_threshold")
+                || arguments.get("dedupe_threshold").isNull()) {
+            return null;
+        }
+        JsonNode node = arguments.get("dedupe_threshold");
+        if (!node.isNumber()) {
+            throw new IllegalArgumentException("Invalid dedupe_threshold");
+        }
+        double value = node.asDouble();
+        if (!Double.isFinite(value) || value < -1.0d || value > 1.0d) {
+            throw new IllegalArgumentException("Invalid dedupe_threshold");
+        }
+        return value;
     }
 }
