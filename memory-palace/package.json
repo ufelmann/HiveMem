@@ -12,7 +12,6 @@
     "@mdi/font": "^7.4.47",
     "@tresjs/cientos": "^5.7.0",
     "@tresjs/core": "^5.8.0",
-    "axios": "^1.15.0",
     "gsap": "^3.15.0",
     "pinia": "^3.0.4",
     "three": "^0.184.0",
