@@ -54,11 +54,13 @@ const portalSlots = computed(() =>
   rooms.value.map((room: any, i: number) => {
     const N = rooms.value.length
     const theta = (i / Math.max(N, 1)) * 2 * PI + PI / 6
-    const px = R * Math.cos(theta)
-    const pz = R * Math.sin(theta)
     const py = 2.0
-    // Rotation-y so the portal's +Z normal points toward the origin
-    const rotY = -theta + PI / 2
+    // Portal sits on sphere surface at y=py, so radial distance = sqrt(R² - py²)
+    const rEq = Math.sqrt(Math.max(0, R * R - py * py))
+    const px = rEq * Math.cos(theta)
+    const pz = rEq * Math.sin(theta)
+    // Rotation-y so the portal's +Z normal points toward the origin (inside of sphere)
+    const rotY = -theta - PI / 2
     return {
       room,
       position: [px, py, pz] as [number, number, number],

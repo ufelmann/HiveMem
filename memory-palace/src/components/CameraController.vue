@@ -18,8 +18,13 @@ function poseForLevel(): { pos: THREE.Vector3; look: THREE.Vector3 } {
       pos.set(0, 10, 14); look.set(0, 1.5, 0); break
     case 'wing':
       pos.set(-3, 2.4, 0); look.set(4, 2.4, 0); break
-    case 'hall':
-      pos.set(0, 2.0, 0); look.set(3, 2.0, 0); break
+    case 'hall': {
+      // Aim at first portal (theta = PI/6) on sphere surface at y=2
+      const t0 = Math.PI / 6
+      const rEq = Math.sqrt(6 * 6 - 2 * 2)
+      pos.set(0, 2.0, 0); look.set(rEq * Math.cos(t0), 2.0, rEq * Math.sin(t0))
+      break
+    }
     case 'room':
       pos.set(-2, 1.8, -2); look.set(2 * Math.cos(Math.PI / 3), 1.8, 2 * Math.sin(Math.PI / 3)); break
     case 'drawer': {
