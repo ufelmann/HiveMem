@@ -162,7 +162,7 @@ class SecurityIntegrationTest {
         }
 
         @Test
-        void writerSees34Tools() throws Exception {
+        void writerSees32Tools() throws Exception {
             insertToken("writer-user", "writer-token", "writer");
 
             mockMvc.perform(post("/mcp")
@@ -170,11 +170,11 @@ class SecurityIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(TOOLS_LIST_REQUEST))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.tools", hasSize(34)));
+                    .andExpect(jsonPath("$.result.tools", hasSize(32)));
         }
 
         @Test
-        void agentSees34Tools() throws Exception {
+        void agentSees32Tools() throws Exception {
             insertToken("agent-user", "agent-token", "agent");
 
             mockMvc.perform(post("/mcp")
@@ -182,11 +182,11 @@ class SecurityIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(TOOLS_LIST_REQUEST))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.tools", hasSize(34)));
+                    .andExpect(jsonPath("$.result.tools", hasSize(32)));
         }
 
         @Test
-        void adminSees38Tools() throws Exception {
+        void adminSees36Tools() throws Exception {
             insertToken("admin-user", "admin-token", "admin");
 
             mockMvc.perform(post("/mcp")
@@ -194,7 +194,7 @@ class SecurityIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(TOOLS_LIST_REQUEST))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.tools", hasSize(38)));
+                    .andExpect(jsonPath("$.result.tools", hasSize(36)));
         }
     }
 
@@ -409,69 +409,6 @@ class SecurityIntegrationTest {
     }
 
     // ================================================================
-    // Path traversal via HTTP (mine_file tool call)
-    // ================================================================
-
-    @Nested
-    class PathTraversalViaHttp {
-
-        /**
-         * mine_file is a write tool (accessible to writer/agent/admin). Calling it with /etc/passwd should return
-         * a -32602 (InvalidParams) error because ImportPathValidator rejects
-         * the path. This tests the full HTTP stack, unlike PathSafetyTest
-         * which tests the validator in isolation.
-         */
-        @Test
-        void mineFileRejectsEtcPasswdOverHttp() throws Exception {
-            insertToken("admin-user", "admin-token", "admin");
-
-            mockMvc.perform(post("/mcp")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(toolsCallRequest("hivemem_mine_file",
-                                    """
-                                    {"file_path":"/etc/passwd"}
-                                    """)))
-                    .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.error.code").value(-32602))
-                    .andExpect(jsonPath("$.error.message").value(
-                            org.hamcrest.Matchers.containsString("outside allowed import directories")));
-        }
-
-        @Test
-        void mineFileRejectsDotDotTraversalOverHttp() throws Exception {
-            insertToken("admin-user", "admin-token", "admin");
-
-            mockMvc.perform(post("/mcp")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(toolsCallRequest("hivemem_mine_file",
-                                    """
-                                    {"file_path":"/data/imports/../../etc/shadow"}
-                                    """)))
-                    .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.error.code").value(-32602))
-                    .andExpect(jsonPath("$.error.message").value(
-                            org.hamcrest.Matchers.containsString("outside allowed import directories")));
-        }
-
-        /** Non-admin roles should not even reach the path validator -- 403 first. */
-        @Test
-        void readerCannotCallMineFile() throws Exception {
-            insertToken("reader-user", "reader-token", "reader");
-
-            mockMvc.perform(post("/mcp")
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer reader-token")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(toolsCallRequest("hivemem_mine_file",
-                                    """
-                                    {"file_path":"/etc/passwd"}
-                                    """)))
-                    .andExpect(status().isForbidden());
-        }
-    }
-
-    // ================================================================
     // Unit tests: ToolPermissionService (no Spring context needed)
     // ================================================================
 
@@ -567,11 +504,5 @@ class SecurityIntegrationTest {
 //   -- These test the token management CLI / admin API which is not yet ported
 //      to the Java server. The DB column is never selected in DbTokenService.
 //
-// test_allowed_import_dirs_exist_or_are_safe
-//   -- Already covered by PathSafetyTest at the validator level.
-//
-// test_path_traversal_etc_passwd / test_path_traversal_secrets /
-// test_path_traversal_dotdot / test_path_traversal_allowed_dir /
-// test_path_traversal_tmp_allowed
-//   -- All 5 covered by PathSafetyTest. HTTP-layer path traversal is tested
-//      in PathTraversalViaHttp above.
+// test_allowed_import_dirs_exist_or_are_safe / test_path_traversal_*
+//   -- Mining tools (mine_file, mine_directory) have been removed from the MCP surface.
