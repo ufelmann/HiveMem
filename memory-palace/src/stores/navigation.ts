@@ -55,8 +55,8 @@ export const useNavigationStore = defineStore('navigation', {
     },
     breadcrumbItems(): BreadcrumbItem[] {
       const items: BreadcrumbItem[] = [{ title: 'Palace', level: 'building' }]
-      if (this.currentWing) items.push({ title: this.currentWing, level: 'corridor', payload: { wing: this.currentWing } })
-      if (this.currentHall) items.push({ title: this.currentHall, level: 'corridor', payload: { wing: this.currentWing!, hall: this.currentHall } })
+      if (this.currentWing) items.push({ title: this.currentWing, level: 'wing', payload: { wing: this.currentWing } })
+      if (this.currentHall) items.push({ title: this.currentHall, level: 'hall', payload: { wing: this.currentWing!, hall: this.currentHall } })
       if (this.currentRoom) items.push({ title: this.currentRoom, level: 'room', payload: { wing: this.currentWing!, hall: this.currentHall!, room: this.currentRoom } })
       if (this.selectedDrawer) items.push({ title: this.selectedDrawer.title, level: 'drawer', payload: { drawerId: this.selectedDrawer.id } })
       return items
@@ -80,19 +80,18 @@ export const useNavigationStore = defineStore('navigation', {
     },
     enterWing(wing: string) {
       this.currentWing = wing
-      const w = this.palace.wings.find((x) => x.name === wing)
-      this.currentHall = w?.halls[0]?.name ?? null
+      this.currentHall = null
       this.currentRoom = null
       this.selectedDrawerId = null
       this.focusedSheet = null
-      this.level = 'corridor'
+      this.level = 'wing'
     },
     enterHall(hall: string) {
       this.currentHall = hall
       this.currentRoom = null
       this.selectedDrawerId = null
       this.focusedSheet = null
-      this.level = 'corridor'
+      this.level = 'hall'
     },
     enterRoom(room: string) {
       this.currentRoom = room
@@ -121,20 +120,19 @@ export const useNavigationStore = defineStore('navigation', {
       this.level = 'drawer'
     },
     goBack() {
-      if (this.level === 'drawer') {
-        if (this.focusedSheet !== null) { this.focusedSheet = null; return }
-        this.level = 'room'; this.selectedDrawerId = null; return
-      }
-      if (this.level === 'room') { this.level = 'corridor'; this.currentRoom = null; return }
-      if (this.level === 'corridor') {
+      if (this.focusedSheet !== null) { this.focusedSheet = null; return }
+      if (this.level === 'drawer') { this.level = 'room'; this.selectedDrawerId = null; return }
+      if (this.level === 'room') { this.level = 'hall'; this.currentRoom = null; return }
+      if (this.level === 'hall') { this.level = 'wing'; this.currentHall = null; return }
+      if (this.level === 'wing') {
         this.level = 'building'
         this.currentWing = null
-        this.currentHall = null
       }
     },
     focusSheet(idx: 0 | 1 | 2) { this.focusedSheet = idx },
     unfocusSheet() { this.focusedSheet = null },
     goToLevel(item: BreadcrumbItem) {
+      this.focusedSheet = null
       switch (item.level) {
         case 'building':
           this.level = 'building'
@@ -143,13 +141,19 @@ export const useNavigationStore = defineStore('navigation', {
           this.currentRoom = null
           this.selectedDrawerId = null
           break
-        case 'corridor':
+        case 'wing':
           if (item.payload?.wing) this.currentWing = item.payload.wing
-          if (item.payload?.hall) this.currentHall = item.payload.hall
-          else this.currentHall = this.wingObj?.halls[0]?.name ?? null
+          this.currentHall = null
           this.currentRoom = null
           this.selectedDrawerId = null
-          this.level = 'corridor'
+          this.level = 'wing'
+          break
+        case 'hall':
+          if (item.payload?.wing) this.currentWing = item.payload.wing
+          if (item.payload?.hall) this.currentHall = item.payload.hall
+          this.currentRoom = null
+          this.selectedDrawerId = null
+          this.level = 'hall'
           break
         case 'room':
           if (item.payload?.room) this.currentRoom = item.payload.room
