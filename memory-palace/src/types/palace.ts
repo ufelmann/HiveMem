@@ -20,11 +20,11 @@ export interface Drawer {
   wing: string
   hall: string
   room: string
-  content: string // L0
-  summary: string // L1
-  keyPoints: string[] // L2
-  insight: string // L3
-  importance: number // 1-5
+  content: string
+  summary: string
+  keyPoints: string[]
+  insight: string
+  importance: number
   status: DrawerStatus
   validFrom: string
   facts: Fact[]
