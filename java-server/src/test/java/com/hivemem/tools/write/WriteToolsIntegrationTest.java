@@ -657,7 +657,7 @@ class WriteToolsIntegrationTest {
     }
 
     @Test
-    void adminCanLogAccessRefreshPopularityAndCheckHealth() throws Exception {
+    void adminCanLogAccessAndCheckHealth() throws Exception {
         UUID drawerId = UUID.fromString("00000000-0000-0000-0000-000000000701");
         insertDrawer(drawerId, null, "Popular drawer", "eng", "search", "facts", "system", 4,
                 "Popular summary", null, null, "committed", "writer-1",
@@ -669,9 +669,10 @@ class WriteToolsIntegrationTest {
         Map<String, Object> logResult = adminToolService.logAccess(drawerId, null, "admin");
         assertThat((Boolean) logResult.get("logged")).isTrue();
 
-        JsonNode refreshContent = callToolContent("admin-token", "hivemem_refresh_popularity", Map.of());
-        assertThat(refreshContent.path("refreshed").asBoolean()).isTrue();
-        assertThat(refreshContent.path("drawer_count").isNumber()).isTrue();
+        // Popularity refresh is now done by the scheduler; call the service directly
+        Map<String, Object> refreshResult = adminToolService.refreshPopularity();
+        assertThat((Boolean) refreshResult.get("refreshed")).isTrue();
+        assertThat(refreshResult.get("drawer_count")).isInstanceOf(Number.class);
 
         JsonNode healthContent = callToolContent("admin-token", "hivemem_health", Map.of());
         assertThat(healthContent.path("db_connected").asBoolean()).isTrue();

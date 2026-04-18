@@ -219,7 +219,7 @@ class SearchParityIntegrationTest {
         for (int i = 0; i < 5; i++) {
             adminToolService.logAccess(popularDrawerId, null, "admin");
         }
-        callTool("admin-token", "hivemem_refresh_popularity", Map.of());
+        adminToolService.refreshPopularity();
 
         JsonNode results = callTool("writer-token", "hivemem_search", Map.of(
                 "query", "docker knowledge",
