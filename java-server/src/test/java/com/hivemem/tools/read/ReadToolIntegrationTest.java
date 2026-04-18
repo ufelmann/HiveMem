@@ -108,18 +108,17 @@ class ReadToolIntegrationTest {
                 .andExpect(jsonPath("$.result.tools[2].name").value("hivemem_search_kg"))
                 .andExpect(jsonPath("$.result.tools[3].name").value("hivemem_get_drawer"))
                 .andExpect(jsonPath("$.result.tools[4].name").value("hivemem_list_wings"))
-                .andExpect(jsonPath("$.result.tools[5].name").value("hivemem_list_halls"))
-                .andExpect(jsonPath("$.result.tools[6].name").value("hivemem_traverse"))
-                .andExpect(jsonPath("$.result.tools[7].name").value("hivemem_quick_facts"))
-                .andExpect(jsonPath("$.result.tools[8].name").value("hivemem_time_machine"))
-                .andExpect(jsonPath("$.result.tools[9].name").value("hivemem_drawer_history"))
-                .andExpect(jsonPath("$.result.tools[10].name").value("hivemem_fact_history"))
-                .andExpect(jsonPath("$.result.tools[11].name").value("hivemem_pending_approvals"))
-                .andExpect(jsonPath("$.result.tools[12].name").value("hivemem_reading_list"))
-                .andExpect(jsonPath("$.result.tools[13].name").value("hivemem_list_agents"))
-                .andExpect(jsonPath("$.result.tools[14].name").value("hivemem_diary_read"))
-                .andExpect(jsonPath("$.result.tools[15].name").value("hivemem_get_blueprint"))
-                .andExpect(jsonPath("$.result.tools[16].name").value("hivemem_wake_up"));
+                .andExpect(jsonPath("$.result.tools[5].name").value("hivemem_traverse"))
+                .andExpect(jsonPath("$.result.tools[6].name").value("hivemem_quick_facts"))
+                .andExpect(jsonPath("$.result.tools[7].name").value("hivemem_time_machine"))
+                .andExpect(jsonPath("$.result.tools[8].name").value("hivemem_drawer_history"))
+                .andExpect(jsonPath("$.result.tools[9].name").value("hivemem_fact_history"))
+                .andExpect(jsonPath("$.result.tools[10].name").value("hivemem_pending_approvals"))
+                .andExpect(jsonPath("$.result.tools[11].name").value("hivemem_reading_list"))
+                .andExpect(jsonPath("$.result.tools[12].name").value("hivemem_list_agents"))
+                .andExpect(jsonPath("$.result.tools[13].name").value("hivemem_diary_read"))
+                .andExpect(jsonPath("$.result.tools[14].name").value("hivemem_get_blueprint"))
+                .andExpect(jsonPath("$.result.tools[15].name").value("hivemem_wake_up"));
     }
 
     @Test
@@ -333,7 +332,7 @@ class ReadToolIntegrationTest {
     }
 
     @Test
-    void listHallsToolReturnsHallsForWing() throws Exception {
+    void listWingsWithWingParamReturnsHalls() throws Exception {
         seedStatusRows();
         insertDrawer(
                 UUID.fromString("00000000-0000-0000-0000-000000000004"),
@@ -354,7 +353,7 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_list_halls", Map.of("wing", "alpha"));
+        JsonNode content = callToolContent("hivemem_list_wings", Map.of("wing", "alpha"));
         assertThat(content.get(0).path("hall").asText()).isEqualTo("planning");
         assertThat(content.get(0).path("drawer_count").asInt()).isEqualTo(1);
         assertThat(content.get(1).path("hall").asText()).isEqualTo("strategy");
