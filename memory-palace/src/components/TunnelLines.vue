@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import * as THREE from 'three'
-import { computed } from 'vue'
+import { shallowRef, watchEffect, onBeforeUnmount } from 'vue'
 
 const props = defineProps<{
   segments: { from: [number, number, number]; to: [number, number, number]; relation: string }[]
@@ -13,8 +13,19 @@ const relationColor: Record<string, string> = {
   refines: '#c8a84e',
 }
 
-const lineObjects = computed(() =>
-  props.segments.map((s, idx) => {
+const lineObjects = shallowRef<{ key: number; object: THREE.Line }[]>([])
+
+function disposeCurrent() {
+  for (const { object } of lineObjects.value) {
+    ;(object.geometry as THREE.BufferGeometry).dispose()
+    ;(object.material as THREE.LineBasicMaterial).dispose()
+  }
+  lineObjects.value = []
+}
+
+watchEffect(() => {
+  disposeCurrent()
+  lineObjects.value = props.segments.map((s, idx) => {
     const geom = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(...s.from),
       new THREE.Vector3(...s.to),
@@ -24,10 +35,11 @@ const lineObjects = computed(() =>
       transparent: true,
       opacity: 0.75,
     })
-    const line = new THREE.Line(geom, mat)
-    return { key: idx, object: line }
+    return { key: idx, object: new THREE.Line(geom, mat) }
   })
-)
+})
+
+onBeforeUnmount(disposeCurrent)
 </script>
 
 <template>

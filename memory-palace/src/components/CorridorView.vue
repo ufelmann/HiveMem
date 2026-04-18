@@ -31,7 +31,7 @@ const doorPositions = computed(() => {
 const hallSwitcherPositions = computed(() =>
   halls.value.map((hall: any, i: number) => ({
     hall,
-    position: [-8 + i * 3, 3.4, 0] as [number, number, number],
+    position: [-CORRIDOR_LENGTH / 2 + 1 + i * 2.4, 0.15, 0] as [number, number, number],
   })),
 )
 

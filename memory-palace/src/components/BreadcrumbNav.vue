@@ -7,6 +7,7 @@ const items = computed(() => store.breadcrumbItems)
 
 function onClick(idx: number) {
   if (store.isTransitioning) return
+  if (idx === items.value.length - 1) return
   store.goToLevel(items.value[idx])
 }
 </script>

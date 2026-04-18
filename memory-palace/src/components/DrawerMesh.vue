@@ -25,7 +25,7 @@ function onBeforeRender() {
   frame++
   if (props.drawer.status === 'pending') {
     const t = frame * 0.05
-    intensity.value = 0.5 + 0.3 * Math.sin(t * 2 * Math.PI * 0.5)
+    intensity.value = 0.65 + 0.25 * Math.sin(t * 2 * Math.PI * 0.5)
   } else if (hovered.value && canHover) {
     intensity.value = baseIntensity.value * 1.6
   } else {
