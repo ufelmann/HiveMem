@@ -99,7 +99,8 @@ class ConcurrencyIntegrationTest {
                 null,
                 null,
                 "committed",
-                BASE_TIME.plusSeconds(index)
+                BASE_TIME.plusSeconds(index),
+                null
         ));
 
         assertThat(results)
@@ -149,7 +150,8 @@ class ConcurrencyIntegrationTest {
                     null,
                     null,
                     "pending",
-                    BASE_TIME.plusSeconds(index)
+                    BASE_TIME.plusSeconds(index),
+                    null
             );
             ids.add(UUID.fromString((String) row.get("id")));
         }
@@ -203,7 +205,8 @@ class ConcurrencyIntegrationTest {
                 null,
                 null,
                 "committed",
-                BASE_TIME
+                BASE_TIME,
+                null
         );
         UUID originalId = UUID.fromString((String) original.get("id"));
 
@@ -354,11 +357,11 @@ class ConcurrencyIntegrationTest {
         // Create two drawers to link
         Map<String, Object> drawerA = writeToolService.addDrawer(
                 WRITER, "Drawer A", "test", "tunnels", "a", "system",
-                List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME
+                List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME, null
         );
         Map<String, Object> drawerB = writeToolService.addDrawer(
                 WRITER, "Drawer B", "test", "tunnels", "b", "system",
-                List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(1)
+                List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(1), null
         );
         UUID idA = UUID.fromString((String) drawerA.get("id"));
         UUID idB = UUID.fromString((String) drawerB.get("id"));

@@ -42,11 +42,24 @@ public class WriteToolService {
             String insight,
             String actionability,
             String requestedStatus,
-            OffsetDateTime validFrom
+            OffsetDateTime validFrom,
+            Double dedupeThreshold
     ) {
         String status = effectiveStatus(principal.role(), requestedStatus);
         List<Float> embedding = embeddingClient.encodeDocument(content);
-        return writeToolRepository.addDrawer(
+
+        if (dedupeThreshold != null) {
+            List<Map<String, Object>> duplicates = writeToolRepository.checkDuplicateDrawer(
+                    embedding.toString(), dedupeThreshold);
+            if (!duplicates.isEmpty()) {
+                Map<String, Object> rejection = new java.util.LinkedHashMap<>();
+                rejection.put("inserted", false);
+                rejection.put("duplicates", duplicates);
+                return rejection;
+            }
+        }
+
+        Map<String, Object> inserted = writeToolRepository.addDrawer(
                 content,
                 embedding,
                 wing,
@@ -63,6 +76,11 @@ public class WriteToolService {
                 principal.name(),
                 validFrom
         );
+
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("inserted", true);
+        result.putAll(inserted);
+        return result;
     }
 
     public Map<String, Object> kgAdd(
@@ -165,12 +183,6 @@ public class WriteToolService {
     public Map<String, Object> removeTunnel(UUID tunnelId) {
         writeToolRepository.removeTunnel(tunnelId);
         return Map.of("id", tunnelId.toString(), "removed", true);
-    }
-
-    public List<Map<String, Object>> checkDuplicate(String content, double threshold) {
-        List<Float> queryVector = embeddingClient.encodeDocument(content);
-        String vectorLiteral = queryVector.toString();
-        return writeToolRepository.checkDuplicateDrawer(vectorLiteral, threshold);
     }
 
     public List<Map<String, Object>> checkContradiction(String subject, String predicate, String newObject) {

@@ -40,7 +40,6 @@ public class ToolPermissionService {
     private static final Set<String> WRITE_TOOLS = tools(
             "hivemem_add_drawer",
             "hivemem_add_tunnel",
-            "hivemem_check_duplicate",
             "hivemem_kg_add",
             "hivemem_kg_invalidate",
             "hivemem_update_identity",
