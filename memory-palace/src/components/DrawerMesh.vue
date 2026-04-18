@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import gsap from 'gsap'
 import type { Drawer } from '../types/palace'
 import { useNavigationStore } from '../stores/navigation'
 import { getDrawerFrontTexture } from '../composables/useTextures'
@@ -40,24 +41,43 @@ function onClick(e: any) {
   if (store.isTransitioning) return
   store.selectDrawer(props.drawer.id)
 }
+
+const slideOffset = ref(0)
+let slideTween: gsap.core.Tween | null = null
+watch(
+  () => store.focusedDrawerId === props.drawer.id,
+  (isFocused) => {
+    if (slideTween) slideTween.kill()
+    const proxy = { v: slideOffset.value }
+    slideTween = gsap.to(proxy, {
+      v: isFocused ? 1.5 : 0,
+      duration: 0.8,
+      ease: isFocused ? 'power2.out' : 'power2.in',
+      onUpdate: () => { slideOffset.value = proxy.v },
+    })
+  },
+  { immediate: false },
+)
 </script>
 
 <template>
   <TresGroup :position="position" :rotation-y="rotationY ?? 0" @click="onClick"
              @pointer-over="hovered = true" @pointer-leave="hovered = false">
-    <TresMesh :scale-y="sizeY" @before-render="onBeforeRender">
-      <TresBoxGeometry :args="[0.6, 1, 0.5]" />
-      <TresMeshStandardMaterial
-        :color="'#ffffff'"
-        :map="drawerTexture"
-        :emissive="emissiveColor"
-        :emissive-intensity="intensity"
-        :roughness="0.4"
-        :metalness="0.3" />
-    </TresMesh>
-    <TresMesh :scale-y="sizeY" :position-z="0.001">
-      <TresBoxGeometry :args="[0.62, 1.02, 0.51]" />
-      <TresMeshBasicMaterial :color="emissiveColor" :wireframe="true" :transparent="true" :opacity="0.35" />
-    </TresMesh>
+    <TresGroup :position="[0, 0, slideOffset]">
+      <TresMesh :scale-y="sizeY" @before-render="onBeforeRender">
+        <TresBoxGeometry :args="[0.6, 1, 0.5]" />
+        <TresMeshStandardMaterial
+          :color="'#ffffff'"
+          :map="drawerTexture"
+          :emissive="emissiveColor"
+          :emissive-intensity="intensity"
+          :roughness="0.4"
+          :metalness="0.3" />
+      </TresMesh>
+      <TresMesh :scale-y="sizeY" :position-z="0.001">
+        <TresBoxGeometry :args="[0.62, 1.02, 0.51]" />
+        <TresMeshBasicMaterial :color="emissiveColor" :wireframe="true" :transparent="true" :opacity="0.35" />
+      </TresMesh>
+    </TresGroup>
   </TresGroup>
 </template>
