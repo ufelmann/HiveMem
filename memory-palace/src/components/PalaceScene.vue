@@ -13,7 +13,7 @@ const store = useNavigationStore()
 
 const orbitOptions = computed(() => {
   switch (store.level) {
-    case 'building': return { enableZoom: true, enablePan: false, minDistance: 12, maxDistance: 32, maxPolarAngle: 1.4 }
+    case 'building': return { enableZoom: true, enablePan: true, enableRotate: true, minDistance: 8, maxDistance: 40, minPolarAngle: 0.1, maxPolarAngle: 1.4 }
     case 'corridor': return { enableZoom: true, enablePan: true, enableRotate: true, minPolarAngle: 0.2, maxPolarAngle: 1.7 }
     case 'room': return { enableZoom: true, enablePan: true, enableRotate: true, minPolarAngle: 0.1, maxPolarAngle: 1.6, minDistance: 1.5, maxDistance: 12 }
     case 'drawer': return { enableZoom: true, enablePan: true, enableRotate: false, minDistance: 1.5, maxDistance: 8 }

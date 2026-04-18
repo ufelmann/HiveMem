@@ -15,7 +15,7 @@ function poseForLevel(): { pos: THREE.Vector3; look: THREE.Vector3 } {
   const look = new THREE.Vector3()
   switch (store.level) {
     case 'building':
-      pos.set(0, 8, 20); look.set(0, 0, 0); break
+      pos.set(0, 10, 14); look.set(0, 1.5, 0); break
     case 'corridor':
       pos.set(-7, 1.8, 0); look.set(5, 1.8, 0); break
     case 'room':
