@@ -16,10 +16,12 @@ function poseForLevel(): { pos: THREE.Vector3; look: THREE.Vector3 } {
   switch (store.level) {
     case 'building':
       pos.set(0, 10, 14); look.set(0, 1.5, 0); break
-    case 'corridor':
-      pos.set(-7, 1.8, 0); look.set(5, 1.8, 0); break
+    case 'wing':
+      pos.set(0, 2.2, 0); look.set(1, 2.2, 0); break
+    case 'hall':
+      pos.set(-5, 1.8, 0); look.set(1, 1.8, 0); break
     case 'room':
-      pos.set(0, 2.2, 5); look.set(0, 1.5, 0); break
+      pos.set(0, 1.8, 0); look.set(Math.cos(Math.PI / 3), 1.8, Math.sin(Math.PI / 3)); break
     case 'drawer':
       if (store.focusedSheet !== null) {
         pos.set(0, 1.6, 3.2); look.set(0, 1.6, 0)
