@@ -25,7 +25,6 @@ public class ToolPermissionService {
             "hivemem_search_kg",
             "hivemem_get_drawer",
             "hivemem_list_wings",
-            "hivemem_list_halls",
             "hivemem_traverse",
             "hivemem_quick_facts",
             "hivemem_time_machine",
