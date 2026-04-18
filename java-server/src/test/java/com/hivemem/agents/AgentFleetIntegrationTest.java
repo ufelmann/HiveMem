@@ -142,7 +142,7 @@ class AgentFleetIntegrationTest {
     @Test
     void rejectedAgentFactIsExcludedFromActiveFacts() {
         Map<String, Object> fact = writeToolService.kgAdd(
-                AGENT, "HiveMem", "uses", "pgvector", 0.9, null, "committed", BASE_TIME
+                AGENT, "HiveMem", "uses", "pgvector", 0.9, null, "committed", BASE_TIME, null
         );
         String factId = (String) fact.get("id");
 
@@ -253,10 +253,10 @@ class AgentFleetIntegrationTest {
 
         // Create 2 pending facts from agent
         Map<String, Object> fact1 = writeToolService.kgAdd(
-                AGENT, "Entity1", "has", "value1", 0.8, null, "committed", BASE_TIME.plusSeconds(2)
+                AGENT, "Entity1", "has", "value1", 0.8, null, "committed", BASE_TIME.plusSeconds(2), null
         );
         Map<String, Object> fact2 = writeToolService.kgAdd(
-                AGENT, "Entity2", "has", "value2", 0.7, null, "committed", BASE_TIME.plusSeconds(3)
+                AGENT, "Entity2", "has", "value2", 0.7, null, "committed", BASE_TIME.plusSeconds(3), null
         );
 
         UUID drawer1Id = UUID.fromString((String) drawer1.get("id"));

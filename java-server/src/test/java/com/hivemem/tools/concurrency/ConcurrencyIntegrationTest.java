@@ -121,7 +121,8 @@ class ConcurrencyIntegrationTest {
                 1.0d,
                 null,
                 "committed",
-                BASE_TIME.plusSeconds(index)
+                BASE_TIME.plusSeconds(index),
+                null
         ));
 
         assertThat(results)
@@ -245,7 +246,8 @@ class ConcurrencyIntegrationTest {
                 1.0d,
                 null,
                 "committed",
-                BASE_TIME
+                BASE_TIME,
+                null
         );
         UUID originalId = UUID.fromString((String) original.get("id"));
 
@@ -327,7 +329,8 @@ class ConcurrencyIntegrationTest {
                 1.0d,
                 null,
                 "committed",
-                BASE_TIME
+                BASE_TIME,
+                null
         );
         UUID factId = UUID.fromString((String) fact.get("id"));
 

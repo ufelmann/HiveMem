@@ -236,9 +236,9 @@ class GraphSearchIntegrationTest {
     void quickFactsReturnsOnlyActiveFactsNotInvalidated() {
         // Add two facts, invalidate one -- quick_facts should only return the active one
         Map<String, Object> activeFact = writeToolService.kgAdd(
-                WRITER, "GraphEntity", "uses", "PostgreSQL", 1.0d, null, "committed", BASE_TIME);
+                WRITER, "GraphEntity", "uses", "PostgreSQL", 1.0d, null, "committed", BASE_TIME, null);
         Map<String, Object> invalidatedFact = writeToolService.kgAdd(
-                WRITER, "GraphEntity", "uses", "SQLite", 0.8d, null, "committed", BASE_TIME.plusSeconds(1));
+                WRITER, "GraphEntity", "uses", "SQLite", 0.8d, null, "committed", BASE_TIME.plusSeconds(1), null);
         UUID invalidatedId = UUID.fromString((String) invalidatedFact.get("id"));
 
         writeToolService.kgInvalidate(invalidatedId);
@@ -252,8 +252,8 @@ class GraphSearchIntegrationTest {
     @Test
     void quickFactsFindsEntityAsSubjectAndAsObject() {
         // "GraphEntity2 uses Java" and "Viktor created GraphEntity2"
-        writeToolService.kgAdd(WRITER, "GraphEntity2", "uses", "Java", 1.0d, null, "committed", BASE_TIME);
-        writeToolService.kgAdd(WRITER, "Viktor", "created", "GraphEntity2", 0.9d, null, "committed", BASE_TIME.plusSeconds(1));
+        writeToolService.kgAdd(WRITER, "GraphEntity2", "uses", "Java", 1.0d, null, "committed", BASE_TIME, null);
+        writeToolService.kgAdd(WRITER, "Viktor", "created", "GraphEntity2", 0.9d, null, "committed", BASE_TIME.plusSeconds(1), null);
 
         List<Map<String, Object>> facts = readToolService.quickFacts("GraphEntity2");
 

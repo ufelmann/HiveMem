@@ -39,6 +39,7 @@ public class KgAddToolHandler implements ToolHandler {
         java.util.UUID sourceId = WriteArgumentParser.optionalUuid(arguments, "source_id");
         String status = WriteArgumentParser.optionalText(arguments, "status");
         java.time.OffsetDateTime validFrom = WriteArgumentParser.optionalTimestamp(arguments, "valid_from");
-        return writeToolService.kgAdd(principal, subject, predicate, object, confidence, sourceId, status, validFrom);
+        String onConflict = WriteArgumentParser.optionalText(arguments, "on_conflict");
+        return writeToolService.kgAdd(principal, subject, predicate, object, confidence, sourceId, status, validFrom, onConflict);
     }
 }

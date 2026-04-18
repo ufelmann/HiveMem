@@ -131,7 +131,8 @@ class SqlRobustnessIntegrationTest {
                     1.0d,
                     null,
                     "committed",
-                    BASE_TIME.plusSeconds(i)
+                    BASE_TIME.plusSeconds(i),
+                    null
             );
         }
 
@@ -150,7 +151,8 @@ class SqlRobustnessIntegrationTest {
                     1.0d,
                     null,
                     "committed",
-                    BASE_TIME.plusSeconds(i)
+                    BASE_TIME.plusSeconds(i),
+                    null
             );
         }
 

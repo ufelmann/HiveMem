@@ -258,7 +258,115 @@ class WriteToolsIntegrationTest {
     }
 
     @Test
-    void checkContradictionReturnsOnlyConflictingActiveFact() throws Exception {
+    void kgAddDefaultInsertsEvenWithConflict() throws Exception {
+        // Insert first fact
+        callToolContent("writer-token", "hivemem_kg_add", Map.of(
+                "subject", "X",
+                "predicate", "status",
+                "object_", "active"
+        ));
+        // Insert second fact with same subject+predicate but different object — no on_conflict arg
+        JsonNode content = callToolContent("writer-token", "hivemem_kg_add", Map.of(
+                "subject", "X",
+                "predicate", "status",
+                "object_", "retired"
+        ));
+        assertThat(content.path("inserted").asBoolean()).isTrue();
+        assertThat(content.path("id").asText()).isNotBlank();
+    }
+
+    @Test
+    void kgAddOnConflictReturnSkipsInsertAndReportsConflicts() throws Exception {
+        // Insert first fact
+        callToolContent("writer-token", "hivemem_kg_add", Map.of(
+                "subject", "Y",
+                "predicate", "status",
+                "object_", "active"
+        ));
+        // Attempt second with on_conflict=return
+        JsonNode content = callToolContent("writer-token", "hivemem_kg_add", Map.of(
+                "subject", "Y",
+                "predicate", "status",
+                "object_", "retired",
+                "on_conflict", "return"
+        ));
+        assertThat(content.path("inserted").asBoolean()).isFalse();
+        assertThat(content.has("id")).isFalse();
+        assertThat(content.path("conflicts").isArray()).isTrue();
+        assertThat(content.path("conflicts")).isNotEmpty();
+    }
+
+    @Test
+    void kgAddOnConflictRejectThrows() throws Exception {
+        // Insert first fact
+        callToolContent("writer-token", "hivemem_kg_add", Map.of(
+                "subject", "Z",
+                "predicate", "status",
+                "object_", "active"
+        ));
+        // Attempt second with on_conflict=reject — expect error response with conflict message
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":99,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_kg_add",
+                                    "arguments":{
+                                      "subject":"Z",
+                                      "predicate":"status",
+                                      "object_":"retired",
+                                      "on_conflict":"reject"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.error.message").value("kg_add rejected: conflicting active fact exists"));
+    }
+
+    @Test
+    void kgAddOnConflictReturnNoConflictInserts() throws Exception {
+        // No prior fact for W — on_conflict=return should just insert
+        JsonNode content = callToolContent("writer-token", "hivemem_kg_add", Map.of(
+                "subject", "W",
+                "predicate", "status",
+                "object_", "active",
+                "on_conflict", "return"
+        ));
+        assertThat(content.path("inserted").asBoolean()).isTrue();
+        assertThat(content.path("id").asText()).isNotBlank();
+    }
+
+    @Test
+    void kgAddInvalidOnConflictRejected() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":100,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_kg_add",
+                                    "arguments":{
+                                      "subject":"V",
+                                      "predicate":"status",
+                                      "object_":"active",
+                                      "on_conflict":"bogus"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void kgAddOnConflictReturnReportsConflictingActiveFacts() throws Exception {
         insertFact(
                 UUID.fromString("00000000-0000-0000-0000-000000000101"),
                 null,
@@ -302,18 +410,21 @@ class WriteToolsIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("writer-token", "hivemem_check_contradiction", Map.of(
+        JsonNode content = callToolContent("writer-token", "hivemem_kg_add", Map.of(
                 "subject", "HiveMem",
                 "predicate", "runs on",
-                "new_object", "Spring Boot"
+                "object_", "Spring Boot",
+                "on_conflict", "return"
         ));
-        assertThat(content).hasSize(2);
+        assertThat(content.path("inserted").asBoolean()).isFalse();
+        JsonNode conflicts = content.path("conflicts");
+        assertThat(conflicts).hasSize(2);
         List<String> existingObjects = new ArrayList<>();
-        for (JsonNode row : content) {
+        for (JsonNode row : conflicts) {
             existingObjects.add(row.path("existing_object").asText());
         }
         assertThat(existingObjects).containsExactlyInAnyOrder("PostgreSQL", "Java");
-        for (JsonNode row : content) {
+        for (JsonNode row : conflicts) {
             assertThat(row.path("valid_from").asText()).matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?[+-]\\d{2}:\\d{2}");
         }
     }
@@ -475,12 +586,16 @@ class WriteToolsIntegrationTest {
                 "new_object", "Spring Boot"
         ));
 
-        JsonNode content = callToolContent("writer-token", "hivemem_check_contradiction", Map.of(
+        // After revising the old fact, on_conflict=return should find no conflicts
+        JsonNode content = callToolContent("writer-token", "hivemem_kg_add", Map.of(
                 "subject", "HiveMem",
                 "predicate", "runs on",
-                "new_object", "Spring Boot"
+                "object_", "Spring Boot",
+                "on_conflict", "return"
         ));
-        assertThat(content).isEmpty();
+        // The revised fact now has object=Spring Boot, and we're adding the same object
+        // so no conflict (conflicts only trigger for *different* objects)
+        assertThat(content.path("inserted").asBoolean()).isTrue();
     }
 
     @Test
@@ -913,11 +1028,12 @@ class WriteToolsIntegrationTest {
                                   "id":11,
                                   "method":"tools/call",
                                   "params":{
-                                    "name":"hivemem_check_contradiction",
+                                    "name":"hivemem_kg_add",
                                     "arguments":{
                                       "subject":"   ",
                                       "predicate":"runs on",
-                                      "new_object":"Java"
+                                      "object_":"Java",
+                                      "on_conflict":"return"
                                     }
                                   }
                                 }
