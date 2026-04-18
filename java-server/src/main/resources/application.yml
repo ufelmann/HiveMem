@@ -18,6 +18,8 @@ hivemem:
   embedding:
     base-url: ${HIVEMEM_EMBEDDING_URL:http://localhost:8081}
     timeout: ${HIVEMEM_EMBEDDING_TIMEOUT:PT5S}
+  popularity:
+    refresh-interval: ${HIVEMEM_POPULARITY_REFRESH_INTERVAL:PT1H}
 
 server:
   port: ${SERVER_PORT:8421}
