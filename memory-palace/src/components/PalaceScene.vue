@@ -33,12 +33,14 @@ interface OrbitOpts {
   maxDistance?: number
   minPolarAngle?: number
   maxPolarAngle?: number
+  autoRotate?: boolean
+  autoRotateSpeed?: number
 }
 
 const orbitOptions = computed<OrbitOpts>(() => {
   switch (store.level) {
     case 'building':
-      return { enableZoom: true, enablePan: true, enableRotate: true, minDistance: 8, maxDistance: 40, minPolarAngle: 0.1, maxPolarAngle: 1.4 }
+      return { enableZoom: true, enablePan: false, enableRotate: true, minDistance: 5, maxDistance: 16, minPolarAngle: 0.2, maxPolarAngle: 1.5, autoRotate: true, autoRotateSpeed: 0.2 }
     case 'wing':
       return { enableZoom: true, enablePan: true, enableRotate: true, minDistance: 1.2, maxDistance: 14, minPolarAngle: 0.15, maxPolarAngle: 1.55 }
     case 'hall':
@@ -66,6 +68,8 @@ const orbitOptions = computed<OrbitOpts>(() => {
       :max-distance="orbitOptions.maxDistance ?? 50"
       :min-polar-angle="orbitOptions.minPolarAngle ?? 0.05"
       :max-polar-angle="orbitOptions.maxPolarAngle ?? 1.6"
+      :auto-rotate="orbitOptions.autoRotate ?? false"
+      :auto-rotate-speed="orbitOptions.autoRotateSpeed ?? 0.2"
     />
     <CameraController />
 
