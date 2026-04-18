@@ -120,13 +120,13 @@ function onPortalClick(name: string) {
     <!-- Lighting -->
     <TresAmbientLight :intensity="0.55" :color="'#ffeecf'" />
     <TresPointLight :position="[0, H - 0.3, 0]" :intensity="1.3" :color="'#ffeecf'" />
-    <TresPointLight
-      v-for="wa in wallAssignments"
-      :key="`light-${wa.wall.index}`"
-      v-show="wa.hall"
-      :position="[wa.wall.centerX * 0.5, 1.8, wa.wall.centerZ * 0.5]"
-      :intensity="0.35"
-      :color="wingColor"
-    />
+    <template v-for="wa in wallAssignments" :key="`light-${wa.wall.index}`">
+      <TresPointLight
+        v-if="wa.hall"
+        :position="[wa.wall.centerX * 0.5, 1.8, wa.wall.centerZ * 0.5]"
+        :intensity="0.35"
+        :color="wingColor"
+      />
+    </template>
   </TresGroup>
 </template>
