@@ -24,7 +24,7 @@ function poseForLevel(): { pos: THREE.Vector3; look: THREE.Vector3 } {
       pos.set(-2, 1.8, -2); look.set(2 * Math.cos(Math.PI / 3), 1.8, 2 * Math.sin(Math.PI / 3)); break
     case 'drawer': {
       const cardIdx = store.currentCardIndex
-      const z = 3.5 - cardIdx * 0.05
+      const z = 2.2 - cardIdx * 0.05
       pos.set(0, 1.8, z); look.set(0, 1.8, 0)
       break
     }
