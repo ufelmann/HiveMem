@@ -186,7 +186,7 @@ class SecurityIntegrationTest {
         }
 
         @Test
-        void adminSees36Tools() throws Exception {
+        void adminSees35Tools() throws Exception {
             insertToken("admin-user", "admin-token", "admin");
 
             mockMvc.perform(post("/mcp")
@@ -194,7 +194,7 @@ class SecurityIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(TOOLS_LIST_REQUEST))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.tools", hasSize(36)));
+                    .andExpect(jsonPath("$.result.tools", hasSize(35)));
         }
     }
 
@@ -428,7 +428,6 @@ class SecurityIntegrationTest {
         void readerCannotAccessAdminTools() {
             assertThat(service.isAllowed(AuthRole.READER, "hivemem_approve_pending")).isFalse();
             assertThat(service.isAllowed(AuthRole.READER, "hivemem_health")).isFalse();
-            assertThat(service.isAllowed(AuthRole.READER, "hivemem_log_access")).isFalse();
             assertThat(service.isAllowed(AuthRole.READER, "hivemem_refresh_popularity")).isFalse();
         }
 
@@ -436,7 +435,6 @@ class SecurityIntegrationTest {
         void writerCannotAccessAdminTools() {
             assertThat(service.isAllowed(AuthRole.WRITER, "hivemem_approve_pending")).isFalse();
             assertThat(service.isAllowed(AuthRole.WRITER, "hivemem_health")).isFalse();
-            assertThat(service.isAllowed(AuthRole.WRITER, "hivemem_log_access")).isFalse();
         }
 
         @Test
@@ -457,7 +455,6 @@ class SecurityIntegrationTest {
             assertThat(adminTools).contains(
                     "hivemem_approve_pending",
                     "hivemem_health",
-                    "hivemem_log_access",
                     "hivemem_refresh_popularity"
             );
         }
@@ -469,7 +466,7 @@ class SecurityIntegrationTest {
 
             for (String adminTool : Set.of(
                     "hivemem_approve_pending", "hivemem_health",
-                    "hivemem_log_access", "hivemem_refresh_popularity")) {
+                    "hivemem_refresh_popularity")) {
                 assertThat(writerTools)
                         .as("Admin tool %s must not appear in writer role", adminTool)
                         .doesNotContain(adminTool);
@@ -495,10 +492,9 @@ class SecurityIntegrationTest {
 //      Covered indirectly by SafeDefaults.unauthenticatedRequestNeverReachesController.
 //
 // test_log_access_no_accessed_by_param (IMP-3)
-//   -- Python checks the MCP wrapper signature; in Java, LogAccessToolHandler.call()
-//      receives AuthPrincipal from the filter, never from client JSON.
-//      The Java type system enforces this at compile time (no "accessed_by" parameter
-//      in the ToolHandler.call signature).
+//   -- log_access is no longer a client-callable tool; access is logged automatically
+//      on every successful get_drawer call inside ReadToolService. The principal is
+//      always injected from the auth token, never from client JSON.
 //
 // test_token_hash_not_in_list / test_token_hash_not_in_info
 //   -- These test the token management CLI / admin API which is not yet ported

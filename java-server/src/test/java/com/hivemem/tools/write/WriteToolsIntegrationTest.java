@@ -9,6 +9,7 @@ import com.hivemem.auth.RateLimiter;
 import com.hivemem.auth.TokenService;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
+import com.hivemem.write.AdminToolService;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 import org.junit.jupiter.api.BeforeEach;
@@ -86,6 +87,9 @@ class WriteToolsIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private AdminToolService adminToolService;
 
     @BeforeEach
     void resetDatabase() {
@@ -661,10 +665,9 @@ class WriteToolsIntegrationTest {
                 OffsetDateTime.parse("2026-04-05T15:00:00Z"),
                 null);
 
-        JsonNode logContent = callToolContent("admin-token", "hivemem_log_access", Map.of(
-                "drawer_id", "00000000-0000-0000-0000-000000000701"
-        ));
-        assertThat(logContent.path("logged").asBoolean()).isTrue();
+        // log_access is no longer a tool; call the service directly to exercise the write path
+        Map<String, Object> logResult = adminToolService.logAccess(drawerId, null, "admin");
+        assertThat((Boolean) logResult.get("logged")).isTrue();
 
         JsonNode refreshContent = callToolContent("admin-token", "hivemem_refresh_popularity", Map.of());
         assertThat(refreshContent.path("refreshed").asBoolean()).isTrue();

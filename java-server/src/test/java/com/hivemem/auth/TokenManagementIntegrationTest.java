@@ -243,7 +243,7 @@ class TokenManagementIntegrationTest {
                 "hivemem_search", "hivemem_wake_up",
                 "hivemem_add_drawer", "hivemem_kg_add",
                 "hivemem_approve_pending", "hivemem_health",
-                "hivemem_log_access", "hivemem_refresh_popularity"
+                "hivemem_refresh_popularity"
         );
     }
 

@@ -39,6 +39,6 @@ public class GetDrawerToolHandler implements ToolHandler {
             throw new IllegalArgumentException("Missing drawer_id");
         }
 
-        return readToolService.getDrawer(UUID.fromString(drawerId));
+        return readToolService.getDrawer(principal, UUID.fromString(drawerId));
     }
 }
