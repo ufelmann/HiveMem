@@ -63,7 +63,9 @@ const drawers: Drawer[] = [
     importance: 3,
     status: 'committed',
     validFrom: '2026-04-10T00:00:00Z',
-    facts: [],
+    facts: [
+      { id: 'c4a42ed8-885f-4837-8070-e7a8f400a968', subject: 'ranked_search', predicate: 'queries_table', object: 'drawers (directly, not active_drawers view, for HNSW compatibility)' },
+    ],
     tunnels: [],
   },
   {
@@ -163,7 +165,11 @@ const drawers: Drawer[] = [
     importance: 1,
     status: 'committed',
     validFrom: '2026-04-11T00:00:00Z',
-    facts: [],
+    facts: [
+      { id: 'fee511dd-1f5c-4c8c-9c2a-bba0033fb13c', subject: 'HiveMem', predicate: 'has_test_count', object: '216' },
+      { id: 'd335965b-7eaa-4229-b26d-a474d8e2cf0d', subject: 'HiveMem', predicate: 'has_migration_framework', object: 'yoyo-migrations (plain SQL, forward-only)' },
+      { id: '5fbafe45-0802-4bc5-94a3-382c574bf4d2', subject: 'HiveMem', predicate: 'has_migration_count', object: '2 (0001_initial, 0002_edges_v2)' },
+    ],
     tunnels: [
       { targetId: '013d59b0-0c4b-41ee-878b-ab841a16cc5f', relation: 'related_to', note: 'Both features built in same session, edges needed migration support' },
     ],
@@ -187,7 +193,10 @@ const drawers: Drawer[] = [
     importance: 5,
     status: 'committed',
     validFrom: '2026-04-14T20:18:28.691347Z',
-    facts: [],
+    facts: [
+      { id: '7198790e-b4bc-4c4c-807b-0e3c35f9a9c6', subject: 'hivemem-java', predicate: 'test_coverage_vs_python', object: '107% (230 vs 215)' },
+      { id: 'f0b29104-b7c5-4b07-9c10-85b165a74d91', subject: 'hivemem-java', predicate: 'test_count', object: '242' },
+    ],
     tunnels: [],
   },
   {
@@ -209,7 +218,10 @@ const drawers: Drawer[] = [
     importance: 2,
     status: 'committed',
     validFrom: '2026-04-16T22:00:00Z',
-    facts: [],
+    facts: [
+      { id: 'f29f9703-dd5b-4223-b737-d248b2a2c297', subject: 'HiveMem', predicate: 'has_feature', object: 'Automatic embedding reencoding on model change with startup detection via /info endpoint' },
+      { id: '22a2b120-92fa-43d4-9a7b-25dc022c2c62', subject: 'HiveMem', predicate: 'has_test_count', object: '264 integration tests (all green)' },
+    ],
     tunnels: [],
   },
   {
@@ -279,7 +291,11 @@ const drawers: Drawer[] = [
     importance: 1,
     status: 'committed',
     validFrom: '2026-04-11T00:00:00Z',
-    facts: [],
+    facts: [
+      { id: '55595dc8-eb1d-4799-a561-de976f06fa65', subject: 'HiveMem', predicate: 'has_auth_system', object: 'DB-backed multi-token with 4 roles (admin/writer/reader/agent)' },
+      { id: '55bde65e-d481-499c-88ad-b5cb698012b5', subject: 'HiveMem', predicate: 'has_middleware_stack', object: 'AuthMiddleware -> AcceptMiddleware -> IdentityMiddleware -> ToolGateMiddleware -> mcp_app' },
+      { id: 'fa2867a8-1282-454c-bb50-afcdcb86e58e', subject: 'approve_pending', predicate: 'restricted_to_role', object: 'admin' },
+    ],
     tunnels: [],
   },
   {
@@ -319,7 +335,11 @@ const drawers: Drawer[] = [
     importance: 1,
     status: 'committed',
     validFrom: '2026-04-11T00:00:00Z',
-    facts: [],
+    facts: [
+      { id: 'c551779b-be8b-400e-9e80-e73d9a61e32c', subject: 'HiveMem', predicate: 'tool_count', object: '38' },
+      { id: 'ffd2a876-d33c-41d3-bcf1-a150e363a66d', subject: 'HiveMem', predicate: 'has_tool_count', object: '38' },
+      { id: '1111fed2-aab6-4cf9-b6f9-a7989411650f', subject: 'HiveMem', predicate: 'has_edge_relations', object: 'related_to, builds_on, contradicts, refines' },
+    ],
     tunnels: [
       { targetId: '42da8b3a-5a5a-417d-a359-93b406bc8fd2', relation: 'builds_on', note: 'Edges redesign extends v2 implementation with drawer-to-drawer linking' },
       { targetId: '5068ae33-69fd-4663-9ba4-c0aaf66f625c', relation: 'related_to', note: 'Both features built in same session, edges needed migration support' },
@@ -343,7 +363,9 @@ const drawers: Drawer[] = [
     importance: 3,
     status: 'committed',
     validFrom: '2026-04-11T00:00:00Z',
-    facts: [],
+    facts: [
+      { id: '62832c99-fcd9-43c5-9efa-b123827fd4c9', subject: 'mine_file', predicate: 'restricted_to_paths', object: '/data/imports, /tmp' },
+    ],
     tunnels: [],
   },
   {
@@ -487,7 +509,12 @@ const drawers: Drawer[] = [
     importance: 4,
     status: 'committed',
     validFrom: '2026-04-10T00:00:00Z',
-    facts: [],
+    facts: [
+      { id: 'fc919a10-77d2-40c5-ada1-519b7245c078', subject: 'HiveMem', predicate: 'planned_feature', object: 'Knowledge UI Obsidian-like (GitHub issue #2)' },
+      { id: '7f9d6658-a294-45f2-98cd-31cfd04a7e9a', subject: 'HiveMem', predicate: 'next_planned_feature', object: 'Multi-Master Sync Protocol (GitHub issue #1)' },
+      { id: 'cf7c5490-d3fc-4474-8ecc-4576498facb9', subject: 'HiveMem', predicate: 'repo', object: 'github.com/ufelmann/HiveMem' },
+      { id: 'e8e46260-3079-4223-ad72-2ffd709a146d', subject: 'HiveMem', predicate: 'architecture', object: 'single Docker container (PG + MCP server)' },
+    ],
     tunnels: [],
   },
   {
@@ -581,7 +608,10 @@ const drawers: Drawer[] = [
     importance: 5,
     status: 'committed',
     validFrom: '2026-04-12T00:00:00Z',
-    facts: [],
+    facts: [
+      { id: 'adcac5b6-c7ad-4d1a-9f3d-5106ac0a41f4', subject: 'HiveMem', predicate: 'version', object: 'v2.1.0' },
+      { id: 'c17e32d3-7d7a-4cbe-a1ef-136f02c10dbe', subject: 'SafeSkill.dev', predicate: 'requires_content_optimization_for_reputation', object: 'Detailed \'Security & Capability Matrix\' with Role, Data Flow, and HITL for every tool.' },
+    ],
     tunnels: [
       { targetId: '0ba0e7d5-916f-4321-8f4f-cc3759b8eb5f', relation: 'builds_on' },
     ],
@@ -658,7 +688,9 @@ const drawers: Drawer[] = [
     importance: 4,
     status: 'committed',
     validFrom: '2026-04-16T20:22:09.430078Z',
-    facts: [],
+    facts: [
+      { id: '06ce167e-dda7-4df4-a094-a3fd18841836', subject: 'HiveMem', predicate: 'uses_embedding_model', object: 'paraphrase-multilingual-MiniLM-L12-v2 via ONNX Runtime (384 dims)' },
+    ],
     tunnels: [],
   },
   {
@@ -697,7 +729,10 @@ const drawers: Drawer[] = [
     importance: 4,
     status: 'committed',
     validFrom: '2026-04-18T05:45:00Z',
-    facts: [],
+    facts: [
+      { id: 'f178e784-0a00-4f3a-bda2-1230b3e24aa5', subject: 'RealtimeClaw', predicate: 'routes_reasoning_to', object: 'OpenClaw CT 103' },
+      { id: 'f0e7243e-3aea-491d-8bc4-ee64e18ad78d', subject: 'OpenClaw CT 103', predicate: 'has_backend', object: 'Google Gemini 2.5 Flash free tier' },
+    ],
     tunnels: [
       { targetId: '480e7c4c-0bed-4f92-aa87-885c9098e089', relation: 'related_to' },
     ],
@@ -736,7 +771,11 @@ const drawers: Drawer[] = [
     importance: 4,
     status: 'committed',
     validFrom: '2026-04-15T04:44:00.233103Z',
-    facts: [],
+    facts: [
+      { id: '4969fbc5-f658-4a85-89c0-f96a28c06716', subject: 'HiveMem', predicate: 'copyright_years', object: '2025-2026' },
+      { id: '86734b28-ecea-482c-8b98-44d10b9d3535', subject: 'HiveMem', predicate: 'has_license', object: 'Sustainable Use License (fair-code)' },
+      { id: '2be9a675-c87b-4c74-bb07-df7ab0c8e823', subject: 'HiveMem', predicate: 'licensor', object: 'Viktor Ufelmann' },
+    ],
     tunnels: [
       { targetId: 'e9bb0777-b1bf-455a-b93c-57cc19ab90a9', relation: 'refines', note: 'Migrates the initial MIT license established in v0.1.0 to a Sustainable Use License.' },
     ],
@@ -759,7 +798,11 @@ const drawers: Drawer[] = [
     importance: 3,
     status: 'committed',
     validFrom: '2026-04-12T22:29:19.244019Z',
-    facts: [],
+    facts: [
+      { id: '39290a22-665e-46b0-b0a0-b72d91482e18', subject: 'CT 102', predicate: 'docker_volumes', object: 'hivemem_hivemem_data, hivemem_hivemem_models (compose-prefixed)' },
+      { id: 'a4da5cc8-988b-447e-a949-aeab0745b4f2', subject: 'CT 102', predicate: 'requires_docker_flag', object: '--security-opt apparmor=unconfined' },
+      { id: '463ae6c8-7251-4188-9afe-22c6302160db', subject: 'CT 102', predicate: 'ram_mb', object: '6144' },
+    ],
     tunnels: [],
   },
   {
@@ -882,7 +925,11 @@ const drawers: Drawer[] = [
     importance: 4,
     status: 'committed',
     validFrom: '2026-04-18T08:50:59.312792Z',
-    facts: [],
+    facts: [
+      { id: '5f81891f-7d4d-44ee-9c42-01dfedefef26', subject: 'Voice PE custom firmware', predicate: 'requires_manual_recovery_on', object: 'TCP session loss' },
+      { id: '839aab13-0474-43ff-bc8b-225698b635bf', subject: 'Voice PE Wohnzimmer (0aae9e)', predicate: 'has_firmware', object: 'stock ESPHome (not esphome-wyoming-client)' },
+      { id: '2500e5ce-ce4f-4a3f-a262-489a63aba950', subject: 'Voice PE kitchen', predicate: 'wake_word_is', object: 'Okay Nabu (micro_wake_word model okay_nabu)' },
+    ],
     tunnels: [
       { targetId: '415a0b34-8115-4fc7-ba83-da0ca06cf345', relation: 'builds_on', note: 'PR #10 drawer flagged "Voice PE on_error path doesn\'t auto-reconnect" as an open item. This drawer closes that item with a 4-part fix.' },
     ],
@@ -906,7 +953,12 @@ const drawers: Drawer[] = [
     importance: 5,
     status: 'committed',
     validFrom: '2026-04-16T20:19:54.120043Z',
-    facts: [],
+    facts: [
+      { id: '6dde866c-9e42-4a52-8475-6b917d14f8ca', subject: 'HiveMem', predicate: 'runs_on', object: 'Java 25 + Spring Boot 4.0.5 (v4.0.0)' },
+      { id: 'f10bfbe1-3c39-4626-9277-085a1353956d', subject: 'Spring Boot 4.0', predicate: 'breaking_change', object: 'Jackson 3 (tools.jackson.databind), @MockitoBean, modularized auto-configs' },
+      { id: 'f88b1bdc-67cf-4423-9437-05304517efc9', subject: 'CT 102', predicate: 'requires_for_jdk25', object: '--security-opt apparmor=unconfined on all Docker containers' },
+      { id: 'e0a6b8e3-d989-4045-afc3-24d05bf6fdd5', subject: 'mempalace-repo', predicate: 'runtime', object: 'java (python removed)' },
+    ],
     tunnels: [
       { targetId: '0bd7a2aa-8f81-43b2-a640-5ec859f4d4d6', relation: 'related_to' },
       { targetId: '3308a2c1-c2c9-496a-a8c5-6ac0c63397dc', relation: 'related_to' },
@@ -930,7 +982,9 @@ const drawers: Drawer[] = [
     importance: 4,
     status: 'committed',
     validFrom: '2026-04-11T00:00:00Z',
-    facts: [],
+    facts: [
+      { id: '0af5974a-9620-4adb-8ea5-51002dabc236', subject: 'HiveMem', predicate: 'mcp_registration', object: 'claude mcp add --scope user hivemem --transport http http://192.168.178.145:8421/mcp' },
+    ],
     tunnels: [],
   },
   {
@@ -989,7 +1043,14 @@ const drawers: Drawer[] = [
     importance: 5,
     status: 'committed',
     validFrom: '2026-04-11T00:00:00Z',
-    facts: [],
+    facts: [
+      { id: '5b792bbc-65af-4e0d-a174-d3cd8fc419b4', subject: 'HiveMem', predicate: 'has_ci', object: 'GitHub Actions (pytest + Docker build to GHCR)' },
+      { id: '908f7b56-0224-4b3d-af91-ea8c754305f5', subject: 'HiveMem', predicate: 'visibility', object: 'public' },
+      { id: '8e8c351f-49ca-4565-a0d5-95fb522e62ec', subject: 'HiveMem', predicate: 'has_github_url', object: 'https://github.com/ufelmann/HiveMem' },
+      { id: '27b0fa14-1c4b-4a02-ac79-7adae843d95e', subject: 'HiveMem', predicate: 'has_docker_image', object: 'ghcr.io/ufelmann/hivemem' },
+      { id: 'a900cfa7-1ce2-4639-8499-f85938aff717', subject: 'HiveMem', predicate: 'deployed_on', object: 'CT 102 (192.168.178.145:8421) via ghcr.io/ufelmann/hivemem:main' },
+      { id: '570c14b4-86b8-49e0-9b6d-73cb40affefa', subject: 'HiveMem', predicate: 'has_version', object: 'v0.1.0' },
+    ],
     tunnels: [],
   },
 ]
