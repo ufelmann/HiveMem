@@ -3,6 +3,59 @@ import * as THREE from 'three'
 // Module-level singleton cache
 let hexWallTexture: THREE.CanvasTexture | null = null
 let stoneFloorTexture: THREE.CanvasTexture | null = null
+let drawerFrontTexture: THREE.CanvasTexture | null = null
+
+function buildDrawerFrontCanvas(): HTMLCanvasElement {
+  const SIZE = 256
+  const canvas = document.createElement('canvas')
+  canvas.width = SIZE
+  canvas.height = SIZE
+  const ctx = canvas.getContext('2d')!
+
+  // Base color: dark steel
+  ctx.fillStyle = '#1c1c2e'
+  ctx.fillRect(0, 0, SIZE, SIZE)
+
+  // Subtle vertical brushed-metal streaks (20 faint lines)
+  for (let i = 0; i < 20; i++) {
+    const x = (i / 20) * SIZE + (Math.random() * SIZE) / 20
+    const light = Math.random() > 0.5
+    ctx.strokeStyle = light
+      ? 'rgba(255,255,255,0.04)'
+      : 'rgba(0,0,0,0.04)'
+    ctx.lineWidth = 1 + Math.random() * 2
+    ctx.beginPath()
+    ctx.moveTo(x, 0)
+    ctx.lineTo(x, SIZE)
+    ctx.stroke()
+  }
+
+  // Thin horizontal groove at 30% height
+  ctx.strokeStyle = 'rgba(0,191,255,0.25)'
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(0, SIZE * 0.30)
+  ctx.lineTo(SIZE, SIZE * 0.30)
+  ctx.stroke()
+
+  // Thin horizontal groove at 70% height
+  ctx.beginPath()
+  ctx.moveTo(0, SIZE * 0.70)
+  ctx.lineTo(SIZE, SIZE * 0.70)
+  ctx.stroke()
+
+  // Small rectangular handle in center-bottom area (~y=0.75)
+  const handleW = SIZE * 0.30
+  const handleH = SIZE * 0.04
+  const handleX = (SIZE - handleW) / 2
+  const handleY = SIZE * 0.75
+  ctx.fillStyle = '#3a3a55'
+  ctx.beginPath()
+  ctx.roundRect(handleX, handleY, handleW, handleH, 3)
+  ctx.fill()
+
+  return canvas
+}
 
 function buildHexWallCanvas(): HTMLCanvasElement {
   const SIZE = 512
@@ -12,7 +65,7 @@ function buildHexWallCanvas(): HTMLCanvasElement {
   const ctx = canvas.getContext('2d')!
 
   // Background sandstone (slightly lighter for visibility)
-  ctx.fillStyle = '#3d352c'
+  ctx.fillStyle = '#5a4e3f'
   ctx.fillRect(0, 0, SIZE, SIZE)
 
   // Subtle vertical gradient for depth
@@ -28,7 +81,7 @@ function buildHexWallCanvas(): HTMLCanvasElement {
   const H = R * 2
   const rowH = H * 0.75
 
-  ctx.strokeStyle = 'rgba(0,191,255,0.45)'
+  ctx.strokeStyle = 'rgba(0,191,255,0.55)'
   ctx.lineWidth = 2
 
   // Draw enough rows/cols to cover the canvas + a bit over for tileability
@@ -68,7 +121,7 @@ function buildStoneFloorCanvas(): HTMLCanvasElement {
   const ctx = canvas.getContext('2d')!
 
   // Lighter base for visibility
-  ctx.fillStyle = '#232338'
+  ctx.fillStyle = '#3a3a4e'
   ctx.fillRect(0, 0, SIZE, SIZE)
 
   // Seed a deterministic PRNG so the pattern is consistent
@@ -99,7 +152,7 @@ function buildStoneFloorCanvas(): HTMLCanvasElement {
     }
     ctx.closePath()
 
-    ctx.fillStyle = `rgba(26,26,46,${0.5 + rand() * 0.4})`
+    ctx.fillStyle = `rgba(26,26,46,${0.6 + rand() * 0.3})`
     ctx.fill()
 
     ctx.strokeStyle = 'rgba(0,191,255,0.18)'
@@ -148,4 +201,10 @@ export function makeStoneFloorTextureWithRepeat(repeatU: number, repeatV: number
   const tex = makeCanvasTexture(base.image as HTMLCanvasElement)
   tex.repeat.set(repeatU, repeatV)
   return tex
+}
+
+export function getDrawerFrontTexture(): THREE.CanvasTexture {
+  if (drawerFrontTexture) return drawerFrontTexture
+  drawerFrontTexture = makeCanvasTexture(buildDrawerFrontCanvas())
+  return drawerFrontTexture
 }

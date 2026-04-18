@@ -16,7 +16,7 @@ const orbitOptions = computed(() => {
     case 'building': return { enableZoom: true, enablePan: false, minDistance: 12, maxDistance: 32, maxPolarAngle: 1.4 }
     case 'corridor': return { enableZoom: false, enablePan: false, minPolarAngle: 1.2, maxPolarAngle: 1.6 }
     case 'room': return { enableZoom: true, enablePan: false, minDistance: 2, maxDistance: 6, minPolarAngle: 0.3, maxPolarAngle: 1.4 }
-    case 'drawer': return { enableZoom: false, enablePan: false, enableRotate: false }
+    case 'drawer': return { enableZoom: true, enablePan: true, enableRotate: false, minDistance: 1.5, maxDistance: 8 }
   }
 })
 </script>

@@ -21,7 +21,7 @@ function poseForLevel(): { pos: THREE.Vector3; look: THREE.Vector3 } {
     case 'room':
       pos.set(0, 2.2, 5); look.set(0, 1.5, 0); break
     case 'drawer':
-      pos.set(0, 1.8, 4.2); look.set(0, 1.6, 0); break
+      pos.set(0, 1.6, 6.0); look.set(0, 1.6, 0); break
   }
   return { pos, look }
 }
@@ -49,7 +49,7 @@ function animateTo(pos: THREE.Vector3, look: THREE.Vector3) {
     onComplete: () => {
       store.setTransitioning(false)
       if (ctrl) {
-        ctrl.enabled = store.level !== 'drawer'
+        ctrl.enabled = true
         if (ctrl.update) ctrl.update()
       }
     },

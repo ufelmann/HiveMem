@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import type { Drawer } from '../types/palace'
 import { useNavigationStore } from '../stores/navigation'
+import { getDrawerFrontTexture } from '../composables/useTextures'
 
 const props = defineProps<{
   drawer: Drawer
@@ -17,6 +18,7 @@ const sizeY = computed(() => 0.3 + props.drawer.importance * 0.08)
 const baseIntensity = computed(() => 0.2 + props.drawer.importance * 0.12)
 
 const emissiveColor = computed(() => (props.drawer.status === 'pending' ? '#FF8C00' : '#00BFFF'))
+const drawerTexture = getDrawerFrontTexture()
 
 const intensity = ref(baseIntensity.value)
 
@@ -46,7 +48,8 @@ function onClick(e: any) {
     <TresMesh :scale-y="sizeY" @before-render="onBeforeRender">
       <TresBoxGeometry :args="[0.6, 1, 0.5]" />
       <TresMeshStandardMaterial
-        :color="'#1c1c2e'"
+        :color="'#ffffff'"
+        :map="drawerTexture"
         :emissive="emissiveColor"
         :emissive-intensity="intensity"
         :roughness="0.4"

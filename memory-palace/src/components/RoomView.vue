@@ -94,8 +94,8 @@ const wingColor = computed(() => store.wingObj?.color ?? '#00BFFF')
     <TunnelLines :segments="tunnelSegments" />
 
     <!-- Lights -->
-    <TresAmbientLight :intensity="0.55" :color="'#ffeecf'" />
-    <TresPointLight :position="[0, ROOM_H - 0.2, 0]" :intensity="1.1" :color="'#ffeecf'" />
+    <TresAmbientLight :intensity="0.7" :color="'#ffeecf'" />
+    <TresPointLight :position="[0, ROOM_H - 0.2, 0]" :intensity="1.4" :color="'#ffeecf'" />
     <TresPointLight :position="[0, 2.2, 2]" :intensity="0.5" :color="wingColor" />
   </TresGroup>
 </template>
