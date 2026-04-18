@@ -34,7 +34,8 @@ function poseForLevel(): { pos: THREE.Vector3; look: THREE.Vector3 } {
 
 function animateTo(pos: THREE.Vector3, look: THREE.Vector3) {
   const cam = camera.activeCamera.value
-  const ctrl: any = controls.value
+  // TresJS v5 useTresContext().controls is null; grab from window exposed by PalaceScene
+  const ctrl: any = (window as any).__palaceOrbit ?? controls.value
   if (!cam) return
   if (currentTween) currentTween.kill()
   store.setTransitioning(true)

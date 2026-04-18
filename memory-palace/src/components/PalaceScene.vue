@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { TresCanvas } from '@tresjs/core'
 import { OrbitControls } from '@tresjs/cientos'
-import { computed } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 import { useNavigationStore } from '../stores/navigation'
 import BuildingView from './BuildingView.vue'
 import WingInteriorView from './WingInteriorView.vue'
@@ -12,6 +12,18 @@ import DrawerCardStack from './DrawerCardStack.vue'
 
 const store = useNavigationStore()
 const R = 6 // sphere radius used by HallTunnelView
+
+// Template ref to capture OrbitControls instance and expose to CameraController via window
+const orbitRef = shallowRef<any>(null)
+watch(orbitRef, (v) => {
+  // Cientos wraps the three OrbitControls; the `.value` on the ref IS the instance,
+  // but Cientos exposes it via `.instance` or directly. Try both.
+  const instance = v?.instance ?? v?.value ?? v
+  if (instance) {
+    // @ts-expect-error intentional globalto bypass missing useTresContext.controls
+    window.__palaceOrbit = instance
+  }
+}, { immediate: true })
 
 interface OrbitOpts {
   enableZoom?: boolean
@@ -44,6 +56,7 @@ const orbitOptions = computed<OrbitOpts>(() => {
   <TresCanvas clear-color="#0a0a1a" window-size>
     <TresPerspectiveCamera :args="[60, 1, 0.1, 100]" :position="[0, 8, 20]" />
     <OrbitControls
+      ref="orbitRef"
       :enable-damping="true"
       :screen-space-panning="true"
       :enable-zoom="orbitOptions.enableZoom ?? true"
