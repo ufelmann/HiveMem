@@ -111,14 +111,13 @@ class ReadToolIntegrationTest {
                 .andExpect(jsonPath("$.result.tools[5].name").value("hivemem_traverse"))
                 .andExpect(jsonPath("$.result.tools[6].name").value("hivemem_quick_facts"))
                 .andExpect(jsonPath("$.result.tools[7].name").value("hivemem_time_machine"))
-                .andExpect(jsonPath("$.result.tools[8].name").value("hivemem_drawer_history"))
-                .andExpect(jsonPath("$.result.tools[9].name").value("hivemem_fact_history"))
-                .andExpect(jsonPath("$.result.tools[10].name").value("hivemem_pending_approvals"))
-                .andExpect(jsonPath("$.result.tools[11].name").value("hivemem_reading_list"))
-                .andExpect(jsonPath("$.result.tools[12].name").value("hivemem_list_agents"))
-                .andExpect(jsonPath("$.result.tools[13].name").value("hivemem_diary_read"))
-                .andExpect(jsonPath("$.result.tools[14].name").value("hivemem_get_blueprint"))
-                .andExpect(jsonPath("$.result.tools[15].name").value("hivemem_wake_up"));
+                .andExpect(jsonPath("$.result.tools[8].name").value("hivemem_history"))
+                .andExpect(jsonPath("$.result.tools[9].name").value("hivemem_pending_approvals"))
+                .andExpect(jsonPath("$.result.tools[10].name").value("hivemem_reading_list"))
+                .andExpect(jsonPath("$.result.tools[11].name").value("hivemem_list_agents"))
+                .andExpect(jsonPath("$.result.tools[12].name").value("hivemem_diary_read"))
+                .andExpect(jsonPath("$.result.tools[13].name").value("hivemem_get_blueprint"))
+                .andExpect(jsonPath("$.result.tools[14].name").value("hivemem_wake_up"));
     }
 
     @Test
@@ -451,7 +450,7 @@ class ReadToolIntegrationTest {
     }
 
     @Test
-    void drawerHistoryToolReturnsOldestVersionFirst() throws Exception {
+    void historyWithDrawerTypeReturnsOldestVersionFirst() throws Exception {
         UUID originalId = UUID.fromString("00000000-0000-0000-0000-000000000301");
         UUID revisedId = UUID.fromString("00000000-0000-0000-0000-000000000302");
         insertDrawer(
@@ -491,7 +490,7 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_drawer_history", Map.of("drawer_id", "00000000-0000-0000-0000-000000000302"));
+        JsonNode content = callToolContent("hivemem_history", Map.of("type", "drawer", "id", "00000000-0000-0000-0000-000000000302"));
         assertThat(content).hasSize(2);
         assertThat(content.get(0).path("summary").asText()).isEqualTo("Drawer V1");
         assertThat(content.get(1).path("summary").asText()).isEqualTo("Drawer V2");
@@ -500,7 +499,7 @@ class ReadToolIntegrationTest {
     }
 
     @Test
-    void factHistoryToolReturnsOldestVersionFirst() throws Exception {
+    void historyWithFactTypeReturnsOldestVersionFirst() throws Exception {
         UUID originalId = UUID.fromString("00000000-0000-0000-0000-000000000401");
         UUID revisedId = UUID.fromString("00000000-0000-0000-0000-000000000402");
         insertFact(
@@ -532,12 +531,34 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_fact_history", Map.of("fact_id", "00000000-0000-0000-0000-000000000402"));
+        JsonNode content = callToolContent("hivemem_history", Map.of("type", "fact", "id", "00000000-0000-0000-0000-000000000402"));
         assertThat(content).hasSize(2);
         assertThat(content.get(0).path("object").asText()).isEqualTo("Camunda7");
         assertThat(content.get(1).path("object").asText()).isEqualTo("Temporal");
         assertThat(content.get(0).path("parent_id").isNull()).isTrue();
         assertThat(content.get(1).path("parent_id").asText()).isEqualTo("00000000-0000-0000-0000-000000000401");
+    }
+
+    @Test
+    void historyRejectsInvalidType() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":50,
+                                  "method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_history",
+                                    "arguments":{"type":"bogus","id":"00000000-0000-0000-0000-000000000001"}
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value(-32602))
+                .andExpect(jsonPath("$.error.message").value(
+                        org.hamcrest.Matchers.containsString("type")));
     }
 
     @Test
