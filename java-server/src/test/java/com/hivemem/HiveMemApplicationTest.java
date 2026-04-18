@@ -4,6 +4,7 @@ import com.hivemem.auth.TokenService;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.EmbeddingMigrationService;
 import com.hivemem.embedding.FixedEmbeddingClient;
+import com.hivemem.popularity.PopularityRefreshScheduler;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -36,6 +37,9 @@ class HiveMemApplicationTest {
 
     @MockitoBean
     private EmbeddingMigrationService embeddingMigrationService;
+
+    @MockitoBean
+    private PopularityRefreshScheduler popularityRefreshScheduler;
 
     @Test
     void contextLoads() {

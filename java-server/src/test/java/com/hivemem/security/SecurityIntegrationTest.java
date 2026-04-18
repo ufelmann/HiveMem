@@ -186,7 +186,7 @@ class SecurityIntegrationTest {
         }
 
         @Test
-        void adminSees35Tools() throws Exception {
+        void adminSees34Tools() throws Exception {
             insertToken("admin-user", "admin-token", "admin");
 
             mockMvc.perform(post("/mcp")
@@ -194,7 +194,7 @@ class SecurityIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(TOOLS_LIST_REQUEST))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.tools", hasSize(35)));
+                    .andExpect(jsonPath("$.result.tools", hasSize(34)));
         }
     }
 
@@ -428,7 +428,6 @@ class SecurityIntegrationTest {
         void readerCannotAccessAdminTools() {
             assertThat(service.isAllowed(AuthRole.READER, "hivemem_approve_pending")).isFalse();
             assertThat(service.isAllowed(AuthRole.READER, "hivemem_health")).isFalse();
-            assertThat(service.isAllowed(AuthRole.READER, "hivemem_refresh_popularity")).isFalse();
         }
 
         @Test
@@ -454,8 +453,7 @@ class SecurityIntegrationTest {
             // Spot-check that admin set includes admin-only tools
             assertThat(adminTools).contains(
                     "hivemem_approve_pending",
-                    "hivemem_health",
-                    "hivemem_refresh_popularity"
+                    "hivemem_health"
             );
         }
 
@@ -465,8 +463,7 @@ class SecurityIntegrationTest {
             Set<String> agentTools = service.allowedTools(AuthRole.AGENT);
 
             for (String adminTool : Set.of(
-                    "hivemem_approve_pending", "hivemem_health",
-                    "hivemem_refresh_popularity")) {
+                    "hivemem_approve_pending", "hivemem_health")) {
                 assertThat(writerTools)
                         .as("Admin tool %s must not appear in writer role", adminTool)
                         .doesNotContain(adminTool);

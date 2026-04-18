@@ -242,8 +242,7 @@ class TokenManagementIntegrationTest {
         assertThat(adminTools).contains(
                 "hivemem_search", "hivemem_wake_up",
                 "hivemem_add_drawer", "hivemem_kg_add",
-                "hivemem_approve_pending", "hivemem_health",
-                "hivemem_refresh_popularity"
+                "hivemem_approve_pending", "hivemem_health"
         );
     }
 
