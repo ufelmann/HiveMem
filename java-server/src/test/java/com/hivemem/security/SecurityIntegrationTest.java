@@ -150,7 +150,7 @@ class SecurityIntegrationTest {
     class ToolListFiltering {
 
         @Test
-        void readerSees16Tools() throws Exception {
+        void readerSees15Tools() throws Exception {
             insertToken("reader-user", "reader-token", "reader");
 
             mockMvc.perform(post("/mcp")
@@ -158,11 +158,11 @@ class SecurityIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(TOOLS_LIST_REQUEST))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.tools", hasSize(16)));
+                    .andExpect(jsonPath("$.result.tools", hasSize(15)));
         }
 
         @Test
-        void writerSees31Tools() throws Exception {
+        void writerSees30Tools() throws Exception {
             insertToken("writer-user", "writer-token", "writer");
 
             mockMvc.perform(post("/mcp")
@@ -170,11 +170,11 @@ class SecurityIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(TOOLS_LIST_REQUEST))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.tools", hasSize(31)));
+                    .andExpect(jsonPath("$.result.tools", hasSize(30)));
         }
 
         @Test
-        void agentSees31Tools() throws Exception {
+        void agentSees30Tools() throws Exception {
             insertToken("agent-user", "agent-token", "agent");
 
             mockMvc.perform(post("/mcp")
@@ -182,11 +182,11 @@ class SecurityIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(TOOLS_LIST_REQUEST))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.tools", hasSize(31)));
+                    .andExpect(jsonPath("$.result.tools", hasSize(30)));
         }
 
         @Test
-        void adminSees33Tools() throws Exception {
+        void adminSees32Tools() throws Exception {
             insertToken("admin-user", "admin-token", "admin");
 
             mockMvc.perform(post("/mcp")
@@ -194,7 +194,7 @@ class SecurityIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(TOOLS_LIST_REQUEST))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.tools", hasSize(33)));
+                    .andExpect(jsonPath("$.result.tools", hasSize(32)));
         }
     }
 
