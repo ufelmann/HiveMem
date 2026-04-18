@@ -63,7 +63,7 @@ const wingColor = computed(() => store.wingObj?.color ?? '#00BFFF')
     <!-- Floor -->
     <TresMesh :rotation-x="-PI / 2">
       <TresPlaneGeometry :args="[ROOM_W, ROOM_D]" />
-      <TresMeshStandardMaterial :color="'#1a1a2e'" :roughness="0.6" :metalness="0.2" :map="floorTexture" />
+      <TresMeshStandardMaterial :color="'#ffffff'" :roughness="0.6" :metalness="0.2" :map="floorTexture" />
     </TresMesh>
     <!-- Ceiling -->
     <TresMesh :rotation-x="PI / 2" :position-y="ROOM_H">
@@ -73,17 +73,17 @@ const wingColor = computed(() => store.wingObj?.color ?? '#00BFFF')
     <!-- Back wall -->
     <TresMesh :position="[0, ROOM_H / 2, -ROOM_D / 2]">
       <TresPlaneGeometry :args="[ROOM_W, ROOM_H]" />
-      <TresMeshStandardMaterial :color="'#2a2520'" :emissive="wingColor" :emissive-intensity="0.08" :map="wallTexture" />
+      <TresMeshStandardMaterial :color="'#ffffff'" :emissive="'#000000'" :map="wallTexture" />
     </TresMesh>
     <!-- Left wall -->
     <TresMesh :rotation-y="PI / 2" :position="[-ROOM_W / 2, ROOM_H / 2, 0]">
       <TresPlaneGeometry :args="[ROOM_D, ROOM_H]" />
-      <TresMeshStandardMaterial :color="'#2a2520'" :emissive="wingColor" :emissive-intensity="0.08" :map="wallTexture" />
+      <TresMeshStandardMaterial :color="'#ffffff'" :emissive="'#000000'" :map="wallTexture" />
     </TresMesh>
     <!-- Right wall -->
     <TresMesh :rotation-y="-PI / 2" :position="[ROOM_W / 2, ROOM_H / 2, 0]">
       <TresPlaneGeometry :args="[ROOM_D, ROOM_H]" />
-      <TresMeshStandardMaterial :color="'#2a2520'" :emissive="wingColor" :emissive-intensity="0.05" :map="wallTexture" />
+      <TresMeshStandardMaterial :color="'#ffffff'" :emissive="'#000000'" :map="wallTexture" />
     </TresMesh>
 
     <!-- Drawers -->
@@ -94,7 +94,8 @@ const wingColor = computed(() => store.wingObj?.color ?? '#00BFFF')
     <TunnelLines :segments="tunnelSegments" />
 
     <!-- Lights -->
-    <TresAmbientLight :intensity="0.2" />
-    <TresPointLight :position="[0, ROOM_H - 0.2, 0]" :intensity="1.2" :color="wingColor" />
+    <TresAmbientLight :intensity="0.55" :color="'#ffeecf'" />
+    <TresPointLight :position="[0, ROOM_H - 0.2, 0]" :intensity="1.1" :color="'#ffeecf'" />
+    <TresPointLight :position="[0, 2.2, 2]" :intensity="0.5" :color="wingColor" />
   </TresGroup>
 </template>

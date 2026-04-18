@@ -55,7 +55,7 @@ function onHallClick(name: string) {
     <!-- Floor -->
     <TresMesh :rotation-x="-PI / 2">
       <TresPlaneGeometry :args="[CORRIDOR_LENGTH, CORRIDOR_WIDTH]" />
-      <TresMeshStandardMaterial :color="'#1a1a2e'" :roughness="0.5" :metalness="0.3" :map="floorTexture" />
+      <TresMeshStandardMaterial :color="'#ffffff'" :roughness="0.5" :metalness="0.3" :map="floorTexture" />
     </TresMesh>
     <!-- Ceiling -->
     <TresMesh :rotation-x="PI / 2" :position-y="CORRIDOR_HEIGHT">
@@ -65,12 +65,12 @@ function onHallClick(name: string) {
     <!-- Left wall -->
     <TresMesh :position="[0, CORRIDOR_HEIGHT / 2, -CORRIDOR_WIDTH / 2]">
       <TresBoxGeometry :args="[CORRIDOR_LENGTH, CORRIDOR_HEIGHT, 0.1]" />
-      <TresMeshStandardMaterial :color="'#2a2520'" :emissive="wingColor" :emissive-intensity="0.08" :roughness="0.7" :map="wallTexture" />
+      <TresMeshStandardMaterial :color="'#ffffff'" :emissive="'#000000'" :roughness="0.7" :map="wallTexture" />
     </TresMesh>
     <!-- Right wall -->
     <TresMesh :position="[0, CORRIDOR_HEIGHT / 2, CORRIDOR_WIDTH / 2]">
       <TresBoxGeometry :args="[CORRIDOR_LENGTH, CORRIDOR_HEIGHT, 0.1]" />
-      <TresMeshStandardMaterial :color="'#2a2520'" :emissive="wingColor" :emissive-intensity="0.08" :roughness="0.7" :map="wallTexture" />
+      <TresMeshStandardMaterial :color="'#ffffff'" :emissive="'#000000'" :roughness="0.7" :map="wallTexture" />
     </TresMesh>
 
     <!-- Doors -->
@@ -100,8 +100,9 @@ function onHallClick(name: string) {
     </TresGroup>
 
     <!-- Lights -->
-    <TresAmbientLight :intensity="0.15" />
-    <TresPointLight :position="[-5, 2.8, 0]" :intensity="1.1" :color="wingColor" />
-    <TresPointLight :position="[5, 2.8, 0]" :intensity="1.1" :color="wingColor" />
+    <TresAmbientLight :intensity="0.55" :color="'#ffeecf'" />
+    <TresPointLight :position="[-5, 2.8, 0]" :intensity="1.2" :color="'#ffeecf'" />
+    <TresPointLight :position="[5, 2.8, 0]" :intensity="1.2" :color="'#ffeecf'" />
+    <TresPointLight :position="[0, 2.8, 0]" :intensity="0.4" :color="wingColor" />
   </TresGroup>
 </template>

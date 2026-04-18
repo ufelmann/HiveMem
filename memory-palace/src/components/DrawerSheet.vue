@@ -361,7 +361,7 @@ const paperMat = computed(() =>
 
 <template>
   <!-- Group placed in front of room centre, facing +Z camera -->
-  <TresGroup :position="[0, 1.5, 2]">
+  <TresGroup :position="[0, 1.6, 0]">
     <!-- Rim glow plane (slightly behind main sheet) -->
     <TresMesh :geometry="rimGeo" :material="rimMat" :position-z="-0.002" />
 

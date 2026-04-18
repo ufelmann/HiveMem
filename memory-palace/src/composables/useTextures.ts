@@ -11,18 +11,25 @@ function buildHexWallCanvas(): HTMLCanvasElement {
   canvas.height = SIZE
   const ctx = canvas.getContext('2d')!
 
-  // Background sandstone
-  ctx.fillStyle = '#2a2520'
+  // Background sandstone (slightly lighter for visibility)
+  ctx.fillStyle = '#3d352c'
+  ctx.fillRect(0, 0, SIZE, SIZE)
+
+  // Subtle vertical gradient for depth
+  const grad = ctx.createLinearGradient(0, 0, 0, SIZE)
+  grad.addColorStop(0, 'rgba(0,0,0,0)')
+  grad.addColorStop(1, 'rgba(0,0,0,0.25)')
+  ctx.fillStyle = grad
   ctx.fillRect(0, 0, SIZE, SIZE)
 
   // Hex grid parameters
-  const R = 24          // outer radius of each hex
-  const W = R * Math.sqrt(3)  // width of a flat-top hex
-  const H = R * 2             // height of a flat-top hex
-  const rowH = H * 0.75       // vertical step between row centres
+  const R = 32          // outer radius
+  const W = R * Math.sqrt(3)
+  const H = R * 2
+  const rowH = H * 0.75
 
-  ctx.strokeStyle = 'rgba(0,191,255,0.12)'
-  ctx.lineWidth = 1
+  ctx.strokeStyle = 'rgba(0,191,255,0.45)'
+  ctx.lineWidth = 2
 
   // Draw enough rows/cols to cover the canvas + a bit over for tileability
   const cols = Math.ceil(SIZE / W) + 2
@@ -60,8 +67,8 @@ function buildStoneFloorCanvas(): HTMLCanvasElement {
   canvas.height = SIZE
   const ctx = canvas.getContext('2d')!
 
-  // Dark base
-  ctx.fillStyle = '#14141e'
+  // Lighter base for visibility
+  ctx.fillStyle = '#232338'
   ctx.fillRect(0, 0, SIZE, SIZE)
 
   // Seed a deterministic PRNG so the pattern is consistent
@@ -92,10 +99,10 @@ function buildStoneFloorCanvas(): HTMLCanvasElement {
     }
     ctx.closePath()
 
-    ctx.fillStyle = '#1a1a2e'
+    ctx.fillStyle = `rgba(26,26,46,${0.5 + rand() * 0.4})`
     ctx.fill()
 
-    ctx.strokeStyle = 'rgba(0,191,255,0.05)'
+    ctx.strokeStyle = 'rgba(0,191,255,0.18)'
     ctx.lineWidth = 1
     ctx.stroke()
   }
