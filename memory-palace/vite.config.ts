@@ -7,7 +7,8 @@ export default defineConfig({
     vue({
       template: {
         compilerOptions: {
-          isCustomElement: (tag) => tag.startsWith('Tres') && tag !== 'TresCanvas',
+          isCustomElement: (tag) =>
+            (tag.startsWith('Tres') && tag !== 'TresCanvas') || tag === 'primitive',
         },
       },
     }),
