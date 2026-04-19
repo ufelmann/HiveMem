@@ -143,6 +143,70 @@ Sources: [LongMemEval README](https://github.com/xiaowu0162/LongMemEval#-testing
 
 ---
 
+## 2.3 Ingestion methodology — who curates what
+
+This is the most important design decision in the benchmark and it was almost missed.
+
+### Where the LLM curation boundary sits
+
+| System | LLM curation happens … | Stored shape |
+|---|---|---|
+| **HiveMem (normal use)** | **Outside** the memory system, in the calling agent (Claude in the user's shell) | Already-curated L0 content + L1 summary + L2 key_points + L3 insight + optional `kg_add` fact triples + optional `add_tunnel` links |
+| Zep | **Inside** the library — `gpt-4o-mini-2024-07-18` builds a temporal knowledge graph from raw messages | Entities, temporal edges, invariants |
+| Mem0 | **Inside** — LLM extracts facts from raw messages | Facts + raw context |
+| MemGPT / Letta | **Inside** — LLM manages the memory hierarchy | Structured memory blocks |
+
+All four use LLMs for ingestion. The only difference is which side of the library boundary the LLM sits on. LongMemEval feeds raw chat-message lists; each system is free to do whatever LLM work it needs to turn those into useful retrieval-grade memory.
+
+### Why a raw-dump adapter would be unfair to HiveMem
+
+A naive adapter that pipes LongMemEval turns straight into `hivemem_add_drawer` would:
+- Store raw `"user: ...\nassistant: ..."` blobs as L0 `content`
+- Use the first 200 characters as a fake `summary`
+- Skip `key_points`, `insight`, `actionability` entirely
+- Skip fact extraction and tunnel creation
+
+That is **not** how HiveMem is used in practice. It produces garbage embeddings (noisy conversational filler instead of distilled summaries) and strips the knowledge-graph signal entirely. Comparing that number against Zep (which did all that work internally) is apples-to-oranges.
+
+### The adapter must include an LLM curation stage
+
+For a defensible benchmark, Task 4's adapter and Task 5's LLM client must cooperate: before each `hivemem_add_drawer` call, a gpt-4o-mini curation pass reads the raw session and produces the L0-L3 layers plus an optional list of fact triples. This matches Zep's `gpt-4o-mini-2024-07-18` "graph construction" stage and keeps the benchmark honest.
+
+Concretely, Task 5's `LlmClient` gets a second method alongside `generate_answer`:
+
+```python
+def curate_session(self, *, session_turns, session_date) -> CuratedSession:
+    """Return {content, summary, key_points, insight, actionability, facts}
+       as HiveMem would expect the user-agent to fill in."""
+```
+
+Task 6's harness calls `curate_session` per session, then feeds the curated payload into `hivemem_add_drawer` and `hivemem_kg_add`.
+
+### Budget impact of curated ingestion
+
+| Run | Raw-dump estimate (wrong) | **Curated-ingestion estimate (correct)** |
+|---|---|---|
+| Smoke (5 cases, ~200 sessions) | ~$0.02 | ~$0.10 |
+| Baseline (25 cases, ~1000 sessions) | ~$0.15 | ~$0.45 |
+| Full `temporal-reasoning` (150 cases, ~6000 sessions) | ~$0.80 | ~$3 |
+| Full `_s` (500 cases, ~20000 sessions) | ~$3 | **~$8-10** |
+
+gpt-4o-mini at ~$0.15/1M input and ~$0.60/1M output. Roughly 500 input + 200 output tokens per session for curation. Track this in the results JSON as `ingestion.cost_usd` alongside answer+judge cost.
+
+### Two-mode optional comparison
+
+For debugging and to document HiveMem's architecture advantage, Section 3.4's follow-up A/B can add a **third axis**: ingestion mode.
+
+| Mode | Describes | Purpose |
+|---|---|---|
+| `raw` | Dump raw turns as L0, no L1-L3, no facts | Baseline showing how much curation contributes |
+| `curated` (default) | gpt-4o-mini fills L0-L3 + extracts facts | Fair comparison vs Zep/Mem0 |
+| `curated+tunnels` | Above plus post-hoc tunnel creation between semantically close drawers | Demonstrates HiveMem's graph signal (optional, may overfit) |
+
+The default is `curated`. Only report headline numbers from `curated` runs.
+
+---
+
 ## 3. Architecture
 
 ### 3.1 Topology
@@ -435,14 +499,16 @@ hivemem:
 
 openai:
   api_key_env: "OPENAI_API_KEY"
-  answer_model: "gpt-4o-mini"    # used for hypothesis generation
+  answer_model: "gpt-4o-mini"      # hypothesis generation
+  curation_model: "gpt-4o-mini"    # per-session L0-L3 curation + fact extraction
 
 longmemeval:
-  root: "data/longmemeval"       # path to cloned LongMemEval repo
+  root: "data/longmemeval"         # path to cloned LongMemEval repo
   dataset_file: "data/longmemeval_s_cleaned.json"  # relative to root
-  subset: "temporal-reasoning"   # filter question_type
+  subset: "temporal-reasoning"     # filter question_type
 
 run:
+  ingestion_mode: "curated"        # "curated" (default, fair vs Zep) | "raw" (baseline ablation)
   max_examples: 25
   results_dir: "results"
 ```
@@ -822,21 +888,26 @@ def to_drawer_writes(case: Case, *, wing: str, hall: str = "conversations") -> L
 
 ---
 
-### Task 5 — OpenAI answer client (TDD)
+### Task 5 — OpenAI client: curation + answer (TDD)
 
-Single responsibility: generate a hypothesis given context + question. **No judging here** — that is delegated to the official `evaluate_qa.py`.
+Two responsibilities, one class: **curate a session into HiveMem-layered form** (L0-L3 + facts) during ingestion, and **generate a hypothesis** given context + question during querying. Judging stays delegated to the official `evaluate_qa.py` (Task 9).
+
+Both use the same OpenAI client instance so we share one connection and one token cache.
 
 ```python
 # tests/test_llm_client.py
-from longmemeval_hivemem.llm_client import LlmClient
+import json
+from longmemeval_hivemem.llm_client import LlmClient, CuratedSession
 
 
 class _FakeCompletions:
-    def __init__(self, text): self._text = text; self.last_messages = None
-    def create(self, *, model, messages, temperature=0):
-        self.last_messages = messages
+    def __init__(self, texts):
+        self._texts = list(texts); self.last_messages = None; self.last_model = None
+    def create(self, *, model, messages, temperature=0, response_format=None):
+        self.last_messages = messages; self.last_model = model
+        text = self._texts.pop(0)
         return type("R", (), {"choices": [
-            type("C", (), {"message": type("M", (), {"content": self._text})()})()
+            type("C", (), {"message": type("M", (), {"content": text})()})()
         ]})()
 
 
@@ -845,22 +916,63 @@ class _FakeChat:
 
 
 class _FakeClient:
-    def __init__(self, text): self.chat = _FakeChat(_FakeCompletions(text))
+    def __init__(self, *texts): self.chat = _FakeChat(_FakeCompletions(texts))
 
 
 def test_generate_answer_returns_text():
     fake = _FakeClient("Alice moved in January 2025.")
-    llm = LlmClient(fake, answer_model="gpt-4o-mini")
+    llm = LlmClient(fake, answer_model="gpt-4o-mini", curation_model="gpt-4o-mini")
     answer = llm.generate_answer(context="drawer text", question="When?")
     assert "January 2025" in answer
-    msgs = fake.chat.completions.last_messages
-    assert any("drawer text" in m["content"] for m in msgs)
+    assert any("drawer text" in m["content"] for m in fake.chat.completions.last_messages)
+
+
+def test_curate_session_parses_structured_payload():
+    payload = json.dumps({
+        "summary": "User announces move to Berlin.",
+        "key_points": ["moving to Berlin", "next month"],
+        "insight": "Life-change event with date reference.",
+        "actionability": "reference",
+        "facts": [
+            {"subject": "user", "predicate": "plans_move_to", "object": "Berlin"}
+        ],
+    })
+    fake = _FakeClient(payload)
+    llm = LlmClient(fake, answer_model="gpt-4o-mini", curation_model="gpt-4o-mini")
+    curated = llm.curate_session(
+        session_turns=[
+            {"role": "user", "content": "I'm moving to Berlin next month."},
+            {"role": "assistant", "content": "Exciting!"},
+        ],
+        session_date="2024-12-15T09:30:00Z",
+    )
+    assert isinstance(curated, CuratedSession)
+    assert curated.summary.startswith("User announces")
+    assert curated.actionability == "reference"
+    assert len(curated.facts) == 1
+    assert curated.facts[0]["predicate"] == "plans_move_to"
+
+
+def test_curate_session_survives_malformed_json():
+    # Be resilient: if the LLM returns non-JSON, fall back to a minimal curation
+    # rather than crashing the whole run.
+    fake = _FakeClient("not json at all")
+    llm = LlmClient(fake, answer_model="gpt-4o-mini", curation_model="gpt-4o-mini")
+    curated = llm.curate_session(
+        session_turns=[{"role": "user", "content": "hi"}],
+        session_date="2025-01-01T00:00:00Z",
+    )
+    assert curated.summary  # non-empty fallback
+    assert curated.facts == []
 ```
 
 ```python
 # src/longmemeval_hivemem/llm_client.py
 from __future__ import annotations
-from typing import Any
+
+from dataclasses import dataclass, field
+from typing import Any, Dict, List
+import json
 
 
 ANSWER_SYSTEM = (
@@ -868,11 +980,39 @@ ANSWER_SYSTEM = (
     "Be concise. If the answer isn't in the context, say 'I don't know.'"
 )
 
+CURATION_SYSTEM = """\
+You are a memory curator for HiveMem, a knowledge management system.
+Given one session of a user-assistant conversation, produce a structured
+JSON payload with four progressive layers plus an optional fact list.
+
+Return STRICT JSON with these keys:
+  "summary": 1-2 sentences capturing the session's content (L1)
+  "key_points": 2-5 short bullets highlighting specific facts (L2)
+  "insight": 1 sentence articulating what this session teaches (L3)
+  "actionability": one of "actionable", "reference", "someday", "archive"
+  "facts": a list of {subject, predicate, object} triples. Extract at most 3.
+           Only include facts that are unambiguously stated and likely to be
+           referenced later. Return [] if nothing fact-worthy.
+
+Be terse. Prefer concrete nouns. Do not invent content not in the session.
+Output JSON only, no prose.
+"""
+
+
+@dataclass(frozen=True)
+class CuratedSession:
+    summary: str
+    key_points: List[str]
+    insight: str
+    actionability: str
+    facts: List[Dict[str, str]] = field(default_factory=list)
+
 
 class LlmClient:
-    def __init__(self, client: Any, *, answer_model: str):
+    def __init__(self, client: Any, *, answer_model: str, curation_model: str):
         self._client = client
-        self._model = answer_model
+        self._answer_model = answer_model
+        self._curation_model = curation_model
 
     def generate_answer(self, *, context: str, question: str) -> str:
         messages = [
@@ -880,91 +1020,229 @@ class LlmClient:
             {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"},
         ]
         resp = self._client.chat.completions.create(
-            model=self._model, messages=messages, temperature=0,
+            model=self._answer_model, messages=messages, temperature=0,
         )
         return resp.choices[0].message.content.strip()
+
+    def curate_session(self, *, session_turns: List[Dict[str, str]], session_date: str) -> CuratedSession:
+        body = "\n".join(f"{t['role']}: {t['content']}" for t in session_turns)
+        messages = [
+            {"role": "system", "content": CURATION_SYSTEM},
+            {"role": "user", "content": f"Session date: {session_date}\n\nSession:\n{body}"},
+        ]
+        resp = self._client.chat.completions.create(
+            model=self._curation_model,
+            messages=messages,
+            temperature=0,
+            response_format={"type": "json_object"},
+        )
+        text = resp.choices[0].message.content.strip()
+        try:
+            parsed = json.loads(text)
+        except (json.JSONDecodeError, ValueError):
+            first_turn = session_turns[0]["content"] if session_turns else ""
+            return CuratedSession(
+                summary=first_turn[:200],
+                key_points=[],
+                insight="",
+                actionability="reference",
+                facts=[],
+            )
+        return CuratedSession(
+            summary=parsed.get("summary", "")[:500],
+            key_points=[kp[:120] for kp in parsed.get("key_points", [])][:5],
+            insight=parsed.get("insight", "")[:500],
+            actionability=parsed.get("actionability") or "reference",
+            facts=[
+                {"subject": f.get("subject", ""), "predicate": f.get("predicate", ""), "object": f.get("object", "")}
+                for f in parsed.get("facts", [])[:3]
+                if f.get("subject") and f.get("predicate") and f.get("object")
+            ],
+        )
 ```
 
-**Commit:** `feat(benchmarks): openai answer generator (#23)`
+**Commit:** `feat(benchmarks): openai curation + answer client (#23)`
 
 ---
 
-### Task 6 — Harness: per-case orchestration (TDD)
+### Task 6 — Harness: per-case orchestration with curated ingestion (TDD)
 
-Composes loader + adapter + client + llm for one case. Returns a dict.
+Composes loader + adapter + LLM curation + HiveMem writes + LLM answer. The `mode` parameter switches between `curated` (default, fair) and `raw` (baseline for ablation — dumps turns as L0 without any L1-L3 or facts).
+
+`HiveMemClient` also needs a `kg_add` method for Task 3 — add it now if missed earlier.
 
 ```python
 # tests/test_harness.py
 from longmemeval_hivemem.loader import Case, Turn
+from longmemeval_hivemem.llm_client import CuratedSession
 from longmemeval_hivemem.harness import run_case
 
 
 class _StubHiveMem:
-    def __init__(self): self.writes = []
-    def add_drawer(self, **kw): self.writes.append(kw); return {"id": f"d{len(self.writes)}"}
-    def search(self, **_): return [{"summary": "Alice moved January 2025.", "score_total": 0.9}]
+    def __init__(self):
+        self.writes = []
+        self.facts = []
+    def add_drawer(self, **kw):
+        self.writes.append(kw); return {"id": f"d{len(self.writes)}"}
+    def kg_add(self, **kw):
+        self.facts.append(kw); return {"inserted": True, "id": f"f{len(self.facts)}"}
+    def search(self, **_):
+        return [{"summary": "User announces move to Berlin.", "score_total": 0.9}]
 
 
 class _StubLlm:
-    def __init__(self): self.calls = []
+    def __init__(self):
+        self.answer_calls = []
+        self.curate_calls = []
     def generate_answer(self, *, context, question):
-        self.calls.append((context, question))
+        self.answer_calls.append((context, question))
         return "January 2025"
+    def curate_session(self, *, session_turns, session_date):
+        self.curate_calls.append((session_turns, session_date))
+        return CuratedSession(
+            summary="User announces move to Berlin.",
+            key_points=["moving to Berlin"],
+            insight="Life-change event referenced.",
+            actionability="reference",
+            facts=[{"subject": "user", "predicate": "moves_to", "object": "Berlin"}],
+        )
 
 
 def _case():
     return Case(
         question_id="q1", question_type="temporal-reasoning",
         question_date="2025-06-01T00:00:00Z",
-        question="When?", answer="January 2025",
-        sessions=[[Turn("user", "moving")]],
+        question="When did the user move?", answer="January 2025",
+        sessions=[[Turn("user", "I'm moving to Berlin."), Turn("assistant", "Nice.")]],
         session_dates=["2025-01-01T00:00:00Z"],
         answer_session_ids=["s1"],
     )
 
 
-def test_run_case_produces_hypothesis_record():
+def test_curated_mode_calls_llm_per_session_and_stores_facts():
     hm, llm = _StubHiveMem(), _StubLlm()
-    result = run_case(_case(), hivemem=hm, llm=llm, wing="bench", search_limit=3)
-    assert result["question_id"] == "q1"
+    result = run_case(_case(), hivemem=hm, llm=llm, wing="bench",
+                      search_limit=3, mode="curated")
     assert result["hypothesis"] == "January 2025"
-    assert result["gold"] == "January 2025"
+    assert result["ingestion_mode"] == "curated"
+    assert len(llm.curate_calls) == 1
     assert len(hm.writes) == 1
-    assert llm.calls, "expected llm call"
+    assert hm.writes[0]["summary"].startswith("User announces")
+    assert "moving to Berlin" in hm.writes[0]["key_points"]
+    assert hm.writes[0]["insight"].startswith("Life-change")
+    assert len(hm.facts) == 1
+    assert hm.facts[0]["predicate"] == "moves_to"
+
+
+def test_raw_mode_skips_curation_and_facts():
+    hm, llm = _StubHiveMem(), _StubLlm()
+    result = run_case(_case(), hivemem=hm, llm=llm, wing="bench",
+                      search_limit=3, mode="raw")
+    assert result["ingestion_mode"] == "raw"
+    assert llm.curate_calls == []  # no curation in raw mode
+    assert len(hm.writes) == 1
+    assert "user: I'm moving" in hm.writes[0]["content"]
+    assert hm.facts == []  # no facts in raw mode
 ```
 
 ```python
 # src/longmemeval_hivemem/harness.py
 from __future__ import annotations
+
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 from .adapter import to_drawer_writes
 from .loader import Case
 
+Mode = Literal["curated", "raw"]
 
-def run_case(case: Case, *, hivemem, llm, wing: str, search_limit: int = 10) -> Dict[str, Any]:
+
+def run_case(
+    case: Case,
+    *,
+    hivemem,
+    llm,
+    wing: str,
+    search_limit: int = 10,
+    mode: Mode = "curated",
+) -> Dict[str, Any]:
     start = time.monotonic()
-    for w in to_drawer_writes(case, wing=wing):
+    raw_writes = to_drawer_writes(case, wing=wing)
+
+    for idx, w in enumerate(raw_writes):
+        turns = [
+            {"role": t.role, "content": t.content}
+            for t in case.sessions[idx]
+        ]
+        session_date = w.valid_from
+
+        if mode == "curated":
+            curated = llm.curate_session(session_turns=turns, session_date=session_date)
+            drawer_content = w.content  # keep raw as L0; L1-L3 are the LLM's work
+            summary = curated.summary or w.summary
+            key_points = curated.key_points or w.key_points
+            insight = curated.insight or ""
+            actionability = curated.actionability
+        else:  # raw
+            drawer_content = w.content
+            summary = w.summary
+            key_points = w.key_points
+            insight = ""
+            actionability = "reference"
+            curated = None
+
         hivemem.add_drawer(
-            content=w.content, summary=w.summary,
-            wing=w.wing, hall=w.hall, room=w.room,
-            importance=w.importance, valid_from=w.valid_from,
-            key_points=w.key_points,
+            content=drawer_content,
+            summary=summary,
+            wing=w.wing,
+            hall=w.hall,
+            room=w.room,
+            importance=w.importance,
+            valid_from=w.valid_from,
+            key_points=key_points,
+            insight=insight,
+            actionability=actionability,
         )
+
+        if curated is not None:
+            for fact in curated.facts:
+                hivemem.kg_add(
+                    subject=fact["subject"],
+                    predicate=fact["predicate"],
+                    object=fact["object"],
+                    valid_from=session_date,
+                )
+
     hits = hivemem.search(query=case.question, limit=search_limit, wing=wing)
     context = "\n\n".join(h.get("summary") or h.get("content", "") for h in hits)
     hypothesis = llm.generate_answer(context=context, question=case.question)
+
     return {
         "question_id": case.question_id,
         "question_type": case.question_type,
         "gold": case.answer,
         "hypothesis": hypothesis,
+        "ingestion_mode": mode,
         "latency_ms": int((time.monotonic() - start) * 1000),
         "hits": len(hits),
+        "sessions_ingested": len(raw_writes),
     }
 ```
 
-**Commit:** `feat(benchmarks): per-case harness (#23)`
+**HiveMemClient additions (if not yet done in Task 3):** add a `kg_add` method:
+
+```python
+def kg_add(self, *, subject, predicate, object, valid_from, confidence=None, on_conflict="return"):
+    args = {"subject": subject, "predicate": predicate, "object_": object,
+            "valid_from": valid_from, "on_conflict": on_conflict}
+    if confidence is not None:
+        args["confidence"] = confidence
+    return self._call("hivemem_kg_add", args)
+```
+
+Note HiveMem expects `object_` (trailing underscore) in the argument name because `object` is a reserved word in the Java server's parameter handling. Test the argument name by running the Hive-Mem integration once with a trace. The Python dict `{"object": ...}` would silently be dropped. (This is a bite-sized gotcha — document it in your Task 3 test once discovered.)
+
+**Commit:** `feat(benchmarks): per-case harness with curated-vs-raw ingestion modes (#23)`
 
 ---
 
@@ -1051,12 +1329,18 @@ def run(argv: Optional[List[str]] = None) -> int:
 
     hm = HiveMemClient(endpoint=cfg["hivemem"]["endpoint"], token=_env(cfg["hivemem"]["token_env"]))
     oai = OpenAI(api_key=_env(cfg["openai"]["api_key_env"]))
-    llm = LlmClient(oai, answer_model=cfg["openai"]["answer_model"])
+    llm = LlmClient(
+        oai,
+        answer_model=cfg["openai"]["answer_model"],
+        curation_model=cfg["openai"].get("curation_model", cfg["openai"]["answer_model"]),
+    )
 
+    mode = cfg["run"].get("ingestion_mode", "curated")
     results = [
         run_case(c, hivemem=hm, llm=llm,
                  wing=cfg["hivemem"]["wing"],
-                 search_limit=cfg["hivemem"]["search_limit"])
+                 search_limit=cfg["hivemem"]["search_limit"],
+                 mode=mode)
         for c in cases
     ]
 
@@ -1201,16 +1485,25 @@ Or (simpler) restart the HiveMem container with a fresh volume.
 
 ## 9. Budget and timing (realistic)
 
-| Phase | Duration | LLM cost (gpt-4o-mini answer + gpt-4o judge) |
-|---|---|---|
-| Plan implementation (Tasks 1-10) | 3-5 h | $0 |
-| First fixture/schema reality check | 30-60 min | $0 |
-| Smoke run (5 cases) | ~2 min | ~$0.02 |
-| Baseline run (25 cases) | ~5-10 min | ~$0.15 |
-| Full `temporal-reasoning` subset (~150 cases) | ~20-40 min | $0.50-1.50 |
-| Full `_s` dataset (500 cases, all subsets) | 60-90 min | $2-4 |
+Costs assume **`ingestion_mode: curated`** (default — gpt-4o-mini per session for L0-L3 + fact extraction) plus gpt-4o-mini for the answer hypothesis plus gpt-4o for the official judge.
 
-Setting `OPENAI_ORG` or a hard spend limit on the OpenAI account before running is recommended.
+| Phase | Duration | Ingestion cost (gpt-4o-mini curation) | Answer+judge cost | Total LLM |
+|---|---|---|---|---|
+| Plan implementation (Tasks 1-10) | 3-5 h | $0 | $0 | **$0** |
+| First fixture/schema reality check | 30-60 min | $0 | $0 | **$0** |
+| Smoke run (5 cases, ~200 sessions) | ~2 min | ~$0.08 | ~$0.02 | **~$0.10** |
+| Baseline run (25 cases, ~1000 sessions) | ~10-15 min | ~$0.35 | ~$0.10 | **~$0.45** |
+| Full `temporal-reasoning` (~150 cases, ~6000 sessions) | 30-45 min | ~$2.20 | ~$0.80 | **~$3** |
+| Full `_s` (500 cases, ~20000 sessions) | 60-90 min | ~$6-8 | ~$2-4 | **~$8-12** |
+
+**Cost breakdown for curated ingestion:**
+- Average ~500 input + ~200 output tokens per session curation call
+- gpt-4o-mini: $0.15/1M input, $0.60/1M output
+- 20,000 sessions ≈ 14M total tokens ≈ ~$6-8 for the full `_s` ingestion pass
+
+**If you run `ingestion_mode: raw` ablation:** divide ingestion cost by 0 (no LLM calls for ingest). Only answer+judge remain, so the full `_s` is ~$2-4 instead of ~$8-12. Use `raw` only for comparison; never publish a headline number from raw mode.
+
+Setting `OPENAI_ORG` or a hard spend limit on the OpenAI account before running is strongly recommended. A full `_s` misconfigured (wrong subset, wrong model) can burn $10+ with nothing to show for it.
 
 ---
 
@@ -1229,6 +1522,7 @@ Setting `OPENAI_ORG` or a hard spend limit on the OpenAI account before running 
 
 - ~~"Which LLM for the judge?"~~ → gpt-4o (official LongMemEval judge), not configurable.
 - ~~"Which embedding model?"~~ → **`Qwen/Qwen3-Embedding-4B` with Matryoshka truncation to 1024 dims** (see Section 3.3 for reasoning). BGE-M3 remains the baseline comparator. Always record `embedding.model` + `embedding.dim` in the results JSON.
+- ~~"Curate ingestion or dump raw turns?"~~ → **Curated via gpt-4o-mini per session** (matches Zep's internal graph-construction LLM, see Section 2.3). Raw mode exists only as an ablation baseline; never publish a headline from raw mode.
 - ~~"Run on prod or separate host?"~~ → separate host with GPU. This document.
 - ~~"Use longmemeval_s or _m?"~~ → `_s` for Phase 1. `_m` (500 sessions/case) is a stress test, not a starter baseline.
 
