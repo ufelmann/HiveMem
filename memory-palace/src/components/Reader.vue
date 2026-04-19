@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { useReaderStore } from '../stores/reader'
 import { useDrawerStore } from '../stores/drawer'
 import MarkdownTab from './readers/MarkdownTab.vue'
+import PdfTab from './readers/PdfTab.vue'
+import EmlTab from './readers/EmlTab.vue'
 
 const reader = useReaderStore()
 const drawer = useDrawerStore()
@@ -11,6 +13,9 @@ const attachments = computed(() => {
   // Populated later from drawer references; empty in SP1 v1
   return [] as { id: string; title: string; url: string; kind: 'pdf' | 'eml' }[]
 })
+
+function kindOf(tab: string) { return attachments.value.find(a => a.id === tab)?.kind }
+function urlOf(tab: string) { return attachments.value.find(a => a.id === tab)?.url ?? '' }
 </script>
 
 <template>
@@ -27,6 +32,8 @@ const attachments = computed(() => {
       </header>
       <main class="reader-body">
         <MarkdownTab v-if="reader.activeTab === 'markdown'" :content="drawer.current.drawer.content" />
+        <PdfTab v-else-if="kindOf(reader.activeTab) === 'pdf'" :url="urlOf(reader.activeTab)" />
+        <EmlTab v-else-if="kindOf(reader.activeTab) === 'eml'" :url="urlOf(reader.activeTab)" />
       </main>
     </div>
   </v-dialog>
