@@ -181,15 +181,39 @@ Sources: [LongMemEval README](https://github.com/xiaowu0162/LongMemEval#-testing
 4. **Phase-gated scope.** Phase 1 = one subset (`temporal-reasoning`, 150 cases) to validate the pipeline end-to-end. Phase 2+ (full 5 subsets, CI regression gate, dashboard) ship as follow-up tickets once Phase 1 produces a clean number.
 5. **Budget guardrails.** Default `max_examples` = 25. Explicit flag required to run the full 150-case temporal subset (~$0.30-0.80 in gpt-4o-mini for answer generation + gpt-4o judge costs).
 
-### 3.3 Hardware recommendation
+### 3.3 Hardware + embedding recommendation
 
-| Tier | GPU | Embedding model | ~Time for `_s` (500 cases) |
-|---|---|---|---|
-| Minimum | RTX 3060 12 GB | BAAI/bge-m3 | ~30 min |
-| Balanced | RTX 4070 Ti 16 GB | Alibaba-NLP/gte-Qwen2-7B-instruct | ~10 min |
-| Comfort | RTX 4090 24 GB | nvidia/NV-Embed-v2 | ~5 min |
+**Hidden blocker: pgvector HNSW has a 2000-dim limit for full-precision `vector` type.** HiveMem uses 1024-dim in prod today. Any embedding model with >2000 native dims must either (a) use [Matryoshka truncation](https://arxiv.org/abs/2205.13147) down to ≤2000 dims (preferred when the model supports it — Qwen3, NV-Embed, Gemini-Embedding all do), or (b) trigger a schema migration to `halfvec` (HNSW supports up to 4000 dims at half-precision). Task 1's config.example.yml defaults to 1024-dim Matryoshka.
 
-The embedding service is already decoupled (`embedding-service/` in this repo), so swapping the model is a single environment-variable change.
+| Tier | GPU | Embedding model | Native dim | Output dim | ~Time for `_s` (500 cases) |
+|---|---|---|---|---|---|
+| Minimum | RTX 3060 12 GB | [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3) | 1024 | 1024 | ~30 min |
+| Minimum+ | RTX 3060 12 GB | [Qwen/Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) | 1024 | 1024 | ~20 min |
+| **Balanced (recommended)** | RTX 4070 Ti 16 GB | [**Qwen/Qwen3-Embedding-4B**](https://huggingface.co/Qwen/Qwen3-Embedding-4B) | 2560 | 1024 via Matryoshka | ~10 min |
+| Comfort | RTX 4090 24 GB | [Qwen/Qwen3-Embedding-8B](https://huggingface.co/Qwen/Qwen3-Embedding-8B) | 4096 | 1024 via Matryoshka | ~5 min |
+| Comfort alt | RTX 4090 24 GB | [nvidia/Llama-Embed-Nemotron-8B](https://arxiv.org/abs/2511.07025) (Nov 2025) | 4096 | 1024 via Matryoshka | ~5 min |
+
+**Why Qwen3-Embedding-4B @ 1024-dim Matryoshka is the recommended default:**
+
+- [#1 MTEB Multilingual](https://huggingface.co/spaces/mteb/leaderboard) scores in the Qwen3 family; 4B sits ~1 point behind 8B, ~5 points ahead of 0.6B
+- Native 2560-dim exceeds HNSW's 2000-dim full-precision limit — Matryoshka truncation to 1024 avoids a schema migration
+- Fits on a single 16 GB consumer GPU at fp16
+- The embedding service is decoupled (`embedding-service/` in this repo), so swapping the model is a single env-var change; no server code touched
+
+**Deprecated choices (do not use):**
+- `Alibaba-NLP/gte-Qwen2-7B-instruct` — superseded by Qwen3-Embedding; no Matryoshka, 3584-dim forces halfvec migration
+- `nvidia/NV-Embed-v2` — still competitive but Qwen3 family beats it on MTEB 2025/2026 leaderboards
+- `text-embedding-3-large` (OpenAI API) — API-only, $0.13/1M tokens extra per ingest, no local iteration
+
+### 3.4 Suggested embedding A/B for Phase 1 follow-up
+
+Once the pipeline works end-to-end with **one** embedding model, rerun the same 25-case baseline with two alternatives to isolate the embedding contribution. Record results in the results JSON with `embedding.model` keyed:
+
+1. `BAAI/bge-m3` — solid baseline, widely cited
+2. `Qwen/Qwen3-Embedding-4B` @ 1024-dim Matryoshka — recommended
+3. `Qwen/Qwen3-Embedding-8B` @ 1024-dim Matryoshka — if GPU permits
+
+Expected delta: Qwen3-4B should outperform BGE-M3 by 3-8 percentage points on retrieval-limited cases (multi-session, knowledge-update). If it does not, something else is the bottleneck (ranker weights, context formatting, answer-LLM size).
 
 ---
 
@@ -1117,7 +1141,7 @@ Setting `OPENAI_ORG` or a hard spend limit on the OpenAI account before running 
 ## 11. Open questions resolved during design
 
 - ~~"Which LLM for the judge?"~~ → gpt-4o (official LongMemEval judge), not configurable.
-- ~~"Which embedding model?"~~ → whatever the benchmark host's embedding service serves. Default recommendation: BGE-M3 for balance of quality and VRAM usage. Record in results JSON.
+- ~~"Which embedding model?"~~ → **`Qwen/Qwen3-Embedding-4B` with Matryoshka truncation to 1024 dims** (see Section 3.3 for reasoning). BGE-M3 remains the baseline comparator. Always record `embedding.model` + `embedding.dim` in the results JSON.
 - ~~"Run on prod or separate host?"~~ → separate host with GPU. This document.
 - ~~"Use longmemeval_s or _m?"~~ → `_s` for Phase 1. `_m` (500 sessions/case) is a stress test, not a starter baseline.
 
@@ -1191,13 +1215,26 @@ All external resources cited in this plan, collated for quick lookup.
 - LightRAG (dual-level retrieval paradigm): [Guo et al., arXiv:2410.05779](https://arxiv.org/abs/2410.05779)
 - Graphiti (temporal KG engine behind Zep): <https://github.com/getzep/graphiti>
 
-### Embedding models recommended for the benchmark host
-- BAAI/bge-m3 (balanced default, ~2-4 GB VRAM): <https://huggingface.co/BAAI/bge-m3>
-- Alibaba-NLP/gte-Qwen2-7B-instruct: <https://huggingface.co/Alibaba-NLP/gte-Qwen2-7B-instruct>
-- Qwen/Qwen3-Embedding-0.6B (tiny, fast): <https://huggingface.co/Qwen/Qwen3-Embedding-0.6B>
-- Qwen/Qwen3-Embedding-8B (SOTA on MTEB 2025): <https://huggingface.co/Qwen/Qwen3-Embedding-8B>
-- nvidia/NV-Embed-v2 (top MTEB leaderboard): <https://huggingface.co/nvidia/NV-Embed-v2>
-- MTEB leaderboard (for current rankings): <https://huggingface.co/spaces/mteb/leaderboard>
+### Embedding models (ranked, current as of April 2026)
+Recommended tier for the benchmark host:
+- **Qwen/Qwen3-Embedding-4B** (recommended default, 1024-dim via Matryoshka): <https://huggingface.co/Qwen/Qwen3-Embedding-4B>
+- Qwen/Qwen3-Embedding-8B (top-shelf, 24 GB GPU): <https://huggingface.co/Qwen/Qwen3-Embedding-8B>
+- Qwen/Qwen3-Embedding-0.6B (tiny, fast, native 1024-dim): <https://huggingface.co/Qwen/Qwen3-Embedding-0.6B>
+- Qwen3 Embedding paper: [arXiv:2506.05176](https://arxiv.org/html/2506.05176v1)
+- Qwen3-Embedding repo: <https://github.com/QwenLM/Qwen3-Embedding>
+- BAAI/bge-m3 (baseline comparator, 1024-dim native): <https://huggingface.co/BAAI/bge-m3>
+- nvidia/Llama-Embed-Nemotron-8B (Nov 2025, strong Borda rank): [arXiv:2511.07025](https://arxiv.org/abs/2511.07025)
+- nvidia/NV-Embed-v2 (2024, still competitive): <https://huggingface.co/nvidia/NV-Embed-v2>
+
+Supporting:
+- MTEB leaderboard (live rankings): <https://huggingface.co/spaces/mteb/leaderboard>
+- MTEB results repo (raw data): <https://github.com/embeddings-benchmark/results>
+- Matryoshka Representation Learning paper (truncation technique): [arXiv:2205.13147](https://arxiv.org/abs/2205.13147)
+- pgvector HNSW dim limits: <https://github.com/pgvector/pgvector#supported-index-types>
+
+Deprecated for this benchmark (do not use):
+- Alibaba-NLP/gte-Qwen2-7B-instruct (superseded by Qwen3, no Matryoshka, 3584-dim needs halfvec)
+- text-embedding-3-large (OpenAI API-only, costs extra per ingest, no local iteration)
 
 ### HiveMem internals the benchmark depends on
 - MCP tool surface and JSON-RPC contract: [`java-server/src/main/java/com/hivemem/mcp/McpController.java`](../../java-server/src/main/java/com/hivemem/mcp/McpController.java)
