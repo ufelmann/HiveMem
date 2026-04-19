@@ -17,6 +17,7 @@ let app: Application | null = null
 let world: Container | null = null
 let snapToRef: ((worldX: number, worldY: number, targetZoom: number, onDone: () => void) => void) | null = null
 let onDrawerClickRef: ((d: Drawer) => void) | null = null
+let cleanup: (() => void) | null = null
 
 onMounted(async () => {
   if (!root.value) return
@@ -54,13 +55,19 @@ onMounted(async () => {
     dragging = true; dragStartX = e.clientX; dragStartY = e.clientY
     dragStartPanX = panX; dragStartPanY = panY
   })
-  window.addEventListener('pointerup', () => dragging = false)
-  window.addEventListener('pointermove', e => {
+  const onPointerUp = () => { dragging = false }
+  const onPointerMove = (e: PointerEvent) => {
     if (!dragging) return
     panX = dragStartPanX + (e.clientX - dragStartX)
     panY = dragStartPanY + (e.clientY - dragStartY)
     applyTransform()
-  })
+  }
+  window.addEventListener('pointerup', onPointerUp)
+  window.addEventListener('pointermove', onPointerMove)
+  cleanup = () => {
+    window.removeEventListener('pointerup', onPointerUp)
+    window.removeEventListener('pointermove', onPointerMove)
+  }
 
   function applyTransform() {
     if (!world || !app) return
@@ -110,7 +117,10 @@ onMounted(async () => {
   render()
 })
 
-onBeforeUnmount(() => { app?.destroy(true, { children: true, texture: false }); app = null; world = null })
+onBeforeUnmount(() => {
+  cleanup?.(); cleanup = null
+  app?.destroy(true, { children: true, texture: false }); app = null; world = null
+})
 
 function render() {
   if (!world || !app) return
