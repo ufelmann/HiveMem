@@ -1,5 +1,5 @@
 ---
-name: mempalace-wakeup
+name: hivemem-wakeup
 description: Use at the start of every session to load identity and critical context from HiveMem.
 ---
 

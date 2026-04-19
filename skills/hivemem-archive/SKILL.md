@@ -1,5 +1,5 @@
 ---
-name: mempalace-archive
+name: hivemem-archive
 description: Use when archiving a completed session, decision, or discovery into HiveMem.
 ---
 

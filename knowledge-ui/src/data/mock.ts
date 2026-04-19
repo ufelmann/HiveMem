@@ -1007,7 +1007,7 @@ const drawers: RawDrawer[] = [
       { id: '6dde866c-9e42-4a52-8475-6b917d14f8ca', subject: 'HiveMem', predicate: 'runs_on', object: 'Java 25 + Spring Boot 4.0.5 (v4.0.0)' },
       { id: 'f10bfbe1-3c39-4626-9277-085a1353956d', subject: 'Spring Boot 4.0', predicate: 'breaking_change', object: 'Jackson 3 (tools.jackson.databind), @MockitoBean, modularized auto-configs' },
       { id: 'f88b1bdc-67cf-4423-9437-05304517efc9', subject: 'CT 102', predicate: 'requires_for_jdk25', object: '--security-opt apparmor=unconfined on all Docker containers' },
-      { id: 'e0a6b8e3-d989-4045-afc3-24d05bf6fdd5', subject: 'mempalace-repo', predicate: 'runtime', object: 'java (python removed)' },
+      { id: 'e0a6b8e3-d989-4045-afc3-24d05bf6fdd5', subject: 'hivemem-repo', predicate: 'runtime', object: 'java (python removed)' },
     ],
     tunnels: [
       { targetId: '0bd7a2aa-8f81-43b2-a640-5ec859f4d4d6', relation: 'related_to' },
