@@ -212,11 +212,21 @@ function onClick(e: any) {
 }
 
 const groupPos = computed<[number, number, number]>(() => props.cell.centroid)
+
+// Rotate the cell so its local +Z axis (extrusion direction) aligns with the
+// outward normal from the sphere centre to this cell's centroid.
+const cellRotation = computed<[number, number, number]>(() => {
+  const normal = new THREE.Vector3(...props.cell.centroid).normalize()
+  const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal)
+  const euler = new THREE.Euler().setFromQuaternion(quat, 'XYZ')
+  return [euler.x, euler.y, euler.z]
+})
 </script>
 
 <template>
   <TresGroup
     :position="groupPos"
+    :rotation="cellRotation"
     :scale="scale"
     @pointer-over="onPointerOver"
     @pointer-leave="onPointerLeave"
