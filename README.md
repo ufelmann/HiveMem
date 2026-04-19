@@ -263,6 +263,29 @@ You have access to HiveMem via MCP. It is your long-term memory. Use it.
 - Call `hivemem_wake_up` before your first response. No exceptions.
 - If the user asks about past work, decisions, or people: `hivemem_search` first, never guess.
 
+### During conversation — search proactively
+
+Wake_up is a snapshot, not a subscription. As the conversation evolves, the relevant memory changes. Search actively when you see these signals:
+
+- **Named reference.** When the user mentions a named project, person, decision, tool, or system that wasn't in wake_up context → call `hivemem_search` BEFORE answering. Even if you think you remember: verify.
+- **Temporal reference.** Phrases like "last week", "a while back", "we decided earlier", "remember when" → call `hivemem_search` (optionally with time filter), or `hivemem_time_machine` for point-in-time queries.
+- **Uncertainty.** If you are about to say "I'm not sure", "I don't recall exactly", or hedge with vague language → search FIRST. If the search returns nothing, then hedge.
+- **Topic drift.** When the conversation shifts to a new topic area not covered in wake_up → quick `hivemem_search` on the new topic keywords before engaging deeply.
+- **Entity-specific.** When the user asks about a specific entity (person, project, technology) → `hivemem_quick_facts` for fast entity lookup, `hivemem_search_kg` for relationship queries.
+
+**Anti-patterns (do NOT do this):**
+- Answering from wake_up context when the topic wasn't in wake_up
+- Hedging instead of searching ("I think we discussed..." without verifying)
+- Batching searches for the end of the conversation
+- Assuming the user will prompt you to search — they won't
+
+**Rule of thumb.** One `hivemem_search` call is cheap (~100ms, no cost). Answering wrong or vague because you didn't search is expensive (user frustration, broken trust in memory system).
+
+**Examples — good proactive search:**
+- User: "What did we decide about the embedding model?" → call `hivemem_search("embedding model decision")` BEFORE answering, then cite the decision with its date.
+- User: "Remember that patch last week?" → call `hivemem_search("patch")` with a recent-date filter, or `hivemem_time_machine` for a point-in-time view.
+- User: "How does the auth flow work again?" → call `hivemem_quick_facts("auth")` first to pull structured facts, then `hivemem_search` for the design drawer.
+
 ### During work
 - After completing a significant action (bug fix, feature, design decision, deployment, investigation):
   archive it immediately. Do not batch, do not wait for session end.
