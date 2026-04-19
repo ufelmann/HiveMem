@@ -7,6 +7,7 @@ import { useCanvasStore } from '../../stores/canvas'
 import { useDrawerStore } from '../../stores/drawer'
 import { useReaderStore } from '../../stores/reader'
 import { computeWingPositions, poissonDiskDrawers } from '../../composables/layout'
+import { drawerVisibleAt } from '../../composables/lod'
 import type { Drawer } from '../../api/types'
 
 const root = ref<HTMLDivElement>()
@@ -55,8 +56,23 @@ onMounted(async () => {
   })
 
   function applyTransform() {
-    if (!world) return
+    if (!world || !app) return
     world.scale.set(zoom); world.position.set(panX, panY)
+    const viewLeft = -panX / zoom, viewTop = -panY / zoom
+    const viewRight = viewLeft + app.screen.width / zoom
+    const viewBottom = viewTop + app.screen.height / zoom
+    for (const c of world.children) {
+      const s = c as any
+      if (s._kind === 'drawer') {
+        let vis = drawerVisibleAt(zoom)
+        if (vis) {
+          const r = Math.max(s.width, s.height)
+          vis = s.x + r > viewLeft && s.x - r < viewRight
+             && s.y + r > viewTop  && s.y - r < viewBottom
+        }
+        s.visible = vis
+      }
+    }
   }
 
   function snapTo(worldX: number, worldY: number, targetZoom: number, onDone: () => void) {
