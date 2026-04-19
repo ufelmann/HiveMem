@@ -1,0 +1,57 @@
+import type { ApiClient, HiveEvent, StatusSummary } from './types'
+
+export interface HttpApiConfig {
+  endpoint: string
+  token: string
+  pollMs?: number
+}
+
+export class HttpApiClient implements ApiClient {
+  private nextId = 1
+  private subscribers = new Set<(e: HiveEvent) => void>()
+  private timer: number | null = null
+  private lastActivity: string | null = null
+
+  constructor(private config: HttpApiConfig) {}
+
+  async call<T>(tool: string, args: Record<string, unknown> = {}): Promise<T> {
+    const id = this.nextId++
+    const res = await fetch(this.config.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${this.config.token}`
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: tool, arguments: args } })
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const json = await res.json() as { result?: T; error?: { message: string } }
+    if (json.error) throw new Error(json.error.message)
+    return json.result as T
+  }
+
+  subscribe(onEvent: (e: HiveEvent) => void): () => void {
+    this.subscribers.add(onEvent)
+    if (!this.timer) this.startPolling()
+    return () => {
+      this.subscribers.delete(onEvent)
+      if (this.subscribers.size === 0 && this.timer) {
+        clearInterval(this.timer); this.timer = null
+      }
+    }
+  }
+
+  private startPolling() {
+    const interval = this.config.pollMs ?? 10_000
+    this.timer = setInterval(async () => {
+      try {
+        const s = await this.call<StatusSummary>('hivemem_status')
+        if (this.lastActivity && s.last_activity !== this.lastActivity) {
+          this.subscribers.forEach(sub => sub({ type: 'status', last_activity: s.last_activity }))
+        }
+        this.lastActivity = s.last_activity
+      } catch { /* swallow — next tick will retry */ }
+    }, interval) as unknown as number
+  }
+}
