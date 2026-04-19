@@ -118,6 +118,8 @@ Sources: [LongMemEval README](https://github.com/xiaowu0162/LongMemEval#-testing
 
 | System | LongMemEval(-s) score | Notes | Source |
 |---|---|---|---|
+| **MemPalace** (raw, no LLM ingestion) | **96.6% R@5** self-reported | Claims 98.4% R@5 with Hybrid v4 tuning, ≥99% with LLM reranking. Released April 2026, 48k+ GitHub stars. R@5 is a retrieval metric (top-5 contains ground-truth session) — **not the same as QA accuracy**, easier to score high. | [github.com/MemPalace/mempalace](https://github.com/MemPalace/mempalace), [NeverCodeAlone glossary](https://nevercodealone.de/de/glossare/ki-tools-2026/mempalace-milla-jovovich-open-source-ki-memory-gegen-ki-amnesie) |
+| MemPalace (disputed by issue #214) | Score controversial | "96.6% R@5 does not test any MemPalace-specific functionality" — the number is effectively a vanilla ChromaDB score over 500 short conversations. AAAK compression, palace-boost, contradiction-detection claims also flagged for correction. Issue closed but substantive criticism unresolved. | [MemPalace issue #214](https://github.com/MemPalace/mempalace/issues/214) |
 | Mem0 (new token-efficient algo) | **93.4%** self-reported | Also claims LoCoMo 91.6% | [mem0.ai/research](https://mem0.ai/research) |
 | MemMachine | **93.0%** self-reported | On LongMemEval_S with full 6-dimension optimization; +2.6% when using gpt-5-mini over gpt-5 as answer LLM | [arXiv:2604.04853](https://arxiv.org/html/2604.04853) |
 | Zep (state-of-the-art post) | "+18.5% aggregate over baseline" | No isolated absolute %, relative vs full-context baseline. Answer LLM gpt-4o-mini + gpt-4o | [blog.getzep.com/state-of-the-art-agent-memory](https://blog.getzep.com/state-of-the-art-agent-memory/) |
@@ -131,8 +133,11 @@ Sources: [LongMemEval README](https://github.com/xiaowu0162/LongMemEval#-testing
 ### Controversies to be aware of
 
 - **Zep ↔ Mem0 cross-fire.** Both vendors accuse the other of benchmark methodology errors. Mem0 reran Zep with "standardized settings" and got 58.44% where Zep reported 84%. Zep recomputed Mem0 with adversarial-category inclusion fixes and claimed Zep beats Mem0 by 10%. Only the **official LongMemEval judge** settles this for outsiders — which is exactly why our plan uses it.
+- **MemPalace's 96.6% vs. reality.** The headline claim measures R@5 retrieval recall on 500 short conversations, which is close to what vanilla ChromaDB returns with no memory-system logic. [Issue #214](https://github.com/MemPalace/mempalace/issues/214) (closed, but substantive) documents that "the benchmark methodology inflates scores by design" and that the 96.6% number does not exercise any MemPalace-specific functionality. Treat MemPalace's raw-mode number as a **ceiling on naive retrieval performance**, not a memory-system score.
+- **R@5 ≠ QA accuracy.** MemPalace reports retrieval recall (was the gold session in the top-5?). The Zep/Mem0/MemGPT numbers and the official LongMemEval judge report **end-to-end QA accuracy** (did the LLM answer correctly after retrieval?). These are different metrics; a system can have 99% R@5 and 60% QA accuracy if the LLM hallucinates despite being handed the right context. Our plan reports QA accuracy for headline numbers and R@5 as a secondary diagnostic.
 - **Adversarial category handling.** LongMemEval includes `*_abs` abstention questions. Including vs. excluding them in the accuracy denominator can swing numbers by 10+ points. Our loader keeps them by default (matches the official script's behavior); document any deviation.
 - **MEMTRACK independent signal.** An independent 2025 paper suggests that on top of GPT-5 / Gemini-2.5-Pro, *neither* Mem0 nor Zep adds meaningful accuracy, and Mem0 slightly degrades Gemini. Interpretation: strong base models already handle long-context recall; memory layers matter most for *small* answer LLMs. Record the answer-LLM tier in the results JSON so this signal surfaces.
+- **Terminology note on MemPalace.** MemPalace uses the identical spatial metaphor (Wings / Halls / Rooms / Drawers / Tunnels) that HiveMem uses. Origin and relationship of the two projects is outside this plan's scope; record it only as a factual observation.
 
 ### What this tells us to expect for HiveMem Phase 1
 
@@ -193,17 +198,17 @@ Task 6's harness calls `curate_session` per session, then feeds the curated payl
 
 gpt-4o-mini at ~$0.15/1M input and ~$0.60/1M output. Roughly 500 input + 200 output tokens per session for curation. Track this in the results JSON as `ingestion.cost_usd` alongside answer+judge cost.
 
-### Two-mode optional comparison
+### Two-mode comparison (both are first-class results)
 
-For debugging and to document HiveMem's architecture advantage, Section 3.4's follow-up A/B can add a **third axis**: ingestion mode.
+Section 3.4's A/B adds a **third axis**: ingestion mode. Unlike my earlier stance, `raw` is **not just an ablation** — MemPalace demonstrates (with caveats around their metric) that raw vector retrieval over verbatim storage can score highly on LongMemEval when the dataset is small enough. A HiveMem raw-mode number is the natural comparable to MemPalace, and a curated-mode number is the natural comparable to Zep / Mem0 / MemMachine.
 
-| Mode | Describes | Purpose |
-|---|---|---|
-| `raw` | Dump raw turns as L0, no L1-L3, no facts | Baseline showing how much curation contributes |
-| `curated` (default) | gpt-4o-mini fills L0-L3 + extracts facts | Fair comparison vs Zep/Mem0 |
-| `curated+tunnels` | Above plus post-hoc tunnel creation between semantically close drawers | Demonstrates HiveMem's graph signal (optional, may overfit) |
+| Mode | Describes | Comparable to | Headline? |
+|---|---|---|---|
+| `raw` | Dump raw turns as L0, no L1-L3, no facts, no KG | **MemPalace raw** (96.6% R@5 claim), vanilla-ChromaDB baselines | Yes — reported as a separate headline |
+| `curated` (default) | gpt-4o-mini fills L0-L3 + extracts 0-3 facts per session | **Zep** (gpt-4o-mini graph construction), Mem0 (LLM extraction), MemMachine | Yes — primary headline |
+| `curated+tunnels` | Above plus post-hoc `hivemem_add_tunnel` between semantically close drawers | HiveMem-specific graph signal showcase | Optional, may overfit |
 
-The default is `curated`. Only report headline numbers from `curated` runs.
+**Always report both modes.** A big curated-over-raw delta means the LLM curation is doing real work; a small delta means either the dataset is too easy or your retrieval stack is already saturating the signal. Both findings are informative and neither is embarrassing. Just be explicit in the results JSON which mode produced which number.
 
 ---
 
@@ -1501,7 +1506,7 @@ Costs assume **`ingestion_mode: curated`** (default — gpt-4o-mini per session 
 - gpt-4o-mini: $0.15/1M input, $0.60/1M output
 - 20,000 sessions ≈ 14M total tokens ≈ ~$6-8 for the full `_s` ingestion pass
 
-**If you run `ingestion_mode: raw` ablation:** divide ingestion cost by 0 (no LLM calls for ingest). Only answer+judge remain, so the full `_s` is ~$2-4 instead of ~$8-12. Use `raw` only for comparison; never publish a headline number from raw mode.
+**If you run `ingestion_mode: raw`:** no ingestion LLM calls. Only answer+judge remain, so the full `_s` is ~$2-4 instead of ~$8-12. Raw mode is a first-class comparable to MemPalace's published raw score — reportable as its own headline, clearly labeled as raw.
 
 Setting `OPENAI_ORG` or a hard spend limit on the OpenAI account before running is strongly recommended. A full `_s` misconfigured (wrong subset, wrong model) can burn $10+ with nothing to show for it.
 
@@ -1522,7 +1527,7 @@ Setting `OPENAI_ORG` or a hard spend limit on the OpenAI account before running 
 
 - ~~"Which LLM for the judge?"~~ → gpt-4o (official LongMemEval judge), not configurable.
 - ~~"Which embedding model?"~~ → **`Qwen/Qwen3-Embedding-4B` with Matryoshka truncation to 1024 dims** (see Section 3.3 for reasoning). BGE-M3 remains the baseline comparator. Always record `embedding.model` + `embedding.dim` in the results JSON.
-- ~~"Curate ingestion or dump raw turns?"~~ → **Curated via gpt-4o-mini per session** (matches Zep's internal graph-construction LLM, see Section 2.3). Raw mode exists only as an ablation baseline; never publish a headline from raw mode.
+- ~~"Curate ingestion or dump raw turns?"~~ → **Run BOTH modes and report both headlines.** Curated (gpt-4o-mini per session, matches Zep) is the primary. Raw is the natural comparable to MemPalace's published raw-mode claim. Never collapse the two — readers need to know which mode produced which score (see Section 2.3).
 - ~~"Run on prod or separate host?"~~ → separate host with GPU. This document.
 - ~~"Use longmemeval_s or _m?"~~ → `_s` for Phase 1. `_m` (500 sessions/case) is a stress test, not a starter baseline.
 
@@ -1585,6 +1590,13 @@ All external resources cited in this plan, collated for quick lookup.
 ### Independent evaluation (MEMTRACK)
 - Paper: [*MEMTRACK: Evaluating Long-Term Memory and State Tracking* (arXiv:2510.01353)](https://arxiv.org/abs/2510.01353)
 - Finding: both Mem0 and Zep show no significant improvement over base GPT-5 / Gemini-2.5-Pro, with slight degradation in some Gemini+Mem0 configurations. Memory layers matter more for smaller answer LLMs.
+
+### MemPalace (released April 2026, 48k+ stars, raw-mode-focused)
+- Repo: <https://github.com/MemPalace/mempalace> — 29 MCP tools, Wings/Halls/Rooms/Drawers/Tunnels hierarchy, ChromaDB + SQLite backend, Python 3.9+
+- Author note in third-party article: co-created by Ben Sigman and (per article) Milla Jovovich as conceptual co-author
+- Glossary article (independent coverage): <https://nevercodealone.de/de/glossare/ki-tools-2026/mempalace-milla-jovovich-open-source-ki-memory-gegen-ki-amnesie>
+- Score correction thread: [MemPalace issue #214 — "Benchmarks do not exercise MemPalace — headline 96.6% is a ChromaDB score"](https://github.com/MemPalace/mempalace/issues/214)
+- Headline claim: **96.6% R@5 raw** (no LLM), 98.4% R@5 Hybrid v4, ≥99% R@5 with LLM reranking. Note R@5 is retrieval recall, not QA accuracy — see Section 2.2 for the metric caveat.
 
 ### Other memory benchmarks worth knowing
 - LoCoMo (Zep's primary published benchmark): <https://github.com/snap-research/locomo>
