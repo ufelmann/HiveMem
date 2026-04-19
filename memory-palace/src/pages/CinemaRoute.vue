@@ -1,15 +1,37 @@
 <script setup lang="ts">
+import { defineAsyncComponent, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useCanvasStore } from '../stores/canvas'
+
 const router = useRouter()
+const canvas = useCanvasStore()
+
+const TresCanvas = defineAsyncComponent(() =>
+  import('@tresjs/core').then((m) => ({ default: m.TresCanvas })),
+)
+const HiveSphere = defineAsyncComponent(() => import('../components/hive/HiveSphere.vue'))
+const CyberBees  = defineAsyncComponent(() => import('../components/hive/CyberBees.vue'))
+const HiveFloor  = defineAsyncComponent(() => import('../components/hive/HiveFloor.vue'))
+
+onMounted(() => { if (!canvas.loaded) canvas.loadTopLevel() })
 </script>
+
 <template>
-  <div class="cinema-root">
-    <v-btn class="back-btn" icon="mdi-arrow-left" @click="router.push('/')" />
-    <div class="placeholder">Cinema Mode (TresJS HiveSphere wired in Task 22)</div>
+  <div class="cinema">
+    <v-btn class="back" icon="mdi-arrow-left" @click="router.push('/')" />
+    <Suspense>
+      <TresCanvas clear-color="#000010" :dpr="1.5">
+        <TresPerspectiveCamera :position="[0, 0, 14]" />
+        <TresAmbientLight :intensity="0.3" />
+        <HiveSphere v-if="canvas.loaded" :wings="canvas.wings" :drawers="canvas.drawers" />
+        <CyberBees />
+        <HiveFloor />
+      </TresCanvas>
+    </Suspense>
   </div>
 </template>
+
 <style scoped>
-.cinema-root { position:fixed; inset:0; background:#000; }
-.back-btn { position:fixed; top:16px; left:16px; }
-.placeholder { color:#4dc4ff; display:grid; place-items:center; height:100%; font-size:14px; letter-spacing:0.2em; }
+.cinema { position: fixed; inset: 0; background: #000010; }
+.back { position: fixed; top: 16px; left: 16px; z-index: 2; }
 </style>

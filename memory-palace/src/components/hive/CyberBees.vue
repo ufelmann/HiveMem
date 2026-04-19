@@ -2,7 +2,24 @@
 import { onBeforeUnmount, shallowRef } from 'vue'
 import * as THREE from 'three'
 import { useLoop } from '@tresjs/core'
-import { getGoldParticleTexture } from '../../composables/useTextures'
+
+// Inlined replacement for the deleted useTextures composable. Generates a small
+// radial-gradient canvas texture that looks like a glowing gold particle.
+function buildGoldParticleTexture(): THREE.CanvasTexture {
+  const S = 64
+  const canvas = document.createElement('canvas')
+  canvas.width = S; canvas.height = S
+  const ctx = canvas.getContext('2d')!
+  const grad = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2)
+  grad.addColorStop(0, 'rgba(255, 232, 150, 1)')
+  grad.addColorStop(0.4, 'rgba(212, 175, 55, 0.7)')
+  grad.addColorStop(1, 'rgba(212, 175, 55, 0)')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, S, S)
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.needsUpdate = true
+  return tex
+}
 
 const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
 const BEE_COUNT = isMobile ? 10 : 20
@@ -25,8 +42,9 @@ const positions = new Float32Array(BEE_COUNT * 3)
 const geometry = new THREE.BufferGeometry()
 geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
 
+const particleTex = buildGoldParticleTexture()
 const material = new THREE.PointsMaterial({
-  map: getGoldParticleTexture(),
+  map: particleTex,
   color: '#d4af37',
   size: 0.08,
   transparent: true,
@@ -56,6 +74,7 @@ onBeforeUnmount(() => {
   stopLoop.off()
   geometry.dispose()
   material.dispose()
+  particleTex.dispose()
 })
 
 const _object = shallowRef(points)
