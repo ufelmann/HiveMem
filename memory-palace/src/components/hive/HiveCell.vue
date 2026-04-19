@@ -138,30 +138,35 @@ function buildGeometry() {
   const centroid = new THREE.Vector3(...props.cell.centroid)
   const normal = centroid.clone().normalize()
   const N = props.cell.vertices.length
-  const vertsRel = props.cell.vertices.map((v) => new THREE.Vector3(...v).sub(centroid))
+  // Shrink cell toward centroid so dark background shows between cells = visible metal frame
+  const INSET = 0.88
+  const vertsRel = props.cell.vertices.map((v) => {
+    const raw = new THREE.Vector3(...v).sub(centroid)
+    return raw.multiplyScalar(INSET)
+  })
 
   // UV basis: use first vertex direction as reference
   const vRef = vertsRel[0].clone().normalize()
   const uBasis = vRef.clone().sub(normal.clone().multiplyScalar(vRef.dot(normal))).normalize()
   const vBasis = new THREE.Vector3().crossVectors(normal, uBasis).normalize()
 
-  // Build a shallow extrusion: front face on sphere surface, back face pulled
-  // slightly inward along the centroid normal. No rotation needed — vertices
-  // are already in world space, so neighbour cells share edges exactly.
-  const depth = 0.06
+  // Shallow extrusion: push front face slightly outward from sphere, back face inward
+  const frontDepth = 0.04
+  const backDepth = 0.10
   const positions: number[] = []
   const uvs: number[] = []
 
-  // Front ring (vertices as-is) — world-space coords relative to centroid
+  // Front ring: pushed slightly outward along normal
   for (const v of vertsRel) {
-    positions.push(v.x, v.y, v.z)
+    const front = v.clone().add(normal.clone().multiplyScalar(frontDepth))
+    positions.push(front.x, front.y, front.z)
     const u = v.dot(uBasis), w = v.dot(vBasis)
     const r = Math.sqrt(u * u + w * w) || 1
     uvs.push(0.5 + (u / r) * 0.5, 0.5 + (w / r) * 0.5)
   }
   // Back ring (pulled toward sphere centre along normal)
   for (const v of vertsRel) {
-    const back = v.clone().sub(normal.clone().multiplyScalar(depth))
+    const back = v.clone().sub(normal.clone().multiplyScalar(backDepth))
     positions.push(back.x, back.y, back.z)
     const u = v.dot(uBasis), w = v.dot(vBasis)
     const r = Math.sqrt(u * u + w * w) || 1
@@ -214,7 +219,7 @@ onBeforeUnmount(() => {
 })
 
 const hovered = shallowRef(false)
-const intensity = shallowRef(0.15)
+const intensity = shallowRef(0.75)
 let intensityTween: gsap.core.Tween | null = null
 watch(
   () => store.hoveredWing === props.wingName && props.wingName !== null,
@@ -222,7 +227,7 @@ watch(
     const proxy = { v: intensity.value }
     if (intensityTween) intensityTween.kill()
     intensityTween = gsap.to(proxy, {
-      v: active ? 0.55 : 0.15,
+      v: active ? 1.4 : 0.75,
       duration: 0.2,
       onUpdate: () => { intensity.value = proxy.v },
     })
@@ -268,15 +273,13 @@ const groupPos = computed<[number, number, number]>(() => props.cell.centroid)
         :color="'#ffffff'"
         :map="tex"
         :emissive-map="tex"
-        :metalness="0.4"
-        :roughness="0.2"
-        :transmission="0.2"
-        :thickness="0.2"
+        :metalness="0.55"
+        :roughness="0.25"
+        :transmission="0"
         :ior="1.3"
         :emissive="'#ffffff'"
         :emissive-intensity="intensity"
-        :transparent="true"
-        :opacity="0.95"
+        :transparent="false"
         :side="THREE.FrontSide"
       />
     </TresMesh>
