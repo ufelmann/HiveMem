@@ -1,26 +1,28 @@
-import type { Drawer, Palace } from '../types/palace'
-import { mockDrawersById, mockPalace } from '../data/mock'
+// Legacy facade retained so existing hive/*.vue prototype files keep importing
+// familiar names. Task 5 will replace this with the useApi composable, and
+// Task 22 will rewire hive/*.vue to the new MockApiClient / HttpApiClient.
+import { palace } from '../data/mock'
+import type { Drawer } from './types'
 
 export interface HivememApi {
-  getPalace(): Promise<Palace>
+  getPalace(): Promise<typeof palace>
   getDrawer(id: string): Promise<Drawer>
   search(query: string, limit?: number): Promise<Drawer[]>
 }
 
 export function createMockClient(): HivememApi {
   return {
-    async getPalace() { return structuredClone(mockPalace) },
+    async getPalace() { return palace },
     async getDrawer(id: string) {
-      const drawer = mockDrawersById[id]
+      const drawer = palace.drawers.find((d) => d.id === id)
       if (!drawer) throw new Error(`Drawer not found: ${id}`)
-      return structuredClone(drawer)
+      return drawer
     },
     async search(query: string, limit = 20) {
       const q = query.toLowerCase()
-      return Object.values(mockDrawersById)
-        .filter((d) => d.title.toLowerCase().includes(q) || d.summary.toLowerCase().includes(q))
+      return palace.drawers
+        .filter((d) => d.title.toLowerCase().includes(q) || (d.summary ?? '').toLowerCase().includes(q))
         .slice(0, limit)
-        .map((d) => structuredClone(d))
     },
   }
 }
