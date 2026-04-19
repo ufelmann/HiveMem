@@ -1,0 +1,85 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useDrawerStore } from '../stores/drawer'
+import { useReaderStore } from '../stores/reader'
+import { useCanvasStore } from '../stores/canvas'
+
+const drawer = useDrawerStore()
+const reader = useReaderStore()
+const canvas = useCanvasStore()
+const d = computed(() => drawer.current)
+
+function openReader() { if (d.value) reader.openReader(d.value.drawer.id) }
+function jumpTo(id: string) { drawer.load(id); canvas.setFocus(id) }
+function close() { drawer.clear(); canvas.setFocus(null) }
+</script>
+
+<template>
+  <transition name="slide-r">
+    <aside v-if="d" class="scan">
+      <header>
+        <strong>{{ d.drawer.title }}</strong>
+        <v-btn icon="mdi-close" size="small" variant="text" @click="close" />
+      </header>
+      <div class="body">
+        <div class="chips">
+          <v-chip size="x-small" color="primary" variant="tonal">{{ d.drawer.wing }}</v-chip>
+          <v-chip v-if="d.drawer.hall" size="x-small" variant="outlined">{{ d.drawer.hall }}</v-chip>
+          <v-chip v-if="d.drawer.room" size="x-small" variant="outlined">{{ d.drawer.room }}</v-chip>
+          <span class="imp">{{ '★'.repeat(d.drawer.importance) }}</span>
+        </div>
+        <section v-if="d.drawer.summary">
+          <div class="label">SUMMARY</div><p>{{ d.drawer.summary }}</p>
+        </section>
+        <section v-if="d.drawer.key_points?.length">
+          <div class="label">KEY POINTS</div>
+          <ul><li v-for="k in d.drawer.key_points" :key="k">{{ k }}</li></ul>
+        </section>
+        <section v-if="d.drawer.insight">
+          <div class="label">INSIGHT</div><blockquote>{{ d.drawer.insight }}</blockquote>
+        </section>
+        <section v-if="d.tunnels.length">
+          <div class="label">TUNNELS ({{ d.tunnels.length }})</div>
+          <div v-for="t in d.tunnels" :key="t.id" class="tunnel"
+               @click="jumpTo(t.to_drawer === d.drawer.id ? t.from_drawer : t.to_drawer)">
+            <span :class="['dot', t.relation]" />
+            <span class="rel">{{ t.relation }}</span>
+            <span class="note">{{ t.note || '' }}</span>
+          </div>
+        </section>
+        <section v-if="d.facts.length">
+          <div class="label">FACTS ({{ d.facts.length }})</div>
+          <div v-for="f in d.facts" :key="f.id" class="fact">
+            <span class="pred">{{ f.predicate }}</span> → {{ f.object }}
+          </div>
+        </section>
+        <v-btn block color="primary" class="mt-3" @click="openReader">Open reader</v-btn>
+      </div>
+    </aside>
+  </transition>
+</template>
+
+<style scoped>
+.scan { position:fixed; top:0; right:0; bottom:0; width:360px; background:#0e0e1c; border-left:1px solid #1a1a24; display:flex; flex-direction:column; z-index:8; }
+header { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #1a1a24; gap:8px; }
+header strong { flex:1; font-size:14px; }
+.body { flex:1; overflow-y:auto; padding:10px 14px; font-size:12px; }
+.chips { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:10px; align-items:center; }
+.imp { color:#ffd24d; margin-left:6px; }
+section { margin:10px 0; }
+.label { color:#888; font-size:10px; letter-spacing:0.1em; font-weight:bold; margin-bottom:4px; }
+blockquote { border-left:3px solid #4dc4ff; padding-left:8px; color:#4dc4ff; font-style:italic; }
+.tunnel { display:flex; gap:6px; align-items:center; padding:4px 0; cursor:pointer; }
+.tunnel:hover { background:#1a1a2a; }
+.dot { width:8px; height:8px; border-radius:50%; }
+.dot.related_to { background:#5a5a5a; }
+.dot.builds_on  { background:#4dc4ff; }
+.dot.contradicts{ background:#ff4d4d; }
+.dot.refines    { background:#4dff9c; }
+.rel { color:#aaa; font-size:10px; }
+.note { color:#ccc; }
+.fact { padding:2px 0; color:#ccc; }
+.pred { color:#4dc4ff; }
+.slide-r-enter-from, .slide-r-leave-to { transform:translateX(20px); opacity:0; }
+.slide-r-enter-active, .slide-r-leave-active { transition:transform 180ms ease, opacity 180ms ease; }
+</style>
