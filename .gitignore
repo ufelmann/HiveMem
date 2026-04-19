@@ -1,6 +1,8 @@
 .env
 .mcp.json
 backups/
+node_modules/
+*.png
 CLAUDE.md
 AGENTS.md
 docs/
