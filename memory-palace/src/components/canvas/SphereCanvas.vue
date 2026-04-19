@@ -3,6 +3,7 @@ import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { Application, Container, Sprite, Graphics } from 'pixi.js'
 import { wingTexture, drawerTexture, colorForWing, parseHsl } from './textures'
 import { focusFilter, hoverFilter, focusRing, godrays } from './filters'
+import { spawnDust } from './particles'
 import { useCanvasStore } from '../../stores/canvas'
 import { useDrawerStore } from '../../stores/drawer'
 import { useReaderStore } from '../../stores/reader'
@@ -23,6 +24,12 @@ onMounted(async () => {
   await app.init({ background: 0x050510, resizeTo: root.value, antialias: true, resolution: devicePixelRatio, autoDensity: true })
   root.value.appendChild(app.canvas)
   world = new Container(); app.stage.addChild(world)
+
+  // Add dust emitter
+  const dustLayer = new Container(); app.stage.addChild(dustLayer)
+  const isMobile = window.matchMedia('(max-width: 768px)').matches
+  const dustUpdate = spawnDust(dustLayer, isMobile ? 120 : 280, { w: app.screen.width, h: app.screen.height })
+  app.ticker.add(t => dustUpdate(t.deltaMS))
 
   // Add godray background
   const bg = new Graphics().rect(0, 0, 4000, 4000).fill(0x05050f)
