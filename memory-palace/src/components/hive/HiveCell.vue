@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
 import * as THREE from 'three'
-import gsap from 'gsap'
-import { useNavigationStore } from '../../stores/navigation'
 import type { GoldbergCell } from '../../composables/goldbergMath'
 import type { WingPalette } from '../../composables/wingPalette'
 
@@ -13,8 +11,6 @@ const props = defineProps<{
   isAccentPink?: boolean
   isAccentViolet?: boolean
 }>()
-
-const store = useNavigationStore()
 
 const R_SPHERE = 3
 
@@ -138,25 +134,21 @@ function buildGeometry() {
   const centroid = new THREE.Vector3(...props.cell.centroid)
   const normal = centroid.clone().normalize()
   const N = props.cell.vertices.length
-  // Shrink cell toward centroid so dark background shows between cells = visible metal frame
   const INSET = 0.88
   const vertsRel = props.cell.vertices.map((v) => {
     const raw = new THREE.Vector3(...v).sub(centroid)
     return raw.multiplyScalar(INSET)
   })
 
-  // UV basis: use first vertex direction as reference
   const vRef = vertsRel[0].clone().normalize()
   const uBasis = vRef.clone().sub(normal.clone().multiplyScalar(vRef.dot(normal))).normalize()
   const vBasis = new THREE.Vector3().crossVectors(normal, uBasis).normalize()
 
-  // Shallow extrusion: push front face slightly outward from sphere, back face inward
   const frontDepth = 0.04
   const backDepth = 0.10
   const positions: number[] = []
   const uvs: number[] = []
 
-  // Front ring: pushed slightly outward along normal
   for (const v of vertsRel) {
     const front = v.clone().add(normal.clone().multiplyScalar(frontDepth))
     positions.push(front.x, front.y, front.z)
@@ -164,7 +156,6 @@ function buildGeometry() {
     const r = Math.sqrt(u * u + w * w) || 1
     uvs.push(0.5 + (u / r) * 0.5, 0.5 + (w / r) * 0.5)
   }
-  // Back ring (pulled toward sphere centre along normal)
   for (const v of vertsRel) {
     const back = v.clone().sub(normal.clone().multiplyScalar(backDepth))
     positions.push(back.x, back.y, back.z)
@@ -174,11 +165,8 @@ function buildGeometry() {
   }
 
   const indices: number[] = []
-  // Front face fan from vertex 0
   for (let i = 1; i < N - 1; i++) indices.push(0, i, i + 1)
-  // Back face fan (reverse winding)
   for (let i = 1; i < N - 1; i++) indices.push(N, N + i + 1, N + i)
-  // Side walls
   for (let i = 0; i < N; i++) {
     const j = (i + 1) % N
     indices.push(i, j, N + i)
@@ -192,7 +180,6 @@ function buildGeometry() {
   geo.computeVertexNormals()
   geometry.value = geo
 
-  // Edges: only the front ring (visible outer rim)
   const edgePos: number[] = []
   for (let i = 0; i < N; i++) {
     const a = vertsRel[i]
@@ -218,45 +205,30 @@ onBeforeUnmount(() => {
   edgesGeometry.value?.dispose()
 })
 
+// Local hover state only -- no cross-cell coordination in cinema view.
 const hovered = shallowRef(false)
-const intensity = shallowRef(0.75)
-let intensityTween: gsap.core.Tween | null = null
-watch(
-  () => store.hoveredWing === props.wingName && props.wingName !== null,
-  (active) => {
-    const proxy = { v: intensity.value }
-    if (intensityTween) intensityTween.kill()
-    intensityTween = gsap.to(proxy, {
-      v: active ? 1.4 : 0.75,
-      duration: 0.2,
-      onUpdate: () => { intensity.value = proxy.v },
-    })
-  },
-)
+const intensity = computed(() => (hovered.value && props.wingName ? 1.4 : 0.75))
 const scale = computed(() => (hovered.value && props.wingName ? 1.03 : 1))
 
 function onPointerOver(e: any) {
   e.stopPropagation?.()
   hovered.value = true
-  if (props.wingName) store.setHoveredWing(props.wingName)
 }
 function onPointerLeave(e: any) {
   e.stopPropagation?.()
   hovered.value = false
-  if (store.hoveredWing === props.wingName) store.setHoveredWing(null)
-}
-function onClick(e: any) {
-  e.stopPropagation?.()
-  if (!props.wingName || store.isTransitioning) return
-  const canHover = typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches
-  if (!canHover && store.hoveredWing !== props.wingName) {
-    store.setHoveredWing(props.wingName)
-    return
-  }
-  store.enterWing(props.wingName)
 }
 
 const groupPos = computed<[number, number, number]>(() => props.cell.centroid)
+
+// Pre-build LineSegments object so the template stays declarative.
+const edgeObject = computed(() => {
+  if (!edgesGeometry.value) return null
+  return new THREE.LineSegments(
+    edgesGeometry.value,
+    new THREE.LineBasicMaterial({ color: '#2a2a2a' }),
+  )
+})
 </script>
 
 <template>
@@ -265,9 +237,7 @@ const groupPos = computed<[number, number, number]>(() => props.cell.centroid)
     :scale="scale"
     @pointer-over="onPointerOver"
     @pointer-leave="onPointerLeave"
-    @click="onClick"
   >
-    <!-- Single glass cell with gradient map baked in -->
     <TresMesh :geometry="geometry ?? undefined" :visible="geometry !== null">
       <TresMeshPhysicalMaterial
         :color="'#ffffff'"
@@ -280,14 +250,9 @@ const groupPos = computed<[number, number, number]>(() => props.cell.centroid)
         :emissive="'#ffffff'"
         :emissive-intensity="intensity"
         :transparent="false"
-        :side="THREE.FrontSide"
       />
     </TresMesh>
 
-    <!-- Metal frame on outer ring (shared edges with neighbours) -->
-    <primitive
-      v-if="edgesGeometry"
-      :object="new THREE.LineSegments(edgesGeometry, new THREE.LineBasicMaterial({ color: '#2a2a2a', linewidth: 2 }))"
-    />
+    <primitive v-if="edgeObject" :object="edgeObject" />
   </TresGroup>
 </template>

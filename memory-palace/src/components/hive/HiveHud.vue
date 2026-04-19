@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useNavigationStore } from '../../stores/navigation'
 
-const store = useNavigationStore()
+defineProps<{
+  drawerCount?: number
+  factCount?: number
+  wingCount?: number
+}>()
+
 const q = ref('')
 </script>
 
@@ -10,7 +14,7 @@ const q = ref('')
   <div class="hive-hud">
     <div class="hive-hud__logo">HiveMem</div>
     <div class="hive-hud__stats">
-      {{ store.drawerCount }} drawers · {{ store.factCount }} facts · {{ store.wingCount }} wings
+      {{ drawerCount ?? 0 }} drawers · {{ factCount ?? 0 }} facts · {{ wingCount ?? 0 }} wings
     </div>
     <div class="hive-hud__search">
       <v-text-field
