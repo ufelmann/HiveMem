@@ -3,6 +3,8 @@ import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { Application, Container, Sprite, Graphics } from 'pixi.js'
 import { wingTexture, drawerTexture, colorForWing, parseHsl } from './textures'
 import { useCanvasStore } from '../../stores/canvas'
+import { useDrawerStore } from '../../stores/drawer'
+import { useReaderStore } from '../../stores/reader'
 import { computeWingPositions, poissonDiskDrawers } from '../../composables/layout'
 import type { Drawer } from '../../api/types'
 
@@ -10,6 +12,8 @@ const root = ref<HTMLDivElement>()
 const canvasStore = useCanvasStore()
 let app: Application | null = null
 let world: Container | null = null
+let snapToRef: ((worldX: number, worldY: number, targetZoom: number, onDone: () => void) => void) | null = null
+let onDrawerClickRef: ((d: Drawer) => void) | null = null
 
 onMounted(async () => {
   if (!root.value) return
@@ -17,6 +21,63 @@ onMounted(async () => {
   await app.init({ background: 0x050510, resizeTo: root.value, antialias: true, resolution: devicePixelRatio, autoDensity: true })
   root.value.appendChild(app.canvas)
   world = new Container(); app.stage.addChild(world)
+
+  let zoom = 1, panX = 0, panY = 0
+
+  app.canvas.addEventListener('wheel', e => {
+    e.preventDefault()
+    const factor = Math.exp(-e.deltaY * 0.0015)
+    const next = Math.min(6, Math.max(0.15, zoom * factor))
+    const mouseX = e.offsetX, mouseY = e.offsetY
+    panX = mouseX - (mouseX - panX) * (next / zoom)
+    panY = mouseY - (mouseY - panY) * (next / zoom)
+    zoom = next
+    applyTransform()
+  }, { passive: false })
+
+  let dragging = false, dragStartX = 0, dragStartY = 0, dragStartPanX = 0, dragStartPanY = 0
+  app.canvas.addEventListener('pointerdown', e => {
+    dragging = true; dragStartX = e.clientX; dragStartY = e.clientY
+    dragStartPanX = panX; dragStartPanY = panY
+  })
+  window.addEventListener('pointerup', () => dragging = false)
+  window.addEventListener('pointermove', e => {
+    if (!dragging) return
+    panX = dragStartPanX + (e.clientX - dragStartX)
+    panY = dragStartPanY + (e.clientY - dragStartY)
+    applyTransform()
+  })
+
+  function applyTransform() {
+    if (!world) return
+    world.scale.set(zoom); world.position.set(panX, panY)
+  }
+
+  function snapTo(worldX: number, worldY: number, targetZoom: number, onDone: () => void) {
+    if (!app) return
+    const startZoom = zoom, startPanX = panX, startPanY = panY
+    const targetPanX = app.screen.width / 2 - worldX * targetZoom
+    const targetPanY = app.screen.height / 2 - worldY * targetZoom
+    const startT = performance.now()
+    function tick(t: number) {
+      const k = Math.min(1, (t - startT) / 280)
+      const e = k * k * (3 - 2 * k)
+      zoom = startZoom + (targetZoom - startZoom) * e
+      panX = startPanX + (targetPanX - startPanX) * e
+      panY = startPanY + (targetPanY - startPanY) * e
+      applyTransform()
+      if (k < 1) requestAnimationFrame(tick); else onDone()
+    }
+    requestAnimationFrame(tick)
+  }
+
+  function onDrawerClick(d: Drawer) {
+    useDrawerStore().load(d.id)
+    canvasStore.setFocus(d.id)
+  }
+
+  snapToRef = snapTo
+  onDrawerClickRef = onDrawerClick
   render()
 })
 
@@ -93,6 +154,18 @@ function render() {
       ds.y = pt.y
       ds._kind = 'drawer'
       ds._drawerId = d.id
+      ds.eventMode = 'static'
+      ds.cursor = 'pointer'
+      let lastClick = 0
+      ds.on('pointertap', () => {
+        const now = performance.now()
+        if (now - lastClick < 320) {
+          useReaderStore().openReader(d.id)
+        } else {
+          snapToRef?.(pt.x, pt.y, 2.2, () => onDrawerClickRef?.(d))
+        }
+        lastClick = now
+      })
       world!.addChild(ds)
     })
   }
