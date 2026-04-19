@@ -450,6 +450,96 @@ class ReadToolIntegrationTest {
     }
 
     @Test
+    void timeMachineBiTemporalRespectsIngestionCutoff() throws Exception {
+        // Bi-temporal scenario: a fact is revised later with a backdated valid_from.
+        // Same event-time query ("what was true at T_eff") must yield different results
+        // depending on the knowledge cutoff ("what did we know at T_know").
+        //
+        //   Event time (valid_from):   T_eff = 2025-06-01
+        //   Original ingested at:      2025-01-01 (known early)
+        //   Revision ingested at:      2026-02-01 (learned later, backdated)
+        //
+        //   Knowledge cutoff T_mid = 2025-08-01  -> only the original is visible
+        //   Knowledge cutoff T_late = 2026-03-01 -> both original and revision visible
+        OffsetDateTime origIngested = OffsetDateTime.parse("2025-01-01T00:00:00Z");
+        OffsetDateTime effectiveFrom = OffsetDateTime.parse("2025-06-01T00:00:00Z");
+        OffsetDateTime revisionIngested = OffsetDateTime.parse("2026-02-01T00:00:00Z");
+        UUID originalId = UUID.fromString("00000000-0000-0000-0000-000000000701");
+        UUID revisedId = UUID.fromString("00000000-0000-0000-0000-000000000702");
+
+        // Original fact: ingested early, effective from T_eff, superseded at revisionIngested.
+        dslContext.execute(
+                """
+                INSERT INTO facts (id, parent_id, subject, predicate, object, confidence,
+                                   source_id, status, created_by, created_at, valid_from, valid_until, ingested_at)
+                VALUES (?, NULL, ?, ?, ?, ?, NULL, 'committed', 'writer',
+                        ?::timestamptz, ?::timestamptz, ?::timestamptz, ?::timestamptz)
+                """,
+                originalId, "Bob", "lives_in", "Munich", 1.0f,
+                origIngested, effectiveFrom, revisionIngested, origIngested
+        );
+        // Revision: ingested late, backdated effective to T_eff, still active.
+        dslContext.execute(
+                """
+                INSERT INTO facts (id, parent_id, subject, predicate, object, confidence,
+                                   source_id, status, created_by, created_at, valid_from, valid_until, ingested_at)
+                VALUES (?, ?, ?, ?, ?, ?, NULL, 'committed', 'writer',
+                        ?::timestamptz, ?::timestamptz, NULL, ?::timestamptz)
+                """,
+                revisedId, originalId, "Bob", "lives_in", "Berlin", 1.0f,
+                revisionIngested, effectiveFrom, revisionIngested
+        );
+
+        // Knowledge cutoff BETWEEN the two ingestion times: only original is visible.
+        JsonNode midKnowledge = callToolContent("hivemem_time_machine", Map.of(
+                "subject", "Bob",
+                "as_of", "2025-06-01T00:00:00Z",
+                "as_of_ingestion", "2025-08-01T00:00:00Z",
+                "limit", 10
+        ));
+        assertThat(midKnowledge).hasSize(1);
+        assertThat(midKnowledge.get(0).path("object").asText()).isEqualTo("Munich");
+        assertThat(midKnowledge.get(0).path("ingested_at").asText()).isNotBlank();
+
+        // Knowledge cutoff AFTER the revision: both visible for the same effective time.
+        JsonNode lateKnowledge = callToolContent("hivemem_time_machine", Map.of(
+                "subject", "Bob",
+                "as_of", "2025-06-01T00:00:00Z",
+                "as_of_ingestion", "2026-03-01T00:00:00Z",
+                "limit", 10
+        ));
+        assertThat(lateKnowledge).hasSize(2);
+    }
+
+    @Test
+    void historyIncludesIngestedAt() throws Exception {
+        UUID originalId = UUID.fromString("00000000-0000-0000-0000-000000000801");
+        UUID revisedId = UUID.fromString("00000000-0000-0000-0000-000000000802");
+        insertDrawer(
+                originalId, null, "Initial", "alpha", "bitemp", "facts", "system", 3,
+                "V1", null, null, "committed", "writer",
+                OffsetDateTime.parse("2025-01-01T00:00:00Z"),
+                OffsetDateTime.parse("2025-01-01T00:00:00Z"),
+                null
+        );
+        insertDrawer(
+                revisedId, originalId, "Revised", "alpha", "bitemp", "facts", "system", 3,
+                "V2", null, null, "committed", "writer",
+                OffsetDateTime.parse("2025-03-01T00:00:00Z"),
+                OffsetDateTime.parse("2025-02-01T00:00:00Z"),
+                null
+        );
+
+        JsonNode content = callToolContent("hivemem_history", Map.of(
+                "type", "drawer",
+                "id", "00000000-0000-0000-0000-000000000802"
+        ));
+        assertThat(content).hasSize(2);
+        assertThat(content.get(0).path("ingested_at").asText()).isNotBlank();
+        assertThat(content.get(1).path("ingested_at").asText()).isNotBlank();
+    }
+
+    @Test
     void historyWithDrawerTypeReturnsOldestVersionFirst() throws Exception {
         UUID originalId = UUID.fromString("00000000-0000-0000-0000-000000000301");
         UUID revisedId = UUID.fromString("00000000-0000-0000-0000-000000000302");

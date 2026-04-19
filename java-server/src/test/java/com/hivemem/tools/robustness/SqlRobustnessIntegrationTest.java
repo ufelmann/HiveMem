@@ -156,7 +156,7 @@ class SqlRobustnessIntegrationTest {
             );
         }
 
-        List<Map<String, Object>> results = readToolService.timeMachine("TimeMachine", null, 3);
+        List<Map<String, Object>> results = readToolService.timeMachine("TimeMachine", null, null, 3);
         assertThat(results).hasSizeLessThanOrEqualTo(3);
     }
 
