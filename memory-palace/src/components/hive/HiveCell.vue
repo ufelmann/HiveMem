@@ -248,7 +248,7 @@ const cellRotation = computed<[number, number, number]>(() => {
       />
     </TresMesh>
 
-    <TresMesh :geometry="geometry ?? undefined" :visible="geometry !== null" :position-z="-0.12" :scale="0.7">
+    <TresMesh :geometry="geometry ?? undefined" :visible="geometry !== null" :position-z="0.12" :scale="0.85">
       <TresMeshBasicMaterial :map="tex" :transparent="true" :opacity="0.95" />
     </TresMesh>
 
