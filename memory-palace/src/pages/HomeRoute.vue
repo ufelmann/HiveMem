@@ -6,6 +6,7 @@ import SearchPanel from '../components/shell/SearchPanel.vue'
 import WingsPanel from '../components/shell/WingsPanel.vue'
 import SettingsPanel from '../components/shell/SettingsPanel.vue'
 import SphereCanvas from '../components/canvas/SphereCanvas.vue'
+import ScanPanel from '../components/ScanPanel.vue'
 import { useCanvasStore } from '../stores/canvas'
 
 const canvas = useCanvasStore()
@@ -21,6 +22,7 @@ onMounted(() => { if (!canvas.loaded) canvas.loadTopLevel() })
       <SphereCanvas v-if="canvas.loaded" />
       <div v-else class="splash">Loading palace…</div>
     </main>
+    <ScanPanel />
   </div>
 </template>
 
