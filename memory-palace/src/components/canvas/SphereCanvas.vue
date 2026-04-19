@@ -3,6 +3,7 @@ import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { Application, Container, Sprite } from 'pixi.js'
 import { wingTexture, drawerTexture, colorForWing, parseHsl } from './textures'
 import { useCanvasStore } from '../../stores/canvas'
+import { computeWingPositions, poissonDiskDrawers } from '../../composables/layout'
 import type { Drawer } from '../../api/types'
 
 const root = ref<HTMLDivElement>()
@@ -24,30 +25,28 @@ onBeforeUnmount(() => { app?.destroy(true, { children: true, texture: false }); 
 function render() {
   if (!world || !app) return
   world.removeChildren()
-  const cx = app.screen.width / 2
-  const cy = app.screen.height / 2
-  const R = Math.min(cx, cy) * 0.5
+  const width = app.screen.width, height = app.screen.height
   const drawersByWing = new Map<string, Drawer[]>()
   for (const d of canvasStore.drawers) {
     if (!drawersByWing.has(d.wing)) drawersByWing.set(d.wing, [])
     drawersByWing.get(d.wing)!.push(d)
   }
-  canvasStore.wings.forEach((w, i) => {
-    const angle = (i / canvasStore.wings.length) * Math.PI * 2
-    const wx = cx + Math.cos(angle) * R
-    const wy = cy + Math.sin(angle) * R
+  const wingPos = computeWingPositions(canvasStore.wings, canvasStore.drawers, canvasStore.tunnels, { width, height })
+  canvasStore.wings.forEach(w => {
+    const p = wingPos.get(w.name); if (!p) return
     const size = 120 + Math.log(1 + w.drawer_count) * 30
     const s: any = new Sprite(wingTexture(colorForWing(w.name)))
-    s.anchor.set(0.5); s.width = s.height = size; s.x = wx; s.y = wy; s._kind = 'wing'; s._name = w.name
+    s.anchor.set(0.5); s.width = s.height = size; s.x = p.x; s.y = p.y
+    s._kind = 'wing'; s._name = w.name
     world!.addChild(s)
     const group = drawersByWing.get(w.name) ?? []
-    group.forEach((d) => {
-      const a = hashAngle(d.id)
-      const rr = 40 + (hashRadius(d.id) % 60)
+    const pts = poissonDiskDrawers(group.length, { x: p.x, y: p.y, r: 70, minDist: 14, seed: w.name })
+    group.forEach((d, i) => {
+      const pt = pts[i]
       const ds: any = new Sprite(drawerTexture())
       ds.anchor.set(0.5); ds.width = ds.height = 14 + d.importance * 4
       ds.tint = parseHsl(colorForWing(d.wing))
-      ds.x = wx + Math.cos(a) * rr; ds.y = wy + Math.sin(a) * rr
+      ds.x = pt.x; ds.y = pt.y
       ds._kind = 'drawer'; ds._drawerId = d.id
       world!.addChild(ds)
     })
@@ -56,9 +55,6 @@ function render() {
 
 watch(() => canvasStore.loaded, v => { if (v) render() })
 watch(() => canvasStore.drawers.length, () => render())
-
-function hashAngle(id: string) { let h = 0; for (const c of id) h = (h * 17 + c.charCodeAt(0)) % 1000; return (h / 1000) * Math.PI * 2 }
-function hashRadius(id: string) { let h = 0; for (const c of id) h = (h * 29 + c.charCodeAt(0)) % 10000; return h }
 </script>
 
 <template><div ref="root" class="canvas-root" /></template>
