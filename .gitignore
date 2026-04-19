@@ -4,6 +4,10 @@ backups/
 CLAUDE.md
 AGENTS.md
 docs/
+!memory-palace/docs/
+.superpowers/
+.serena/
+.playwright-mcp/
 .base-hash
 .idea/
 .vscode/
