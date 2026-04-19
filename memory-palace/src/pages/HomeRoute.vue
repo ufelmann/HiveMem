@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import IconRail from '../components/shell/IconRail.vue'
 import SlidePanel from '../components/shell/SlidePanel.vue'
+import SearchPanel from '../components/shell/SearchPanel.vue'
+import WingsPanel from '../components/shell/WingsPanel.vue'
+import SettingsPanel from '../components/shell/SettingsPanel.vue'
 </script>
 <template>
   <div class="home-root">
     <IconRail />
-    <SlidePanel id="search" title="Search"><em>Search UI (Task 10)</em></SlidePanel>
-    <SlidePanel id="wings" title="Wings"><em>Wings tree (Task 10)</em></SlidePanel>
-    <SlidePanel id="settings" title="Settings"><em>Settings (Task 10)</em></SlidePanel>
+    <SlidePanel id="search" title="Search"><SearchPanel /></SlidePanel>
+    <SlidePanel id="wings" title="Wings"><WingsPanel /></SlidePanel>
+    <SlidePanel id="settings" title="Settings"><SettingsPanel /></SlidePanel>
     <main class="canvas-slot">
       <div style="padding:20px;color:#666">SphereCanvas goes here (Task 11)</div>
     </main>
