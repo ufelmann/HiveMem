@@ -55,7 +55,7 @@ HiveMem Java-Server (existing, unchanged for SP1 v1)
 
 ### Tech stack
 
-- **Vue 3 + Vite + TypeScript** (scaffold already in `memory-palace/`, commit `02715e6`)
+- **Vue 3 + Vite + TypeScript** (scaffold already in `knowledge-ui/`, commit `02715e6`)
 - **Vuetify 3** — app shell, panels, dialogs, form controls
 - **Pinia** — reactive state (5 modules)
 - **PixiJS 8 + pixi-filters** — 2D canvas rendering, GPU-accelerated

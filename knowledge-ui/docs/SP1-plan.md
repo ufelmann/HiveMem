@@ -15,66 +15,66 @@
 ## File Structure
 
 **Created:**
-- `memory-palace/src/api/types.ts` — `ApiClient`, `HiveEvent`, domain types (Drawer, Wing, Tunnel, Fact)
-- `memory-palace/src/api/mockClient.ts` — `MockApiClient` implementation
-- `memory-palace/src/api/httpClient.ts` — `HttpApiClient` implementation
-- `memory-palace/src/api/useApi.ts` — composable, picks impl based on flag
-- `memory-palace/src/stores/auth.ts`
-- `memory-palace/src/stores/canvas.ts`
-- `memory-palace/src/stores/drawer.ts`
-- `memory-palace/src/stores/reader.ts`
-- `memory-palace/src/stores/ui.ts`
-- `memory-palace/src/components/LoginDialog.vue`
-- `memory-palace/src/components/shell/IconRail.vue`
-- `memory-palace/src/components/shell/SlidePanel.vue`
-- `memory-palace/src/components/shell/SearchPanel.vue`
-- `memory-palace/src/components/shell/WingsPanel.vue`
-- `memory-palace/src/components/shell/SettingsPanel.vue`
-- `memory-palace/src/components/canvas/SphereCanvas.vue` — PixiJS wrapper
-- `memory-palace/src/components/canvas/textures.ts` — procedural sprite-texture generator
-- `memory-palace/src/components/canvas/filters.ts` — filter presets (bloom, outline, godray, zoomblur)
-- `memory-palace/src/components/canvas/particles.ts` — dust emitter
-- `memory-palace/src/composables/layout.ts` — d3-force wings + Poisson-disk drawers
-- `memory-palace/src/composables/lod.ts` — zoom-to-LOD-level mapping + visibility rules
-- `memory-palace/src/composables/keybindings.ts`
-- `memory-palace/src/components/ScanPanel.vue`
-- `memory-palace/src/components/Reader.vue`
-- `memory-palace/src/components/readers/MarkdownTab.vue`
-- `memory-palace/src/components/readers/PdfTab.vue`
-- `memory-palace/src/components/readers/EmlTab.vue`
-- `memory-palace/src/pages/HomeRoute.vue`
-- `memory-palace/src/pages/CinemaRoute.vue` — lazy-loaded
-- `memory-palace/src/router.ts`
-- `memory-palace/tests/unit/mockClient.spec.ts`
-- `memory-palace/tests/unit/httpClient.spec.ts`
-- `memory-palace/tests/unit/layout.spec.ts`
-- `memory-palace/tests/unit/lod.spec.ts`
-- `memory-palace/tests/unit/stores.spec.ts`
-- `memory-palace/tests/e2e/smoke.spec.ts`
-- `memory-palace/vitest.config.ts`
-- `memory-palace/playwright.config.ts`
+- `knowledge-ui/src/api/types.ts` — `ApiClient`, `HiveEvent`, domain types (Drawer, Wing, Tunnel, Fact)
+- `knowledge-ui/src/api/mockClient.ts` — `MockApiClient` implementation
+- `knowledge-ui/src/api/httpClient.ts` — `HttpApiClient` implementation
+- `knowledge-ui/src/api/useApi.ts` — composable, picks impl based on flag
+- `knowledge-ui/src/stores/auth.ts`
+- `knowledge-ui/src/stores/canvas.ts`
+- `knowledge-ui/src/stores/drawer.ts`
+- `knowledge-ui/src/stores/reader.ts`
+- `knowledge-ui/src/stores/ui.ts`
+- `knowledge-ui/src/components/LoginDialog.vue`
+- `knowledge-ui/src/components/shell/IconRail.vue`
+- `knowledge-ui/src/components/shell/SlidePanel.vue`
+- `knowledge-ui/src/components/shell/SearchPanel.vue`
+- `knowledge-ui/src/components/shell/WingsPanel.vue`
+- `knowledge-ui/src/components/shell/SettingsPanel.vue`
+- `knowledge-ui/src/components/canvas/SphereCanvas.vue` — PixiJS wrapper
+- `knowledge-ui/src/components/canvas/textures.ts` — procedural sprite-texture generator
+- `knowledge-ui/src/components/canvas/filters.ts` — filter presets (bloom, outline, godray, zoomblur)
+- `knowledge-ui/src/components/canvas/particles.ts` — dust emitter
+- `knowledge-ui/src/composables/layout.ts` — d3-force wings + Poisson-disk drawers
+- `knowledge-ui/src/composables/lod.ts` — zoom-to-LOD-level mapping + visibility rules
+- `knowledge-ui/src/composables/keybindings.ts`
+- `knowledge-ui/src/components/ScanPanel.vue`
+- `knowledge-ui/src/components/Reader.vue`
+- `knowledge-ui/src/components/readers/MarkdownTab.vue`
+- `knowledge-ui/src/components/readers/PdfTab.vue`
+- `knowledge-ui/src/components/readers/EmlTab.vue`
+- `knowledge-ui/src/pages/HomeRoute.vue`
+- `knowledge-ui/src/pages/CinemaRoute.vue` — lazy-loaded
+- `knowledge-ui/src/router.ts`
+- `knowledge-ui/tests/unit/mockClient.spec.ts`
+- `knowledge-ui/tests/unit/httpClient.spec.ts`
+- `knowledge-ui/tests/unit/layout.spec.ts`
+- `knowledge-ui/tests/unit/lod.spec.ts`
+- `knowledge-ui/tests/unit/stores.spec.ts`
+- `knowledge-ui/tests/e2e/smoke.spec.ts`
+- `knowledge-ui/vitest.config.ts`
+- `knowledge-ui/playwright.config.ts`
 
 **Modified:**
-- `memory-palace/package.json` — add deps
-- `memory-palace/src/main.ts` — add router
-- `memory-palace/src/App.vue` — use router + LoginDialog
+- `knowledge-ui/package.json` — add deps
+- `knowledge-ui/src/main.ts` — add router
+- `knowledge-ui/src/App.vue` — use router + LoginDialog
 
 **Deleted (dead code from prototype port):**
-- `memory-palace/src/components/BreadcrumbNav.vue` (unused in new shell)
-- `memory-palace/src/stores/navigation.ts` (replaced by 5 new stores)
-- `memory-palace/src/types/palace.ts` (replaced by `api/types.ts`)
+- `knowledge-ui/src/components/BreadcrumbNav.vue` (unused in new shell)
+- `knowledge-ui/src/stores/navigation.ts` (replaced by 5 new stores)
+- `knowledge-ui/src/types/palace.ts` (replaced by `api/types.ts`)
 
 ---
 
 ## Task 1: Install dependencies, clean scaffold
 
 **Files:**
-- Modify: `memory-palace/package.json`
+- Modify: `knowledge-ui/package.json`
 - Delete: three prototype-era files
 
 - [ ] **Step 1: Add deps to package.json**
 
-Edit `memory-palace/package.json`, add to `dependencies`:
+Edit `knowledge-ui/package.json`, add to `dependencies`:
 
 ```json
 "pixi.js": "^8.5.0",
@@ -109,7 +109,7 @@ Add to `scripts`:
 
 - [ ] **Step 2: Install**
 
-Run: `cd memory-palace && npm install`
+Run: `cd knowledge-ui && npm install`
 Expected: no errors, `node_modules` updated.
 
 - [ ] **Step 3: Delete prototype-era files that have no role in v1**
@@ -117,22 +117,22 @@ Expected: no errors, `node_modules` updated.
 Run:
 
 ```bash
-rm memory-palace/src/components/BreadcrumbNav.vue
-rm memory-palace/src/stores/navigation.ts
-rm memory-palace/src/types/palace.ts
+rm knowledge-ui/src/components/BreadcrumbNav.vue
+rm knowledge-ui/src/stores/navigation.ts
+rm knowledge-ui/src/types/palace.ts
 ```
 
 - [ ] **Step 4: Verify build is still green**
 
-Run: `cd memory-palace && npx vue-tsc --noEmit && npx vite build`
+Run: `cd knowledge-ui && npx vue-tsc --noEmit && npx vite build`
 Expected: exit 0.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 cd /root/hivemem
-git add memory-palace/package.json memory-palace/package-lock.json
-git rm memory-palace/src/components/BreadcrumbNav.vue memory-palace/src/stores/navigation.ts memory-palace/src/types/palace.ts
+git add knowledge-ui/package.json knowledge-ui/package-lock.json
+git rm knowledge-ui/src/components/BreadcrumbNav.vue knowledge-ui/src/stores/navigation.ts knowledge-ui/src/types/palace.ts
 git commit -m "chore(ui): add pixijs + d3-force + markdown-it + pdfjs + test deps; drop prototype files"
 ```
 
@@ -141,11 +141,11 @@ git commit -m "chore(ui): add pixijs + d3-force + markdown-it + pdfjs + test dep
 ## Task 2: Domain types and ApiClient interface
 
 **Files:**
-- Create: `memory-palace/src/api/types.ts`
+- Create: `knowledge-ui/src/api/types.ts`
 
 - [ ] **Step 1: Define types**
 
-Create `memory-palace/src/api/types.ts`:
+Create `knowledge-ui/src/api/types.ts`:
 
 ```ts
 export type Role = 'admin' | 'writer' | 'reader' | 'agent'
@@ -226,13 +226,13 @@ export interface ApiClient {
 
 - [ ] **Step 2: Verify typecheck**
 
-Run: `cd memory-palace && npx vue-tsc --noEmit`
+Run: `cd knowledge-ui && npx vue-tsc --noEmit`
 Expected: exit 0.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add memory-palace/src/api/types.ts
+git add knowledge-ui/src/api/types.ts
 git commit -m "feat(ui): define api types (Drawer, Wing, Tunnel, Fact, ApiClient, HiveEvent)"
 ```
 
@@ -241,14 +241,14 @@ git commit -m "feat(ui): define api types (Drawer, Wing, Tunnel, Fact, ApiClient
 ## Task 3: Mock API client with tests
 
 **Files:**
-- Create: `memory-palace/src/api/mockClient.ts`
-- Create: `memory-palace/tests/unit/mockClient.spec.ts`
-- Create: `memory-palace/vitest.config.ts`
-- Modify (if needed): `memory-palace/src/data/mock.ts`
+- Create: `knowledge-ui/src/api/mockClient.ts`
+- Create: `knowledge-ui/tests/unit/mockClient.spec.ts`
+- Create: `knowledge-ui/vitest.config.ts`
+- Modify (if needed): `knowledge-ui/src/data/mock.ts`
 
 - [ ] **Step 1: Vitest config**
 
-Create `memory-palace/vitest.config.ts`:
+Create `knowledge-ui/vitest.config.ts`:
 
 ```ts
 import { defineConfig } from 'vitest/config'
@@ -266,7 +266,7 @@ export default defineConfig({
 
 - [ ] **Step 2: Write failing test**
 
-Create `memory-palace/tests/unit/mockClient.spec.ts`:
+Create `knowledge-ui/tests/unit/mockClient.spec.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest'
@@ -309,12 +309,12 @@ describe('MockApiClient', () => {
 
 - [ ] **Step 3: Run test — should fail**
 
-Run: `cd memory-palace && npx vitest run tests/unit/mockClient.spec.ts`
+Run: `cd knowledge-ui && npx vitest run tests/unit/mockClient.spec.ts`
 Expected: FAIL, "Cannot find module mockClient".
 
 - [ ] **Step 4: Implement MockApiClient**
 
-Create `memory-palace/src/api/mockClient.ts`:
+Create `knowledge-ui/src/api/mockClient.ts`:
 
 ```ts
 import { palace as mockPalace } from '../data/mock'
@@ -432,17 +432,17 @@ export class MockApiClient implements ApiClient {
 
 - [ ] **Step 4b: Reshape mock.ts if required**
 
-Open `memory-palace/src/data/mock.ts`. The existing snapshot was designed for the prototype's `Palace` type. Ensure it exports a `palace` object with fields `drawers: Drawer[]`, `wings: Wing[]`, `tunnels: Tunnel[]`, `facts: Fact[]`, `references?: Reference[]` matching the types in `api/types.ts`. If the shape differs, add a small adapter at the bottom of `mock.ts` that computes `palace` from the raw snapshot — do not rewrite the data itself.
+Open `knowledge-ui/src/data/mock.ts`. The existing snapshot was designed for the prototype's `Palace` type. Ensure it exports a `palace` object with fields `drawers: Drawer[]`, `wings: Wing[]`, `tunnels: Tunnel[]`, `facts: Fact[]`, `references?: Reference[]` matching the types in `api/types.ts`. If the shape differs, add a small adapter at the bottom of `mock.ts` that computes `palace` from the raw snapshot — do not rewrite the data itself.
 
 - [ ] **Step 5: Run test — should pass**
 
-Run: `cd memory-palace && npx vitest run tests/unit/mockClient.spec.ts`
+Run: `cd knowledge-ui && npx vitest run tests/unit/mockClient.spec.ts`
 Expected: 4 passed.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add memory-palace/src/api/mockClient.ts memory-palace/tests/unit/mockClient.spec.ts memory-palace/vitest.config.ts memory-palace/src/data/mock.ts
+git add knowledge-ui/src/api/mockClient.ts knowledge-ui/tests/unit/mockClient.spec.ts knowledge-ui/vitest.config.ts knowledge-ui/src/data/mock.ts
 git commit -m "feat(ui): MockApiClient with status/search/get_drawer/traverse + subscribe ticker"
 ```
 
@@ -451,12 +451,12 @@ git commit -m "feat(ui): MockApiClient with status/search/get_drawer/traverse + 
 ## Task 4: HTTP API client with tests
 
 **Files:**
-- Create: `memory-palace/src/api/httpClient.ts`
-- Create: `memory-palace/tests/unit/httpClient.spec.ts`
+- Create: `knowledge-ui/src/api/httpClient.ts`
+- Create: `knowledge-ui/tests/unit/httpClient.spec.ts`
 
 - [ ] **Step 1: Write failing test**
 
-Create `memory-palace/tests/unit/httpClient.spec.ts`:
+Create `knowledge-ui/tests/unit/httpClient.spec.ts`:
 
 ```ts
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -507,12 +507,12 @@ describe('HttpApiClient', () => {
 
 - [ ] **Step 2: Run — fail**
 
-Run: `cd memory-palace && npx vitest run tests/unit/httpClient.spec.ts`
+Run: `cd knowledge-ui && npx vitest run tests/unit/httpClient.spec.ts`
 Expected: FAIL, module not found.
 
 - [ ] **Step 3: Implement HttpApiClient**
 
-Create `memory-palace/src/api/httpClient.ts`:
+Create `knowledge-ui/src/api/httpClient.ts`:
 
 ```ts
 import type { ApiClient, HiveEvent, StatusSummary } from './types'
@@ -576,13 +576,13 @@ export class HttpApiClient implements ApiClient {
 
 - [ ] **Step 4: Run — pass**
 
-Run: `cd memory-palace && npx vitest run tests/unit/httpClient.spec.ts`
+Run: `cd knowledge-ui && npx vitest run tests/unit/httpClient.spec.ts`
 Expected: 3 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add memory-palace/src/api/httpClient.ts memory-palace/tests/unit/httpClient.spec.ts
+git add knowledge-ui/src/api/httpClient.ts knowledge-ui/tests/unit/httpClient.spec.ts
 git commit -m "feat(ui): HttpApiClient JSON-RPC over fetch + bearer auth + status polling"
 ```
 
@@ -591,11 +591,11 @@ git commit -m "feat(ui): HttpApiClient JSON-RPC over fetch + bearer auth + statu
 ## Task 5: useApi composable + toggle
 
 **Files:**
-- Create: `memory-palace/src/api/useApi.ts`
+- Create: `knowledge-ui/src/api/useApi.ts`
 
 - [ ] **Step 1: Implement**
 
-Create `memory-palace/src/api/useApi.ts`:
+Create `knowledge-ui/src/api/useApi.ts`:
 
 ```ts
 import { MockApiClient } from './mockClient'
@@ -628,13 +628,13 @@ export function resetApi() { client = null }
 
 - [ ] **Step 2: Typecheck**
 
-Run: `cd memory-palace && npx vue-tsc --noEmit`
+Run: `cd knowledge-ui && npx vue-tsc --noEmit`
 Expected: exit 0.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add memory-palace/src/api/useApi.ts
+git add knowledge-ui/src/api/useApi.ts
 git commit -m "feat(ui): useApi composable picks Mock or Http impl via env/localStorage"
 ```
 
@@ -643,12 +643,12 @@ git commit -m "feat(ui): useApi composable picks Mock or Http impl via env/local
 ## Task 6: Pinia stores (auth, canvas, drawer, reader, ui)
 
 **Files:**
-- Create: 5 files under `memory-palace/src/stores/`
-- Create: `memory-palace/tests/unit/stores.spec.ts`
+- Create: 5 files under `knowledge-ui/src/stores/`
+- Create: `knowledge-ui/tests/unit/stores.spec.ts`
 
 - [ ] **Step 1: Test the store boundaries**
 
-Create `memory-palace/tests/unit/stores.spec.ts`:
+Create `knowledge-ui/tests/unit/stores.spec.ts`:
 
 ```ts
 import { describe, it, expect, beforeEach } from 'vitest'
@@ -685,12 +685,12 @@ describe('stores', () => {
 
 - [ ] **Step 2: Run — fails**
 
-Run: `cd memory-palace && npx vitest run tests/unit/stores.spec.ts`
+Run: `cd knowledge-ui && npx vitest run tests/unit/stores.spec.ts`
 Expected: FAIL.
 
 - [ ] **Step 3: Create stores**
 
-`memory-palace/src/stores/auth.ts`:
+`knowledge-ui/src/stores/auth.ts`:
 
 ```ts
 import { defineStore } from 'pinia'
@@ -722,7 +722,7 @@ export const useAuthStore = defineStore('auth', {
 })
 ```
 
-`memory-palace/src/stores/ui.ts`:
+`knowledge-ui/src/stores/ui.ts`:
 
 ```ts
 import { defineStore } from 'pinia'
@@ -751,7 +751,7 @@ export const useUiStore = defineStore('ui', {
 })
 ```
 
-`memory-palace/src/stores/canvas.ts`:
+`knowledge-ui/src/stores/canvas.ts`:
 
 ```ts
 import { defineStore } from 'pinia'
@@ -786,7 +786,7 @@ export const useCanvasStore = defineStore('canvas', {
 })
 ```
 
-`memory-palace/src/stores/drawer.ts`:
+`knowledge-ui/src/stores/drawer.ts`:
 
 ```ts
 import { defineStore } from 'pinia'
@@ -829,7 +829,7 @@ export const useDrawerStore = defineStore('drawer', {
 })
 ```
 
-`memory-palace/src/stores/reader.ts`:
+`knowledge-ui/src/stores/reader.ts`:
 
 ```ts
 import { defineStore } from 'pinia'
@@ -853,13 +853,13 @@ export const useReaderStore = defineStore('reader', {
 
 - [ ] **Step 4: Run — pass**
 
-Run: `cd memory-palace && npx vitest run tests/unit/stores.spec.ts`
+Run: `cd knowledge-ui && npx vitest run tests/unit/stores.spec.ts`
 Expected: 3 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add memory-palace/src/stores/ memory-palace/tests/unit/stores.spec.ts
+git add knowledge-ui/src/stores/ knowledge-ui/tests/unit/stores.spec.ts
 git commit -m "feat(ui): pinia stores auth/canvas/drawer/reader/ui"
 ```
 
@@ -868,12 +868,12 @@ git commit -m "feat(ui): pinia stores auth/canvas/drawer/reader/ui"
 ## Task 7: Login dialog + App wiring
 
 **Files:**
-- Create: `memory-palace/src/components/LoginDialog.vue`
-- Modify: `memory-palace/src/App.vue`
+- Create: `knowledge-ui/src/components/LoginDialog.vue`
+- Modify: `knowledge-ui/src/App.vue`
 
 - [ ] **Step 1: LoginDialog**
 
-Create `memory-palace/src/components/LoginDialog.vue`:
+Create `knowledge-ui/src/components/LoginDialog.vue`:
 
 ```vue
 <script setup lang="ts">
@@ -929,7 +929,7 @@ async function submit() {
 
 - [ ] **Step 2: Rewrite App.vue**
 
-Replace `memory-palace/src/App.vue`:
+Replace `knowledge-ui/src/App.vue`:
 
 ```vue
 <script setup lang="ts">
@@ -976,7 +976,7 @@ onMounted(async () => {
 - [ ] **Step 3: Commit**
 
 ```bash
-git add memory-palace/src/components/LoginDialog.vue memory-palace/src/App.vue
+git add knowledge-ui/src/components/LoginDialog.vue knowledge-ui/src/App.vue
 git commit -m "feat(ui): login dialog with mock/token toggle + app wiring"
 ```
 
@@ -985,12 +985,12 @@ git commit -m "feat(ui): login dialog with mock/token toggle + app wiring"
 ## Task 8: Router + Home + Cinema routes
 
 **Files:**
-- Create: `memory-palace/src/router.ts`, `memory-palace/src/pages/HomeRoute.vue`, `memory-palace/src/pages/CinemaRoute.vue`
-- Modify: `memory-palace/src/main.ts`
+- Create: `knowledge-ui/src/router.ts`, `knowledge-ui/src/pages/HomeRoute.vue`, `knowledge-ui/src/pages/CinemaRoute.vue`
+- Modify: `knowledge-ui/src/main.ts`
 
 - [ ] **Step 1: Router**
 
-Create `memory-palace/src/router.ts`:
+Create `knowledge-ui/src/router.ts`:
 
 ```ts
 import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router'
@@ -1005,7 +1005,7 @@ export const router = createRouter({ history: createWebHistory(), routes })
 
 - [ ] **Step 2: Stub pages**
 
-Create `memory-palace/src/pages/HomeRoute.vue`:
+Create `knowledge-ui/src/pages/HomeRoute.vue`:
 
 ```vue
 <script setup lang="ts"></script>
@@ -1019,7 +1019,7 @@ Create `memory-palace/src/pages/HomeRoute.vue`:
 </style>
 ```
 
-Create `memory-palace/src/pages/CinemaRoute.vue`:
+Create `knowledge-ui/src/pages/CinemaRoute.vue`:
 
 ```vue
 <script setup lang="ts">
@@ -1041,7 +1041,7 @@ const router = useRouter()
 
 - [ ] **Step 3: Wire router in main.ts**
 
-Replace `memory-palace/src/main.ts`:
+Replace `knowledge-ui/src/main.ts`:
 
 ```ts
 import { createApp } from 'vue'
@@ -1056,13 +1056,13 @@ createApp(App).use(createPinia()).use(vuetify).use(router).mount('#app')
 
 - [ ] **Step 4: Build**
 
-Run: `cd memory-palace && npx vue-tsc --noEmit && npx vite build`
+Run: `cd knowledge-ui && npx vue-tsc --noEmit && npx vite build`
 Expected: exit 0.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add memory-palace/src/router.ts memory-palace/src/pages/ memory-palace/src/main.ts
+git add knowledge-ui/src/router.ts knowledge-ui/src/pages/ knowledge-ui/src/main.ts
 git commit -m "feat(ui): add router with home + cinema routes"
 ```
 
@@ -1071,12 +1071,12 @@ git commit -m "feat(ui): add router with home + cinema routes"
 ## Task 9: Icon-Rail shell + SlidePanel
 
 **Files:**
-- Create: `memory-palace/src/components/shell/IconRail.vue`, `SlidePanel.vue`
-- Modify: `memory-palace/src/pages/HomeRoute.vue`
+- Create: `knowledge-ui/src/components/shell/IconRail.vue`, `SlidePanel.vue`
+- Modify: `knowledge-ui/src/pages/HomeRoute.vue`
 
 - [ ] **Step 1: IconRail**
 
-Create `memory-palace/src/components/shell/IconRail.vue`:
+Create `knowledge-ui/src/components/shell/IconRail.vue`:
 
 ```vue
 <script setup lang="ts">
@@ -1128,7 +1128,7 @@ function visible(it: typeof items[number]) { return !it.role || auth.role === it
 
 - [ ] **Step 2: SlidePanel**
 
-Create `memory-palace/src/components/shell/SlidePanel.vue`:
+Create `knowledge-ui/src/components/shell/SlidePanel.vue`:
 
 ```vue
 <script setup lang="ts">
@@ -1160,7 +1160,7 @@ header { display:flex; align-items:center; justify-content:space-between; paddin
 
 - [ ] **Step 3: Mount in HomeRoute**
 
-Replace `memory-palace/src/pages/HomeRoute.vue`:
+Replace `knowledge-ui/src/pages/HomeRoute.vue`:
 
 ```vue
 <script setup lang="ts">
@@ -1187,12 +1187,12 @@ import SlidePanel from '../components/shell/SlidePanel.vue'
 
 - [ ] **Step 4: Visual sanity check**
 
-Run `cd memory-palace && npx vite`, open browser, confirm icon-rail renders and panels open/close.
+Run `cd knowledge-ui && npx vite`, open browser, confirm icon-rail renders and panels open/close.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add memory-palace/src/components/shell/ memory-palace/src/pages/HomeRoute.vue
+git add knowledge-ui/src/components/shell/ knowledge-ui/src/pages/HomeRoute.vue
 git commit -m "feat(ui): 56px icon-rail + slide-panel shell with 6 panel slots"
 ```
 
@@ -1201,12 +1201,12 @@ git commit -m "feat(ui): 56px icon-rail + slide-panel shell with 6 panel slots"
 ## Task 10: Wings panel + Search panel + Settings panel content
 
 **Files:**
-- Create: `memory-palace/src/components/shell/SearchPanel.vue`, `WingsPanel.vue`, `SettingsPanel.vue`
-- Modify: `memory-palace/src/pages/HomeRoute.vue`
+- Create: `knowledge-ui/src/components/shell/SearchPanel.vue`, `WingsPanel.vue`, `SettingsPanel.vue`
+- Modify: `knowledge-ui/src/pages/HomeRoute.vue`
 
 - [ ] **Step 1: WingsPanel**
 
-Create `memory-palace/src/components/shell/WingsPanel.vue`:
+Create `knowledge-ui/src/components/shell/WingsPanel.vue`:
 
 ```vue
 <script setup lang="ts">
@@ -1255,7 +1255,7 @@ function colorFor(wing: string): string {
 
 - [ ] **Step 2: SearchPanel**
 
-Create `memory-palace/src/components/shell/SearchPanel.vue`:
+Create `knowledge-ui/src/components/shell/SearchPanel.vue`:
 
 ```vue
 <script setup lang="ts">
@@ -1292,7 +1292,7 @@ watch(q, v => {
 
 - [ ] **Step 3: SettingsPanel**
 
-Create `memory-palace/src/components/shell/SettingsPanel.vue`:
+Create `knowledge-ui/src/components/shell/SettingsPanel.vue`:
 
 ```vue
 <script setup lang="ts">
@@ -1338,7 +1338,7 @@ import SettingsPanel from '../components/shell/SettingsPanel.vue'
 - [ ] **Step 5: Commit**
 
 ```bash
-git add memory-palace/src/components/shell/ memory-palace/src/pages/HomeRoute.vue
+git add knowledge-ui/src/components/shell/ knowledge-ui/src/pages/HomeRoute.vue
 git commit -m "feat(ui): wings/search/settings panel content with size-metric selector"
 ```
 
@@ -1347,13 +1347,13 @@ git commit -m "feat(ui): wings/search/settings panel content with size-metric se
 ## Task 11: PixiJS SphereCanvas skeleton
 
 **Files:**
-- Create: `memory-palace/src/components/canvas/SphereCanvas.vue`
-- Create: `memory-palace/src/components/canvas/textures.ts`
-- Modify: `memory-palace/src/pages/HomeRoute.vue`
+- Create: `knowledge-ui/src/components/canvas/SphereCanvas.vue`
+- Create: `knowledge-ui/src/components/canvas/textures.ts`
+- Modify: `knowledge-ui/src/pages/HomeRoute.vue`
 
 - [ ] **Step 1: Texture generator**
 
-Create `memory-palace/src/components/canvas/textures.ts`:
+Create `knowledge-ui/src/components/canvas/textures.ts`:
 
 ```ts
 import { Texture } from 'pixi.js'
@@ -1412,7 +1412,7 @@ export function parseHsl(hsl: string): number {
 
 - [ ] **Step 2: SphereCanvas skeleton**
 
-Create `memory-palace/src/components/canvas/SphereCanvas.vue`:
+Create `knowledge-ui/src/components/canvas/SphereCanvas.vue`:
 
 ```vue
 <script setup lang="ts">
@@ -1516,7 +1516,7 @@ Run dev server, verify wings render as glowing circles in a ring with drawer-poi
 - [ ] **Step 5: Commit**
 
 ```bash
-git add memory-palace/src/components/canvas/ memory-palace/src/pages/HomeRoute.vue
+git add knowledge-ui/src/components/canvas/ knowledge-ui/src/pages/HomeRoute.vue
 git commit -m "feat(ui): PixiJS SphereCanvas renders wings + drawer points from canvas store"
 ```
 
@@ -1525,12 +1525,12 @@ git commit -m "feat(ui): PixiJS SphereCanvas renders wings + drawer points from 
 ## Task 12: Layout via d3-force + Poisson-disk
 
 **Files:**
-- Create: `memory-palace/src/composables/layout.ts`, `memory-palace/tests/unit/layout.spec.ts`
-- Modify: `memory-palace/src/components/canvas/SphereCanvas.vue`
+- Create: `knowledge-ui/src/composables/layout.ts`, `knowledge-ui/tests/unit/layout.spec.ts`
+- Modify: `knowledge-ui/src/components/canvas/SphereCanvas.vue`
 
 - [ ] **Step 1: Test**
 
-Create `memory-palace/tests/unit/layout.spec.ts`:
+Create `knowledge-ui/tests/unit/layout.spec.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest'
@@ -1558,12 +1558,12 @@ describe('layout', () => {
 
 - [ ] **Step 2: Run — fail**
 
-Run: `cd memory-palace && npx vitest run tests/unit/layout.spec.ts`
+Run: `cd knowledge-ui && npx vitest run tests/unit/layout.spec.ts`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement**
 
-Create `memory-palace/src/composables/layout.ts`:
+Create `knowledge-ui/src/composables/layout.ts`:
 
 ```ts
 import * as d3 from 'd3-force'
@@ -1636,7 +1636,7 @@ function seededRng(seed: string) {
 
 - [ ] **Step 4: Run — pass**
 
-Run: `cd memory-palace && npx vitest run tests/unit/layout.spec.ts`
+Run: `cd knowledge-ui && npx vitest run tests/unit/layout.spec.ts`
 Expected: 2 passed.
 
 - [ ] **Step 5: Replace ring layout in SphereCanvas**
@@ -1674,7 +1674,7 @@ Remove the hardcoded-ring logic.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add memory-palace/src/composables/layout.ts memory-palace/tests/unit/layout.spec.ts memory-palace/src/components/canvas/SphereCanvas.vue
+git add knowledge-ui/src/composables/layout.ts knowledge-ui/tests/unit/layout.spec.ts knowledge-ui/src/components/canvas/SphereCanvas.vue
 git commit -m "feat(ui): d3-force wing layout + Poisson-disk drawer placement"
 ```
 
@@ -1683,7 +1683,7 @@ git commit -m "feat(ui): d3-force wing layout + Poisson-disk drawer placement"
 ## Task 13: Edges layer
 
 **Files:**
-- Modify: `memory-palace/src/components/canvas/SphereCanvas.vue`
+- Modify: `knowledge-ui/src/components/canvas/SphereCanvas.vue`
 
 - [ ] **Step 1: Draw edges under spheres**
 
@@ -1718,8 +1718,8 @@ world!.addChild(edges)
 - [ ] **Step 2: Build + visual check + commit**
 
 ```bash
-cd memory-palace && npx vite build
-git add memory-palace/src/components/canvas/SphereCanvas.vue
+cd knowledge-ui && npx vite build
+git add knowledge-ui/src/components/canvas/SphereCanvas.vue
 git commit -m "feat(ui): draw tunnel edges as relation-coloured lines"
 ```
 
@@ -1728,7 +1728,7 @@ git commit -m "feat(ui): draw tunnel edges as relation-coloured lines"
 ## Task 14: Zoom + pan + snap-focus
 
 **Files:**
-- Modify: `memory-palace/src/components/canvas/SphereCanvas.vue`
+- Modify: `knowledge-ui/src/components/canvas/SphereCanvas.vue`
 
 - [ ] **Step 1: Wheel zoom + drag pan**
 
@@ -1817,7 +1817,7 @@ function onDrawerClick(d: Drawer) {
 - [ ] **Step 3: Commit**
 
 ```bash
-git add memory-palace/src/components/canvas/SphereCanvas.vue
+git add knowledge-ui/src/components/canvas/SphereCanvas.vue
 git commit -m "feat(ui): wheel zoom + drag pan + snap-focus tween + double-click opens reader"
 ```
 
@@ -1826,12 +1826,12 @@ git commit -m "feat(ui): wheel zoom + drag pan + snap-focus tween + double-click
 ## Task 15: Filter presets + bloom on focus
 
 **Files:**
-- Create: `memory-palace/src/components/canvas/filters.ts`
-- Modify: `memory-palace/src/components/canvas/SphereCanvas.vue`
+- Create: `knowledge-ui/src/components/canvas/filters.ts`
+- Modify: `knowledge-ui/src/components/canvas/SphereCanvas.vue`
 
 - [ ] **Step 1: Filter presets**
 
-Create `memory-palace/src/components/canvas/filters.ts`:
+Create `knowledge-ui/src/components/canvas/filters.ts`:
 
 ```ts
 import { AdvancedBloomFilter, OutlineFilter, ZoomBlurFilter, GodrayFilter } from 'pixi-filters'
@@ -1880,7 +1880,7 @@ app.stage.addChildAt(bg, 0)
 - [ ] **Step 4: Commit**
 
 ```bash
-git add memory-palace/src/components/canvas/filters.ts memory-palace/src/components/canvas/SphereCanvas.vue
+git add knowledge-ui/src/components/canvas/filters.ts knowledge-ui/src/components/canvas/SphereCanvas.vue
 git commit -m "feat(ui): pixi-filters bloom/outline/zoomblur/godray; hover + focus highlights"
 ```
 
@@ -1889,12 +1889,12 @@ git commit -m "feat(ui): pixi-filters bloom/outline/zoomblur/godray; hover + foc
 ## Task 16: LOD + viewport culling
 
 **Files:**
-- Create: `memory-palace/src/composables/lod.ts`, `memory-palace/tests/unit/lod.spec.ts`
-- Modify: `memory-palace/src/components/canvas/SphereCanvas.vue`
+- Create: `knowledge-ui/src/composables/lod.ts`, `knowledge-ui/tests/unit/lod.spec.ts`
+- Modify: `knowledge-ui/src/components/canvas/SphereCanvas.vue`
 
 - [ ] **Step 1: Test**
 
-Create `memory-palace/tests/unit/lod.spec.ts`:
+Create `knowledge-ui/tests/unit/lod.spec.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest'
@@ -1912,7 +1912,7 @@ describe('lod', () => {
 
 - [ ] **Step 2: Implement**
 
-Create `memory-palace/src/composables/lod.ts`:
+Create `knowledge-ui/src/composables/lod.ts`:
 
 ```ts
 export type Lod = 'wings' | 'halos' | 'labels' | 'full'
@@ -1956,8 +1956,8 @@ function applyTransform() {
 - [ ] **Step 4: Run tests + commit**
 
 ```bash
-cd memory-palace && npx vitest run tests/unit/lod.spec.ts  # 6 pass
-git add memory-palace/src/composables/lod.ts memory-palace/tests/unit/lod.spec.ts memory-palace/src/components/canvas/SphereCanvas.vue
+cd knowledge-ui && npx vitest run tests/unit/lod.spec.ts  # 6 pass
+git add knowledge-ui/src/composables/lod.ts knowledge-ui/tests/unit/lod.spec.ts knowledge-ui/src/components/canvas/SphereCanvas.vue
 git commit -m "feat(ui): LOD visibility + viewport culling in applyTransform"
 ```
 
@@ -1966,12 +1966,12 @@ git commit -m "feat(ui): LOD visibility + viewport culling in applyTransform"
 ## Task 17: ScanPanel (drawer-detail slide-panel)
 
 **Files:**
-- Create: `memory-palace/src/components/ScanPanel.vue`
-- Modify: `memory-palace/src/pages/HomeRoute.vue`
+- Create: `knowledge-ui/src/components/ScanPanel.vue`
+- Modify: `knowledge-ui/src/pages/HomeRoute.vue`
 
 - [ ] **Step 1: ScanPanel**
 
-Create `memory-palace/src/components/ScanPanel.vue`:
+Create `knowledge-ui/src/components/ScanPanel.vue`:
 
 ```vue
 <script setup lang="ts">
@@ -2074,7 +2074,7 @@ Import: `import ScanPanel from '../components/ScanPanel.vue'`.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add memory-palace/src/components/ScanPanel.vue memory-palace/src/pages/HomeRoute.vue
+git add knowledge-ui/src/components/ScanPanel.vue knowledge-ui/src/pages/HomeRoute.vue
 git commit -m "feat(ui): scan panel with L1/L2/L3, tunnels (jumpable), facts, reader CTA"
 ```
 
@@ -2083,12 +2083,12 @@ git commit -m "feat(ui): scan panel with L1/L2/L3, tunnels (jumpable), facts, re
 ## Task 18: Reader (Markdown tab)
 
 **Files:**
-- Create: `memory-palace/src/components/Reader.vue`, `memory-palace/src/components/readers/MarkdownTab.vue`
-- Modify: `memory-palace/src/pages/HomeRoute.vue`
+- Create: `knowledge-ui/src/components/Reader.vue`, `knowledge-ui/src/components/readers/MarkdownTab.vue`
+- Modify: `knowledge-ui/src/pages/HomeRoute.vue`
 
 - [ ] **Step 1: MarkdownTab**
 
-Create `memory-palace/src/components/readers/MarkdownTab.vue`:
+Create `knowledge-ui/src/components/readers/MarkdownTab.vue`:
 
 ```vue
 <script setup lang="ts">
@@ -2134,7 +2134,7 @@ const html = computed(() => md.render(renderKatex(props.content || '')))
 
 - [ ] **Step 2: Reader shell**
 
-Create `memory-palace/src/components/Reader.vue`:
+Create `knowledge-ui/src/components/Reader.vue`:
 
 ```vue
 <script setup lang="ts">
@@ -2185,7 +2185,7 @@ Add `<Reader />` in `HomeRoute.vue` with import.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add memory-palace/src/components/Reader.vue memory-palace/src/components/readers/MarkdownTab.vue memory-palace/src/pages/HomeRoute.vue
+git add knowledge-ui/src/components/Reader.vue knowledge-ui/src/components/readers/MarkdownTab.vue knowledge-ui/src/pages/HomeRoute.vue
 git commit -m "feat(ui): reader fullscreen dialog + markdown-it/katex/highlight tab"
 ```
 
@@ -2194,12 +2194,12 @@ git commit -m "feat(ui): reader fullscreen dialog + markdown-it/katex/highlight 
 ## Task 19: PDF tab (pdf.js dynamic import)
 
 **Files:**
-- Create: `memory-palace/src/components/readers/PdfTab.vue`
-- Modify: `memory-palace/src/components/Reader.vue`
+- Create: `knowledge-ui/src/components/readers/PdfTab.vue`
+- Modify: `knowledge-ui/src/components/Reader.vue`
 
 - [ ] **Step 1: PdfTab**
 
-Create `memory-palace/src/components/readers/PdfTab.vue`:
+Create `knowledge-ui/src/components/readers/PdfTab.vue`:
 
 ```vue
 <script setup lang="ts">
@@ -2254,7 +2254,7 @@ function urlOf(tab: string) { return attachments.value.find(a => a.id === tab)?.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add memory-palace/src/components/readers/PdfTab.vue memory-palace/src/components/Reader.vue
+git add knowledge-ui/src/components/readers/PdfTab.vue knowledge-ui/src/components/Reader.vue
 git commit -m "feat(ui): pdf.js tab via dynamic import (ready for SP2 attachments)"
 ```
 
@@ -2263,12 +2263,12 @@ git commit -m "feat(ui): pdf.js tab via dynamic import (ready for SP2 attachment
 ## Task 20: .eml tab via postal-mime
 
 **Files:**
-- Create: `memory-palace/src/components/readers/EmlTab.vue`
-- Modify: `memory-palace/src/components/Reader.vue`
+- Create: `knowledge-ui/src/components/readers/EmlTab.vue`
+- Modify: `knowledge-ui/src/components/Reader.vue`
 
 - [ ] **Step 1: EmlTab**
 
-Create `memory-palace/src/components/readers/EmlTab.vue`:
+Create `knowledge-ui/src/components/readers/EmlTab.vue`:
 
 ```vue
 <script setup lang="ts">
@@ -2325,7 +2325,7 @@ Import: `import EmlTab from './readers/EmlTab.vue'`.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add memory-palace/src/components/readers/EmlTab.vue memory-palace/src/components/Reader.vue
+git add knowledge-ui/src/components/readers/EmlTab.vue knowledge-ui/src/components/Reader.vue
 git commit -m "feat(ui): .eml tab with postal-mime"
 ```
 
@@ -2334,7 +2334,7 @@ git commit -m "feat(ui): .eml tab with postal-mime"
 ## Task 21: Live-update subscribe + toast
 
 **Files:**
-- Modify: `memory-palace/src/pages/HomeRoute.vue`
+- Modify: `knowledge-ui/src/pages/HomeRoute.vue`
 
 - [ ] **Step 1: Subscribe**
 
@@ -2363,7 +2363,7 @@ onBeforeUnmount(() => unsub?.())
 - [ ] **Step 2: Commit**
 
 ```bash
-git add memory-palace/src/pages/HomeRoute.vue
+git add knowledge-ui/src/pages/HomeRoute.vue
 git commit -m "feat(ui): live-update subscribe pushes reload toast"
 ```
 
@@ -2372,22 +2372,22 @@ git commit -m "feat(ui): live-update subscribe pushes reload toast"
 ## Task 22: Cinema route with recycled HiveSphere
 
 **Files:**
-- Modify: `memory-palace/src/pages/CinemaRoute.vue`
-- Modify: `memory-palace/package.json` if TresJS not present
+- Modify: `knowledge-ui/src/pages/CinemaRoute.vue`
+- Modify: `knowledge-ui/package.json` if TresJS not present
 
 - [ ] **Step 1: Ensure TresJS + three are present**
 
-Run: `cd memory-palace && npm ls @tresjs/core three`
+Run: `cd knowledge-ui && npm ls @tresjs/core three`
 
 If missing:
 
 ```bash
-cd memory-palace && npm install @tresjs/core@^5 @tresjs/cientos@^5 three@^0.170
+cd knowledge-ui && npm install @tresjs/core@^5 @tresjs/cientos@^5 three@^0.170
 ```
 
 - [ ] **Step 2: Rewrite CinemaRoute**
 
-Replace `memory-palace/src/pages/CinemaRoute.vue`:
+Replace `knowledge-ui/src/pages/CinemaRoute.vue`:
 
 ```vue
 <script setup lang="ts">
@@ -2431,13 +2431,13 @@ If the recycled HiveSphere has a different prop shape (e.g. expects a `palace` o
 
 - [ ] **Step 3: Verify bundle splits TresJS into its own chunk**
 
-Run: `cd memory-palace && npx vite build`
+Run: `cd knowledge-ui && npx vite build`
 Expected: dist contains separate chunks for `three` and `@tresjs/core`; main bundle does not grow by the TresJS size.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add memory-palace/src/pages/CinemaRoute.vue memory-palace/package.json memory-palace/package-lock.json
+git add knowledge-ui/src/pages/CinemaRoute.vue knowledge-ui/package.json knowledge-ui/package-lock.json
 git commit -m "feat(ui): cinema route lazy-loads TresJS + recycled HiveSphere"
 ```
 
@@ -2446,12 +2446,12 @@ git commit -m "feat(ui): cinema route lazy-loads TresJS + recycled HiveSphere"
 ## Task 23: Keyboard shortcuts
 
 **Files:**
-- Create: `memory-palace/src/composables/keybindings.ts`
-- Modify: `memory-palace/src/pages/HomeRoute.vue`
+- Create: `knowledge-ui/src/composables/keybindings.ts`
+- Modify: `knowledge-ui/src/pages/HomeRoute.vue`
 
 - [ ] **Step 1: Composable**
 
-Create `memory-palace/src/composables/keybindings.ts`:
+Create `knowledge-ui/src/composables/keybindings.ts`:
 
 ```ts
 import { useEventListener } from '@vueuse/core'
@@ -2489,7 +2489,7 @@ useKeybindings()
 - [ ] **Step 3: Commit**
 
 ```bash
-git add memory-palace/src/composables/keybindings.ts memory-palace/src/pages/HomeRoute.vue
+git add knowledge-ui/src/composables/keybindings.ts knowledge-ui/src/pages/HomeRoute.vue
 git commit -m "feat(ui): Cmd+K / Esc / Enter / ? keybindings"
 ```
 
@@ -2498,11 +2498,11 @@ git commit -m "feat(ui): Cmd+K / Esc / Enter / ? keybindings"
 ## Task 24: Playwright E2E smoke
 
 **Files:**
-- Create: `memory-palace/playwright.config.ts`, `memory-palace/tests/e2e/smoke.spec.ts`
+- Create: `knowledge-ui/playwright.config.ts`, `knowledge-ui/tests/e2e/smoke.spec.ts`
 
 - [ ] **Step 1: Playwright config**
 
-Create `memory-palace/playwright.config.ts`:
+Create `knowledge-ui/playwright.config.ts`:
 
 ```ts
 import { defineConfig, devices } from '@playwright/test'
@@ -2521,7 +2521,7 @@ export default defineConfig({
 
 - [ ] **Step 2: Smoke test**
 
-Create `memory-palace/tests/e2e/smoke.spec.ts`:
+Create `knowledge-ui/tests/e2e/smoke.spec.ts`:
 
 ```ts
 import { test, expect } from '@playwright/test'
@@ -2546,7 +2546,7 @@ test('login → search → open drawer → reader → close', async ({ page }) =
 - [ ] **Step 3: Install browsers + run**
 
 ```bash
-cd memory-palace && npx playwright install chromium && npx playwright test
+cd knowledge-ui && npx playwright install chromium && npx playwright test
 ```
 
 Expected: 1 passed.
@@ -2554,7 +2554,7 @@ Expected: 1 passed.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add memory-palace/playwright.config.ts memory-palace/tests/e2e/smoke.spec.ts memory-palace/package.json memory-palace/package-lock.json
+git add knowledge-ui/playwright.config.ts knowledge-ui/tests/e2e/smoke.spec.ts knowledge-ui/package.json knowledge-ui/package-lock.json
 git commit -m "test(ui): playwright e2e smoke (login → search → open → reader → close)"
 ```
 
@@ -2563,12 +2563,12 @@ git commit -m "test(ui): playwright e2e smoke (login → search → open → rea
 ## Task 25: Final polish — particles + build verification
 
 **Files:**
-- Create: `memory-palace/src/components/canvas/particles.ts`
-- Modify: `memory-palace/src/components/canvas/SphereCanvas.vue`
+- Create: `knowledge-ui/src/components/canvas/particles.ts`
+- Modify: `knowledge-ui/src/components/canvas/SphereCanvas.vue`
 
 - [ ] **Step 1: Particle emitter**
 
-Create `memory-palace/src/components/canvas/particles.ts`:
+Create `knowledge-ui/src/components/canvas/particles.ts`:
 
 ```ts
 import { Container, Graphics } from 'pixi.js'
@@ -2610,7 +2610,7 @@ app.ticker.add(t => update(t.deltaMS))
 - [ ] **Step 3: Final verification**
 
 ```bash
-cd memory-palace
+cd knowledge-ui
 npx vue-tsc --noEmit
 npx vitest run
 npx vite build
@@ -2622,7 +2622,7 @@ All four should exit 0.
 - [ ] **Step 4: Commit + push**
 
 ```bash
-git add memory-palace/src/components/canvas/
+git add knowledge-ui/src/components/canvas/
 git commit -m "feat(ui): ambient dust particles (mobile halved); sp1 complete"
 git push
 ```
@@ -2634,7 +2634,7 @@ git push
 - [x] Spec coverage: every section has a task. Architecture (Task 2-5). Pinia (Task 6). Auth (Task 7). Routing (Task 8). Shell (Task 9-10). Canvas (Task 11-16). Drawer detail (Task 17-20). Live-update (Task 21). Cinema (Task 22). Keybindings (Task 23). E2E (Task 24). Polish (Task 25).
 - [x] No "TBD" or "similar to Task N" placeholders.
 - [x] Type names consistent: `ApiClient`, `Drawer`, `Wing`, `Tunnel`, `Fact`, `HiveEvent`, `StatusSummary`, `Role`, `Relation` all defined in Task 2 and used consistently across tasks.
-- [x] File paths absolute from `memory-palace/`.
+- [x] File paths absolute from `knowledge-ui/`.
 - [x] Each code step shows actual code; each test step shows assertion.
 - [x] Commits frequent (one per task) and follow Conventional Commits.
 - [x] SP1-scope respected: no editor (SP4), no uploads (SP2), no OCR (SP3), no watcher (SP5).
