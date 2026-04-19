@@ -217,6 +217,93 @@ Expected delta: Qwen3-4B should outperform BGE-M3 by 3-8 percentage points on re
 
 ---
 
+### 3.5 Reference test setup (the machine Phase 1 runs on)
+
+This is the concrete hardware we target for Phase 1. All run-time estimates, memory budgets, and ROCm workarounds in this plan assume this configuration.
+
+| Component | Spec |
+|---|---|
+| CPU | AMD Ryzen 5 7600X — 6 cores / 12 threads, 4.7 GHz base, Zen 4, Socket AM5 |
+| RAM | 32 GB DDR5-5600 (2 × 16 GB G.Skill Ripjaws S5, CL40-40-40-89, dual-channel) |
+| GPU | PowerColor Radeon RX 7800 XT — 16 GB GDDR6, RDNA3 Navi 32 (gfx1101), ~37 TFLOPS fp32 |
+| Platform | AM5 motherboard, PCIe 4.0 x16 to GPU |
+
+**This is an AMD GPU, not NVIDIA.** The rest of Section 3 defaulted to NVIDIA+CUDA; everything below adapts the stack for AMD+ROCm.
+
+#### Software stack
+
+| Layer | Choice | Rationale |
+|---|---|---|
+| OS | Ubuntu 24.04 LTS (or Arch) | Cleanest ROCm + amdgpu driver support, latest PyTorch wheels |
+| Kernel | ≥ 6.5 | Needed for full RDNA3 amdgpu support |
+| GPU driver | `amdgpu-pro` or upstream `amdgpu` | Either works; upstream is simpler |
+| ROCm | 6.2 or newer | First version with solid RDNA3 support outside gfx1100 |
+| PyTorch | ROCm build: `pip install torch --index-url https://download.pytorch.org/whl/rocm6.2` | NOT the CPU or CUDA wheel |
+| Python | 3.11 (matches Task 1 requirement) | |
+| Container | Docker + AMD Container Runtime, base image `rocm/pytorch:latest-ubuntu22.04-py3.10-torch2.3` | If you containerise the embedding service |
+
+#### ROCm workaround for RX 7800 XT
+
+RX 7800 XT is `gfx1101`. AMD's officially-supported ROCm consumer list covers only `gfx1100` (7900 XTX/XT/GRE). The 7800 XT runs via an ID override:
+
+```bash
+export HSA_OVERRIDE_GFX_VERSION=11.0.0
+# Add to the embedding service's systemd unit or Dockerfile ENV, not just shell.
+```
+
+Without this, `torch.cuda.is_available()` returns True on ROCm but kernels fail at runtime. Set it system-wide.
+
+#### Smoke check before first benchmark run
+
+```bash
+python - <<'PY'
+import torch
+print("rocm/cuda available:", torch.cuda.is_available())
+print("device:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu")
+x = torch.randn(1024, 1024, device="cuda")
+y = torch.randn(1024, 1024, device="cuda")
+z = x @ y
+print("matmul ok, shape:", z.shape)
+PY
+```
+
+Expected: `device: AMD Radeon RX 7800 XT` (or similar) and `matmul ok`. If this fails, the rest of the benchmark won't run.
+
+#### What works and what does not on this setup
+
+| Workload | Status | Notes |
+|---|---|---|
+| Qwen3-Embedding-0.6B inference | ✅ | ~2 GB VRAM, trivially fast |
+| Qwen3-Embedding-4B @ 1024-dim Matryoshka | ✅ recommended | ~10-11 GB VRAM during inference, ~5 GB headroom |
+| Qwen3-Embedding-8B inference | ⚠️ only with 4-bit quant | Weights alone are 16 GB fp16, does not fit at full precision. Drop to Q4_K_M via llama.cpp or bitsandbytes; accept ~1 MTEB-point quality loss |
+| BGE-M3 | ✅ | 1024-dim native, ~4 GB VRAM |
+| Flash Attention v2 | ⚠️ partial | Some kernels fall back to non-flash. Inference still works, ~10-20% slower |
+| Running the answer LLM (gpt-4o-mini) locally | ❌ out of scope | Answer + judge go to OpenAI API. Local inference for 7B+ models is tight on 16 GB and adds complexity we do not need for Phase 1 |
+| vLLM / TensorRT-LLM | ❌ | NVIDIA-only. Not required for embedding-only workloads |
+
+#### Run-time estimates specific to this hardware
+
+Benchmarked against published RX 7800 XT vs RTX 4070 Ti embedding inference ratios (~0.5-0.7× throughput):
+
+| Workload | RTX 4070 Ti reference | **RX 7800 XT estimate** |
+|---|---|---|
+| Smoke run (5 cases, ~200 sessions ingest) | ~1 min | ~1.5-2 min |
+| Baseline (25 cases, ~1000 sessions ingest) | ~5-10 min | ~8-15 min |
+| Full temporal subset (150 cases, ~6000 sessions) | ~20 min | ~30-40 min |
+| Full LongMemEval_S (500 cases, ~20000 sessions) | ~30 min | ~45-70 min |
+
+Dominated by embedding throughput; LLM-round-trip latency is network-bound and identical across hardware.
+
+#### If ROCm setup gets stuck
+
+Fallback: rent a one-off NVIDIA cloud GPU to unblock the first baseline:
+- [vast.ai](https://vast.ai) RTX 4090 24 GB ≈ $0.25/hour → full `_s` run under $2 total
+- [runpod.io](https://runpod.io) similar pricing
+
+This is strictly optional and does not replace the home setup for iterative work.
+
+---
+
 ## 4. Repository layout after implementation
 
 ```
@@ -263,7 +350,7 @@ benchmarks/longmemeval/
 
 Before the first run:
 
-- [ ] Dedicated benchmark host provisioned (Linux + NVIDIA GPU + Docker + NVIDIA Container Toolkit)
+- [ ] Dedicated benchmark host provisioned — see **Section 3.5 for the reference setup** (Ryzen 5 7600X + 32 GB DDR5 + Radeon RX 7800 XT 16 GB). NVIDIA hosts also work; AMD requires `HSA_OVERRIDE_GFX_VERSION=11.0.0` for the 7800 XT.
 - [ ] HiveMem deployed on that host with branch containing V0009 bi-temporal migration applied
 - [ ] Embedding service running on GPU with chosen model; verified via `/info` endpoint
 - [ ] Writer-role HiveMem token created: `scripts/hivemem-token create bench-writer --role writer --expires 30d`; plaintext exported as `HIVEMEM_BENCH_TOKEN`
