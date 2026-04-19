@@ -137,25 +137,65 @@ const tex = shallowRef<THREE.CanvasTexture | null>(null)
 function buildGeometry() {
   const centroid = new THREE.Vector3(...props.cell.centroid)
   const normal = centroid.clone().normalize()
-  const tangent = new THREE.Vector3()
-  if (Math.abs(normal.y) < 0.99) tangent.copy(new THREE.Vector3(0, 1, 0)).cross(normal).normalize()
-  else tangent.copy(new THREE.Vector3(1, 0, 0)).cross(normal).normalize()
-  const bitangent = new THREE.Vector3().copy(normal).cross(tangent).normalize()
+  const N = props.cell.vertices.length
+  const vertsRel = props.cell.vertices.map((v) => new THREE.Vector3(...v).sub(centroid))
 
-  const shape = new THREE.Shape()
-  const flat: [number, number][] = props.cell.vertices.map((v) => {
-    const p = new THREE.Vector3(...v).sub(centroid)
-    return [p.dot(tangent) * 0.98, p.dot(bitangent) * 0.98]
-  })
-  shape.moveTo(flat[0][0], flat[0][1])
-  for (let i = 1; i < flat.length; i++) shape.lineTo(flat[i][0], flat[i][1])
-  shape.lineTo(flat[0][0], flat[0][1])
+  // UV basis: use first vertex direction as reference
+  const vRef = vertsRel[0].clone().normalize()
+  const uBasis = vRef.clone().sub(normal.clone().multiplyScalar(vRef.dot(normal))).normalize()
+  const vBasis = new THREE.Vector3().crossVectors(normal, uBasis).normalize()
 
-  const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.08, bevelEnabled: false })
-  geo.translate(0, 0, -0.04)
+  // Build a shallow extrusion: front face on sphere surface, back face pulled
+  // slightly inward along the centroid normal. No rotation needed — vertices
+  // are already in world space, so neighbour cells share edges exactly.
+  const depth = 0.06
+  const positions: number[] = []
+  const uvs: number[] = []
+
+  // Front ring (vertices as-is) — world-space coords relative to centroid
+  for (const v of vertsRel) {
+    positions.push(v.x, v.y, v.z)
+    const u = v.dot(uBasis), w = v.dot(vBasis)
+    const r = Math.sqrt(u * u + w * w) || 1
+    uvs.push(0.5 + (u / r) * 0.5, 0.5 + (w / r) * 0.5)
+  }
+  // Back ring (pulled toward sphere centre along normal)
+  for (const v of vertsRel) {
+    const back = v.clone().sub(normal.clone().multiplyScalar(depth))
+    positions.push(back.x, back.y, back.z)
+    const u = v.dot(uBasis), w = v.dot(vBasis)
+    const r = Math.sqrt(u * u + w * w) || 1
+    uvs.push(0.5 + (u / r) * 0.5, 0.5 + (w / r) * 0.5)
+  }
+
+  const indices: number[] = []
+  // Front face fan from vertex 0
+  for (let i = 1; i < N - 1; i++) indices.push(0, i, i + 1)
+  // Back face fan (reverse winding)
+  for (let i = 1; i < N - 1; i++) indices.push(N, N + i + 1, N + i)
+  // Side walls
+  for (let i = 0; i < N; i++) {
+    const j = (i + 1) % N
+    indices.push(i, j, N + i)
+    indices.push(j, N + j, N + i)
+  }
+
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  geo.setIndex(indices)
+  geo.computeVertexNormals()
   geometry.value = geo
 
-  const edges = new THREE.EdgesGeometry(geo, 1)
+  // Edges: only the front ring (visible outer rim)
+  const edgePos: number[] = []
+  for (let i = 0; i < N; i++) {
+    const a = vertsRel[i]
+    const b = vertsRel[(i + 1) % N]
+    edgePos.push(a.x, a.y, a.z, b.x, b.y, b.z)
+  }
+  const edges = new THREE.BufferGeometry()
+  edges.setAttribute('position', new THREE.Float32BufferAttribute(edgePos, 3))
   edgesGeometry.value = edges
 
   if (tex.value) tex.value.dispose()
@@ -212,49 +252,39 @@ function onClick(e: any) {
 }
 
 const groupPos = computed<[number, number, number]>(() => props.cell.centroid)
-
-// Rotate the cell so its local +Z axis (extrusion direction) aligns with the
-// outward normal from the sphere centre to this cell's centroid.
-const cellRotation = computed<[number, number, number]>(() => {
-  const normal = new THREE.Vector3(...props.cell.centroid).normalize()
-  const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal)
-  const euler = new THREE.Euler().setFromQuaternion(quat, 'XYZ')
-  return [euler.x, euler.y, euler.z]
-})
 </script>
 
 <template>
   <TresGroup
     :position="groupPos"
-    :rotation="cellRotation"
     :scale="scale"
     @pointer-over="onPointerOver"
     @pointer-leave="onPointerLeave"
     @click="onClick"
   >
+    <!-- Single glass cell with gradient map baked in -->
     <TresMesh :geometry="geometry ?? undefined" :visible="geometry !== null">
       <TresMeshPhysicalMaterial
-        :color="'#1c1c1c'"
-        :metalness="0.85"
-        :roughness="0.15"
-        :transmission="0.55"
-        :thickness="0.3"
-        :ior="1.45"
-        :emissive="palette?.tint ?? '#0d0d0d'"
+        :color="'#ffffff'"
+        :map="tex"
+        :emissive-map="tex"
+        :metalness="0.4"
+        :roughness="0.2"
+        :transmission="0.2"
+        :thickness="0.2"
+        :ior="1.3"
+        :emissive="'#ffffff'"
         :emissive-intensity="intensity"
         :transparent="true"
-        :opacity="0.85"
-        :side="THREE.DoubleSide"
+        :opacity="0.95"
+        :side="THREE.FrontSide"
       />
     </TresMesh>
 
-    <TresMesh :geometry="geometry ?? undefined" :visible="geometry !== null" :position-z="0.12" :scale="0.85">
-      <TresMeshBasicMaterial :map="tex" :transparent="true" :opacity="0.95" />
-    </TresMesh>
-
+    <!-- Metal frame on outer ring (shared edges with neighbours) -->
     <primitive
       v-if="edgesGeometry"
-      :object="new THREE.LineSegments(edgesGeometry, new THREE.LineBasicMaterial({ color: '#2a2a2a' }))"
+      :object="new THREE.LineSegments(edgesGeometry, new THREE.LineBasicMaterial({ color: '#2a2a2a', linewidth: 2 }))"
     />
   </TresGroup>
 </template>
