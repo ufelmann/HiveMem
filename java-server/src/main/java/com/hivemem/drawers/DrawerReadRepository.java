@@ -182,34 +182,45 @@ public class DrawerReadRepository {
         return results;
     }
 
-    public List<Map<String, Object>> timeMachine(String subject, OffsetDateTime asOf, int limit) {
-        String sql;
-        Object[] params;
-        if (asOf == null) {
-            sql = """
-                    SELECT id, subject, predicate, "object", confidence, valid_from, valid_until
+    public List<Map<String, Object>> timeMachine(String subject, OffsetDateTime asOf, OffsetDateTime asOfIngestion, int limit) {
+        StringBuilder sql = new StringBuilder();
+        List<Object> params = new ArrayList<>();
+
+        if (asOf == null && asOfIngestion == null) {
+            sql.append("""
+                    SELECT id, subject, predicate, "object", confidence, valid_from, valid_until, ingested_at
                     FROM active_facts
                     WHERE subject ILIKE ?
                     ORDER BY valid_from DESC
                     LIMIT ?
-                    """;
-            params = new Object[]{"%" + subject + "%", limit};
+                    """);
+            params.add("%" + subject + "%");
+            params.add(limit);
         } else {
-            sql = """
-                    SELECT id, subject, predicate, "object", confidence, valid_from, valid_until
+            sql.append("""
+                    SELECT id, subject, predicate, "object", confidence, valid_from, valid_until, ingested_at
                     FROM facts
                     WHERE subject ILIKE ?
-                      AND valid_from <= ?::timestamptz
-                      AND (valid_until IS NULL OR valid_until > ?::timestamptz)
                       AND status = 'committed'
-                    ORDER BY valid_from DESC
-                    LIMIT ?
-                    """;
-            params = new Object[]{"%" + subject + "%", asOf, asOf, limit};
+                    """);
+            params.add("%" + subject + "%");
+            if (asOf != null) {
+                sql.append("  AND valid_from <= ?::timestamptz\n");
+                sql.append("  AND (valid_until IS NULL OR valid_until > ?::timestamptz)\n");
+                params.add(asOf);
+                params.add(asOf);
+            }
+            if (asOfIngestion != null) {
+                sql.append("  AND ingested_at <= ?::timestamptz\n");
+                params.add(asOfIngestion);
+            }
+            sql.append("ORDER BY valid_from DESC\n");
+            sql.append("LIMIT ?\n");
+            params.add(limit);
         }
 
         List<Map<String, Object>> results = new ArrayList<>();
-        for (Record row : dslContext.fetch(sql, params)) {
+        for (Record row : dslContext.fetch(sql.toString(), params.toArray())) {
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("id", uuidValue(row, "id"));
             result.put("subject", row.get("subject", String.class));
@@ -218,6 +229,7 @@ public class DrawerReadRepository {
             result.put("confidence", numberValue(row, "confidence"));
             result.put("valid_from", timestampValue(row, "valid_from"));
             result.put("valid_until", timestampValue(row, "valid_until"));
+            result.put("ingested_at", timestampValue(row, "ingested_at"));
             results.add(result);
         }
         return results;
@@ -227,16 +239,16 @@ public class DrawerReadRepository {
         List<Map<String, Object>> results = new ArrayList<>();
         for (Record row : dslContext.fetch("""
                 WITH RECURSIVE chain AS (
-                    SELECT d.id, d.parent_id, d.summary, d.created_by, d.valid_from, d.valid_until, 1 AS depth
+                    SELECT d.id, d.parent_id, d.summary, d.created_by, d.valid_from, d.valid_until, d.ingested_at, 1 AS depth
                     FROM drawers d
                     WHERE d.id = ?
                     UNION ALL
-                    SELECT d.id, d.parent_id, d.summary, d.created_by, d.valid_from, d.valid_until, c.depth + 1
+                    SELECT d.id, d.parent_id, d.summary, d.created_by, d.valid_from, d.valid_until, d.ingested_at, c.depth + 1
                     FROM drawers d
                     JOIN chain c ON d.id = c.parent_id
                     WHERE c.depth < 100
                 )
-                SELECT id, parent_id, summary, created_by, valid_from, valid_until
+                SELECT id, parent_id, summary, created_by, valid_from, valid_until, ingested_at
                 FROM chain
                 ORDER BY valid_from ASC
                 """, drawerId)) {
@@ -247,6 +259,7 @@ public class DrawerReadRepository {
             result.put("created_by", row.get("created_by", String.class));
             result.put("valid_from", timestampValue(row, "valid_from"));
             result.put("valid_until", timestampValue(row, "valid_until"));
+            result.put("ingested_at", timestampValue(row, "ingested_at"));
             results.add(result);
         }
         return results;
@@ -256,16 +269,16 @@ public class DrawerReadRepository {
         List<Map<String, Object>> results = new ArrayList<>();
         for (Record row : dslContext.fetch("""
                 WITH RECURSIVE chain AS (
-                    SELECT f.id, f.parent_id, f.subject, f.predicate, f."object", f.created_by, f.valid_from, f.valid_until, 1 AS depth
+                    SELECT f.id, f.parent_id, f.subject, f.predicate, f."object", f.created_by, f.valid_from, f.valid_until, f.ingested_at, 1 AS depth
                     FROM facts f
                     WHERE f.id = ?
                     UNION ALL
-                    SELECT f.id, f.parent_id, f.subject, f.predicate, f."object", f.created_by, f.valid_from, f.valid_until, c.depth + 1
+                    SELECT f.id, f.parent_id, f.subject, f.predicate, f."object", f.created_by, f.valid_from, f.valid_until, f.ingested_at, c.depth + 1
                     FROM facts f
                     JOIN chain c ON f.id = c.parent_id
                     WHERE c.depth < 100
                 )
-                SELECT id, parent_id, subject, predicate, "object", created_by, valid_from, valid_until
+                SELECT id, parent_id, subject, predicate, "object", created_by, valid_from, valid_until, ingested_at
                 FROM chain
                 ORDER BY valid_from ASC
                 """, factId)) {
@@ -278,6 +291,7 @@ public class DrawerReadRepository {
             result.put("created_by", row.get("created_by", String.class));
             result.put("valid_from", timestampValue(row, "valid_from"));
             result.put("valid_until", timestampValue(row, "valid_until"));
+            result.put("ingested_at", timestampValue(row, "ingested_at"));
             results.add(result);
         }
         return results;

@@ -107,8 +107,8 @@ public class ReadToolService {
         return drawerReadRepository.quickFacts(entity);
     }
 
-    public List<Map<String, Object>> timeMachine(String subject, OffsetDateTime asOf, int limit) {
-        return drawerReadRepository.timeMachine(subject, asOf, limit);
+    public List<Map<String, Object>> timeMachine(String subject, OffsetDateTime asOf, OffsetDateTime asOfIngestion, int limit) {
+        return drawerReadRepository.timeMachine(subject, asOf, asOfIngestion, limit);
     }
 
     public List<Map<String, Object>> drawerHistory(UUID drawerId) {
