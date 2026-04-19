@@ -4,7 +4,7 @@ backups/
 CLAUDE.md
 AGENTS.md
 docs/
-!memory-palace/docs/
+!knowledge-ui/docs/
 .superpowers/
 .serena/
 .playwright-mcp/
