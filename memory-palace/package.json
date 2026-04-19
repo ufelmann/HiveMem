@@ -39,7 +39,7 @@
     "@vitejs/plugin-vue": "^6.0.5",
     "@vue/test-utils": "^2.4.6",
     "@vue/tsconfig": "^0.9.1",
-    "happy-dom": "^15.7.4",
+    "happy-dom": "^20.9.0",
     "sass": "^1.99.0",
     "typescript": "~6.0.2",
     "vite": "^8.0.4",
