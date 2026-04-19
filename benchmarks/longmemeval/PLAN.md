@@ -1101,3 +1101,72 @@ Setting `OPENAI_ORG` or a hard spend limit on the OpenAI account before running 
 - [x] Official judge is invoked, not re-implemented.
 - [x] Benchmark isolation is explicit (separate host, wing, purge).
 - [x] Variance and calibration explained so readers do not misinterpret low early numbers.
+
+---
+
+## 13. References
+
+All external resources cited in this plan, collated for quick lookup.
+
+### LongMemEval (the benchmark itself)
+- Paper: [Wu et al., *LongMemEval*, ICLR 2025 (arXiv:2410.10813)](https://arxiv.org/abs/2410.10813)
+- Paper PDF (direct): <https://arxiv.org/pdf/2410.10813.pdf>
+- Project page: <https://xiaowu0162.github.io/long-mem-eval/>
+- Code repo: <https://github.com/xiaowu0162/LongMemEval>
+- Official judge script: <https://github.com/xiaowu0162/LongMemEval/blob/main/src/evaluation/evaluate_qa.py>
+- Setup + usage section: <https://github.com/xiaowu0162/LongMemEval#-testing-your-system>
+- Dataset (HF): <https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned>
+- Dataset files:
+  - <https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json>
+  - <https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_m_cleaned.json>
+  - <https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_oracle.json>
+- Custom-history corpus (for extending difficulty): <https://drive.google.com/file/d/1loTKBdywbCfYL5h5zwfnVcqlh7QwnBQm/view?usp=sharing>
+
+### Zep (primary comparable)
+- Paper (arXiv): [Rasmussen et al., *Zep: A Temporal Knowledge Graph Architecture for Agent Memory* (arXiv:2501.13956)](https://arxiv.org/abs/2501.13956)
+- Paper HTML: <https://arxiv.org/html/2501.13956v1>
+- Paper PDF (getzep mirror with eval methodology details): <https://blog.getzep.com/content/files/2025/01/ZEP__USING_KNOWLEDGE_GRAPHS_TO_POWER_LLM_AGENT_MEMORY_2025011700.pdf>
+- State-of-the-art announcement post (judge methodology explicit): <https://blog.getzep.com/state-of-the-art-agent-memory/>
+- GPT-4.1 follow-up study (reuses gpt-4o judge): <https://blog.getzep.com/gpt-4-1-and-o4-mini-is-openai-overselling-long-context/>
+- Score correction thread (LoCoMo 84% → 58.44%): <https://github.com/getzep/zep-papers/issues/5>
+
+### MemGPT / Letta
+- Paper: [Packer et al., *MemGPT: Towards LLMs as Operating Systems* (arXiv:2310.08560)](https://arxiv.org/abs/2310.08560)
+- Letta docs (sleep-time compute / recall memory pattern): <https://docs.letta.com/>
+- Letta repo: <https://github.com/letta-ai/letta>
+
+### Mem0 (independent eval of Zep, uses official judge)
+- Mem0 repo + benchmark README: <https://github.com/mem0ai/mem0>
+- Mem0 vs Zep corrective evaluation (referenced in Section 2.1): follow the thread in the zep-papers issue above
+
+### Other memory benchmarks worth knowing
+- LoCoMo (Zep's primary published benchmark): <https://github.com/snap-research/locomo>
+- DMR (Deep Memory Retrieval from MemGPT): part of MemGPT repo <https://github.com/letta-ai/letta>
+- Memorybench (unified memory benchmark harness): <https://github.com/supermemoryai/memorybench>
+- Incremental multi-turn memory eval (arXiv:2507.05257): <https://arxiv.org/abs/2507.05257>
+
+### Related retrieval research relevant to HiveMem's 5-signal ranker
+- LightRAG (dual-level retrieval paradigm): [Guo et al., arXiv:2410.05779](https://arxiv.org/abs/2410.05779)
+- Graphiti (temporal KG engine behind Zep): <https://github.com/getzep/graphiti>
+
+### Embedding models recommended for the benchmark host
+- BAAI/bge-m3 (balanced default, ~2-4 GB VRAM): <https://huggingface.co/BAAI/bge-m3>
+- Alibaba-NLP/gte-Qwen2-7B-instruct: <https://huggingface.co/Alibaba-NLP/gte-Qwen2-7B-instruct>
+- Qwen/Qwen3-Embedding-0.6B (tiny, fast): <https://huggingface.co/Qwen/Qwen3-Embedding-0.6B>
+- Qwen/Qwen3-Embedding-8B (SOTA on MTEB 2025): <https://huggingface.co/Qwen/Qwen3-Embedding-8B>
+- nvidia/NV-Embed-v2 (top MTEB leaderboard): <https://huggingface.co/nvidia/NV-Embed-v2>
+- MTEB leaderboard (for current rankings): <https://huggingface.co/spaces/mteb/leaderboard>
+
+### HiveMem internals the benchmark depends on
+- MCP tool surface and JSON-RPC contract: [`java-server/src/main/java/com/hivemem/mcp/McpController.java`](../../java-server/src/main/java/com/hivemem/mcp/McpController.java)
+- Token management CLI: [`scripts/hivemem-token`](../../scripts/hivemem-token)
+- Bi-temporal migration that must be applied on the benchmark host: [`java-server/src/main/resources/db/migration/V0009__bi_temporal.sql`](../../java-server/src/main/resources/db/migration/V0009__bi_temporal.sql)
+- Embedding service (swap the model here): [`embedding-service/`](../../embedding-service/)
+
+### Tracking
+- GitHub issue this plan implements: <https://github.com/ufelmann/HiveMem/issues/23>
+- Research-driven roadmap overview (meta): <https://github.com/ufelmann/HiveMem/issues/29>
+- Related tickets that synergise:
+  - Bi-temporal model (already shipped): <https://github.com/ufelmann/HiveMem/issues/24>
+  - Graph proximity (follow-up): <https://github.com/ufelmann/HiveMem/issues/25>
+  - Proactive search triggers (already shipped): <https://github.com/ufelmann/HiveMem/issues/22>
