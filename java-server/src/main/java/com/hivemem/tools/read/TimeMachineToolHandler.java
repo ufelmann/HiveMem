@@ -27,15 +27,16 @@ public class TimeMachineToolHandler implements ToolHandler {
 
     @Override
     public String description() {
-        return "Historical knowledge retrieval.";
+        return "Historical knowledge retrieval. Supports bi-temporal queries: 'as_of' filters by event time (when a fact was true); 'as_of_ingestion' filters by transaction time (when HiveMem learned of the fact).";
     }
 
     @Override
     public Object call(AuthPrincipal principal, JsonNode arguments) {
         String subject = requiredText(arguments, "subject");
         OffsetDateTime asOf = offsetDateTimeValue(arguments, "as_of");
+        OffsetDateTime asOfIngestion = offsetDateTimeValue(arguments, "as_of_ingestion");
         int limit = intValue(arguments, "limit");
-        return readToolService.timeMachine(subject, asOf, limit);
+        return readToolService.timeMachine(subject, asOf, asOfIngestion, limit);
     }
 
     private static String requiredText(JsonNode arguments, String field) {
@@ -60,7 +61,7 @@ public class TimeMachineToolHandler implements ToolHandler {
         try {
             return OffsetDateTime.parse(value);
         } catch (RuntimeException e) {
-            throw new IllegalArgumentException("Invalid as_of");
+            throw new IllegalArgumentException("Invalid " + field);
         }
     }
 
