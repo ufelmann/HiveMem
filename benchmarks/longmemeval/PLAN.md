@@ -112,6 +112,37 @@ Sources: [LongMemEval README](https://github.com/xiaowu0162/LongMemEval#-testing
 
 ---
 
+## 2.2 Published competitor scores (what to calibrate against)
+
+**Heavy caveat:** there is **no public LongMemEval leaderboard**. Every number below is vendor-self-reported, vendors actively dispute each other's methodology, and independent reruns can differ by 20+ percentage points. Treat these as "approximate order of magnitude to beat or approach", not ground truth.
+
+| System | LongMemEval(-s) score | Notes | Source |
+|---|---|---|---|
+| Mem0 (new token-efficient algo) | **93.4%** self-reported | Also claims LoCoMo 91.6% | [mem0.ai/research](https://mem0.ai/research) |
+| MemMachine | **93.0%** self-reported | On LongMemEval_S with full 6-dimension optimization; +2.6% when using gpt-5-mini over gpt-5 as answer LLM | [arXiv:2604.04853](https://arxiv.org/html/2604.04853) |
+| Zep (state-of-the-art post) | "+18.5% aggregate over baseline" | No isolated absolute %, relative vs full-context baseline. Answer LLM gpt-4o-mini + gpt-4o | [blog.getzep.com/state-of-the-art-agent-memory](https://blog.getzep.com/state-of-the-art-agent-memory/) |
+| Zep (2025 follow-up w/ GPT-4.1) | **72.27%** average | Using gpt-4o as judge; per-category ~56-93% depending on subset | [Zep GPT-4.1 post](https://blog.getzep.com/gpt-4-1-and-o4-mini-is-openai-overselling-long-context/) |
+| Zep (Mem0 rebuttal claim) | **75.14% ± 0.17** (J-score) | Zep's recalculation disputing Mem0's reported 65.99% | [blog.getzep.com/lies-damn-lies-statistics-is-mem0-really-sota-in-agent-memory](https://blog.getzep.com/lies-damn-lies-statistics-is-mem0-really-sota-in-agent-memory/) |
+| Zep (Mem0 independent rerun) | **58.44%** corrected | Mem0's rerun of Zep with matched settings, disputing Zep's 84% LoCoMo claim | [zep-papers issue #5](https://github.com/getzep/zep-papers/issues/5) |
+| MemGPT / Letta | Not successfully evaluable on LongMemEval | Framework does not support direct history ingestion; Zep's archival-history workaround failed | Zep state-of-the-art post (as above) |
+| MemGPT on **DMR** (separate benchmark) | 93.4% w/ gpt-4-turbo | Not LongMemEval but often cited next to it | MemGPT paper |
+| Independent eval (MEMTRACK) | Mem0 + Zep show "no significant improvement" when paired with GPT-5 or Gemini-2.5-Pro; slight degradation in some scenarios | Independent; neither Mem0 nor Zep co-authored | [arXiv:2510.01353](https://arxiv.org/abs/2510.01353) |
+
+### Controversies to be aware of
+
+- **Zep ↔ Mem0 cross-fire.** Both vendors accuse the other of benchmark methodology errors. Mem0 reran Zep with "standardized settings" and got 58.44% where Zep reported 84%. Zep recomputed Mem0 with adversarial-category inclusion fixes and claimed Zep beats Mem0 by 10%. Only the **official LongMemEval judge** settles this for outsiders — which is exactly why our plan uses it.
+- **Adversarial category handling.** LongMemEval includes `*_abs` abstention questions. Including vs. excluding them in the accuracy denominator can swing numbers by 10+ points. Our loader keeps them by default (matches the official script's behavior); document any deviation.
+- **MEMTRACK independent signal.** An independent 2025 paper suggests that on top of GPT-5 / Gemini-2.5-Pro, *neither* Mem0 nor Zep adds meaningful accuracy, and Mem0 slightly degrades Gemini. Interpretation: strong base models already handle long-context recall; memory layers matter most for *small* answer LLMs. Record the answer-LLM tier in the results JSON so this signal surfaces.
+
+### What this tells us to expect for HiveMem Phase 1
+
+- **Realistic first-run range on `temporal-reasoning` subset with gpt-4o-mini answer + gpt-4o judge:** 35-65%. A first number in this band is **normal and not a failure signal**.
+- **Above 75% without tuning:** treat with suspicion; check the adapter isn't leaking ground truth.
+- **Below 25%:** pipeline bug. Retrieval likely returning nothing, or ingestion not persisting. Debug before quoting.
+- **Headline claim bar:** we need n≥100, official judge, recorded embedding model + answer LLM, and ideally one rerun for variance, before publishing any number.
+
+---
+
 ## 3. Architecture
 
 ### 3.1 Topology
@@ -1126,18 +1157,29 @@ All external resources cited in this plan, collated for quick lookup.
 - Paper (arXiv): [Rasmussen et al., *Zep: A Temporal Knowledge Graph Architecture for Agent Memory* (arXiv:2501.13956)](https://arxiv.org/abs/2501.13956)
 - Paper HTML: <https://arxiv.org/html/2501.13956v1>
 - Paper PDF (getzep mirror with eval methodology details): <https://blog.getzep.com/content/files/2025/01/ZEP__USING_KNOWLEDGE_GRAPHS_TO_POWER_LLM_AGENT_MEMORY_2025011700.pdf>
-- State-of-the-art announcement post (judge methodology explicit): <https://blog.getzep.com/state-of-the-art-agent-memory/>
-- GPT-4.1 follow-up study (reuses gpt-4o judge): <https://blog.getzep.com/gpt-4-1-and-o4-mini-is-openai-overselling-long-context/>
-- Score correction thread (LoCoMo 84% → 58.44%): <https://github.com/getzep/zep-papers/issues/5>
+- State-of-the-art announcement post (primary result page, judge methodology explicit): <https://blog.getzep.com/state-of-the-art-agent-memory/>
+- GPT-4.1 follow-up study (result table with 72.27% average, per-category breakdown): <https://blog.getzep.com/gpt-4-1-and-o4-mini-is-openai-overselling-long-context/>
+- Rebuttal of Mem0 numbers (Zep's 75.14% J-score claim): <https://blog.getzep.com/lies-damn-lies-statistics-is-mem0-really-sota-in-agent-memory/>
+- Score correction thread (LoCoMo 84% → 58.44% by Mem0's rerun): <https://github.com/getzep/zep-papers/issues/5>
 
 ### MemGPT / Letta
 - Paper: [Packer et al., *MemGPT: Towards LLMs as Operating Systems* (arXiv:2310.08560)](https://arxiv.org/abs/2310.08560)
 - Letta docs (sleep-time compute / recall memory pattern): <https://docs.letta.com/>
 - Letta repo: <https://github.com/letta-ai/letta>
+- DMR benchmark (Deep Memory Retrieval, 93.4% MemGPT gpt-4-turbo): referenced in the MemGPT paper and Zep blog
 
-### Mem0 (independent eval of Zep, uses official judge)
+### Mem0 (main competitor in the memory-layer space)
 - Mem0 repo + benchmark README: <https://github.com/mem0ai/mem0>
-- Mem0 vs Zep corrective evaluation (referenced in Section 2.1): follow the thread in the zep-papers issue above
+- Mem0 research page (self-reported 93.4% on LongMemEval, 91.6% on LoCoMo): <https://mem0.ai/research>
+- Mem0 ↔ Zep methodology dispute: see Zep rebuttal + zep-papers issue #5 above
+
+### MemMachine (ablation-study system, Sep-2025)
+- Paper (arXiv HTML): <https://arxiv.org/html/2604.04853>
+- Key finding: 93.0% on LongMemEval_S with retrieval-stage optimizations contributing more than ingestion-stage; gpt-5-mini > gpt-5 as answer LLM paired with optimized prompts.
+
+### Independent evaluation (MEMTRACK)
+- Paper: [*MEMTRACK: Evaluating Long-Term Memory and State Tracking* (arXiv:2510.01353)](https://arxiv.org/abs/2510.01353)
+- Finding: both Mem0 and Zep show no significant improvement over base GPT-5 / Gemini-2.5-Pro, with slight degradation in some Gemini+Mem0 configurations. Memory layers matter more for smaller answer LLMs.
 
 ### Other memory benchmarks worth knowing
 - LoCoMo (Zep's primary published benchmark): <https://github.com/snap-research/locomo>
