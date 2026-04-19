@@ -1,7 +1,5 @@
 <script setup lang="ts">
-import { useDisplay } from 'vuetify'
-
-const { mobile } = useDisplay()
+const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
 const PI = Math.PI
 </script>
 
@@ -10,8 +8,8 @@ const PI = Math.PI
     <TresPlaneGeometry :args="[40, 40]" />
     <TresMeshStandardMaterial
       :color="'#0a0a12'"
-      :metalness="mobile ? 0 : 0.6"
-      :roughness="mobile ? 0.9 : 0.1"
+      :metalness="isMobile ? 0 : 0.6"
+      :roughness="isMobile ? 0.9 : 0.1"
     />
   </TresMesh>
 </template>

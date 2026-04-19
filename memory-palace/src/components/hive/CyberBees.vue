@@ -2,11 +2,10 @@
 import { onBeforeUnmount, shallowRef } from 'vue'
 import * as THREE from 'three'
 import { useLoop } from '@tresjs/core'
-import { useDisplay } from 'vuetify'
 import { getGoldParticleTexture } from '../../composables/useTextures'
 
-const { mobile } = useDisplay()
-const BEE_COUNT = mobile.value ? 10 : 20
+const isMobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
+const BEE_COUNT = isMobile ? 10 : 20
 const R_BASE = 3
 
 interface BeeState { phase: number; radius: number; yPhase: number; ySpan: number; speed: number; y0: number }
