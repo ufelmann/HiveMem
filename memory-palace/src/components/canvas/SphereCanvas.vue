@@ -2,6 +2,7 @@
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { Application, Container, Sprite, Graphics } from 'pixi.js'
 import { wingTexture, drawerTexture, colorForWing, parseHsl } from './textures'
+import { focusFilter, hoverFilter, focusRing, godrays } from './filters'
 import { useCanvasStore } from '../../stores/canvas'
 import { useDrawerStore } from '../../stores/drawer'
 import { useReaderStore } from '../../stores/reader'
@@ -21,6 +22,11 @@ onMounted(async () => {
   await app.init({ background: 0x050510, resizeTo: root.value, antialias: true, resolution: devicePixelRatio, autoDensity: true })
   root.value.appendChild(app.canvas)
   world = new Container(); app.stage.addChild(world)
+
+  // Add godray background
+  const bg = new Graphics().rect(0, 0, 4000, 4000).fill(0x05050f)
+  ;(bg as any).filters = [godrays()]
+  app.stage.addChildAt(bg, 0)
 
   let zoom = 1, panX = 0, panY = 0
 
@@ -166,6 +172,12 @@ function render() {
         }
         lastClick = now
       })
+      ds.on('pointerover', () => {
+        ds.filters = [hoverFilter()]
+      })
+      ds.on('pointerout', () => {
+        ds.filters = canvasStore.focusedId === d.id ? [focusFilter(), focusRing()] : []
+      })
       world!.addChild(ds)
     })
   }
@@ -173,6 +185,15 @@ function render() {
 
 watch(() => canvasStore.loaded, v => { if (v) render() })
 watch(() => canvasStore.drawers.length, () => render())
+
+watch(() => canvasStore.focusedId, id => {
+  if (!world) return
+  for (const c of world.children) {
+    const s = c as any
+    if (s._kind !== 'drawer') continue
+    s.filters = s._drawerId === id ? [focusFilter(), focusRing()] : []
+  }
+})
 </script>
 
 <template><div ref="root" class="canvas-root" /></template>
