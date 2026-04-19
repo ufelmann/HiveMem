@@ -1,11 +1,61 @@
 // AUTO-GENERATED from HiveMem snapshot on 2026-04-18. Do not edit by hand.
-import type { Drawer, Palace } from '../types/palace'
+import type {
+  Drawer as NewDrawer,
+  Wing as NewWing,
+  Tunnel as NewTunnel,
+  Fact as NewFact,
+  Reference as NewReference,
+} from '../api/types'
 
 // ---------------------------------------------------------------------------
 // Raw drawer data from MCP snapshot (47 drawers)
+// Minimal local type matches the snapshot shape (camelCase fields, nested facts/tunnels).
+// The adapter at the bottom converts this into the new api/types.ts shape.
 // ---------------------------------------------------------------------------
 
-const drawers: Drawer[] = [
+interface RawFact {
+  id?: string
+  subject?: string
+  predicate?: string
+  object?: string
+  valid_from?: string
+  validFrom?: string
+  valid_until?: string | null
+}
+
+interface RawTunnel {
+  id?: string
+  to_drawer?: string
+  to?: string
+  targetId?: string
+  relation?: string
+  note?: string | null
+}
+
+interface RawDrawer {
+  id: string
+  title: string
+  wing: string
+  hall: string
+  room: string
+  content: string
+  summary: string
+  keyPoints?: string[]
+  key_points?: string[]
+  insight?: string
+  tags?: string[]
+  importance: number
+  status: string
+  validFrom?: string
+  valid_from?: string
+  valid_until?: string | null
+  created_by?: string
+  created_at?: string
+  facts?: RawFact[]
+  tunnels?: RawTunnel[]
+}
+
+const drawers: RawDrawer[] = [
   {
     id: '6a7d4096-827a-4b25-894f-2ce326a8db1f',
     title: 'Schema v2 Implementation Plan',
@@ -1056,48 +1106,86 @@ const drawers: Drawer[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// Build Palace tree
+// Adapter: convert raw snapshot shape into the new api/types.ts shape
 // ---------------------------------------------------------------------------
 
-// Collect unique wings → halls → rooms from the drawer data
-const wingMap = new Map<string, Map<string, Set<string>>>()
-for (const d of drawers) {
-  if (!wingMap.has(d.wing)) wingMap.set(d.wing, new Map())
-  const hallMap = wingMap.get(d.wing)!
-  if (!hallMap.has(d.hall)) hallMap.set(d.hall, new Set())
-  hallMap.get(d.hall)!.add(d.room)
+function adaptDrawer(raw: RawDrawer): NewDrawer {
+  return {
+    id: raw.id,
+    wing: raw.wing,
+    hall: raw.hall ?? null,
+    room: raw.room ?? null,
+    title: raw.title,
+    content: raw.content ?? '',
+    summary: raw.summary ?? null,
+    key_points: raw.keyPoints ?? raw.key_points ?? [],
+    insight: raw.insight || null,
+    tags: raw.tags ?? [],
+    importance: (raw.importance ?? 2) as 1 | 2 | 3,
+    status: (raw.status ?? 'committed') as NewDrawer['status'],
+    created_by: raw.created_by ?? 'mock',
+    created_at: raw.validFrom ?? raw.valid_from ?? raw.created_at ?? new Date().toISOString(),
+    valid_from: raw.validFrom ?? raw.valid_from ?? new Date().toISOString(),
+    valid_until: raw.valid_until ?? null,
+  }
 }
 
-const WING_COLORS: Record<string, string> = {
-  Engineering: '#00BFFF',
-  Projects: '#00FF88',
-  Test: '#c8a84e',
+const allDrawers: NewDrawer[] = drawers.map(adaptDrawer)
+
+// Aggregate wings from drawers
+const wingMap = new Map<string, { hallCounts: Map<string, number>; total: number }>()
+for (const d of allDrawers) {
+  if (!wingMap.has(d.wing)) wingMap.set(d.wing, { hallCounts: new Map(), total: 0 })
+  const w = wingMap.get(d.wing)!
+  w.total++
+  const h = d.hall ?? '(none)'
+  w.hallCounts.set(h, (w.hallCounts.get(h) ?? 0) + 1)
+}
+const allWings: NewWing[] = [...wingMap.entries()].map(([name, agg]) => ({
+  name,
+  drawer_count: agg.total,
+  halls: [...agg.hallCounts.entries()].map(([hn, hc]) => ({ name: hn, drawer_count: hc, rooms: [] })),
+}))
+
+// Tunnels: flatten from drawer.tunnels arrays if present; otherwise empty
+const allTunnels: NewTunnel[] = []
+for (const raw of drawers) {
+  const tls = raw.tunnels ?? []
+  for (const t of tls) {
+    const toId = t.to_drawer ?? t.to ?? t.targetId ?? ''
+    allTunnels.push({
+      id: t.id ?? `${raw.id}-${toId}`,
+      from_drawer: raw.id,
+      to_drawer: toId,
+      relation: (t.relation ?? 'related_to') as NewTunnel['relation'],
+      note: t.note ?? null,
+      status: 'committed',
+      created_at: new Date().toISOString(),
+      valid_until: null,
+    })
+  }
 }
 
-export const mockPalace: Palace = {
-  wings: Array.from(wingMap.entries()).map(([wingName, hallMap]) => {
-    const wingDrawers = drawers.filter((x) => x.wing === wingName)
-    return {
-      name: wingName,
-      color: WING_COLORS[wingName] ?? '#9eb6d9',
-      hallCount: hallMap.size,
-      drawerCount: wingDrawers.length,
-      halls: Array.from(hallMap.entries()).map(([hallName, roomSet]) => {
-        const hallDrawers = wingDrawers.filter((x) => x.hall === hallName)
-        return {
-          name: hallName,
-          roomCount: roomSet.size,
-          drawerCount: hallDrawers.length,
-          rooms: Array.from(roomSet).map((roomName) => {
-            const roomDrawers = hallDrawers.filter((x) => x.room === roomName)
-            return { name: roomName, drawerCount: roomDrawers.length, drawers: roomDrawers }
-          }),
-        }
-      }),
-    }
-  }),
+// Facts: flatten from drawer.facts arrays
+const allFacts: NewFact[] = []
+for (const raw of drawers) {
+  const fs = raw.facts ?? []
+  for (const f of fs) {
+    allFacts.push({
+      id: f.id ?? `${raw.id}-fact`,
+      subject: f.subject ?? raw.title,
+      predicate: f.predicate ?? '',
+      object: f.object ?? '',
+      valid_from: f.valid_from ?? f.validFrom ?? new Date().toISOString(),
+      valid_until: f.valid_until ?? null,
+    })
+  }
 }
 
-export const mockDrawersById: Record<string, Drawer> = Object.fromEntries(
-  drawers.map((x) => [x.id, x]),
-)
+export const palace = {
+  drawers: allDrawers,
+  wings: allWings,
+  tunnels: allTunnels,
+  facts: allFacts,
+  references: [] as NewReference[],
+}
