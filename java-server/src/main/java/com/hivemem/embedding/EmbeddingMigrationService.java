@@ -89,15 +89,15 @@ public class EmbeddingMigrationService implements ApplicationRunner {
         try {
             runBackup();
 
-            int total = stateRepository.countDrawersWithContent();
-            log.info("Reencoding {} drawers: {} → {}", total, from.model(), to.model());
+            int total = stateRepository.countCellsWithContent();
+            log.info("Reencoding {} cells: {} → {}", total, from.model(), to.model());
 
             stateRepository.dropEmbeddingIndex();
             log.info("Dropped HNSW index");
 
             int done = 0;
             while (done < total) {
-                List<EmbeddingStateRepository.DrawerRow> batch = stateRepository.fetchDrawerBatch(done, BATCH_SIZE);
+                List<EmbeddingStateRepository.DrawerRow> batch = stateRepository.fetchCellBatch(done, BATCH_SIZE);
                 if (batch.isEmpty()) {
                     break;
                 }
