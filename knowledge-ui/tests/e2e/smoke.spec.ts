@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-test('login → search → open drawer → reader → close', async ({ page }) => {
+test('login → search → open cell → reader → close', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('hivemem_mock', 'true'))
   await page.goto('/')
   // login dialog appears; mock toggle is pre-enabled via init script
