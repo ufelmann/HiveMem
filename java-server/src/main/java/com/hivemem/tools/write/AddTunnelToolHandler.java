@@ -27,16 +27,16 @@ public class AddTunnelToolHandler implements ToolHandler {
 
     @Override
     public String description() {
-        return "Create a drawer-to-drawer tunnel.";
+        return "Create a cell-to-cell tunnel.";
     }
 
     @Override
     public Object call(AuthPrincipal principal, JsonNode arguments) {
-        UUID fromDrawer = WriteArgumentParser.requiredUuid(arguments, "from_drawer");
-        UUID toDrawer = WriteArgumentParser.requiredUuid(arguments, "to_drawer");
+        UUID fromCell = WriteArgumentParser.requiredUuid(arguments, "from_cell");
+        UUID toCell = WriteArgumentParser.requiredUuid(arguments, "to_cell");
         String relation = WriteArgumentParser.requiredText(arguments, "relation");
         String note = WriteArgumentParser.optionalText(arguments, "note");
         String status = WriteArgumentParser.optionalText(arguments, "status");
-        return writeToolService.addTunnel(principal, fromDrawer, toDrawer, relation, note, status);
+        return writeToolService.addTunnel(principal, fromCell, toCell, relation, note, status);
     }
 }

@@ -1,5 +1,5 @@
 import { palace as mockPalace } from '../data/mock'
-import type { ApiClient, HiveEvent, Drawer, Wing, Hall, Tunnel, Fact, StatusSummary, Reference } from './types'
+import type { ApiClient, HiveEvent, Cell, Realm, Signal, Tunnel, Fact, StatusSummary, Reference } from './types'
 
 interface MockConfig { latencyMs?: [number, number]; eventInterval?: number }
 
@@ -16,11 +16,11 @@ export class MockApiClient implements ApiClient {
     this.handlers = {
       hivemem_status: () => this.status(),
       hivemem_wake_up: () => this.wakeUp(),
-      hivemem_list_wings: (args: { wing?: string }) => this.listWings(args),
+      hivemem_list_realms: (args: { realm?: string }) => this.listRealms(args),
       hivemem_search: (args: { query?: string; limit?: number }) => this.search(args),
-      hivemem_get_drawer: (args: { id: string }) => this.getDrawer(args),
+      hivemem_get_cell: (args: { cell_id: string }) => this.getCell(args),
       hivemem_quick_facts: (args: { subject: string }) => this.quickFacts(args),
-      hivemem_traverse: (args: { drawer_id: string; depth?: number }) => this.traverse(args),
+      hivemem_traverse: (args: { cell_id: string; depth?: number }) => this.traverse(args),
       hivemem_list_tunnels: () => mockPalace.tunnels,
       hivemem_reading_list: () => mockPalace.references ?? [],
       hivemem_pending_approvals: () => [],
@@ -53,8 +53,8 @@ export class MockApiClient implements ApiClient {
 
   private startTicker() {
     this.timer = setInterval(() => {
-      const existing = mockPalace.drawers[Math.floor(Math.random() * mockPalace.drawers.length)]
-      const ev: HiveEvent = { type: 'drawer_added', drawer: existing }
+      const existing = mockPalace.cells[Math.floor(Math.random() * mockPalace.cells.length)]
+      const ev: HiveEvent = { type: 'cell_added', cell: existing }
       this.subscribers.forEach(s => s(ev))
     }, this.config.eventInterval) as unknown as number
   }
@@ -66,9 +66,9 @@ export class MockApiClient implements ApiClient {
 
   private status(): StatusSummary {
     return {
-      drawer_count: mockPalace.drawers.length,
+      cell_count: mockPalace.cells.length,
       fact_count: mockPalace.facts.length,
-      wing_count: mockPalace.wings.length,
+      realm_count: mockPalace.realms.length,
       tunnel_count: mockPalace.tunnels.length,
       pending_count: 0,
       last_activity: new Date().toISOString(),
@@ -76,43 +76,43 @@ export class MockApiClient implements ApiClient {
   }
 
   private wakeUp() {
-    return { role: 'admin', identity: 'mock-user', wings: mockPalace.wings.map(w => w.name) }
+    return { role: 'admin', identity: 'mock-user', realms: mockPalace.realms.map(r => r.name) }
   }
 
-  private listWings(args: { wing?: string }): Wing[] | Hall[] {
-    if (args.wing) return mockPalace.wings.find(w => w.name === args.wing)?.halls ?? []
-    return mockPalace.wings
+  private listRealms(args: { realm?: string }): Realm[] | Signal[] {
+    if (args.realm) return mockPalace.realms.find(r => r.name === args.realm)?.signals ?? []
+    return mockPalace.realms
   }
 
-  private search(args: { query?: string; limit?: number }): Drawer[] {
+  private search(args: { query?: string; limit?: number }): Cell[] {
     const q = (args.query || '').toLowerCase()
     const all = q
-      ? mockPalace.drawers.filter(d => d.title.toLowerCase().includes(q) || d.content.toLowerCase().includes(q))
-      : mockPalace.drawers
+      ? mockPalace.cells.filter(c => c.title.toLowerCase().includes(q) || c.content.toLowerCase().includes(q))
+      : mockPalace.cells
     return all.slice(0, args.limit ?? 100)
   }
 
-  private getDrawer(args: { id: string }): Drawer {
-    const d = mockPalace.drawers.find(x => x.id === args.id)
-    if (!d) throw new Error(`Drawer not found: ${args.id}`)
-    return d
+  private getCell(args: { cell_id: string }): Cell {
+    const c = mockPalace.cells.find(x => x.id === args.cell_id)
+    if (!c) throw new Error(`Cell not found: ${args.cell_id}`)
+    return c
   }
 
   private quickFacts(args: { subject: string }): Fact[] {
     return mockPalace.facts.filter(f => f.subject === args.subject)
   }
 
-  private traverse(args: { drawer_id: string; depth?: number }): Tunnel[] {
+  private traverse(args: { cell_id: string; depth?: number }): Tunnel[] {
     const depth = args.depth ?? 1
-    const seen = new Set<string>([args.drawer_id])
-    const frontier = [args.drawer_id]
+    const seen = new Set<string>([args.cell_id])
+    const frontier = [args.cell_id]
     const result: Tunnel[] = []
     for (let d = 0; d < depth; d++) {
       const next: string[] = []
       for (const id of frontier) {
         for (const t of mockPalace.tunnels) {
-          if (t.from_drawer === id && !seen.has(t.to_drawer)) { seen.add(t.to_drawer); next.push(t.to_drawer); result.push(t) }
-          if (t.to_drawer === id && !seen.has(t.from_drawer)) { seen.add(t.from_drawer); next.push(t.from_drawer); result.push(t) }
+          if (t.from_cell === id && !seen.has(t.to_cell)) { seen.add(t.to_cell); next.push(t.to_cell); result.push(t) }
+          if (t.to_cell === id && !seen.has(t.from_cell)) { seen.add(t.from_cell); next.push(t.from_cell); result.push(t) }
         }
       }
       frontier.splice(0, frontier.length, ...next)

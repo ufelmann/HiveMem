@@ -2,26 +2,26 @@
 // familiar names. Task 5 will replace this with the useApi composable, and
 // Task 22 will rewire hive/*.vue to the new MockApiClient / HttpApiClient.
 import { palace } from '../data/mock'
-import type { Drawer } from './types'
+import type { Cell } from './types'
 
 export interface HivememApi {
   getPalace(): Promise<typeof palace>
-  getDrawer(id: string): Promise<Drawer>
-  search(query: string, limit?: number): Promise<Drawer[]>
+  getCell(id: string): Promise<Cell>
+  search(query: string, limit?: number): Promise<Cell[]>
 }
 
 export function createMockClient(): HivememApi {
   return {
     async getPalace() { return palace },
-    async getDrawer(id: string) {
-      const drawer = palace.drawers.find((d) => d.id === id)
-      if (!drawer) throw new Error(`Drawer not found: ${id}`)
-      return drawer
+    async getCell(id: string) {
+      const cell = palace.cells.find((c) => c.id === id)
+      if (!cell) throw new Error(`Cell not found: ${id}`)
+      return cell
     },
     async search(query: string, limit = 20) {
       const q = query.toLowerCase()
-      return palace.drawers
-        .filter((d) => d.title.toLowerCase().includes(q) || (d.summary ?? '').toLowerCase().includes(q))
+      return palace.cells
+        .filter((c) => c.title.toLowerCase().includes(q) || (c.summary ?? '').toLowerCase().includes(q))
         .slice(0, limit)
     },
   }

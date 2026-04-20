@@ -11,39 +11,39 @@ import java.util.List;
 import java.util.UUID;
 
 @Repository
-public class DrawerSearchRepository {
+public class CellSearchRepository {
 
     private final DSLContext dslContext;
 
-    public DrawerSearchRepository(DSLContext dslContext) {
+    public CellSearchRepository(DSLContext dslContext) {
         this.dslContext = dslContext;
     }
 
-    public List<SearchCandidate> searchCandidates(String wing, String hall, String room) {
+    public List<SearchCandidate> searchCandidates(String realm, String signal, String topic) {
         List<Object> params = new ArrayList<>();
         StringBuilder sql = new StringBuilder("""
-                SELECT d.id, d.content, d.summary, d.wing, d.hall, d.room, d.tags, d.importance, d.created_at,
-                       d.valid_from,
-                       d.embedding::real[] AS embedding,
-                       COALESCE(dp.access_count, 0) AS access_count
-                FROM drawers d
-                LEFT JOIN drawer_popularity dp ON dp.drawer_id = d.id
-                WHERE d.status = 'committed'
-                  AND (d.valid_until IS NULL OR d.valid_until > now())
+                SELECT c.id, c.content, c.summary, c.realm, c.signal, c.topic, c.tags, c.importance, c.created_at,
+                       c.valid_from,
+                       c.embedding::real[] AS embedding,
+                       COALESCE(cp.access_count, 0) AS access_count
+                FROM cells c
+                LEFT JOIN cell_popularity cp ON cp.cell_id = c.id
+                WHERE c.status = 'committed'
+                  AND (c.valid_until IS NULL OR c.valid_until > now())
                 """);
-        if (wing != null) {
-            sql.append(" AND d.wing = ?");
-            params.add(wing);
+        if (realm != null) {
+            sql.append(" AND c.realm = ?");
+            params.add(realm);
         }
-        if (hall != null) {
-            sql.append(" AND d.hall = ?");
-            params.add(hall);
+        if (signal != null) {
+            sql.append(" AND c.signal = ?");
+            params.add(signal);
         }
-        if (room != null) {
-            sql.append(" AND d.room = ?");
-            params.add(room);
+        if (topic != null) {
+            sql.append(" AND c.topic = ?");
+            params.add(topic);
         }
-        sql.append(" ORDER BY d.created_at DESC");
+        sql.append(" ORDER BY c.created_at DESC");
 
         List<SearchCandidate> results = new ArrayList<>();
         for (Record row : dslContext.fetch(sql.toString(), params.toArray())) {
@@ -51,9 +51,9 @@ public class DrawerSearchRepository {
                     row.get("id", UUID.class),
                     row.get("content", String.class),
                     row.get("summary", String.class),
-                    row.get("wing", String.class),
-                    row.get("hall", String.class),
-                    row.get("room", String.class),
+                    row.get("realm", String.class),
+                    row.get("signal", String.class),
+                    row.get("topic", String.class),
                     textArray(row, "tags"),
                     row.get("importance", Integer.class),
                     row.get("created_at", OffsetDateTime.class),
@@ -69,9 +69,9 @@ public class DrawerSearchRepository {
             UUID id,
             String content,
             String summary,
-            String wing,
-            String hall,
-            String room,
+            String realm,
+            String signal,
+            String topic,
             List<String> tags,
             Integer importance,
             OffsetDateTime createdAt,

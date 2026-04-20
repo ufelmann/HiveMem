@@ -2,10 +2,10 @@ package com.hivemem.tools.summarization;
 
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
-import com.hivemem.drawers.DrawerReadRepository;
+import com.hivemem.cells.CellReadRepository;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
-import com.hivemem.search.DrawerSearchRepository;
+import com.hivemem.search.CellSearchRepository;
 import com.hivemem.search.KgSearchRepository;
 import com.hivemem.tools.read.ReadToolService;
 import com.hivemem.write.AdminToolRepository;
@@ -87,7 +87,7 @@ class ProgressiveSummarizationIntegrationTest {
 
     @BeforeEach
     void resetDatabase() {
-        dslContext.execute("TRUNCATE TABLE agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
+        dslContext.execute("TRUNCATE TABLE agent_diary, cell_references, references_, blueprints, identity, agents, facts, tunnels, cells CASCADE");
     }
 
     // -----------------------------------------------------------------------
@@ -96,12 +96,12 @@ class ProgressiveSummarizationIntegrationTest {
 
     @Test
     void allLayersPersistedAndReturnedViaGetDrawer() {
-        Map<String, Object> created = writeToolService.addDrawer(
+        Map<String, Object> created = writeToolService.addCell(
                 WRITER,
                 "We decided to migrate BOGIS from Camunda 7 to Temporal. Better DX and native Go support.",
                 "engineering",
-                "bogis",
                 "facts",
+                "bogis",
                 "claude-code",
                 List.of("migration", "temporal"),
                 1,
@@ -117,7 +117,7 @@ class ProgressiveSummarizationIntegrationTest {
         String drawerId = (String) created.get("id");
         assertThat(drawerId).isNotNull();
 
-        Map<String, Object> drawer = readToolService.getDrawer(WRITER,UUID.fromString(drawerId));
+        Map<String, Object> drawer = readToolService.getCell(WRITER,UUID.fromString(drawerId));
         assertThat(drawer).isNotNull();
         assertThat(drawer.get("content")).isEqualTo(
                 "We decided to migrate BOGIS from Camunda 7 to Temporal. Better DX and native Go support.");
@@ -134,12 +134,12 @@ class ProgressiveSummarizationIntegrationTest {
 
     @Test
     void drawerWithOnlyL0IsValidAndStored() {
-        Map<String, Object> created = writeToolService.addDrawer(
+        Map<String, Object> created = writeToolService.addCell(
                 WRITER,
                 "Minimal drawer without progressive layers",
                 "test",
-                "test",
                 "facts",
+                "test",
                 null,
                 List.of(),
                 null,
@@ -152,7 +152,7 @@ class ProgressiveSummarizationIntegrationTest {
                 null
         );
 
-        Map<String, Object> drawer = readToolService.getDrawer(WRITER,
+        Map<String, Object> drawer = readToolService.getCell(WRITER,
                 UUID.fromString((String) created.get("id")));
         assertThat(drawer).isNotNull();
         assertThat(drawer.get("content")).isEqualTo("Minimal drawer without progressive layers");
@@ -175,60 +175,60 @@ class ProgressiveSummarizationIntegrationTest {
 
     @Test
     void actionabilityActionableIsAccepted() {
-        Map<String, Object> created = writeToolService.addDrawer(
+        Map<String, Object> created = writeToolService.addCell(
                 WRITER,
                 "Actionable drawer",
-                "test", "test", "facts",
+                "test", "facts", "test",
                 null, List.of(), null, "summary", List.of(), null,
                 "actionable",
                 "committed", BASE_TIME, null
         );
-        Map<String, Object> drawer = readToolService.getDrawer(WRITER,
+        Map<String, Object> drawer = readToolService.getCell(WRITER,
                 UUID.fromString((String) created.get("id")));
         assertThat(drawer.get("actionability")).isEqualTo("actionable");
     }
 
     @Test
     void actionabilityReferenceIsAccepted() {
-        Map<String, Object> created = writeToolService.addDrawer(
+        Map<String, Object> created = writeToolService.addCell(
                 WRITER,
                 "Reference drawer",
-                "test", "test", "facts",
+                "test", "facts", "test",
                 null, List.of(), null, "summary", List.of(), null,
                 "reference",
                 "committed", BASE_TIME, null
         );
-        Map<String, Object> drawer = readToolService.getDrawer(WRITER,
+        Map<String, Object> drawer = readToolService.getCell(WRITER,
                 UUID.fromString((String) created.get("id")));
         assertThat(drawer.get("actionability")).isEqualTo("reference");
     }
 
     @Test
     void actionabilitySomedayIsAccepted() {
-        Map<String, Object> created = writeToolService.addDrawer(
+        Map<String, Object> created = writeToolService.addCell(
                 WRITER,
                 "Someday drawer",
-                "test", "test", "facts",
+                "test", "facts", "test",
                 null, List.of(), null, "summary", List.of(), null,
                 "someday",
                 "committed", BASE_TIME, null
         );
-        Map<String, Object> drawer = readToolService.getDrawer(WRITER,
+        Map<String, Object> drawer = readToolService.getCell(WRITER,
                 UUID.fromString((String) created.get("id")));
         assertThat(drawer.get("actionability")).isEqualTo("someday");
     }
 
     @Test
     void actionabilityArchiveIsAccepted() {
-        Map<String, Object> created = writeToolService.addDrawer(
+        Map<String, Object> created = writeToolService.addCell(
                 WRITER,
                 "Archive drawer",
-                "test", "test", "facts",
+                "test", "facts", "test",
                 null, List.of(), null, "summary", List.of(), null,
                 "archive",
                 "committed", BASE_TIME, null
         );
-        Map<String, Object> drawer = readToolService.getDrawer(WRITER,
+        Map<String, Object> drawer = readToolService.getCell(WRITER,
                 UUID.fromString((String) created.get("id")));
         assertThat(drawer.get("actionability")).isEqualTo("archive");
     }
@@ -240,27 +240,27 @@ class ProgressiveSummarizationIntegrationTest {
      */
     @Test
     void invalidActionabilityIsRejectedByCheckConstraint() {
-        assertThatThrownBy(() -> writeToolService.addDrawer(
+        assertThatThrownBy(() -> writeToolService.addCell(
                 WRITER,
                 "Bad actionability drawer",
-                "test", "test", "facts",
+                "test", "facts", "test",
                 null, List.of(), null, "summary", List.of(), null,
                 "invalid_value",
                 "committed", BASE_TIME, null
-        )).hasMessageContaining("drawers_actionability_check");
+        )).hasMessageContaining("cells_actionability_check");
     }
 
     @Test
     void actionabilityNullIsAccepted() {
-        Map<String, Object> created = writeToolService.addDrawer(
+        Map<String, Object> created = writeToolService.addCell(
                 WRITER,
                 "Null actionability drawer",
-                "test", "test", "facts",
+                "test", "facts", "test",
                 null, List.of(), null, "summary", List.of(), null,
                 null,
                 "committed", BASE_TIME, null
         );
-        Map<String, Object> drawer = readToolService.getDrawer(WRITER,
+        Map<String, Object> drawer = readToolService.getCell(WRITER,
                 UUID.fromString((String) created.get("id")));
         assertThat(drawer.get("actionability")).isNull();
     }
@@ -275,10 +275,10 @@ class ProgressiveSummarizationIntegrationTest {
 
     @Test
     void addDrawerWithDedupeThresholdSkipsInsertWhenDuplicateExists() {
-        writeToolService.addDrawer(
+        writeToolService.addCell(
                 WRITER,
                 "Duplicate oracle alpha",
-                "test", "dup", "facts",
+                "test", "facts", "dup",
                 null, List.of(), null,
                 "Duplicate oracle alpha",
                 List.of(), null, null,
@@ -287,10 +287,10 @@ class ProgressiveSummarizationIntegrationTest {
 
         // Same "duplicate oracle" prefix -> identical embedding -> similarity ~1.0
         // A low threshold (0.5) should detect the duplicate and skip insert.
-        Map<String, Object> result = writeToolService.addDrawer(
+        Map<String, Object> result = writeToolService.addCell(
                 WRITER,
                 "Duplicate oracle beta",
-                "test", "dup", "facts",
+                "test", "facts", "dup",
                 null, List.of(), null, null,
                 List.of(), null, null,
                 "committed", BASE_TIME.plusSeconds(1), 0.5);
@@ -303,10 +303,10 @@ class ProgressiveSummarizationIntegrationTest {
 
     @Test
     void addDrawerWithDedupeThresholdInsertsWhenNoMatch() {
-        writeToolService.addDrawer(
+        writeToolService.addCell(
                 WRITER,
                 "Duplicate oracle alpha",
-                "test", "dup", "facts",
+                "test", "facts", "dup",
                 null, List.of(), null,
                 "Duplicate oracle alpha",
                 List.of(), null, null,
@@ -316,10 +316,10 @@ class ProgressiveSummarizationIntegrationTest {
         // FixedEmbeddingClient: "duplicate oracle alpha" and "duplicate oracle beta"
         // both map to the same vector (0.9, 0.9, 0.0, ...) -> similarity 1.0.
         // A threshold of 0.99 should still catch the duplicate.
-        Map<String, Object> highThresholdResult = writeToolService.addDrawer(
+        Map<String, Object> highThresholdResult = writeToolService.addCell(
                 WRITER,
                 "Duplicate oracle beta",
-                "test", "dup", "facts",
+                "test", "facts", "dup",
                 null, List.of(), null, null,
                 List.of(), null, null,
                 "committed", BASE_TIME.plusSeconds(1), 0.99);
@@ -329,10 +329,10 @@ class ProgressiveSummarizationIntegrationTest {
         // Note: FixedEmbeddingClient is word-hash based, so unrelated content still has
         // low-but-nonzero cosine similarity (~0.56). A strict threshold (0.9) correctly
         // allows the insert.
-        Map<String, Object> noMatchResult = writeToolService.addDrawer(
+        Map<String, Object> noMatchResult = writeToolService.addCell(
                 WRITER,
                 "Cooking Italian pasta recipes for dinner tonight",
-                "test", "dup", "facts",
+                "test", "facts", "dup",
                 null, List.of(), null, null,
                 List.of(), null, null,
                 "committed", BASE_TIME.plusSeconds(2), 0.9);
@@ -342,20 +342,20 @@ class ProgressiveSummarizationIntegrationTest {
 
     @Test
     void addDrawerWithoutDedupeThresholdAlwaysInserts() {
-        writeToolService.addDrawer(
+        writeToolService.addCell(
                 WRITER,
                 "PostgreSQL vector search with pgvector",
-                "eng", "db", "facts",
+                "eng", "facts", "db",
                 null, List.of(), null, "pgvector search",
                 List.of(), null, null,
                 "committed", BASE_TIME, null
         );
 
         // Without dedupe_threshold, always inserts even for similar content.
-        Map<String, Object> result = writeToolService.addDrawer(
+        Map<String, Object> result = writeToolService.addCell(
                 WRITER,
                 "PostgreSQL vector search with pgvector",
-                "eng", "db", "facts",
+                "eng", "facts", "db",
                 null, List.of(), null, "pgvector search",
                 List.of(), null, null,
                 "committed", BASE_TIME.plusSeconds(1), null);
@@ -369,10 +369,10 @@ class ProgressiveSummarizationIntegrationTest {
 
     @Test
     void reviseDrawerPreservesAllLayersWhenOnlyContentChanges() {
-        Map<String, Object> original = writeToolService.addDrawer(
+        Map<String, Object> original = writeToolService.addCell(
                 WRITER,
                 "Original content about auth migration",
-                "eng", "auth", "facts",
+                "eng", "facts", "auth",
                 "system",
                 List.of("auth", "migration"),
                 1,
@@ -386,11 +386,11 @@ class ProgressiveSummarizationIntegrationTest {
         );
         UUID originalId = UUID.fromString((String) original.get("id"));
 
-        Map<String, Object> revision = writeToolService.reviseDrawer(
+        Map<String, Object> revision = writeToolService.reviseCell(
                 WRITER, originalId, "Updated content about auth migration complete", null);
 
         UUID newId = UUID.fromString((String) revision.get("new_id"));
-        Map<String, Object> revised = readToolService.getDrawer(WRITER,newId);
+        Map<String, Object> revised = readToolService.getCell(WRITER,newId);
 
         assertThat(revised).isNotNull();
         // L0 updated
@@ -410,10 +410,10 @@ class ProgressiveSummarizationIntegrationTest {
 
     @Test
     void reviseDrawerUpdatesL1SummaryWhilePreservingL2L3() {
-        Map<String, Object> original = writeToolService.addDrawer(
+        Map<String, Object> original = writeToolService.addCell(
                 WRITER,
                 "Content about database optimization",
-                "eng", "db", "facts",
+                "eng", "facts", "db",
                 "system",
                 List.of("db"),
                 2,
@@ -427,11 +427,11 @@ class ProgressiveSummarizationIntegrationTest {
         );
         UUID originalId = UUID.fromString((String) original.get("id"));
 
-        Map<String, Object> revision = writeToolService.reviseDrawer(
+        Map<String, Object> revision = writeToolService.reviseCell(
                 WRITER, originalId, "Revised DB optimization content", "DB optimization v2");
 
         UUID newId = UUID.fromString((String) revision.get("new_id"));
-        Map<String, Object> revised = readToolService.getDrawer(WRITER,newId);
+        Map<String, Object> revised = readToolService.getCell(WRITER,newId);
 
         assertThat(revised).isNotNull();
         assertThat(revised.get("content")).isEqualTo("Revised DB optimization content");
@@ -445,10 +445,10 @@ class ProgressiveSummarizationIntegrationTest {
 
     @Test
     void reviseDrawerCreatesNewRowAndClosesOld() {
-        Map<String, Object> original = writeToolService.addDrawer(
+        Map<String, Object> original = writeToolService.addCell(
                 WRITER,
                 "Version 1 content",
-                "eng", "docs", "facts",
+                "eng", "facts", "docs",
                 "system",
                 List.of(),
                 3,
@@ -462,19 +462,19 @@ class ProgressiveSummarizationIntegrationTest {
         );
         UUID originalId = UUID.fromString((String) original.get("id"));
 
-        Map<String, Object> revision = writeToolService.reviseDrawer(
+        Map<String, Object> revision = writeToolService.reviseCell(
                 WRITER, originalId, "Version 2 content", null);
 
         UUID newId = UUID.fromString((String) revision.get("new_id"));
         assertThat(newId).isNotEqualTo(originalId);
 
         // Old row is closed (valid_until is set)
-        Map<String, Object> oldDrawer = readToolService.getDrawer(WRITER,originalId);
+        Map<String, Object> oldDrawer = readToolService.getCell(WRITER,originalId);
         assertThat(oldDrawer).isNotNull();
         assertThat(oldDrawer.get("valid_until")).isNotNull();
 
         // New row points to old via parent_id
-        Map<String, Object> newDrawer = readToolService.getDrawer(WRITER,newId);
+        Map<String, Object> newDrawer = readToolService.getCell(WRITER,newId);
         assertThat(newDrawer).isNotNull();
         assertThat(newDrawer.get("parent_id")).isEqualTo(originalId.toString());
         assertThat(newDrawer.get("valid_until")).isNull();
@@ -486,10 +486,10 @@ class ProgressiveSummarizationIntegrationTest {
 
     @Test
     void drawerWithEmptyKeyPointsAndNullInsightRoundTrips() {
-        Map<String, Object> created = writeToolService.addDrawer(
+        Map<String, Object> created = writeToolService.addCell(
                 WRITER,
                 "Edge case drawer with empty arrays",
-                "test", "edge", "facts",
+                "test", "facts", "edge",
                 null, List.of(), null,
                 "Has a summary",
                 List.of(),    // empty key_points
@@ -500,7 +500,7 @@ class ProgressiveSummarizationIntegrationTest {
                 null
         );
 
-        Map<String, Object> drawer = readToolService.getDrawer(WRITER,
+        Map<String, Object> drawer = readToolService.getCell(WRITER,
                 UUID.fromString((String) created.get("id")));
         assertThat(drawer.get("summary")).isEqualTo("Has a summary");
         assertThat((List<?>) drawer.get("key_points")).isEmpty();
@@ -511,48 +511,48 @@ class ProgressiveSummarizationIntegrationTest {
     @Test
     void multipleDrawersWithDifferentLayerCombinations() {
         // L0 only
-        Map<String, Object> l0Only = writeToolService.addDrawer(
-                WRITER, "L0 only content", "test", "layers", "facts",
+        Map<String, Object> l0Only = writeToolService.addCell(
+                WRITER, "L0 only content", "test", "facts", "layers",
                 null, List.of(), null, null, List.of(), null, null,
                 "committed", BASE_TIME, null);
 
         // L0 + L1
-        Map<String, Object> l0l1 = writeToolService.addDrawer(
-                WRITER, "L0 plus L1 content", "test", "layers", "facts",
+        Map<String, Object> l0l1 = writeToolService.addCell(
+                WRITER, "L0 plus L1 content", "test", "facts", "layers",
                 null, List.of(), null, "Has summary only", List.of(), null, null,
                 "committed", BASE_TIME.plusSeconds(1), null);
 
         // L0 + L1 + L2
-        Map<String, Object> l0l1l2 = writeToolService.addDrawer(
-                WRITER, "L0 plus L1 plus L2 content", "test", "layers", "facts",
+        Map<String, Object> l0l1l2 = writeToolService.addCell(
+                WRITER, "L0 plus L1 plus L2 content", "test", "facts", "layers",
                 null, List.of(), null, "Summary present",
                 List.of("point-1", "point-2"), null, null,
                 "committed", BASE_TIME.plusSeconds(2), null);
 
         // L0 + L1 + L2 + L3 (all layers)
-        Map<String, Object> allLayers = writeToolService.addDrawer(
-                WRITER, "All layers present", "test", "layers", "facts",
+        Map<String, Object> allLayers = writeToolService.addCell(
+                WRITER, "All layers present", "test", "facts", "layers",
                 null, List.of(), null, "Full summary",
                 List.of("key-a", "key-b", "key-c"), "Deep insight", "actionable",
                 "committed", BASE_TIME.plusSeconds(3), null);
 
         // Verify each round-trips correctly
-        Map<String, Object> d0 = readToolService.getDrawer(WRITER,UUID.fromString((String) l0Only.get("id")));
+        Map<String, Object> d0 = readToolService.getCell(WRITER,UUID.fromString((String) l0Only.get("id")));
         assertThat(d0.get("summary")).isNull();
         assertThat((List<?>) d0.get("key_points")).isEmpty();
         assertThat(d0.get("insight")).isNull();
 
-        Map<String, Object> d1 = readToolService.getDrawer(WRITER,UUID.fromString((String) l0l1.get("id")));
+        Map<String, Object> d1 = readToolService.getCell(WRITER,UUID.fromString((String) l0l1.get("id")));
         assertThat(d1.get("summary")).isEqualTo("Has summary only");
         assertThat((List<?>) d1.get("key_points")).isEmpty();
         assertThat(d1.get("insight")).isNull();
 
-        Map<String, Object> d2 = readToolService.getDrawer(WRITER,UUID.fromString((String) l0l1l2.get("id")));
+        Map<String, Object> d2 = readToolService.getCell(WRITER,UUID.fromString((String) l0l1l2.get("id")));
         assertThat(d2.get("summary")).isEqualTo("Summary present");
         assertThat((List<String>) d2.get("key_points")).containsExactly("point-1", "point-2");
         assertThat(d2.get("insight")).isNull();
 
-        Map<String, Object> d3 = readToolService.getDrawer(WRITER,UUID.fromString((String) allLayers.get("id")));
+        Map<String, Object> d3 = readToolService.getCell(WRITER,UUID.fromString((String) allLayers.get("id")));
         assertThat(d3.get("summary")).isEqualTo("Full summary");
         assertThat((List<String>) d3.get("key_points")).containsExactly("key-a", "key-b", "key-c");
         assertThat(d3.get("insight")).isEqualTo("Deep insight");
@@ -569,8 +569,8 @@ class ProgressiveSummarizationIntegrationTest {
             WriteToolService.class,
             WriteToolRepository.class,
             ReadToolService.class,
-            DrawerReadRepository.class,
-            DrawerSearchRepository.class,
+            CellReadRepository.class,
+            CellSearchRepository.class,
             KgSearchRepository.class,
             AdminToolRepository.class,
             TestConfig.class

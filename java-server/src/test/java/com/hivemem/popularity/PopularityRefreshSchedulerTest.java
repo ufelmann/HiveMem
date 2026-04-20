@@ -70,8 +70,8 @@ class PopularityRefreshSchedulerTest {
     @BeforeEach
     void resetDatabase() {
         rateLimiter.clearAll();
-        dslContext.execute("TRUNCATE TABLE access_log, agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
-        dslContext.execute("REFRESH MATERIALIZED VIEW drawer_popularity");
+        dslContext.execute("TRUNCATE TABLE access_log, agent_diary, cell_references, references_, blueprints, identity, agents, facts, tunnels, cells CASCADE");
+        dslContext.execute("REFRESH MATERIALIZED VIEW cell_popularity");
     }
 
     @Test
@@ -91,16 +91,16 @@ class PopularityRefreshSchedulerTest {
         com.hivemem.embedding.FixedEmbeddingClient client = new FixedEmbeddingClient();
         Float[] embedding = client.encodeDocument("test content").toArray(Float[]::new);
         dslContext.execute("""
-                INSERT INTO drawers (id, content, embedding, wing, hall, room, status, created_by, valid_from)
-                VALUES (?, ?, ?::vector, 'eng', 'infra', 'facts', 'committed', 'test', now())
+                INSERT INTO cells (id, content, embedding, realm, signal, topic, status, created_by, valid_from)
+                VALUES (?, ?, ?::vector, 'eng', 'facts', 'infra', 'committed', 'test', now())
                 """, drawerId, "test content", embedding);
 
-        dslContext.execute("INSERT INTO access_log (drawer_id, accessed_by) VALUES (?, 'test')", drawerId);
+        dslContext.execute("INSERT INTO access_log (cell_id, accessed_by) VALUES (?, 'test')", drawerId);
 
         scheduler.refresh();
 
         Long accessCount = dslContext.fetchOne("""
-                SELECT access_count FROM drawer_popularity WHERE drawer_id = ?
+                SELECT access_count FROM cell_popularity WHERE cell_id = ?
                 """, drawerId).get("access_count", Long.class);
         assertThat(accessCount).isEqualTo(1L);
     }

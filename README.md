@@ -28,7 +28,7 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 | Theory | Key Insight | HiveMem Consequence |
 |---|---|---|
 | **Working Memory Limitation** (Cowan, 2001) | Humans hold ~4 items in working memory | Wake-up context delivers max 15-20 items, prioritized by importance |
-| **Cognitive Load Theory** (Sweller, 1988) | Disorganized information wastes mental resources needed for thinking | Wings/Halls/Rooms taxonomy, Blueprints, progressive summarization |
+| **Cognitive Load Theory** (Sweller, 1988) | Disorganized information wastes mental resources needed for thinking | Realms/Signals/Topics taxonomy, Blueprints, progressive summarization |
 | **Extended Mind Thesis** (Clark & Chalmers, 1998) | Well-used external tools become genuine extensions of cognition | Proactive capturing, graph traversal for hidden connections, synthesis agents |
 | **Forgetting Curve** (Ebbinghaus, 1885) | 90% of learned information is lost within a week | Immediate capture at session end, proactive storage of decisions |
 
@@ -36,12 +36,12 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 
 **Zettelkasten** (Luhmann) -- Atomic notes + linking. Knowledge emerges from connections, not hierarchies. Luhmann produced 70 books and 400 papers from 90,000 linked notes.
 
-*What HiveMem adopts:* Atomic drawers (one topic per drawer), knowledge graph as linking (facts), drawer-to-drawer tunnels with temporal versioning (related_to, builds_on, contradicts, refines).
+*What HiveMem adopts:* Atomic cells (one topic per cell), knowledge graph as linking (facts), cell-to-cell tunnels with temporal versioning (related_to, builds_on, contradicts, refines).
 *What HiveMem does differently:* Semi-automatic linking -- LLM agents create tunnels after archiving based on semantic search. Bidirectional traversal. Temporal validity -- notes and tunnels can expire.
 
 **PARA** (Tiago Forte) -- Projects / Areas / Resources / Archive. Sorted by actionability, not topic.
 
-*What HiveMem adopts:* Actionability field (actionable / reference / someday / archive). Wake-up prioritizes actionable over reference. Wings map to Areas.
+*What HiveMem adopts:* Actionability field (actionable / reference / someday / archive). Wake-up prioritizes actionable over reference. Realms map to Areas.
 
 ### References
 
@@ -63,12 +63,12 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 - **30 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
 - **5-signal ranked search** -- semantic similarity + keyword match + recency + importance + popularity
 - **Append-only versioning** -- never lose history, revise with parent_id chains, point-in-time queries
-- **Progressive summarization** (L0-L3) -- content, summary, key_points, insight per drawer
+- **Progressive summarization** (L0-L3) -- content, summary, key_points, insight per cell
 - **Temporal knowledge graph** -- facts with valid_from/valid_until, contradiction detection, multi-hop traversal
 - **Role-based token auth** -- multiple tokens, 4 roles (admin/writer/reader/agent), per-role tool visibility
 - **Agent fleet** with approval workflow -- agents write pending suggestions, only admins approve
-- **Blueprints** -- curated narrative overviews per wing, append-only versioned
-- **References & reading list** -- track sources, link to drawers, filter by type/status
+- **Blueprints** -- curated narrative overviews per realm, append-only versioned
+- **References & reading list** -- track sources, link to cells, filter by type/status
 - **Spring Boot 4.0.5 + Java 25** -- MCP server with jOOQ, Flyway migrations, Caffeine cache
 - **Automatic embedding reencoding** -- detects model changes at startup, re-encodes all vectors with backup and progress tracking
 - **264 tests** with Testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
@@ -89,7 +89,7 @@ The service must expose:
 - `POST /embeddings` — `{"text": "...", "mode": "document"}` → `{"vector": [...], "model": "...", "dimension": N}`
 - `GET /info` — `{"model": "...", "dimension": N}` (used by HiveMem for model change detection)
 
-**Automatic reencoding:** When HiveMem detects a model change at startup (different model name or dimension), it automatically backs up the database, re-encodes all drawers, and rebuilds the HNSW index. Search is blocked (503) during reencoding.
+**Automatic reencoding:** When HiveMem detects a model change at startup (different model name or dimension), it automatically backs up the database, re-encodes all cells, and rebuilds the HNSW index. Search is blocked (503) during reencoding.
 
 To build the embedding service:
 
@@ -250,7 +250,7 @@ Add to `claude_desktop_config.json`:
 
 ### Teach your agent to use HiveMem
 
-The MCP server ships instructions that tell the agent *how* to use the 30 tools (call `wake_up` first, optionally pass `dedupe_threshold` to `add_drawer` for duplicate detection, etc.). But the agent won't reliably *remember to archive* unless you tell it to in your own CLAUDE.md.
+The MCP server ships instructions that tell the agent *how* to use the 30 tools (call `wake_up` first, optionally pass `dedupe_threshold` to `add_cell` for duplicate detection, etc.). But the agent won't reliably *remember to archive* unless you tell it to in your own CLAUDE.md.
 
 Add this to your **user-level** CLAUDE.md (`~/.claude/CLAUDE.md`) so it applies to every project:
 
@@ -284,12 +284,12 @@ Wake_up is a snapshot, not a subscription. As the conversation evolves, the rele
 **Examples — good proactive search:**
 - User: "What did we decide about the embedding model?" → call `hivemem_search("embedding model decision")` BEFORE answering, then cite the decision with its date.
 - User: "Remember that patch last week?" → call `hivemem_search("patch")` with a recent-date filter, or `hivemem_time_machine` for a point-in-time view.
-- User: "How does the auth flow work again?" → call `hivemem_quick_facts("auth")` first to pull structured facts, then `hivemem_search` for the design drawer.
+- User: "How does the auth flow work again?" → call `hivemem_quick_facts("auth")` first to pull structured facts, then `hivemem_search` for the design cell.
 
 ### During work
 - After completing a significant action (bug fix, feature, design decision, deployment, investigation):
   archive it immediately. Do not batch, do not wait for session end.
-- Archiving means: `add_drawer` with `dedupe_threshold` (one embedding call handles the dedupe gate) → extract facts (`kg_add` with `on_conflict=return` to catch contradictions) → link related drawers (`search` → `add_tunnel` for top 2-3 matches).
+- Archiving means: `add_cell` with `dedupe_threshold` (one embedding call handles the dedupe gate) → extract facts (`kg_add` with `on_conflict=return` to catch contradictions) → link related cells (`search` → `add_tunnel` for top 2-3 matches).
 - When facts change: `kg_invalidate` the old fact first, then `kg_add` the new one.
 
 ### Session end
@@ -297,9 +297,9 @@ Wake_up is a snapshot, not a subscription. As the conversation evolves, the rele
 - When the user says "archive", "save", or "persist": archive the full session.
 
 ### Classification
-- Use existing wings and halls. Call `list_wings` before inventing new ones (pass the `wing` param to get halls within a specific wing).
-- Wing = major life area, Hall = broad category, Room = specific topic.
-- One drawer per topic. Fill ALL layers: content (L0), summary (L1), key_points (L2), insight (L3).
+- Use existing realms and signals. Call `list_realms` before inventing new ones (pass the `realm` param to get signals within a specific realm).
+- Realm = major life area, Signal = broad category, Topic = specific topic.
+- One cell per topic. Fill ALL layers: content (L0), summary (L1), key_points (L2), insight (L3).
 - Every fact needs `valid_from`. Knowledge without timestamps is useless.
 
 ### What to archive
@@ -319,39 +319,39 @@ Wake_up is a snapshot, not a subscription. As the conversation evolves, the rele
 
 **Why is the MCP protocol not enough?** The MCP `instructions` field tells the agent *how* to use the tools correctly (check duplicates, fill all layers, etc.). But it cannot force the agent to *decide* to archive — that decision depends on the conversation context, which only the CLAUDE.md can influence. The MCP protocol is the "API docs"; the CLAUDE.md is the "job description".
 
-## The Building
+## The Structure
 
-HiveMem organizes knowledge like a building you walk through. Wings, halls, rooms, and drawers -- a spatial hierarchy everyone understands intuitively. Secret tunnels connect drawers across the entire structure, revealing hidden relationships in your knowledge.
+HiveMem organizes knowledge in a spatial hierarchy that is easy to navigate. Realms, signals, topics, and cells -- four levels from broad to specific. Tunnels connect cells across the entire structure, revealing hidden relationships in your knowledge.
 
 ```mermaid
 graph TB
     subgraph HM["HiveMem"]
         direction TB
 
-        subgraph Wing1["Wing: Projects"]
+        subgraph Realm1["Realm: Projects"]
             direction TB
-            subgraph Hall1["Hall: Software"]
+            subgraph Signal1["Signal: Software"]
                 direction LR
-                subgraph Room1A["Room: HiveMem"]
-                    D1["Drawer<br/><i>L0: content</i><br/><i>L1: summary</i><br/><i>L2: key points</i><br/><i>L3: insight</i>"]
-                    D2["Drawer"]
+                subgraph Topic1A["Topic: HiveMem"]
+                    D1["Cell<br/><i>L0: content</i><br/><i>L1: summary</i><br/><i>L2: key points</i><br/><i>L3: insight</i>"]
+                    D2["Cell"]
                 end
-                subgraph Room1B["Room: Website"]
-                    D3["Drawer"]
+                subgraph Topic1B["Topic: Website"]
+                    D3["Cell"]
                 end
             end
         end
 
-        subgraph Wing2["Wing: Knowledge"]
+        subgraph Realm2["Realm: Knowledge"]
             direction TB
-            subgraph Hall2["Hall: Tech"]
+            subgraph Signal2["Signal: Tech"]
                 direction LR
-                subgraph Room2A["Room: AI"]
-                    D5["Drawer"]
-                    D6["Drawer"]
+                subgraph Topic2A["Topic: AI"]
+                    D5["Cell"]
+                    D6["Cell"]
                 end
-                subgraph Room2B["Room: Security"]
-                    D7["Drawer"]
+                subgraph Topic2B["Topic: Security"]
+                    D7["Cell"]
                 end
             end
         end
@@ -366,24 +366,24 @@ graph TB
     end
 
     subgraph BP["Blueprint"]
-        M1["Narrative overview<br/><i>per wing</i>"]
+        M1["Narrative overview<br/><i>per realm</i>"]
     end
 
     D1 -.->|"source"| F1
-    Wing1 -.-> M1
+    Realm1 -.-> M1
 
-    classDef wing fill:#4a90d9,stroke:#2c5f8a,color:white
-    classDef hall fill:#5ba85b,stroke:#3d7a3d,color:white
-    classDef room fill:#e8a838,stroke:#b8802a,color:white
-    classDef drawer fill:#f5f5f5,stroke:#999,color:#333
+    classDef realm fill:#4a90d9,stroke:#2c5f8a,color:white
+    classDef signal fill:#5ba85b,stroke:#3d7a3d,color:white
+    classDef topic fill:#e8a838,stroke:#b8802a,color:white
+    classDef cell fill:#f5f5f5,stroke:#999,color:#333
     classDef kg fill:#c0392b,stroke:#962d22,color:white
     classDef bp fill:#9b59b6,stroke:#7d3c98,color:white
     classDef hm fill:#f0f4f8,stroke:#4a90d9,color:#333
 
-    class Wing1,Wing2 wing
-    class Hall1,Hall2 hall
-    class Room1A,Room1B,Room2A,Room2B room
-    class D1,D2,D3,D5,D6,D7 drawer
+    class Realm1,Realm2 realm
+    class Signal1,Signal2 signal
+    class Topic1A,Topic1B,Topic2A,Topic2B topic
+    class D1,D2,D3,D5,D6,D7 cell
     class KG,F1 kg
     class BP,M1 bp
     class HM hm
@@ -393,21 +393,21 @@ graph TB
 
 | Concept | Description | Example |
 |---|---|---|
-| **Wing** | Top-level category -- a wing of the building | "Projects", "Knowledge", "Cooking" |
-| **Hall** | A hall within a wing | "Software", "Italian Cuisine" |
-| **Room** | A room within a hall | "HiveMem", "Pasta Recipes" |
-| **Drawer** | Single knowledge item with 4 layers (L0-L3) | A design decision, a recipe, a meeting note |
-| **Tunnel** | Secret passage connecting two drawers | `builds_on`, `related_to`, `contradicts`, `refines` |
+| **Realm** | Top-level category | "Projects", "Knowledge", "Cooking" |
+| **Signal** | A signal within a realm | "Software", "Italian Cuisine" |
+| **Topic** | A topic within a signal | "HiveMem", "Pasta Recipes" |
+| **Cell** | Single knowledge item with 4 layers (L0-L3) | A design decision, a recipe, a meeting note |
+| **Tunnel** | Passage connecting two cells | `builds_on`, `related_to`, `contradicts`, `refines` |
 | **Fact** | Atomic knowledge triple in the knowledge graph | "HiveMem → uses → PostgreSQL" with temporal validity |
-| **Blueprint** | Narrative overview of a wing | How halls, rooms, and key drawers in a wing connect |
+| **Blueprint** | Narrative overview of a realm | How signals, topics, and key cells in a realm connect |
 
 ### How it works
 
-1. **Store** -- Content is classified into wing/hall/room and stored as a drawer with progressive summarization (L0: full content, L1: summary, L2: key points, L3: insight)
-2. **Connect** -- Tunnels link related drawers across the building; facts capture atomic relationships in the knowledge graph
-3. **Search** -- 5-signal ranked search finds drawers by meaning, keywords, recency, importance, and popularity
+1. **Store** -- Content is classified into realm/signal/topic and stored as a cell with progressive summarization (L0: full content, L1: summary, L2: key points, L3: insight)
+2. **Connect** -- Tunnels link related cells across the structure; facts capture atomic relationships in the knowledge graph
+3. **Search** -- 5-signal ranked search finds cells by meaning, keywords, recency, importance, and popularity
 4. **Traverse** -- Follow tunnels to discover hidden connections; use time machine to see what was known at any point
-5. **Wake up** -- Each session starts with identity context and critical facts, like walking back into the building and remembering where everything is
+5. **Wake up** -- Each session starts with identity context and critical facts, like navigating back to your knowledge and remembering where everything is
 
 ## Architecture
 
@@ -437,14 +437,14 @@ graph TB
 
 ```mermaid
 erDiagram
-    drawers {
+    cells {
         UUID id PK
         UUID parent_id FK
         TEXT content
         vector embedding
-        TEXT wing
-        TEXT hall
-        TEXT room
+        TEXT realm
+        TEXT signal
+        TEXT topic
         TEXT summary
         TEXT[] key_points
         TEXT insight
@@ -468,8 +468,8 @@ erDiagram
     }
     tunnels {
         UUID id PK
-        UUID from_drawer FK
-        UUID to_drawer FK
+        UUID from_cell FK
+        UUID to_cell FK
         TEXT relation
         TEXT note
         TEXT status
@@ -479,11 +479,11 @@ erDiagram
     }
     blueprints {
         UUID id PK
-        TEXT wing
+        TEXT realm
         TEXT title
         TEXT narrative
-        TEXT[] hall_order
-        UUID[] key_drawers
+        TEXT[] signal_order
+        UUID[] key_cells
         TIMESTAMPTZ valid_from
         TIMESTAMPTZ valid_until
     }
@@ -510,13 +510,13 @@ erDiagram
         SMALLINT importance
     }
 
-    drawers ||--o{ facts : "source_id"
-    drawers ||--o{ drawers : "parent_id (revision chain)"
+    cells ||--o{ facts : "source_id"
+    cells ||--o{ cells : "parent_id (revision chain)"
     facts ||--o{ facts : "parent_id (revision chain)"
-    drawers ||--o{ drawer_references : "links"
-    references_ ||--o{ drawer_references : "links"
+    cells ||--o{ cell_references : "links"
+    references_ ||--o{ cell_references : "links"
     agents ||--o{ agent_diary : "writes"
-    drawers ||--o{ access_log : "tracked"
+    cells ||--o{ access_log : "tracked"
 ```
 
 ### Security & Capability Matrix
@@ -526,9 +526,9 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 | Category | Tools | Access Role | Data Flow | HITL Required? | Description |
 |---|---|---|---|---|---|
 | **Search** | `search`, `search_kg`, `quick_facts`, `time_machine` | `reader` | Read Only | No | 5-signal semantic & keyword search. |
-| **Read** | `status`, `get_drawer`, `list_wings`, `traverse`, `wake_up`, `get_blueprint`, `history` | `reader` | Read Only | No | Navigation and context retrieval. |
-| **Write** | `add_drawer`, `kg_add`, `kg_invalidate`, `revise_drawer`, `revise_fact`, `update_identity`, `update_blueprint` | `agent` | Propose Change | Yes (for Agents) | Append-only knowledge capture. |
-| **Tunnels** | `add_tunnel`, `remove_tunnel` | `agent` | Link Discovery | Yes | Drawer-to-drawer semantic linking. |
+| **Read** | `status`, `get_cell`, `list_realms`, `traverse`, `wake_up`, `get_blueprint`, `history` | `reader` | Read Only | No | Navigation and context retrieval. |
+| **Write** | `add_cell`, `kg_add`, `kg_invalidate`, `revise_cell`, `revise_fact`, `update_identity`, `update_blueprint` | `agent` | Propose Change | Yes (for Agents) | Append-only knowledge capture. |
+| **Tunnels** | `add_tunnel`, `remove_tunnel` | `agent` | Link Discovery | Yes | Cell-to-cell semantic linking. |
 | **Approval** | `approve_pending` | `admin` | Commit Change | Yes | Batch approve or reject pending agent writes. |
 | **Agent** | `register_agent`, `list_agents`, `diary_write`, `diary_read` | `admin` | Fleet Management | Yes | Autonomous fleet orchestration. |
 | **References** | `add_reference`, `link_reference`, `reading_list` | `agent` | Metadata | No | Source and citation tracking. |
@@ -559,34 +559,34 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 1. `hivemem_status`: System overview and counts.
 2. `hivemem_search`: Semantic similarity + keyword search.
 3. `hivemem_search_kg`: Knowledge graph triple lookup.
-4. `hivemem_get_drawer`: Read single knowledge item (logs access automatically).
-5. `hivemem_list_wings`: Wings with counts; halls of one wing when `wing` is provided.
+4. `hivemem_get_cell`: Read single knowledge item (logs access automatically).
+5. `hivemem_list_realms`: Realms with counts; signals of one realm when `realm` is provided.
 6. `hivemem_traverse`: Recursive graph traversal.
 7. `hivemem_quick_facts`: Context-aware facts about an entity.
 8. `hivemem_time_machine`: Historical knowledge retrieval.
 9. `hivemem_wake_up`: Initial session context.
-10. `hivemem_history`: Trace revisions of a drawer or fact (type-dispatched, recursive CTE depth cap 100).
+10. `hivemem_history`: Trace revisions of a cell or fact (type-dispatched, recursive CTE depth cap 100).
 11. `hivemem_pending_approvals`: List work awaiting review.
-12. `hivemem_get_blueprint`: Narrative wing overviews.
+12. `hivemem_get_blueprint`: Narrative realm overviews.
 13. `hivemem_reading_list`: Manage unread/in-progress sources.
 14. `hivemem_list_agents`: View active agent fleet.
 15. `hivemem_diary_read`: Read agent diary entries.
 
 **Write (13):**
 
-16. `hivemem_add_drawer`: Store with L0-L3; optional `dedupe_threshold` runs an embedding-based dedupe gate in one call.
-17. `hivemem_add_tunnel`: Link two drawers together.
+16. `hivemem_add_cell`: Store with L0-L3; optional `dedupe_threshold` runs an embedding-based dedupe gate in one call.
+17. `hivemem_add_tunnel`: Link two cells together.
 18. `hivemem_kg_add`: Fact triple; optional `on_conflict` (`insert`|`return`|`reject`) gates against active conflicts.
 19. `hivemem_kg_invalidate`: Soft-delete/expire a fact.
 20. `hivemem_update_identity`: Update session context facts.
 21. `hivemem_add_reference`: Store source documents/URLs.
-22. `hivemem_link_reference`: Cite source for a drawer.
-23. `hivemem_remove_tunnel`: Expire a drawer link.
-24. `hivemem_revise_drawer`: Create a new version of a drawer.
+22. `hivemem_link_reference`: Cite source for a cell.
+23. `hivemem_remove_tunnel`: Expire a cell link.
+24. `hivemem_revise_cell`: Create a new version of a cell.
 25. `hivemem_revise_fact`: Create a new version of a fact.
 26. `hivemem_register_agent`: Add an agent to the fleet.
 27. `hivemem_diary_write`: Agent-private reflection tool.
-28. `hivemem_update_blueprint`: Update wing narrative.
+28. `hivemem_update_blueprint`: Update realm narrative.
 
 **Admin (2):**
 
@@ -607,7 +607,7 @@ The `hivemem_search` tool combines 5 signals with configurable weights:
 
 ### Progressive Summarization
 
-Every drawer supports 4 layers of progressive summarization:
+Every cell supports 4 layers of progressive summarization:
 
 | Layer | Field | Purpose |
 |---|---|---|

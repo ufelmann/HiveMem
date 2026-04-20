@@ -1,47 +1,47 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useDrawerStore } from '../stores/drawer'
+import { useCellStore } from '../stores/cell'
 import { useReaderStore } from '../stores/reader'
 import { useCanvasStore } from '../stores/canvas'
 
-const drawer = useDrawerStore()
+const cellStore = useCellStore()
 const reader = useReaderStore()
 const canvas = useCanvasStore()
-const d = computed(() => drawer.current)
+const d = computed(() => cellStore.current)
 
-function openReader() { if (d.value) reader.openReader(d.value.drawer.id) }
-function jumpTo(id: string) { drawer.load(id); canvas.setFocus(id) }
-function close() { drawer.clear(); canvas.setFocus(null) }
+function openReader() { if (d.value) reader.openReader(d.value.cell.id) }
+function jumpTo(id: string) { cellStore.load(id); canvas.setFocus(id) }
+function close() { cellStore.clear(); canvas.setFocus(null) }
 </script>
 
 <template>
   <transition name="slide-r">
     <aside v-if="d" class="scan">
       <header>
-        <strong>{{ d.drawer.title }}</strong>
+        <strong>{{ d.cell.title }}</strong>
         <v-btn icon="mdi-close" size="small" variant="text" @click="close" />
       </header>
       <div class="body">
         <div class="chips">
-          <v-chip size="x-small" color="primary" variant="tonal">{{ d.drawer.wing }}</v-chip>
-          <v-chip v-if="d.drawer.hall" size="x-small" variant="outlined">{{ d.drawer.hall }}</v-chip>
-          <v-chip v-if="d.drawer.room" size="x-small" variant="outlined">{{ d.drawer.room }}</v-chip>
-          <span class="imp">{{ '★'.repeat(d.drawer.importance) }}</span>
+          <v-chip size="x-small" color="primary" variant="tonal">{{ d.cell.realm }}</v-chip>
+          <v-chip v-if="d.cell.signal" size="x-small" variant="outlined">{{ d.cell.signal }}</v-chip>
+          <v-chip v-if="d.cell.topic" size="x-small" variant="outlined">{{ d.cell.topic }}</v-chip>
+          <span class="imp">{{ '★'.repeat(d.cell.importance) }}</span>
         </div>
-        <section v-if="d.drawer.summary">
-          <div class="label">SUMMARY</div><p>{{ d.drawer.summary }}</p>
+        <section v-if="d.cell.summary">
+          <div class="label">SUMMARY</div><p>{{ d.cell.summary }}</p>
         </section>
-        <section v-if="d.drawer.key_points?.length">
+        <section v-if="d.cell.key_points?.length">
           <div class="label">KEY POINTS</div>
-          <ul><li v-for="k in d.drawer.key_points" :key="k">{{ k }}</li></ul>
+          <ul><li v-for="k in d.cell.key_points" :key="k">{{ k }}</li></ul>
         </section>
-        <section v-if="d.drawer.insight">
-          <div class="label">INSIGHT</div><blockquote>{{ d.drawer.insight }}</blockquote>
+        <section v-if="d.cell.insight">
+          <div class="label">INSIGHT</div><blockquote>{{ d.cell.insight }}</blockquote>
         </section>
         <section v-if="d.tunnels.length">
           <div class="label">TUNNELS ({{ d.tunnels.length }})</div>
           <div v-for="t in d.tunnels" :key="t.id" class="tunnel"
-               @click="jumpTo(t.to_drawer === d.drawer.id ? t.from_drawer : t.to_drawer)">
+               @click="jumpTo(t.to_cell === d.cell.id ? t.from_cell : t.to_cell)">
             <span :class="['dot', t.relation]" />
             <span class="rel">{{ t.relation }}</span>
             <span class="note">{{ t.note || '' }}</span>

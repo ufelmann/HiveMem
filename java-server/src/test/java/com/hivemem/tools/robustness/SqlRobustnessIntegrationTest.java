@@ -2,10 +2,10 @@ package com.hivemem.tools.robustness;
 
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
-import com.hivemem.drawers.DrawerReadRepository;
+import com.hivemem.cells.CellReadRepository;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
-import com.hivemem.search.DrawerSearchRepository;
+import com.hivemem.search.CellSearchRepository;
 import com.hivemem.search.KgSearchRepository;
 import com.hivemem.tools.read.ReadToolService;
 import com.hivemem.write.WriteToolRepository;
@@ -83,19 +83,19 @@ class SqlRobustnessIntegrationTest {
 
     @BeforeEach
     void resetDatabase() {
-        dslContext.execute("TRUNCATE TABLE agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
+        dslContext.execute("TRUNCATE TABLE agent_diary, cell_references, references_, blueprints, identity, agents, facts, tunnels, cells CASCADE");
     }
 
     @Test
     void approvePendingBatchHandlesAllIdsInSingleStatement() {
         List<UUID> ids = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
-            Map<String, Object> result = writeToolService.addDrawer(
+            Map<String, Object> result = writeToolService.addCell(
                     WRITER,
                     "Pending " + i,
                     "test",
-                    "batch",
                     "facts",
+                    "batch",
                     "system",
                     List.of(),
                     1,
@@ -114,7 +114,7 @@ class SqlRobustnessIntegrationTest {
         assertThat(((Number) approveResult.get("count")).intValue()).isEqualTo(5);
 
         for (UUID id : ids) {
-            Record row = dslContext.fetchOne("SELECT status FROM drawers WHERE id = ?", id);
+            Record row = dslContext.fetchOne("SELECT status FROM cells WHERE id = ?", id);
             assertThat(row).isNotNull();
             assertThat(row.get("status", String.class)).isEqualTo("committed");
         }
@@ -163,17 +163,17 @@ class SqlRobustnessIntegrationTest {
     @Test
     void traverseDoesNotBlowUpOnDiamond() {
         // Build diamond: A -> B, A -> C, B -> D, C -> D
-        Map<String, Object> dA = writeToolService.addDrawer(
-                WRITER, "Diamond A", "test", "graph", null, "system",
+        Map<String, Object> dA = writeToolService.addCell(
+                WRITER, "Diamond A", "test", "facts", null, "system",
                 List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME, null);
-        Map<String, Object> dB = writeToolService.addDrawer(
-                WRITER, "Diamond B", "test", "graph", null, "system",
+        Map<String, Object> dB = writeToolService.addCell(
+                WRITER, "Diamond B", "test", "facts", null, "system",
                 List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(1), null);
-        Map<String, Object> dC = writeToolService.addDrawer(
-                WRITER, "Diamond C", "test", "graph", null, "system",
+        Map<String, Object> dC = writeToolService.addCell(
+                WRITER, "Diamond C", "test", "facts", null, "system",
                 List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(2), null);
-        Map<String, Object> dD = writeToolService.addDrawer(
-                WRITER, "Diamond D", "test", "graph", null, "system",
+        Map<String, Object> dD = writeToolService.addCell(
+                WRITER, "Diamond D", "test", "facts", null, "system",
                 List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(3), null);
 
         UUID idA = UUID.fromString((String) dA.get("id"));
@@ -190,8 +190,8 @@ class SqlRobustnessIntegrationTest {
 
         Set<UUID> found = new HashSet<>();
         for (Map<String, Object> row : results) {
-            found.add(UUID.fromString((String) row.get("from_drawer")));
-            found.add(UUID.fromString((String) row.get("to_drawer")));
+            found.add(UUID.fromString((String) row.get("from_cell")));
+            found.add(UUID.fromString((String) row.get("to_cell")));
         }
         assertThat(found).contains(idA, idB, idC, idD);
         // UNION deduplicates -- bounded: 4 tunnels x 2 directions x up to 3 depths
@@ -202,8 +202,8 @@ class SqlRobustnessIntegrationTest {
     void statusReturnsConsolidatedCounts() {
         Map<String, Object> result = readToolService.status();
 
-        assertThat(result).containsKeys("drawers", "facts", "tunnels", "pending", "wings");
-        assertThat(result.get("drawers")).isInstanceOf(Number.class);
+        assertThat(result).containsKeys("cells", "facts", "tunnels", "pending", "realms");
+        assertThat(result.get("cells")).isInstanceOf(Number.class);
         assertThat(result.get("facts")).isInstanceOf(Number.class);
         assertThat(result.get("tunnels")).isInstanceOf(Number.class);
         assertThat(result.get("pending")).isInstanceOf(Number.class);
@@ -236,8 +236,8 @@ class SqlRobustnessIntegrationTest {
             WriteToolService.class,
             WriteToolRepository.class,
             ReadToolService.class,
-            DrawerReadRepository.class,
-            DrawerSearchRepository.class,
+            CellReadRepository.class,
+            CellSearchRepository.class,
             KgSearchRepository.class,
             AdminToolRepository.class,
             TestConfig.class
