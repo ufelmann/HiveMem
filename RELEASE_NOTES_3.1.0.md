@@ -1,6 +1,6 @@
 ## HiveMem 3.1.0
 
-Complete rewrite from Python to Java. Production-verified on a container with migrated 2.x data.
+Complete rewrite from Python to Java. Production-verified against migrated 2.x data.
 
 ### Highlights
 

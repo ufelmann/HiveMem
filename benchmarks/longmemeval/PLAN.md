@@ -244,7 +244,7 @@ Section 3.4's A/B adds a **third axis**: ingestion mode. Unlike my earlier stanc
 
 ### 3.2 Key decisions
 
-1. **Separate benchmark host.** Prod HiveMem on a container stays untouched. Each benchmark run starts with a fresh database container (no cross-run contamination). Iteration on embedding models / ranking weights happens here without risking prod.
+1. **Separate benchmark host.** The production HiveMem instance stays untouched. Each benchmark run starts with a fresh database container (no cross-run contamination). Iteration on embedding models / ranking weights happens here without risking prod.
 2. **CUDA-accelerated embeddings.** LongMemEval's `_s` subset ingests ~20,000 sessions; CPU embedding would take hours. A 12 GB consumer GPU serves BGE-M3 or Qwen3-Embedding-0.6B comfortably; a 24 GB card handles larger models.
 3. **Official LongMemEval judge.** Rather than rolling our own LLM-as-judge, we emit a JSONL hypothesis file and invoke LongMemEval's `src/evaluation/evaluate_qa.py` (gpt-4o). This makes our scores directly comparable to the paper's published numbers.
 4. **Phase-gated scope.** Phase 1 = one subset (`temporal-reasoning`, 150 cases) to validate the pipeline end-to-end. Phase 2+ (full 5 subsets, CI regression gate, dashboard) ship as follow-up tickets once Phase 1 produces a clean number.
