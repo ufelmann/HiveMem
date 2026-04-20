@@ -36,23 +36,23 @@ public class AdminToolRepository {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("db_connected", dslContext.fetchOne("SELECT 1 AS ok").get("ok", Integer.class) == 1);
         result.put("extensions", extensions);
-        result.put("drawers", count("SELECT count(*) AS cnt FROM drawers"));
+        result.put("cells", count("SELECT count(*) AS cnt FROM cells"));
         result.put("facts", count("SELECT count(*) AS cnt FROM facts"));
         result.put("db_size", dslContext.fetchOne("SELECT pg_size_pretty(pg_database_size(current_database())) AS size").get("size", String.class));
         result.put("disk_free_gb", diskFreeGb());
         return result;
     }
 
-    public void logAccess(UUID drawerId, UUID factId, String accessedBy) {
+    public void logAccess(UUID cellId, UUID factId, String accessedBy) {
         dslContext.execute("""
-                INSERT INTO access_log (drawer_id, fact_id, accessed_by)
+                INSERT INTO access_log (cell_id, fact_id, accessed_by)
                 VALUES (?, ?, ?)
-                """, drawerId, factId, accessedBy);
+                """, cellId, factId, accessedBy);
     }
 
     public long refreshPopularity() {
-        dslContext.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY drawer_popularity");
-        return count("SELECT count(*) AS cnt FROM drawer_popularity");
+        dslContext.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY cell_popularity");
+        return count("SELECT count(*) AS cnt FROM cell_popularity");
     }
 
     private long count(String sql) {

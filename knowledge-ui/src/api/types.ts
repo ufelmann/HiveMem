@@ -1,12 +1,12 @@
 export type Role = 'admin' | 'writer' | 'reader' | 'agent'
 export type Relation = 'related_to' | 'builds_on' | 'contradicts' | 'refines'
-export type DrawerStatus = 'committed' | 'pending' | 'rejected'
+export type CellStatus = 'committed' | 'pending' | 'rejected'
 
-export interface Drawer {
+export interface Cell {
   id: string
-  wing: string
-  hall: string | null
-  room: string | null
+  realm: string
+  signal: string | null
+  topic: string | null
   title: string
   content: string
   summary: string | null
@@ -14,24 +14,24 @@ export interface Drawer {
   insight: string | null
   tags: string[]
   importance: 1 | 2 | 3
-  status: DrawerStatus
+  status: CellStatus
   created_by: string
   created_at: string
   valid_from: string
   valid_until: string | null
 }
 
-export interface Wing { name: string; drawer_count: number; halls: Hall[] }
-export interface Hall { name: string; drawer_count: number; rooms: Room[] }
-export interface Room { name: string; drawer_count: number }
+export interface Realm { name: string; cell_count: number; signals: Signal[] }
+export interface Signal { name: string; cell_count: number; topics: Topic[] }
+export interface Topic { name: string; cell_count: number }
 
 export interface Tunnel {
   id: string
-  from_drawer: string
-  to_drawer: string
+  from_cell: string
+  to_cell: string
   relation: Relation
   note: string | null
-  status: DrawerStatus
+  status: CellStatus
   created_at: string
   valid_until: string | null
 }
@@ -54,17 +54,17 @@ export interface Reference {
 }
 
 export interface StatusSummary {
-  drawer_count: number
+  cell_count: number
   fact_count: number
-  wing_count: number
+  realm_count: number
   tunnel_count: number
   pending_count: number
   last_activity: string
 }
 
 export type HiveEvent =
-  | { type: 'drawer_added'; drawer: Drawer }
-  | { type: 'drawer_revised'; id: string; parent_id: string }
+  | { type: 'cell_added'; cell: Cell }
+  | { type: 'cell_revised'; id: string; parent_id: string }
   | { type: 'tunnel_added'; tunnel: Tunnel }
   | { type: 'status'; last_activity: string }
 

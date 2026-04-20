@@ -6,7 +6,7 @@ import { useUiStore, type SizeMetric } from '../../stores/ui'
 const canvas = useCanvasStore()
 const ui = useUiStore()
 const metrics: { v: SizeMetric; label: string }[] = [
-  { v: 'drawer_count', label: 'Drawer count' },
+  { v: 'cell_count', label: 'Cell count' },
   { v: 'content_volume', label: 'Content volume' },
   { v: 'importance', label: 'Importance-weighted' },
   { v: 'popularity', label: 'Popularity' }
@@ -14,8 +14,8 @@ const metrics: { v: SizeMetric; label: string }[] = [
 
 onMounted(() => { if (!canvas.loaded) canvas.loadTopLevel() })
 
-function colorFor(wing: string): string {
-  let h = 0; for (let i = 0; i < wing.length; i++) h = (h * 31 + wing.charCodeAt(i)) % 360
+function colorFor(realm: string): string {
+  let h = 0; for (let i = 0; i < realm.length; i++) h = (h * 31 + realm.charCodeAt(i)) % 360
   return `hsl(${h}, 70%, 55%)`
 }
 </script>
@@ -23,9 +23,9 @@ function colorFor(wing: string): string {
 <template>
   <div>
     <v-list density="compact">
-      <v-list-item v-for="w in canvas.wings" :key="w.name" :title="w.name" :subtitle="`${w.drawer_count} drawers`">
+      <v-list-item v-for="r in canvas.realms" :key="r.name" :title="r.name" :subtitle="`${r.cell_count} cells`">
         <template #prepend>
-          <span class="dot" :style="{ background: colorFor(w.name) }" />
+          <span class="dot" :style="{ background: colorFor(r.name) }" />
         </template>
       </v-list-item>
     </v-list>

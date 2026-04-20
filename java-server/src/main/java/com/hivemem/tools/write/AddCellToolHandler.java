@@ -13,30 +13,30 @@ import java.util.List;
 
 @Component
 @Order(18)
-public class AddDrawerToolHandler implements ToolHandler {
+public class AddCellToolHandler implements ToolHandler {
 
     private final WriteToolService writeToolService;
 
-    public AddDrawerToolHandler(WriteToolService writeToolService) {
+    public AddCellToolHandler(WriteToolService writeToolService) {
         this.writeToolService = writeToolService;
     }
 
     @Override
     public String name() {
-        return "hivemem_add_drawer";
+        return "hivemem_add_cell";
     }
 
     @Override
     public String description() {
-        return "Create a new drawer with progressive layers and embedding.";
+        return "Create a new cell with progressive layers and embedding.";
     }
 
     @Override
     public Object call(AuthPrincipal principal, JsonNode arguments) {
         String content = WriteArgumentParser.requiredText(arguments, "content");
-        String wing = WriteArgumentParser.optionalText(arguments, "wing");
-        String hall = WriteArgumentParser.optionalText(arguments, "hall");
-        String room = WriteArgumentParser.optionalText(arguments, "room");
+        String realm = WriteArgumentParser.optionalText(arguments, "realm");
+        String signal = WriteArgumentParser.optionalText(arguments, "signal");
+        String topic = WriteArgumentParser.optionalText(arguments, "topic");
         String source = WriteArgumentParser.optionalText(arguments, "source");
         List<String> tags = WriteArgumentParser.optionalTextList(arguments, "tags");
         Integer importance = WriteArgumentParser.optionalInteger(arguments, "importance");
@@ -47,12 +47,12 @@ public class AddDrawerToolHandler implements ToolHandler {
         String status = WriteArgumentParser.optionalText(arguments, "status");
         OffsetDateTime validFrom = WriteArgumentParser.optionalTimestamp(arguments, "valid_from");
         Double dedupeThreshold = optionalDedupeThreshold(arguments);
-        return writeToolService.addDrawer(
+        return writeToolService.addCell(
                 principal,
                 content,
-                wing,
-                hall,
-                room,
+                realm,
+                signal,
+                topic,
                 source,
                 tags,
                 importance,

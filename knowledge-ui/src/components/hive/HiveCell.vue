@@ -2,12 +2,12 @@
 import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
 import * as THREE from 'three'
 import type { GoldbergCell } from '../../composables/goldbergMath'
-import type { WingPalette } from '../../composables/wingPalette'
+import type { RealmPalette } from '../../composables/wingPalette'
 
 const props = defineProps<{
   cell: GoldbergCell
-  wingName: string | null
-  palette: WingPalette | null
+  realmName: string | null
+  palette: RealmPalette | null
   isAccentPink?: boolean
   isAccentViolet?: boolean
 }>()
@@ -197,7 +197,7 @@ function buildGeometry() {
 }
 
 watch(() => props.cell.index, buildGeometry, { immediate: true })
-watch(() => [props.wingName, props.isAccentPink, props.isAccentViolet], buildGeometry)
+watch(() => [props.realmName, props.isAccentPink, props.isAccentViolet], buildGeometry)
 
 onBeforeUnmount(() => {
   if (tex.value) tex.value.dispose()
@@ -207,8 +207,8 @@ onBeforeUnmount(() => {
 
 // Local hover state only -- no cross-cell coordination in cinema view.
 const hovered = shallowRef(false)
-const intensity = computed(() => (hovered.value && props.wingName ? 1.4 : 0.75))
-const scale = computed(() => (hovered.value && props.wingName ? 1.03 : 1))
+const intensity = computed(() => (hovered.value && props.realmName ? 1.4 : 0.75))
+const scale = computed(() => (hovered.value && props.realmName ? 1.03 : 1))
 
 function onPointerOver(e: any) {
   e.stopPropagation?.()

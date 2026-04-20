@@ -49,12 +49,12 @@ public class WriteToolRepository {
         return factRow(row);
     }
 
-    public Map<String, Object> addDrawer(
+    public Map<String, Object> addCell(
             String content,
             List<Float> embedding,
-            String wing,
-            String hall,
-            String room,
+            String realm,
+            String signal,
+            String topic,
             String source,
             List<String> tags,
             Integer importance,
@@ -70,18 +70,18 @@ public class WriteToolRepository {
         String[] keyPointArray = keyPoints == null ? new String[0] : keyPoints.toArray(String[]::new);
         Float[] embeddingArray = embedding == null ? null : embedding.toArray(Float[]::new);
         Record row = dslContext.fetchOne("""
-                INSERT INTO drawers (content, embedding, wing, hall, room, source, tags, importance,
+                INSERT INTO cells (content, embedding, realm, signal, topic, source, tags, importance,
                                      summary, key_points, insight, actionability, status, created_by, valid_from)
                 VALUES (?, ?::vector, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?::timestamptz, now()))
-                RETURNING id, wing, hall, room, status
+                RETURNING id, realm, signal, topic, status
                 """,
-                content, embeddingArray, wing, hall, room, source, tagArray, importance,
+                content, embeddingArray, realm, signal, topic, source, tagArray, importance,
                 summary, keyPointArray, insight, actionability, status, createdBy, validFrom);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", uuidValue(row, "id"));
-        result.put("wing", row.get("wing", String.class));
-        result.put("hall", row.get("hall", String.class));
-        result.put("room", row.get("room", String.class));
+        result.put("realm", row.get("realm", String.class));
+        result.put("signal", row.get("signal", String.class));
+        result.put("topic", row.get("topic", String.class));
         result.put("status", row.get("status", String.class));
         return result;
     }
@@ -120,15 +120,15 @@ public class WriteToolRepository {
         return result;
     }
 
-    public Map<String, Object> linkReference(UUID drawerId, UUID referenceId, String relation) {
+    public Map<String, Object> linkReference(UUID cellId, UUID referenceId, String relation) {
         Record row = dslContext.fetchOne("""
-                INSERT INTO drawer_references (drawer_id, reference_id, relation)
+                INSERT INTO cell_references (cell_id, reference_id, relation)
                 VALUES (?, ?, ?)
                 RETURNING id
-                """, drawerId, referenceId, relation);
+                """, cellId, referenceId, relation);
         return Map.of(
                 "id", uuidValue(row, "id"),
-                "drawer_id", drawerId.toString(),
+                "cell_id", cellId.toString(),
                 "reference_id", referenceId.toString(),
                 "relation", relation
         );
@@ -175,7 +175,7 @@ public class WriteToolRepository {
 
     public Map<String, Object> updateBlueprint(
             String createdBy,
-            String wing,
+            String realm,
             String title,
             String narrative,
             List<String> hallOrder,
@@ -183,46 +183,46 @@ public class WriteToolRepository {
     ) {
         return dslContext.transactionResult(configuration -> {
             DSLContext tx = DSL.using(configuration);
-            tx.execute("SELECT pg_advisory_xact_lock(hashtext(?))", "blueprint:" + wing);
+            tx.execute("SELECT pg_advisory_xact_lock(hashtext(?))", "blueprint:" + realm);
             OffsetDateTime timestamp = tx.fetchOne("SELECT now() AS ts").get("ts", OffsetDateTime.class);
             tx.execute("""
                     UPDATE blueprints
                     SET valid_until = ?::timestamptz
-                    WHERE wing = ?
+                    WHERE realm = ?
                       AND valid_until IS NULL
-                    """, timestamp, wing);
+                    """, timestamp, realm);
             String[] hallOrderArray = hallOrder == null ? new String[0] : hallOrder.toArray(String[]::new);
             UUID[] keyDrawerArray = keyDrawers == null ? new UUID[0] : keyDrawers.toArray(UUID[]::new);
             Record row = tx.fetchOne("""
-                    INSERT INTO blueprints (wing, title, narrative, hall_order, key_drawers, created_by, valid_from)
+                    INSERT INTO blueprints (realm, title, narrative, hall_order, key_drawers, created_by, valid_from)
                     VALUES (?, ?, ?, ?, ?, ?, ?::timestamptz)
-                    RETURNING id, wing, title
-                    """, wing, title, narrative, hallOrderArray, keyDrawerArray, createdBy, timestamp);
+                    RETURNING id, realm, title
+                    """, realm, title, narrative, hallOrderArray, keyDrawerArray, createdBy, timestamp);
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("id", uuidValue(row, "id"));
-            result.put("wing", row.get("wing", String.class));
+            result.put("realm", row.get("realm", String.class));
             result.put("title", row.get("title", String.class));
             return result;
         });
     }
 
     public Map<String, Object> addTunnel(
-            UUID fromDrawer,
-            UUID toDrawer,
+            UUID fromCell,
+            UUID toCell,
             String relation,
             String note,
             String status,
             String createdBy
     ) {
         Record row = dslContext.fetchOne("""
-                INSERT INTO tunnels (from_drawer, to_drawer, relation, note, status, created_by)
+                INSERT INTO tunnels (from_cell, to_cell, relation, note, status, created_by)
                 VALUES (?, ?, ?, ?, ?, ?)
-                RETURNING id, from_drawer, to_drawer, relation, note, status
-                """, fromDrawer, toDrawer, relation, note, status, createdBy);
+                RETURNING id, from_cell, to_cell, relation, note, status
+                """, fromCell, toCell, relation, note, status, createdBy);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", uuidValue(row, "id"));
-        result.put("from_drawer", uuidValue(row, "from_drawer"));
-        result.put("to_drawer", uuidValue(row, "to_drawer"));
+        result.put("from_cell", uuidValue(row, "from_cell"));
+        result.put("to_cell", uuidValue(row, "to_cell"));
         result.put("relation", row.get("relation", String.class));
         result.put("note", row.get("note", String.class));
         result.put("status", row.get("status", String.class));
@@ -294,7 +294,7 @@ public class WriteToolRepository {
         });
     }
 
-    public Map<String, Object> reviseDrawer(
+    public Map<String, Object> reviseCell(
             UUID oldId,
             String newContent,
             String newSummary,
@@ -308,23 +308,23 @@ public class WriteToolRepository {
             Record timestampRow = tx.fetchOne("SELECT now() AS ts");
             OffsetDateTime revisionTimestamp = timestampRow.get("ts", OffsetDateTime.class);
             Record oldRow = tx.fetchOne("""
-                    SELECT wing, hall, room, source, tags, importance, summary, key_points, insight, actionability
-                    FROM drawers
+                    SELECT realm, signal, topic, source, tags, importance, summary, key_points, insight, actionability
+                    FROM cells
                     WHERE id = ? AND valid_until IS NULL
                     FOR UPDATE
                     """, oldId);
             if (oldRow == null) {
-                throw new IllegalArgumentException("Drawer " + oldId + " not found or already revised");
+                throw new IllegalArgumentException("Cell " + oldId + " not found or already revised");
             }
 
             tx.execute("""
-                    UPDATE drawers
+                    UPDATE cells
                     SET valid_until = ?::timestamptz
                     WHERE id = ?
                     """, revisionTimestamp, oldId);
 
             Record newRow = tx.fetchOne("""
-                    INSERT INTO drawers (parent_id, content, embedding, wing, hall, room, source, tags, importance,
+                    INSERT INTO cells (parent_id, content, embedding, realm, signal, topic, source, tags, importance,
                                          summary, key_points, insight, actionability, status, created_by, valid_from)
                     VALUES (?, ?, ?::vector, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz)
                     RETURNING id
@@ -332,9 +332,9 @@ public class WriteToolRepository {
                     oldId,
                     newContent,
                     embeddingArray,
-                    oldRow.get("wing", String.class),
-                    oldRow.get("hall", String.class),
-                    oldRow.get("room", String.class),
+                    oldRow.get("realm", String.class),
+                    oldRow.get("signal", String.class),
+                    oldRow.get("topic", String.class),
                     oldRow.get("source", String.class),
                     oldRow.get("tags", String[].class),
                     oldRow.get("importance", Integer.class),
@@ -353,10 +353,10 @@ public class WriteToolRepository {
         });
     }
 
-    public List<Map<String, Object>> checkDuplicateDrawer(String vectorLiteral, double threshold) {
+    public List<Map<String, Object>> checkDuplicateCell(String vectorLiteral, double threshold) {
         List<Map<String, Object>> results = new ArrayList<>();
         for (Record row : dslContext.fetch(
-                "SELECT * FROM check_duplicate_drawer(?::vector, ?::real)",
+                "SELECT * FROM check_duplicate_cell(?::vector, ?::real)",
                 vectorLiteral, threshold)) {
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("id", uuidValue(row, "id"));
@@ -389,8 +389,8 @@ public class WriteToolRepository {
         UUID[] idArray = ids.toArray(UUID[]::new);
         return dslContext.transactionResult(configuration -> {
             DSLContext tx = DSL.using(configuration);
-            int drawerCount = tx.execute("""
-                    UPDATE drawers
+            int cellCount = tx.execute("""
+                    UPDATE cells
                     SET status = ?
                     WHERE id = ANY(?::uuid[])
                       AND status = 'pending'
@@ -407,7 +407,7 @@ public class WriteToolRepository {
                     WHERE id = ANY(?::uuid[])
                       AND status = 'pending'
                     """, decision, idArray);
-            return drawerCount + factCount + tunnelCount;
+            return cellCount + factCount + tunnelCount;
         });
     }
 
