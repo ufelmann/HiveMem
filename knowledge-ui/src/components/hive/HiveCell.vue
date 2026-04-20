@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
 import * as THREE from 'three'
 import type { GoldbergCell } from '../../composables/goldbergMath'
-import type { RealmPalette } from '../../composables/wingPalette'
+import type { RealmPalette } from '../../composables/realmPalette'
 
 const props = defineProps<{
   cell: GoldbergCell
