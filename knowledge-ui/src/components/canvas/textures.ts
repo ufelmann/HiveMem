@@ -2,12 +2,12 @@ import { Texture } from 'pixi.js'
 
 const cache = new Map<string, Texture>()
 
-export function colorForWing(name: string): string {
+export function colorForRealm(name: string): string {
   let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360
   return `hsl(${h}, 70%, 55%)`
 }
 
-export function wingTexture(colorHsl: string, size = 256): Texture {
+export function realmTexture(colorHsl: string, size = 256): Texture {
   const key = `${colorHsl}:${size}`
   const cached = cache.get(key); if (cached) return cached
   const canvas = document.createElement('canvas')
@@ -28,8 +28,8 @@ export function wingTexture(colorHsl: string, size = 256): Texture {
   cache.set(key, tex); return tex
 }
 
-export function drawerTexture(size = 64): Texture {
-  const key = `drawer:${size}`
+export function cellTexture(size = 64): Texture {
+  const key = `cell:${size}`
   const cached = cache.get(key); if (cached) return cached
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = size

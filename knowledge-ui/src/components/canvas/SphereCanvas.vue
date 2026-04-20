@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { Application, Container, Sprite, Graphics } from 'pixi.js'
-import { wingTexture, drawerTexture, colorForWing, parseHsl } from './textures'
+import { realmTexture, cellTexture, colorForRealm, parseHsl } from './textures'
 import { focusFilter, hoverFilter, focusRing, godrays } from './filters'
 import { spawnDust } from './particles'
 import { useCanvasStore } from '../../stores/canvas'
 import { useCellStore } from '../../stores/cell'
 import { useReaderStore } from '../../stores/reader'
-import { computeWingPositions, poissonDiskDrawers } from '../../composables/layout'
-import { drawerVisibleAt } from '../../composables/lod'
+import { computeWingPositions, poissonDiskCells } from '../../composables/layout'
+import { cellVisibleAt } from '../../composables/lod'
 import type { Cell } from '../../api/types'
 
 const root = ref<HTMLDivElement>()
@@ -78,7 +78,7 @@ onMounted(async () => {
     for (const c of world.children) {
       const s = c as any
       if (s._kind === 'cell') {
-        let vis = drawerVisibleAt(zoom)
+        let vis = cellVisibleAt(zoom)
         if (vis) {
           const r = Math.max(s.width, s.height)
           vis = s.x + r > viewLeft && s.x - r < viewRight
@@ -148,7 +148,7 @@ function render() {
     const p = realmPos.get(r.name)
     if (!p) continue
     const group = cellsByRealm.get(r.name) ?? []
-    const pts = poissonDiskDrawers(group.length, { x: p.x, y: p.y, r: 70, minDist: 14, seed: r.name })
+    const pts = poissonDiskCells(group.length, { x: p.x, y: p.y, r: 70, minDist: 14, seed: r.name })
     group.forEach((c, i) => cellPos.set(c.id, pts[i]))
   }
 
@@ -170,7 +170,7 @@ function render() {
     const p = realmPos.get(r.name)
     if (!p) return
     const size = 120 + Math.log(1 + r.cell_count) * 30
-    const s: any = new Sprite(wingTexture(colorForWing(r.name)))
+    const s: any = new Sprite(realmTexture(colorForRealm(r.name)))
     s.anchor.set(0.5)
     s.width = s.height = size
     s.x = p.x
@@ -185,10 +185,10 @@ function render() {
     group.forEach(c => {
       const pt = cellPos.get(c.id)
       if (!pt) return
-      const ds: any = new Sprite(drawerTexture())
+      const ds: any = new Sprite(cellTexture())
       ds.anchor.set(0.5)
       ds.width = ds.height = 14 + c.importance * 4
-      ds.tint = parseHsl(colorForWing(c.realm))
+      ds.tint = parseHsl(colorForRealm(c.realm))
       ds.x = pt.x
       ds.y = pt.y
       ds._kind = 'cell'

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeWingPositions, poissonDiskDrawers } from '../../src/composables/layout'
+import { computeWingPositions, poissonDiskCells } from '../../src/composables/layout'
 import type { Realm, Cell, Tunnel } from '../../src/api/types'
 
 describe('layout', () => {
@@ -13,8 +13,8 @@ describe('layout', () => {
     expect(pos.size).toBe(3)
   })
 
-  it('poissonDiskDrawers emits N points inside radius with min spacing', () => {
-    const pts = poissonDiskDrawers(20, { x: 100, y: 100, r: 80, minDist: 12, seed: 'realm-a' })
+  it('poissonDiskCells emits N points inside radius with min spacing', () => {
+    const pts = poissonDiskCells(20, { x: 100, y: 100, r: 80, minDist: 12, seed: 'realm-a' })
     expect(pts.length).toBe(20)
     for (const p of pts) expect(Math.hypot(p.x - 100, p.y - 100)).toBeLessThanOrEqual(80)
   })
