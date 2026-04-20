@@ -25,7 +25,7 @@ public class HistoryToolHandler implements ToolHandler {
 
     @Override
     public String description() {
-        return "Trace revisions of a drawer or fact by id.";
+        return "Trace revisions of a cell or fact by id.";
     }
 
     @Override
@@ -34,9 +34,9 @@ public class HistoryToolHandler implements ToolHandler {
         String id = requiredText(arguments, "id");
         UUID uuid = UUID.fromString(id);
         return switch (type) {
-            case "drawer" -> readToolService.drawerHistory(uuid);
+            case "cell" -> readToolService.cellHistory(uuid);
             case "fact" -> readToolService.factHistory(uuid);
-            default -> throw new IllegalArgumentException("Invalid type, must be 'drawer' or 'fact'");
+            default -> throw new IllegalArgumentException("Invalid type, must be 'cell' or 'fact'");
         };
     }
 

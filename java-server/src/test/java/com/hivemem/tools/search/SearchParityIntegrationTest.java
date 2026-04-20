@@ -87,8 +87,8 @@ class SearchParityIntegrationTest {
     @BeforeEach
     void resetDatabase() {
         rateLimiter.clearAll();
-        dslContext.execute("TRUNCATE TABLE access_log, agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
-        dslContext.execute("REFRESH MATERIALIZED VIEW drawer_popularity");
+        dslContext.execute("TRUNCATE TABLE access_log, agent_diary, cell_references, references_, blueprints, identity, agents, facts, tunnels, cells CASCADE");
+        dslContext.execute("REFRESH MATERIALIZED VIEW cell_popularity");
     }
 
     @Test
@@ -147,11 +147,11 @@ class SearchParityIntegrationTest {
 
         JsonNode results = callTool("writer-token", "hivemem_search", Map.of(
                 "query", "topic",
-                "wing", "eng"
+                "realm", "eng"
         ));
 
         assertThat(results).hasSize(1);
-        assertThat(textValues(results, "wing")).containsExactly("eng");
+        assertThat(textValues(results, "realm")).containsExactly("eng");
     }
 
     @Test
@@ -181,11 +181,11 @@ class SearchParityIntegrationTest {
 
         JsonNode results = callTool("writer-token", "hivemem_search", Map.of(
                 "query", "search",
-                "hall", "discoveries"
+                "signal", "discoveries"
         ));
 
         assertThat(results).hasSize(1);
-        assertThat(textValues(results, "hall")).containsExactly("discoveries");
+        assertThat(textValues(results, "signal")).containsExactly("discoveries");
     }
 
     @Test
@@ -305,9 +305,9 @@ class SearchParityIntegrationTest {
     private void insertDrawer(
             UUID id,
             String content,
-            String wing,
-            String hall,
-            String room,
+            String realm,
+            String signal,
+            String topic,
             Integer importance,
             String summary,
             String status,
@@ -315,11 +315,11 @@ class SearchParityIntegrationTest {
     ) {
         dslContext.execute(
                 """
-                INSERT INTO drawers (
-                    id, content, wing, hall, room, importance, summary, status, created_by, created_at, valid_from, valid_until
+                INSERT INTO cells (
+                    id, content, realm, signal, topic, importance, summary, status, created_by, created_at, valid_from, valid_until
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz, ?::timestamptz)
                 """,
-                id, content, wing, hall, room, importance, summary, status, "writer-1", createdAt, createdAt, null
+                id, content, realm, signal, topic, importance, summary, status, "writer-1", createdAt, createdAt, null
         );
     }
 

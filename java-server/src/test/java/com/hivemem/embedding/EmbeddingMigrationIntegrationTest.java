@@ -85,8 +85,8 @@ class EmbeddingMigrationIntegrationTest {
     @BeforeEach
     void resetDatabase() {
         rateLimiter.clearAll();
-        dslContext.execute("TRUNCATE TABLE access_log, agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
-        dslContext.execute("REFRESH MATERIALIZED VIEW drawer_popularity");
+        dslContext.execute("TRUNCATE TABLE access_log, agent_diary, cell_references, references_, blueprints, identity, agents, facts, tunnels, cells CASCADE");
+        dslContext.execute("REFRESH MATERIALIZED VIEW cell_popularity");
     }
 
     @Test
@@ -174,7 +174,7 @@ class EmbeddingMigrationIntegrationTest {
         stateRepository.updateEmbedding(rows.getFirst().id(), embedding);
 
         var result = dslContext.fetchOne(
-                "SELECT array_length(embedding::real[], 1) AS dim FROM drawers WHERE id = ?",
+                "SELECT array_length(embedding::real[], 1) AS dim FROM cells WHERE id = ?",
                 rows.getFirst().id());
         assertThat(result).isNotNull();
         assertThat(result.get("dim", Integer.class)).isEqualTo(512);
@@ -203,7 +203,7 @@ class EmbeddingMigrationIntegrationTest {
 
         var result = dslContext.fetchOne("""
                 SELECT count(*) AS cnt FROM pg_indexes
-                WHERE tablename = 'drawers' AND indexname = 'idx_drawers_embedding'
+                WHERE tablename = 'cells' AND indexname = 'idx_cells_embedding'
                 """);
         assertThat(result).isNotNull();
         assertThat(result.get("cnt", Number.class).intValue()).isEqualTo(1);
@@ -217,7 +217,7 @@ class EmbeddingMigrationIntegrationTest {
 
         UUID id1 = UUID.randomUUID();
         dslContext.execute("""
-                INSERT INTO drawers (id, content, embedding, wing, hall, room, status, created_by, valid_from)
+                INSERT INTO cells (id, content, embedding, realm, signal, topic, status, created_by, valid_from)
                 VALUES (?, 'small vec', ?::vector, 'eng', 'test', 'test', 'committed', 'test', now())
                 """, id1, new Float[]{0.1f, 0.2f, 0.3f});
 
@@ -225,11 +225,11 @@ class EmbeddingMigrationIntegrationTest {
         Float[] largeVec = new Float[2048];
         for (int i = 0; i < 2048; i++) largeVec[i] = 0.01f;
         dslContext.execute("""
-                INSERT INTO drawers (id, content, embedding, wing, hall, room, status, created_by, valid_from)
+                INSERT INTO cells (id, content, embedding, realm, signal, topic, status, created_by, valid_from)
                 VALUES (?, 'large vec', ?::vector, 'eng', 'test', 'test', 'committed', 'test', now())
                 """, id2, largeVec);
 
-        var result = dslContext.fetchOne("SELECT count(*) AS cnt FROM drawers WHERE id IN (?, ?)", id1, id2);
+        var result = dslContext.fetchOne("SELECT count(*) AS cnt FROM cells WHERE id IN (?, ?)", id1, id2);
         assertThat(result.get("cnt", Number.class).intValue()).isEqualTo(2);
     }
 
@@ -238,7 +238,7 @@ class EmbeddingMigrationIntegrationTest {
         var embedding = client.encodeDocument(content);
         Float[] embeddingArray = embedding.toArray(Float[]::new);
         dslContext.execute("""
-                INSERT INTO drawers (id, content, embedding, wing, hall, room, status, created_by, valid_from)
+                INSERT INTO cells (id, content, embedding, realm, signal, topic, status, created_by, valid_from)
                 VALUES (?, ?, ?::vector, ?, ?, ?, 'committed', 'test', now())
                 """, UUID.randomUUID(), content, embeddingArray, wing, hall, room);
     }

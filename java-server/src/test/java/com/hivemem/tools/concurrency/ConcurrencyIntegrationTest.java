@@ -5,7 +5,7 @@ import com.hivemem.auth.AuthRole;
 import com.hivemem.auth.RateLimiter;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
-import com.hivemem.search.DrawerSearchRepository;
+import com.hivemem.search.CellSearchRepository;
 import com.hivemem.write.WriteToolRepository;
 import com.hivemem.write.WriteToolService;
 import org.jooq.DSLContext;
@@ -80,12 +80,12 @@ class ConcurrencyIntegrationTest {
 
     @BeforeEach
     void resetDatabase() {
-        dslContext.execute("TRUNCATE TABLE agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
+        dslContext.execute("TRUNCATE TABLE agent_diary, cell_references, references_, blueprints, identity, agents, facts, tunnels, cells CASCADE");
     }
 
     @Test
     void concurrentDrawerWritesCreateDistinctRows() throws Exception {
-        List<Map<String, Object>> results = runConcurrently(6, index -> writeToolService.addDrawer(
+        List<Map<String, Object>> results = runConcurrently(6, index -> writeToolService.addCell(
                 WRITER,
                 "Concurrent drawer " + index,
                 "test",
@@ -107,7 +107,7 @@ class ConcurrencyIntegrationTest {
                 .extracting(result -> result.get("id"))
                 .doesNotHaveDuplicates()
                 .hasSize(6);
-        assertThat(countRows("SELECT count(*) AS cnt FROM drawers WHERE wing = ? AND hall = ?", "test", "concurrency"))
+        assertThat(countRows("SELECT count(*) AS cnt FROM cells WHERE realm = ? AND signal = ?", "test", "concurrency"))
                 .isEqualTo(6L);
     }
 
@@ -137,7 +137,7 @@ class ConcurrencyIntegrationTest {
     void concurrentApprovalOnSameIdsIsIdempotent() throws Exception {
         List<UUID> ids = new ArrayList<>();
         for (int index = 0; index < 5; index++) {
-            Map<String, Object> row = writeToolService.addDrawer(
+            Map<String, Object> row = writeToolService.addCell(
                     WRITER,
                     "Pending drawer " + index,
                     "test",
@@ -163,7 +163,7 @@ class ConcurrencyIntegrationTest {
                 .extracting(result -> ((Number) result.get("count")).intValue())
                 .containsExactlyInAnyOrder(5, 0);
         assertThat(countRows(
-                "SELECT count(*) AS cnt FROM drawers WHERE wing = ? AND hall = ? AND status = 'committed'",
+                "SELECT count(*) AS cnt FROM cells WHERE realm = ? AND signal = ? AND status = 'committed'",
                 "test",
                 "approve"
         ))
@@ -182,17 +182,17 @@ class ConcurrencyIntegrationTest {
         ));
 
         assertThat(results)
-                .extracting(result -> result.get("wing"))
+                .extracting(result -> result.get("realm"))
                 .containsOnly("race-wing");
-        assertThat(countRows("SELECT count(*) AS cnt FROM blueprints WHERE wing = ?", "race-wing"))
+        assertThat(countRows("SELECT count(*) AS cnt FROM blueprints WHERE realm = ?", "race-wing"))
                 .isEqualTo(2L);
-        assertThat(countRows("SELECT count(*) AS cnt FROM blueprints WHERE wing = ? AND valid_until IS NULL", "race-wing"))
+        assertThat(countRows("SELECT count(*) AS cnt FROM blueprints WHERE realm = ? AND valid_until IS NULL", "race-wing"))
                 .isEqualTo(1L);
     }
 
     @Test
     void concurrentReviseOfSameDrawerLeavesOneActiveChild() throws Exception {
-        Map<String, Object> original = writeToolService.addDrawer(
+        Map<String, Object> original = writeToolService.addCell(
                 WRITER,
                 "Original content",
                 "test",
@@ -215,7 +215,7 @@ class ConcurrencyIntegrationTest {
         AtomicInteger failures = new AtomicInteger();
 
         List<Object> results = runConcurrentlyTolerant(2, index -> {
-            writeToolService.reviseDrawer(
+            writeToolService.reviseCell(
                     WRITER,
                     originalId,
                     "Revised content v" + index,
@@ -230,7 +230,7 @@ class ConcurrencyIntegrationTest {
 
         // Exactly one child with valid_until IS NULL
         long activeChildren = countRows(
-                "SELECT count(*) AS cnt FROM drawers WHERE parent_id = ? AND valid_until IS NULL",
+                "SELECT count(*) AS cnt FROM cells WHERE parent_id = ? AND valid_until IS NULL",
                 originalId
         );
         assertThat(activeChildren).isEqualTo(1L);
@@ -307,15 +307,15 @@ class ConcurrencyIntegrationTest {
         ));
 
         assertThat(results)
-                .extracting(result -> result.get("wing"))
+                .extracting(result -> result.get("realm"))
                 .containsOnly("aggressive-wing");
 
         // All 10 writes persisted (no lost writes)
-        long totalRows = countRows("SELECT count(*) AS cnt FROM blueprints WHERE wing = ?", "aggressive-wing");
+        long totalRows = countRows("SELECT count(*) AS cnt FROM blueprints WHERE realm = ?", "aggressive-wing");
         assertThat(totalRows).isEqualTo(10L);
 
         // Exactly 1 active row (the last writer wins, all others closed)
-        long activeRows = countRows("SELECT count(*) AS cnt FROM blueprints WHERE wing = ? AND valid_until IS NULL", "aggressive-wing");
+        long activeRows = countRows("SELECT count(*) AS cnt FROM blueprints WHERE realm = ? AND valid_until IS NULL", "aggressive-wing");
         assertThat(activeRows).isEqualTo(1L);
     }
 
@@ -358,11 +358,11 @@ class ConcurrencyIntegrationTest {
     @Test
     void concurrentAddTunnelWithIdenticalEndpointsBothSucceed() throws Exception {
         // Create two drawers to link
-        Map<String, Object> drawerA = writeToolService.addDrawer(
+        Map<String, Object> drawerA = writeToolService.addCell(
                 WRITER, "Drawer A", "test", "tunnels", "a", "system",
                 List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME, null
         );
-        Map<String, Object> drawerB = writeToolService.addDrawer(
+        Map<String, Object> drawerB = writeToolService.addCell(
                 WRITER, "Drawer B", "test", "tunnels", "b", "system",
                 List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(1), null
         );
@@ -374,7 +374,7 @@ class ConcurrencyIntegrationTest {
                 WRITER, idA, idB, "related_to", "concurrent note " + index, "committed"
         ));
 
-        // No unique constraint on (from_drawer, to_drawer, relation), so both succeed
+        // No unique constraint on (from_cell, to_cell, relation), so both succeed
         assertThat(results).hasSize(2);
         assertThat(results)
                 .extracting(result -> result.get("id"))
@@ -382,7 +382,7 @@ class ConcurrencyIntegrationTest {
 
         // active_tunnels should reflect both
         long activeTunnels = countRows(
-                "SELECT count(*) AS cnt FROM active_tunnels WHERE from_drawer = ? AND to_drawer = ?",
+                "SELECT count(*) AS cnt FROM active_tunnels WHERE from_cell = ? AND to_cell = ?",
                 idA, idB
         );
         assertThat(activeTunnels).isEqualTo(2L);
@@ -497,7 +497,7 @@ class ConcurrencyIntegrationTest {
     @Import({
             WriteToolService.class,
             WriteToolRepository.class,
-            DrawerSearchRepository.class,
+            CellSearchRepository.class,
             TestConfig.class
     })
     static class TestApplication {

@@ -10,35 +10,35 @@ import java.util.UUID;
 
 @Component
 @Order(4)
-public class GetDrawerToolHandler implements ToolHandler {
+public class GetCellToolHandler implements ToolHandler {
 
     private final ReadToolService readToolService;
 
-    public GetDrawerToolHandler(ReadToolService readToolService) {
+    public GetCellToolHandler(ReadToolService readToolService) {
         this.readToolService = readToolService;
     }
 
     @Override
     public String name() {
-        return "hivemem_get_drawer";
+        return "hivemem_get_cell";
     }
 
     @Override
     public String description() {
-        return "Single drawer by UUID with all L0-L3 layers.";
+        return "Single cell by UUID with all L0-L3 layers.";
     }
 
     @Override
     public Object call(AuthPrincipal principal, JsonNode arguments) {
-        if (arguments == null || !arguments.hasNonNull("drawer_id")) {
-            throw new IllegalArgumentException("Missing drawer_id");
+        if (arguments == null || !arguments.hasNonNull("cell_id")) {
+            throw new IllegalArgumentException("Missing cell_id");
         }
 
-        String drawerId = arguments.get("drawer_id").asText();
-        if (drawerId.isBlank()) {
-            throw new IllegalArgumentException("Missing drawer_id");
+        String cellId = arguments.get("cell_id").asText();
+        if (cellId.isBlank()) {
+            throw new IllegalArgumentException("Missing cell_id");
         }
 
-        return readToolService.getDrawer(principal, UUID.fromString(drawerId));
+        return readToolService.getCell(principal, UUID.fromString(cellId));
     }
 }
