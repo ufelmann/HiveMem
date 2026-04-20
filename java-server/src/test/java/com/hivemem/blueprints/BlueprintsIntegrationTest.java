@@ -114,24 +114,24 @@ class BlueprintsIntegrationTest {
         assertThat(blueprints).isEmpty();
     }
 
-    // --- 3. Blueprint with halls list ---
+    // --- 3. Blueprint with signals list ---
 
     @Test
-    void blueprintStoresAndReturnsHallOrder() {
+    void blueprintStoresAndReturnsSignalOrder() {
         writeToolService.updateBlueprint(WRITER, "eng", "Ordered",
-                "With halls", List.of("auth", "search", "infra"), List.of());
+                "With signals", List.of("auth", "search", "infra"), List.of());
 
         List<Map<String, Object>> blueprints = readToolService.getBlueprint("eng");
 
         assertThat(blueprints).hasSize(1);
-        assertThat(blueprints.get(0).get("hall_order")).isEqualTo(List.of("auth", "search", "infra"));
+        assertThat(blueprints.get(0).get("signal_order")).isEqualTo(List.of("auth", "search", "infra"));
     }
 
-    // --- 4. Blueprint with key_drawers list ---
-    // Not ported: blueprintWithDrawerRefs — Python test_maps.py does not test drawer_refs
-    // (only hall_order is tested). The Java schema supports key_drawers but the Python
-    // tests don't cover it separately. The key_drawers column is exercised implicitly
-    // through updateBlueprint calls above (empty list).
+    // --- 4. Blueprint with key_cells list ---
+    // Not ported: blueprintWithCellRefs — original Python test suite did not cover
+    // cell_refs separately (only signal_order was tested). The Java schema supports
+    // key_cells but it is exercised here only implicitly via updateBlueprint calls
+    // above (empty list).
 
     // --- 5. History chain: 3 updates, only latest active ---
 
