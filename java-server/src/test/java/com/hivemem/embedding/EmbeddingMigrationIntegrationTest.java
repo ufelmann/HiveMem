@@ -142,7 +142,7 @@ class EmbeddingMigrationIntegrationTest {
         insertDrawer("content A", "eng", "facts", "infra");
         insertDrawer("content B", "eng", "facts", "infra");
 
-        int count = stateRepository.countDrawersWithContent();
+        int count = stateRepository.countCellsWithContent();
         assertThat(count).isEqualTo(2);
     }
 
@@ -152,10 +152,10 @@ class EmbeddingMigrationIntegrationTest {
         insertDrawer("batch content 2", "eng", "facts", "infra");
         insertDrawer("batch content 3", "eng", "facts", "infra");
 
-        var batch1 = stateRepository.fetchDrawerBatch(0, 2);
+        var batch1 = stateRepository.fetchCellBatch(0, 2);
         assertThat(batch1).hasSize(2);
 
-        var batch2 = stateRepository.fetchDrawerBatch(2, 2);
+        var batch2 = stateRepository.fetchCellBatch(2, 2);
         assertThat(batch2).hasSize(1);
     }
 
@@ -166,7 +166,7 @@ class EmbeddingMigrationIntegrationTest {
         stateRepository.dropEmbeddingIndex();
 
         insertDrawer("embedding update test", "eng", "facts", "infra");
-        var rows = stateRepository.fetchDrawerBatch(0, 1);
+        var rows = stateRepository.fetchCellBatch(0, 1);
         assertThat(rows).hasSize(1);
 
         FixedEmbeddingClient client = new FixedEmbeddingClient(512, "new-model");
