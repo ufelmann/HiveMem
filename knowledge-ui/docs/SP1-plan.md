@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a 2D sphere-canvas frontend for HiveMem (branch `feat/knowledge-ui`) that renders wings + drawers + tunnels via PixiJS, with a Scan+Reader drawer-detail dual-mode and a toggleable Mock/HTTP API layer.
+**Goal:** Build a 2D sphere-canvas frontend for HiveMem (branch `feat/knowledge-ui`) that renders realms + cells + tunnels via PixiJS, with a Scan+Reader cell-detail dual-mode and a toggleable Mock/HTTP API layer.
 
 **Architecture:** Vue 3 SPA talks to the existing HiveMem Java MCP server via JSON-RPC behind a typed `ApiClient` interface (mock impl for offline dev). PixiJS drives the zoomable canvas; Vuetify 3 drives a 56px icon-rail + slide-panels. No backend changes in v1 — live-update is polling. Cinema route lazy-loads TresJS + recycled 3D HiveSphere.
 
@@ -15,13 +15,13 @@
 ## File Structure
 
 **Created:**
-- `knowledge-ui/src/api/types.ts` — `ApiClient`, `HiveEvent`, domain types (Drawer, Wing, Tunnel, Fact)
+- `knowledge-ui/src/api/types.ts` — `ApiClient`, `HiveEvent`, domain types (Cell, Realm, Tunnel, Fact)
 - `knowledge-ui/src/api/mockClient.ts` — `MockApiClient` implementation
 - `knowledge-ui/src/api/httpClient.ts` — `HttpApiClient` implementation
 - `knowledge-ui/src/api/useApi.ts` — composable, picks impl based on flag
 - `knowledge-ui/src/stores/auth.ts`
 - `knowledge-ui/src/stores/canvas.ts`
-- `knowledge-ui/src/stores/drawer.ts`
+- `knowledge-ui/src/stores/cell.ts`
 - `knowledge-ui/src/stores/reader.ts`
 - `knowledge-ui/src/stores/ui.ts`
 - `knowledge-ui/src/components/LoginDialog.vue`
@@ -34,7 +34,7 @@
 - `knowledge-ui/src/components/canvas/textures.ts` — procedural sprite-texture generator
 - `knowledge-ui/src/components/canvas/filters.ts` — filter presets (bloom, outline, godray, zoomblur)
 - `knowledge-ui/src/components/canvas/particles.ts` — dust emitter
-- `knowledge-ui/src/composables/layout.ts` — d3-force wings + Poisson-disk drawers
+- `knowledge-ui/src/composables/layout.ts` — d3-force realms + Poisson-disk cells
 - `knowledge-ui/src/composables/lod.ts` — zoom-to-LOD-level mapping + visibility rules
 - `knowledge-ui/src/composables/keybindings.ts`
 - `knowledge-ui/src/components/ScanPanel.vue`
@@ -150,13 +150,13 @@ Create `knowledge-ui/src/api/types.ts`:
 ```ts
 export type Role = 'admin' | 'writer' | 'reader' | 'agent'
 export type Relation = 'related_to' | 'builds_on' | 'contradicts' | 'refines'
-export type DrawerStatus = 'committed' | 'pending' | 'rejected'
+export type CellStatus = 'committed' | 'pending' | 'rejected'
 
-export interface Drawer {
+export interface Cell {
   id: string
-  wing: string
-  hall: string | null
-  room: string | null
+  realm: string
+  signal: string | null
+  topic: string | null
   title: string
   content: string
   summary: string | null
@@ -164,24 +164,24 @@ export interface Drawer {
   insight: string | null
   tags: string[]
   importance: 1 | 2 | 3
-  status: DrawerStatus
+  status: CellStatus
   created_by: string
   created_at: string
   valid_from: string
   valid_until: string | null
 }
 
-export interface Wing { name: string; drawer_count: number; halls: Hall[] }
-export interface Hall { name: string; drawer_count: number; rooms: Room[] }
-export interface Room { name: string; drawer_count: number }
+export interface Realm { name: string; cell_count: number; signals: Signal[] }
+export interface Signal { name: string; cell_count: number; topics: Topic[] }
+export interface Topic { name: string; drawer_count: number }
 
 export interface Tunnel {
   id: string
-  from_drawer: string
-  to_drawer: string
+  from_cell: string
+  to_cell: string
   relation: Relation
   note: string | null
-  status: DrawerStatus
+  status: CellStatus
   created_at: string
   valid_until: string | null
 }
@@ -204,16 +204,16 @@ export interface Reference {
 }
 
 export interface StatusSummary {
-  drawer_count: number
+  cell_count: number
   fact_count: number
-  wing_count: number
+  realm_count: number
   tunnel_count: number
   pending_count: number
   last_activity: string
 }
 
 export type HiveEvent =
-  | { type: 'drawer_added'; drawer: Drawer }
+  | { type: 'cell_added'; cell: Cell }
   | { type: 'drawer_revised'; id: string; parent_id: string }
   | { type: 'tunnel_added'; tunnel: Tunnel }
   | { type: 'status'; last_activity: string }
@@ -233,7 +233,7 @@ Expected: exit 0.
 
 ```bash
 git add knowledge-ui/src/api/types.ts
-git commit -m "feat(ui): define api types (Drawer, Wing, Tunnel, Fact, ApiClient, HiveEvent)"
+git commit -m "feat(ui): define api types (Cell, Realm, Tunnel, Fact, ApiClient, HiveEvent)"
 ```
 
 ---
@@ -271,7 +271,7 @@ Create `knowledge-ui/tests/unit/mockClient.spec.ts`:
 ```ts
 import { describe, it, expect } from 'vitest'
 import { MockApiClient } from '../../src/api/mockClient'
-import type { StatusSummary, Drawer } from '../../src/api/types'
+import type { StatusSummary, Cell } from '../../src/api/types'
 
 describe('MockApiClient', () => {
   it('returns deterministic status', async () => {
@@ -282,17 +282,17 @@ describe('MockApiClient', () => {
     expect(typeof s.last_activity).toBe('string')
   })
 
-  it('search returns drawers array', async () => {
+  it('search returns cells array', async () => {
     const c = new MockApiClient()
-    const res = await c.call<Drawer[]>('hivemem_search', { query: '' })
+    const res = await c.call<Cell[]>('hivemem_search', { query: '' })
     expect(Array.isArray(res)).toBe(true)
     expect(res.length).toBeGreaterThan(0)
   })
 
-  it('get_drawer returns drawer with matching id', async () => {
+  it('get_cell returns cell with matching id', async () => {
     const c = new MockApiClient()
-    const all = await c.call<Drawer[]>('hivemem_search', { query: '' })
-    const d = await c.call<Drawer>('hivemem_get_drawer', { id: all[0].id })
+    const all = await c.call<Cell[]>('hivemem_search', { query: '' })
+    const d = await c.call<Cell>('hivemem_get_cell', { id: all[0].id })
     expect(d.id).toBe(all[0].id)
   })
 
@@ -318,7 +318,7 @@ Create `knowledge-ui/src/api/mockClient.ts`:
 
 ```ts
 import { palace as mockPalace } from '../data/mock'
-import type { ApiClient, HiveEvent, Drawer, Wing, Hall, Tunnel, Fact, StatusSummary, Reference } from './types'
+import type { ApiClient, HiveEvent, Cell, Realm, Signal, Tunnel, Fact, StatusSummary, Reference } from './types'
 
 interface MockConfig { latencyMs?: [number, number]; eventInterval?: number }
 
@@ -351,8 +351,8 @@ export class MockApiClient implements ApiClient {
 
   private startTicker() {
     this.timer = setInterval(() => {
-      const existing = mockPalace.drawers[Math.floor(Math.random() * mockPalace.drawers.length)]
-      const ev: HiveEvent = { type: 'drawer_added', drawer: existing }
+      const existing = mockPalace.cells[Math.floor(Math.random() * mockPalace.cells.length)]
+      const ev: HiveEvent = { type: 'cell_added', cell: existing }
       this.subscribers.forEach(s => s(ev))
     }, this.config.eventInterval) as unknown as number
   }
@@ -364,9 +364,9 @@ export class MockApiClient implements ApiClient {
 
   private _hivemem_status(): StatusSummary {
     return {
-      drawer_count: mockPalace.drawers.length,
+      cell_count: mockPalace.cells.length,
       fact_count: mockPalace.facts.length,
-      wing_count: mockPalace.wings.length,
+      realm_count: mockPalace.realms.length,
       tunnel_count: mockPalace.tunnels.length,
       pending_count: 0,
       last_activity: new Date().toISOString()
@@ -374,25 +374,25 @@ export class MockApiClient implements ApiClient {
   }
 
   private _hivemem_wake_up() {
-    return { role: 'admin', identity: 'mock-user', wings: mockPalace.wings.map(w => w.name) }
+    return { role: 'admin', identity: 'mock-user', realms: mockPalace.realms.map(w => w.name) }
   }
 
-  private _hivemem_list_wings(args: { wing?: string }): Wing[] | Hall[] {
-    if (args.wing) return mockPalace.wings.find(w => w.name === args.wing)?.halls ?? []
-    return mockPalace.wings
+  private _hivemem_list_realms(args: { realm?: string }): Realm[] | Signal[] {
+    if (args.realm) return mockPalace.realms.find(w => w.name === args.realm)?.signals ?? []
+    return mockPalace.realms
   }
 
-  private _hivemem_search(args: { query?: string; limit?: number }): Drawer[] {
+  private _hivemem_search(args: { query?: string; limit?: number }): Cell[] {
     const q = (args.query || '').toLowerCase()
     const all = q
-      ? mockPalace.drawers.filter(d => d.title.toLowerCase().includes(q) || d.content.toLowerCase().includes(q))
-      : mockPalace.drawers
+      ? mockPalace.cells.filter(d => d.title.toLowerCase().includes(q) || d.content.toLowerCase().includes(q))
+      : mockPalace.cells
     return all.slice(0, args.limit ?? 100)
   }
 
-  private _hivemem_get_drawer(args: { id: string }): Drawer {
-    const d = mockPalace.drawers.find(x => x.id === args.id)
-    if (!d) throw new Error(`Drawer not found: ${args.id}`)
+  private _hivemem_get_cell(args: { id: string }): Cell {
+    const d = mockPalace.cells.find(x => x.id === args.id)
+    if (!d) throw new Error(`Cell not found: ${args.id}`)
     return d
   }
 
@@ -400,17 +400,17 @@ export class MockApiClient implements ApiClient {
     return mockPalace.facts.filter(f => f.subject === args.subject)
   }
 
-  private _hivemem_traverse(args: { drawer_id: string; depth?: number }) {
+  private _hivemem_traverse(args: { cell_id: string; depth?: number }) {
     const depth = args.depth ?? 1
-    const seen = new Set<string>([args.drawer_id])
-    const frontier = [args.drawer_id]
+    const seen = new Set<string>([args.cell_id])
+    const frontier = [args.cell_id]
     const result: Tunnel[] = []
     for (let d = 0; d < depth; d++) {
       const next: string[] = []
       for (const id of frontier) {
         for (const t of mockPalace.tunnels) {
-          if (t.from_drawer === id && !seen.has(t.to_drawer)) { seen.add(t.to_drawer); next.push(t.to_drawer); result.push(t) }
-          if (t.to_drawer === id && !seen.has(t.from_drawer)) { seen.add(t.from_drawer); next.push(t.from_drawer); result.push(t) }
+          if (t.from_cell === id && !seen.has(t.to_cell)) { seen.add(t.to_cell); next.push(t.to_cell); result.push(t) }
+          if (t.to_cell === id && !seen.has(t.from_cell)) { seen.add(t.from_cell); next.push(t.from_cell); result.push(t) }
         }
       }
       frontier.splice(0, frontier.length, ...next)
@@ -432,7 +432,7 @@ export class MockApiClient implements ApiClient {
 
 - [ ] **Step 4b: Reshape mock.ts if required**
 
-Open `knowledge-ui/src/data/mock.ts`. The existing snapshot was designed for the prototype's `Palace` type. Ensure it exports a `palace` object with fields `drawers: Drawer[]`, `wings: Wing[]`, `tunnels: Tunnel[]`, `facts: Fact[]`, `references?: Reference[]` matching the types in `api/types.ts`. If the shape differs, add a small adapter at the bottom of `mock.ts` that computes `palace` from the raw snapshot — do not rewrite the data itself.
+Open `knowledge-ui/src/data/mock.ts`. The existing snapshot was designed for the prototype's `Palace` type. Ensure it exports a `palace` object with fields `cells: Cell[]`, `realms: Realm[]`, `tunnels: Tunnel[]`, `facts: Fact[]`, `references?: Reference[]` matching the types in `api/types.ts`. If the shape differs, add a small adapter at the bottom of `mock.ts` that computes `palace` from the raw snapshot — do not rewrite the data itself.
 
 - [ ] **Step 5: Run test — should pass**
 
@@ -640,7 +640,7 @@ git commit -m "feat(ui): useApi composable picks Mock or Http impl via env/local
 
 ---
 
-## Task 6: Pinia stores (auth, canvas, drawer, reader, ui)
+## Task 6: Pinia stores (auth, canvas, cell, reader, ui)
 
 **Files:**
 - Create: 5 files under `knowledge-ui/src/stores/`
@@ -673,12 +673,12 @@ describe('stores', () => {
     expect(s.theme).toBe('dark')
   })
 
-  it('canvas loadTopLevel populates wings + drawers from api', async () => {
+  it('canvas loadTopLevel populates realms + cells from api', async () => {
     localStorage.setItem('hivemem_mock', 'true')
     const s = useCanvasStore()
     await s.loadTopLevel()
-    expect(s.wings.length).toBeGreaterThan(0)
-    expect(s.drawers.length).toBeGreaterThan(0)
+    expect(s.realms.length).toBeGreaterThan(0)
+    expect(s.cells.length).toBeGreaterThan(0)
   })
 })
 ```
@@ -727,14 +727,14 @@ export const useAuthStore = defineStore('auth', {
 ```ts
 import { defineStore } from 'pinia'
 
-export type PanelId = null | 'search' | 'wings' | 'reading' | 'stats' | 'history' | 'settings'
-export type SizeMetric = 'drawer_count' | 'content_volume' | 'importance' | 'popularity'
+export type PanelId = null | 'search' | 'realms' | 'reading' | 'stats' | 'history' | 'settings'
+export type SizeMetric = 'cell_count' | 'content_volume' | 'importance' | 'popularity'
 
 export const useUiStore = defineStore('ui', {
   state: () => ({
     activePanel: null as PanelId,
     panelPinned: false,
-    sizeMetric: 'drawer_count' as SizeMetric,
+    sizeMetric: 'cell_count' as SizeMetric,
     theme: 'dark' as 'dark' | 'light',
     searchQuery: '',
     showLoginDialog: false,
@@ -756,12 +756,12 @@ export const useUiStore = defineStore('ui', {
 ```ts
 import { defineStore } from 'pinia'
 import { useApi } from '../api/useApi'
-import type { Drawer, Wing, Tunnel } from '../api/types'
+import type { Cell, Realm, Tunnel } from '../api/types'
 
 export const useCanvasStore = defineStore('canvas', {
   state: () => ({
-    wings: [] as Wing[],
-    drawers: [] as Drawer[],
+    realms: [] as Realm[],
+    cells: [] as Cell[],
     tunnels: [] as Tunnel[],
     loaded: false,
     zoom: 1,
@@ -772,11 +772,11 @@ export const useCanvasStore = defineStore('canvas', {
   actions: {
     async loadTopLevel() {
       const api = useApi()
-      const [wings, drawers] = await Promise.all([
-        api.call<Wing[]>('hivemem_list_wings'),
-        api.call<Drawer[]>('hivemem_search', { query: '', limit: 500 })
+      const [realms, cells] = await Promise.all([
+        api.call<Realm[]>('hivemem_list_realms'),
+        api.call<Cell[]>('hivemem_search', { query: '', limit: 500 })
       ])
-      this.wings = wings; this.drawers = drawers; this.loaded = true
+      this.realms = realms; this.cells = cells; this.loaded = true
       try { this.tunnels = await api.call<Tunnel[]>('hivemem_list_tunnels') }
       catch { this.tunnels = [] }
     },
@@ -786,21 +786,21 @@ export const useCanvasStore = defineStore('canvas', {
 })
 ```
 
-`knowledge-ui/src/stores/drawer.ts`:
+`knowledge-ui/src/stores/cell.ts`:
 
 ```ts
 import { defineStore } from 'pinia'
 import { useApi } from '../api/useApi'
-import type { Drawer, Fact, Tunnel } from '../api/types'
+import type { Cell, Fact, Tunnel } from '../api/types'
 
-export const useDrawerStore = defineStore('drawer', {
+export const useCellStore = defineStore('cell', {
   state: () => ({
-    cache: new Map<string, { drawer: Drawer; facts: Fact[]; tunnels: Tunnel[] }>(),
+    cache: new Map<string, { cell: Cell; facts: Fact[]; tunnels: Tunnel[] }>(),
     currentId: null as string | null,
     loading: false
   }),
   getters: {
-    current(s): { drawer: Drawer; facts: Fact[]; tunnels: Tunnel[] } | null {
+    current(s): { cell: Cell; facts: Fact[]; tunnels: Tunnel[] } | null {
       return s.currentId ? s.cache.get(s.currentId) ?? null : null
     }
   },
@@ -810,12 +810,12 @@ export const useDrawerStore = defineStore('drawer', {
       try {
         if (!this.cache.has(id)) {
           const api = useApi()
-          const [drawer, tunnels] = await Promise.all([
-            api.call<Drawer>('hivemem_get_drawer', { id }),
-            api.call<Tunnel[]>('hivemem_traverse', { drawer_id: id, depth: 1 }).catch(() => [])
+          const [cell, tunnels] = await Promise.all([
+            api.call<Cell>('hivemem_get_cell', { id }),
+            api.call<Tunnel[]>('hivemem_traverse', { cell_id: id, depth: 1 }).catch(() => [])
           ])
-          const facts = await api.call<Fact[]>('hivemem_quick_facts', { subject: drawer.title }).catch(() => [])
-          this.cache.set(id, { drawer, facts, tunnels })
+          const facts = await api.call<Fact[]>('hivemem_quick_facts', { subject: cell.title }).catch(() => [])
+          this.cache.set(id, { cell, facts, tunnels })
           if (this.cache.size > 50) {
             const first = this.cache.keys().next().value
             if (first) this.cache.delete(first)
@@ -860,7 +860,7 @@ Expected: 3 passed.
 
 ```bash
 git add knowledge-ui/src/stores/ knowledge-ui/tests/unit/stores.spec.ts
-git commit -m "feat(ui): pinia stores auth/canvas/drawer/reader/ui"
+git commit -m "feat(ui): pinia stores auth/canvas/cell/reader/ui"
 ```
 
 ---
@@ -1090,7 +1090,7 @@ const router = useRouter()
 
 const items: { id: Exclude<typeof ui.activePanel, null>; icon: string; role?: 'admin' }[] = [
   { id: 'search',   icon: 'mdi-magnify' },
-  { id: 'wings',    icon: 'mdi-star-four-points-outline' },
+  { id: 'realms',    icon: 'mdi-star-four-points-outline' },
   { id: 'reading',  icon: 'mdi-book-open-variant' },
   { id: 'stats',    icon: 'mdi-chart-donut', role: 'admin' },
   { id: 'history',  icon: 'mdi-history' },
@@ -1171,7 +1171,7 @@ import SlidePanel from '../components/shell/SlidePanel.vue'
   <div class="home-root">
     <IconRail />
     <SlidePanel id="search" title="Search"><em>Search UI (Task 10)</em></SlidePanel>
-    <SlidePanel id="wings" title="Wings"><em>Wings tree (Task 10)</em></SlidePanel>
+    <SlidePanel id="realms" title="Realms"><em>Realms tree (Task 10)</em></SlidePanel>
     <SlidePanel id="settings" title="Settings"><em>Settings (Task 10)</em></SlidePanel>
     <main class="canvas-slot">
       <div style="padding:20px;color:#666">SphereCanvas goes here (Task 11)</div>
@@ -1198,7 +1198,7 @@ git commit -m "feat(ui): 56px icon-rail + slide-panel shell with 6 panel slots"
 
 ---
 
-## Task 10: Wings panel + Search panel + Settings panel content
+## Task 10: Realms panel + Search panel + Settings panel content
 
 **Files:**
 - Create: `knowledge-ui/src/components/shell/SearchPanel.vue`, `WingsPanel.vue`, `SettingsPanel.vue`
@@ -1217,7 +1217,7 @@ import { useUiStore, SizeMetric } from '../../stores/ui'
 const canvas = useCanvasStore()
 const ui = useUiStore()
 const metrics: { v: SizeMetric; label: string }[] = [
-  { v: 'drawer_count', label: 'Drawer count' },
+  { v: 'cell_count', label: 'Cell count' },
   { v: 'content_volume', label: 'Content volume' },
   { v: 'importance', label: 'Importance-weighted' },
   { v: 'popularity', label: 'Popularity' }
@@ -1225,8 +1225,8 @@ const metrics: { v: SizeMetric; label: string }[] = [
 
 onMounted(() => { if (!canvas.loaded) canvas.loadTopLevel() })
 
-function colorFor(wing: string): string {
-  let h = 0; for (let i = 0; i < wing.length; i++) h = (h * 31 + wing.charCodeAt(i)) % 360
+function colorFor(realm: string): string {
+  let h = 0; for (let i = 0; i < realm.length; i++) h = (h * 31 + realm.charCodeAt(i)) % 360
   return `hsl(${h}, 70%, 55%)`
 }
 </script>
@@ -1234,7 +1234,7 @@ function colorFor(wing: string): string {
 <template>
   <div>
     <v-list density="compact">
-      <v-list-item v-for="w in canvas.wings" :key="w.name" :title="w.name" :subtitle="`${w.drawer_count} drawers`">
+      <v-list-item v-for="w in canvas.realms" :key="w.name" :title="w.name" :subtitle="`${w.cell_count} cells`">
         <template #prepend>
           <span class="dot" :style="{ background: colorFor(w.name) }" />
         </template>
@@ -1261,20 +1261,20 @@ Create `knowledge-ui/src/components/shell/SearchPanel.vue`:
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useApi } from '../../api/useApi'
-import type { Drawer } from '../../api/types'
-import { useDrawerStore } from '../../stores/drawer'
+import type { Cell } from '../../api/types'
+import { useCellStore } from '../../stores/cell'
 
 const q = ref('')
-const results = ref<Drawer[]>([])
+const results = ref<Cell[]>([])
 const loading = ref(false)
-const drawer = useDrawerStore()
+const cell = useCellStore()
 
 let timer: number | null = null
 watch(q, v => {
   if (timer) clearTimeout(timer)
   timer = setTimeout(async () => {
     loading.value = true
-    try { results.value = await useApi().call<Drawer[]>('hivemem_search', { query: v, limit: 50 }) }
+    try { results.value = await useApi().call<Cell[]>('hivemem_search', { query: v, limit: 50 }) }
     finally { loading.value = false }
   }, 180) as unknown as number
 })
@@ -1283,8 +1283,8 @@ watch(q, v => {
 <template>
   <v-text-field v-model="q" density="compact" variant="solo-filled" placeholder="Type to search…" autofocus />
   <v-list density="compact">
-    <v-list-item v-for="d in results" :key="d.id" :title="d.title" :subtitle="d.wing + (d.hall ? ` · ${d.hall}` : '')"
-                 @click="drawer.load(d.id)" />
+    <v-list-item v-for="d in results" :key="d.id" :title="d.title" :subtitle="d.realm + (d.signal ? ` · ${d.signal}` : '')"
+                 @click="cell.load(d.id)" />
   </v-list>
   <div v-if="loading" style="color:#666;padding:8px">Searching…</div>
 </template>
@@ -1323,7 +1323,7 @@ Update `HomeRoute.vue` SlidePanel lines:
 
 ```vue
 <SlidePanel id="search" title="Search"><SearchPanel /></SlidePanel>
-<SlidePanel id="wings" title="Wings"><WingsPanel /></SlidePanel>
+<SlidePanel id="realms" title="Realms"><WingsPanel /></SlidePanel>
 <SlidePanel id="settings" title="Settings"><SettingsPanel /></SlidePanel>
 ```
 
@@ -1339,7 +1339,7 @@ import SettingsPanel from '../components/shell/SettingsPanel.vue'
 
 ```bash
 git add knowledge-ui/src/components/shell/ knowledge-ui/src/pages/HomeRoute.vue
-git commit -m "feat(ui): wings/search/settings panel content with size-metric selector"
+git commit -m "feat(ui): realms/search/settings panel content with size-metric selector"
 ```
 
 ---
@@ -1360,7 +1360,7 @@ import { Texture } from 'pixi.js'
 
 const cache = new Map<string, Texture>()
 
-export function colorForWing(name: string): string {
+export function colorForRealm(name: string): string {
   let h = 0; for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360
   return `hsl(${h}, 70%, 55%)`
 }
@@ -1387,7 +1387,7 @@ export function wingTexture(colorHsl: string, size = 256): Texture {
 }
 
 export function drawerTexture(size = 64): Texture {
-  const key = `drawer:${size}`
+  const key = `cell:${size}`
   const cached = cache.get(key); if (cached) return cached
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = size
@@ -1418,9 +1418,9 @@ Create `knowledge-ui/src/components/canvas/SphereCanvas.vue`:
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { Application, Container, Sprite } from 'pixi.js'
-import { wingTexture, drawerTexture, colorForWing, parseHsl } from './textures'
+import { wingTexture, drawerTexture, colorForRealm, parseHsl } from './textures'
 import { useCanvasStore } from '../../stores/canvas'
-import type { Drawer } from '../../api/types'
+import type { Cell } from '../../api/types'
 
 const root = ref<HTMLDivElement>()
 const canvasStore = useCanvasStore()
@@ -1444,35 +1444,35 @@ function render() {
   const cx = app.screen.width / 2
   const cy = app.screen.height / 2
   const R = Math.min(cx, cy) * 0.5
-  const drawersByWing = new Map<string, Drawer[]>()
-  for (const d of canvasStore.drawers) {
-    if (!drawersByWing.has(d.wing)) drawersByWing.set(d.wing, [])
-    drawersByWing.get(d.wing)!.push(d)
+  const cellsByRealm = new Map<string, Cell[]>()
+  for (const d of canvasStore.cells) {
+    if (!cellsByRealm.has(d.realm)) cellsByRealm.set(d.realm, [])
+    cellsByRealm.get(d.realm)!.push(d)
   }
-  canvasStore.wings.forEach((w, i) => {
-    const angle = (i / canvasStore.wings.length) * Math.PI * 2
+  canvasStore.realms.forEach((realm, i) => {
+    const angle = (i / canvasStore.realms.length) * Math.PI * 2
     const wx = cx + Math.cos(angle) * R
     const wy = cy + Math.sin(angle) * R
     const size = 120 + Math.log(1 + w.drawer_count) * 30
-    const s: any = new Sprite(wingTexture(colorForWing(w.name)))
-    s.anchor.set(0.5); s.width = s.height = size; s.x = wx; s.y = wy; s._kind = 'wing'; s._name = w.name
+    const s: any = new Sprite(wingTexture(colorForRealm(w.name)))
+    s.anchor.set(0.5); s.width = s.height = size; s.x = wx; s.y = wy; s._kind = 'realm'; s._name = w.name
     world!.addChild(s)
-    const group = drawersByWing.get(w.name) ?? []
+    const group = cellsByRealm.get(w.name) ?? []
     group.forEach((d, idx) => {
       const a = hashAngle(d.id)
       const rr = 40 + (hashRadius(d.id) % 60)
       const ds: any = new Sprite(drawerTexture())
       ds.anchor.set(0.5); ds.width = ds.height = 14 + d.importance * 4
-      ds.tint = parseHsl(colorForWing(d.wing))
+      ds.tint = parseHsl(colorForRealm(d.realm))
       ds.x = wx + Math.cos(a) * rr; ds.y = wy + Math.sin(a) * rr
-      ds._kind = 'drawer'; ds._drawerId = d.id
+      ds._kind = 'cell'; ds._cellId = d.id
       world!.addChild(ds)
     })
   })
 }
 
 watch(() => canvasStore.loaded, v => { if (v) render() })
-watch(() => canvasStore.drawers.length, () => render())
+watch(() => canvasStore.cells.length, () => render())
 
 function hashAngle(id: string) { let h = 0; for (const c of id) h = (h * 17 + c.charCodeAt(0)) % 1000; return (h / 1000) * Math.PI * 2 }
 function hashRadius(id: string) { let h = 0; for (const c of id) h = (h * 29 + c.charCodeAt(0)) % 10000; return h }
@@ -1511,13 +1511,13 @@ Add CSS:
 
 - [ ] **Step 4: Visual sanity**
 
-Run dev server, verify wings render as glowing circles in a ring with drawer-points.
+Run dev server, verify realms render as glowing circles in a ring with cell-points.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add knowledge-ui/src/components/canvas/ knowledge-ui/src/pages/HomeRoute.vue
-git commit -m "feat(ui): PixiJS SphereCanvas renders wings + drawer points from canvas store"
+git commit -m "feat(ui): PixiJS SphereCanvas renders realms + cell points from canvas store"
 ```
 
 ---
@@ -1534,22 +1534,22 @@ Create `knowledge-ui/tests/unit/layout.spec.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest'
-import { computeWingPositions, poissonDiskDrawers } from '../../src/composables/layout'
-import type { Wing, Drawer, Tunnel } from '../../src/api/types'
+import { computeRealmPositions, poissonDiskCells } from '../../src/composables/layout'
+import type { Realm, Cell, Tunnel } from '../../src/api/types'
 
 describe('layout', () => {
-  it('wing positions settle to non-overlapping centres', () => {
-    const wings: Wing[] = [
-      { name: 'a', drawer_count: 10, halls: [] },
-      { name: 'b', drawer_count: 20, halls: [] },
-      { name: 'c', drawer_count: 5, halls: [] }
+  it('realm positions settle to non-overlapping centres',, () => {
+    const realms: Realm[] = [
+      { name: 'a', drawer_count: 10, signals: [] },
+      { name: 'b', drawer_count: 20, signals: [] },
+      { name: 'c', drawer_count: 5, signals: [] }
     ]
-    const pos = computeWingPositions(wings, [] as Drawer[], [] as Tunnel[], { width: 1000, height: 800 })
+    const pos = computeRealmPositions(realms, [] as Cell[], [] as Tunnel[], { width: 1000, height: 800 })
     expect(pos.size).toBe(3)
   })
 
-  it('poissonDiskDrawers emits N points inside radius with min spacing', () => {
-    const pts = poissonDiskDrawers(20, { x: 100, y: 100, r: 80, minDist: 12, seed: 'wing-a' })
+  it('poissonDiskCells emits N points inside radius with min spacing', () => {
+    const pts = poissonDiskCells(20, { x: 100, y: 100, r: 80, minDist: 12, seed: 'realm-a' })
     expect(pts.length).toBe(20)
     for (const p of pts) expect(Math.hypot(p.x - 100, p.y - 100)).toBeLessThanOrEqual(80)
   })
@@ -1567,22 +1567,22 @@ Create `knowledge-ui/src/composables/layout.ts`:
 
 ```ts
 import * as d3 from 'd3-force'
-import type { Wing, Drawer, Tunnel } from '../api/types'
+import type { Realm, Cell, Tunnel } from '../api/types'
 
 export interface Point { x: number; y: number }
 
-export function computeWingPositions(
-  wings: Wing[], drawers: Drawer[], tunnels: Tunnel[],
+export function computeRealmPositions(
+  realms: Realm[], cells: Cell[], tunnels: Tunnel[],
   viewport: { width: number; height: number }
 ): Map<string, Point> {
   type N = d3.SimulationNodeDatum & { id: string; size: number }
-  const nodes: N[] = wings.map(w => ({ id: w.name, size: Math.log(1 + w.drawer_count) * 10 + 40 }))
+  const nodes: N[] = realms.map(w => ({ id: w.name, size: Math.log(1 + w.drawer_count) * 10 + 40 }))
 
-  const drawerWing = new Map<string, string>()
-  for (const d of drawers) drawerWing.set(d.id, d.wing)
+  const cellRealm = new Map<string, string>()
+  for (const d of cells) cellRealm.set(d.id, d.realm)
   const wingPairCount = new Map<string, number>()
   for (const t of tunnels) {
-    const a = drawerWing.get(t.from_drawer); const b = drawerWing.get(t.to_drawer)
+    const a = cellRealm.get(t.from_cell); const b = cellRealm.get(t.to_cell)
     if (!a || !b || a === b) continue
     const k = [a, b].sort().join('|')
     wingPairCount.set(k, (wingPairCount.get(k) ?? 0) + 1)
@@ -1605,7 +1605,7 @@ export function computeWingPositions(
   return out
 }
 
-export function poissonDiskDrawers(
+export function poissonDiskCells(
   count: number,
   spec: { x: number; y: number; r: number; minDist: number; seed: string }
 ): Point[] {
@@ -1644,26 +1644,26 @@ Expected: 2 passed.
 In `SphereCanvas.vue` render(), replace the ring-math with:
 
 ```ts
-import { computeWingPositions, poissonDiskDrawers } from '../../composables/layout'
+import { computeRealmPositions, poissonDiskCells } from '../../composables/layout'
 
 // inside render():
 const width = app.screen.width, height = app.screen.height
-const wingPos = computeWingPositions(canvasStore.wings, canvasStore.drawers, canvasStore.tunnels, { width, height })
-canvasStore.wings.forEach(w => {
-  const p = wingPos.get(w.name); if (!p) return
+const realmPos = computeRealmPositions(canvasStore.realms, canvasStore.cells, canvasStore.tunnels, { width, height })
+canvasStore.realms.forEach(realm => {
+  const p = realmPos.get(realm.name); if (!p) return
   const size = 120 + Math.log(1 + w.drawer_count) * 30
-  const s: any = new Sprite(wingTexture(colorForWing(w.name)))
-  s.anchor.set(0.5); s.width = s.height = size; s.x = p.x; s.y = p.y; s._kind = 'wing'; s._name = w.name
+  const s: any = new Sprite(wingTexture(colorForRealm(w.name)))
+  s.anchor.set(0.5); s.width = s.height = size; s.x = p.x; s.y = p.y; s._kind = 'realm'; s._name = w.name
   world!.addChild(s)
-  const group = drawersByWing.get(w.name) ?? []
-  const pts = poissonDiskDrawers(group.length, { x: p.x, y: p.y, r: 70, minDist: 14, seed: w.name })
+  const group = cellsByRealm.get(w.name) ?? []
+  const pts = poissonDiskCells(group.length, { x: p.x, y: p.y, r: 70, minDist: 14, seed: w.name })
   group.forEach((d, i) => {
     const pt = pts[i]
     const ds: any = new Sprite(drawerTexture())
     ds.anchor.set(0.5); ds.width = ds.height = 14 + d.importance * 4
-    ds.tint = parseHsl(colorForWing(d.wing))
+    ds.tint = parseHsl(colorForRealm(d.realm))
     ds.x = pt.x; ds.y = pt.y
-    ds._kind = 'drawer'; ds._drawerId = d.id
+    ds._kind = 'cell'; ds._cellId = d.id
     world!.addChild(ds)
   })
 })
@@ -1675,7 +1675,7 @@ Remove the hardcoded-ring logic.
 
 ```bash
 git add knowledge-ui/src/composables/layout.ts knowledge-ui/tests/unit/layout.spec.ts knowledge-ui/src/components/canvas/SphereCanvas.vue
-git commit -m "feat(ui): d3-force wing layout + Poisson-disk drawer placement"
+git commit -m "feat(ui): d3-force realm layout + Poisson-disk cell placement"
 ```
 
 ---
@@ -1687,32 +1687,32 @@ git commit -m "feat(ui): d3-force wing layout + Poisson-disk drawer placement"
 
 - [ ] **Step 1: Draw edges under spheres**
 
-In `render()`, before creating wings/drawers, collect drawer positions, then draw Graphics lines:
+In `render()`, before creating realms/cells, collect cell positions, then draw Graphics lines:
 
 ```ts
 import { Graphics } from 'pixi.js'
 const relationColor: Record<string, number> = {
   related_to: 0x5a5a5a, builds_on: 0x4dc4ff, contradicts: 0xff4d4d, refines: 0x4dff9c
 }
-// inside render() AFTER wingPos and drawerPos are known:
-const drawerPos = new Map<string, { x: number; y: number }>()
-for (const w of canvasStore.wings) {
-  const p = wingPos.get(w.name); if (!p) continue
-  const group = drawersByWing.get(w.name) ?? []
-  const pts = poissonDiskDrawers(group.length, { x: p.x, y: p.y, r: 70, minDist: 14, seed: w.name })
-  group.forEach((d, i) => drawerPos.set(d.id, pts[i]))
+// inside render() AFTER realmPos and cellPos are known:
+const cellPos = new Map<string, { x: number; y: number }>()
+for (const w of canvasStore.realms) {
+  const p = realmPos.get(realm.name); if (!p) continue
+  const group = cellsByRealm.get(w.name) ?? []
+  const pts = poissonDiskCells(group.length, { x: p.x, y: p.y, r: 70, minDist: 14, seed: w.name })
+  group.forEach((d, i) => cellPos.set(d.id, pts[i]))
 }
 const edges = new Graphics()
 ;(edges as any)._kind = 'edges'
 for (const t of canvasStore.tunnels) {
-  const a = drawerPos.get(t.from_drawer); const b = drawerPos.get(t.to_drawer)
+  const a = cellPos.get(t.from_cell); const b = cellPos.get(t.to_cell)
   if (!a || !b) continue
   const col = relationColor[t.relation] ?? 0x666666
   const w = Math.max(0.6, Math.log(2) * 1.3)
   edges.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: w, color: col, alpha: 0.4 })
 }
 world!.addChild(edges)
-// Then add wings + drawers on top using drawerPos/wingPos as before.
+// Then add realms + cells on top using cellPos/realmPos as before.
 ```
 
 - [ ] **Step 2: Build + visual check + commit**
@@ -1765,9 +1765,9 @@ function applyTransform() {
 }
 ```
 
-- [ ] **Step 2: Click + double-click on drawer sprite**
+- [ ] **Step 2: Click + double-click on cell sprite**
 
-In the drawer-creation loop, add:
+In the cell-creation loop, add:
 
 ```ts
 ds.eventMode = 'static'; ds.cursor = 'pointer'
@@ -1783,7 +1783,7 @@ ds.on('pointertap', () => {
 Imports:
 
 ```ts
-import { useDrawerStore } from '../../stores/drawer'
+import { useCellStore } from '../../stores/cell'
 import { useReaderStore } from '../../stores/reader'
 ```
 
@@ -1808,8 +1808,8 @@ function snapTo(worldX: number, worldY: number, targetZoom: number, onDone: () =
   requestAnimationFrame(tick)
 }
 
-function onDrawerClick(d: Drawer) {
-  useDrawerStore().load(d.id)
+function onDrawerClick(d: Cell) {
+  useCellStore().load(d.id)
   canvasStore.setFocus(d.id)
 }
 ```
@@ -1845,7 +1845,7 @@ export const godrays      = () => new GodrayFilter({ alpha: 0.05, angle: 30, lac
 
 - [ ] **Step 2: Apply hover/focus**
 
-In SphereCanvas, when creating each drawer sprite:
+In SphereCanvas, when creating each cell sprite:
 
 ```ts
 ds.on('pointerover', () => { ds.filters = [hoverFilter()] })
@@ -1859,8 +1859,8 @@ watch(() => canvasStore.focusedId, id => {
   if (!world) return
   for (const c of world.children) {
     const s = c as any
-    if (s._kind !== 'drawer') continue
-    s.filters = s._drawerId === id ? [focusFilter(), focusRing()] : []
+    if (s._kind !== 'cell') continue
+    s.filters = s._cellId === id ? [focusFilter(), focusRing()] : []
   }
 })
 ```
@@ -1901,7 +1901,7 @@ import { describe, it, expect } from 'vitest'
 import { lodLevel, drawerVisibleAt } from '../../src/composables/lod'
 
 describe('lod', () => {
-  it('< 0.3 -> wings', () => expect(lodLevel(0.2)).toBe('wings'))
+  it('< 0.3 -> realms', () => expect(lodLevel(0.2)).toBe('realms'))
   it('0.3..1.0 -> halos', () => expect(lodLevel(0.7)).toBe('halos'))
   it('1.0..3.0 -> labels', () => expect(lodLevel(1.5)).toBe('labels'))
   it('> 3 -> full', () => expect(lodLevel(4)).toBe('full'))
@@ -1915,10 +1915,10 @@ describe('lod', () => {
 Create `knowledge-ui/src/composables/lod.ts`:
 
 ```ts
-export type Lod = 'wings' | 'halos' | 'labels' | 'full'
+export type Lod = 'realms' | 'halos' | 'labels' | 'full'
 
 export function lodLevel(zoom: number): Lod {
-  if (zoom < 0.3) return 'wings'
+  if (zoom < 0.3) return 'realms'
   if (zoom < 1.0) return 'halos'
   if (zoom < 3.0) return 'labels'
   return 'full'
@@ -1940,7 +1940,7 @@ function applyTransform() {
   const viewBottom = viewTop + app.screen.height / zoom
   for (const c of world.children) {
     const s = c as any
-    if (s._kind === 'drawer') {
+    if (s._kind === 'cell') {
       let vis = drawerVisibleAt(zoom)
       if (vis) {
         const r = Math.max(s.width, s.height)
@@ -1963,7 +1963,7 @@ git commit -m "feat(ui): LOD visibility + viewport culling in applyTransform"
 
 ---
 
-## Task 17: ScanPanel (drawer-detail slide-panel)
+## Task 17: ScanPanel (cell-detail slide-panel)
 
 **Files:**
 - Create: `knowledge-ui/src/components/ScanPanel.vue`
@@ -1976,48 +1976,48 @@ Create `knowledge-ui/src/components/ScanPanel.vue`:
 ```vue
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useDrawerStore } from '../stores/drawer'
+import { useCellStore } from '../stores/cell'
 import { useReaderStore } from '../stores/reader'
 import { useCanvasStore } from '../stores/canvas'
 
-const drawer = useDrawerStore()
+const cell = useCellStore()
 const reader = useReaderStore()
 const canvas = useCanvasStore()
-const d = computed(() => drawer.current)
+const d = computed(() => cell.current)
 
-function openReader() { if (d.value) reader.openReader(d.value.drawer.id) }
-function jumpTo(id: string) { drawer.load(id); canvas.setFocus(id) }
-function close() { drawer.clear(); canvas.setFocus(null) }
+function openReader() { if (d.value) reader.openReader(d.value.cell.id) }
+function jumpTo(id: string) { cell.load(id); canvas.setFocus(id) }
+function close() { cell.clear(); canvas.setFocus(null) }
 </script>
 
 <template>
   <transition name="slide-r">
     <aside v-if="d" class="scan">
       <header>
-        <strong>{{ d.drawer.title }}</strong>
+        <strong>{{ d.cell.title }}</strong>
         <v-btn icon="mdi-close" size="small" variant="text" @click="close" />
       </header>
       <div class="body">
         <div class="chips">
-          <v-chip size="x-small" color="primary" variant="tonal">{{ d.drawer.wing }}</v-chip>
-          <v-chip v-if="d.drawer.hall" size="x-small" variant="outlined">{{ d.drawer.hall }}</v-chip>
-          <v-chip v-if="d.drawer.room" size="x-small" variant="outlined">{{ d.drawer.room }}</v-chip>
-          <span class="imp">{{ '★'.repeat(d.drawer.importance) }}</span>
+          <v-chip size="x-small" color="primary" variant="tonal">{{ d.cell.realm }}</v-chip>
+          <v-chip v-if="d.cell.signal" size="x-small" variant="outlined">{{ d.cell.signal }}</v-chip>
+          <v-chip v-if="d.cell.topic" size="x-small" variant="outlined">{{ d.cell.topic }}</v-chip>
+          <span class="imp">{{ '★'.repeat(d.cell.importance) }}</span>
         </div>
-        <section v-if="d.drawer.summary">
-          <div class="label">SUMMARY</div><p>{{ d.drawer.summary }}</p>
+        <section v-if="d.cell.summary">
+          <div class="label">SUMMARY</div><p>{{ d.cell.summary }}</p>
         </section>
-        <section v-if="d.drawer.key_points?.length">
+        <section v-if="d.cell.key_points?.length">
           <div class="label">KEY POINTS</div>
-          <ul><li v-for="k in d.drawer.key_points" :key="k">{{ k }}</li></ul>
+          <ul><li v-for="k in d.cell.key_points" :key="k">{{ k }}</li></ul>
         </section>
-        <section v-if="d.drawer.insight">
-          <div class="label">INSIGHT</div><blockquote>{{ d.drawer.insight }}</blockquote>
+        <section v-if="d.cell.insight">
+          <div class="label">INSIGHT</div><blockquote>{{ d.cell.insight }}</blockquote>
         </section>
         <section v-if="d.tunnels.length">
           <div class="label">TUNNELS ({{ d.tunnels.length }})</div>
           <div v-for="t in d.tunnels" :key="t.id" class="tunnel"
-               @click="jumpTo(t.to_drawer === d.drawer.id ? t.from_drawer : t.to_drawer)">
+               @click="jumpTo(t.to_cell === d.cell.id ? t.from_cell : t.to_cell)">
             <span :class="['dot', t.relation]" />
             <span class="rel">{{ t.relation }}</span>
             <span class="note">{{ t.note || '' }}</span>
@@ -2140,21 +2140,21 @@ Create `knowledge-ui/src/components/Reader.vue`:
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useReaderStore } from '../stores/reader'
-import { useDrawerStore } from '../stores/drawer'
+import { useCellStore } from '../stores/cell'
 import MarkdownTab from './readers/MarkdownTab.vue'
 
 const reader = useReaderStore()
-const drawer = useDrawerStore()
+const cell = useCellStore()
 
 const attachments = computed(() => {
-  // Populated later from drawer references; empty in SP1 v1
+  // Populated later from cell references; empty in SP1 v1
   return [] as { id: string; title: string; url: string; kind: 'pdf' | 'eml' }[]
 })
 </script>
 
 <template>
   <v-dialog v-model="reader.open" fullscreen transition="dialog-bottom-transition" persistent>
-    <div class="reader-shell" v-if="drawer.current">
+    <div class="reader-shell" v-if="cell.current">
       <header>
         <v-btn icon="mdi-arrow-left" variant="text" @click="reader.close()" />
         <v-tabs v-model="reader.activeTab" density="compact" color="primary">
@@ -2165,7 +2165,7 @@ const attachments = computed(() => {
         <v-btn icon="mdi-pencil" variant="text" disabled title="Editor — SP4" />
       </header>
       <main class="reader-body">
-        <MarkdownTab v-if="reader.activeTab === 'markdown'" :content="drawer.current.drawer.content" />
+        <MarkdownTab v-if="reader.activeTab === 'markdown'" :content="cell.current.cell.content" />
       </main>
     </div>
   </v-dialog>
@@ -2352,7 +2352,7 @@ let unsub: (() => void) | null = null
 onMounted(() => {
   if (!canvas.loaded) canvas.loadTopLevel()
   unsub = useApi().subscribe(e => {
-    if (e.type === 'status' || e.type === 'drawer_added' || e.type === 'tunnel_added') {
+    if (e.type === 'status' || e.type === 'cell_added' || e.type === 'tunnel_added') {
       ui.pushToast('info', 'New activity — click Reload to refresh')
     }
   })
@@ -2413,7 +2413,7 @@ onMounted(() => { if (!canvas.loaded) canvas.loadTopLevel() })
       <TresCanvas clear-color="#000010" :dpr="1.5">
         <TresPerspectiveCamera :position="[0, 0, 14]" />
         <TresAmbientLight :intensity="0.3" />
-        <HiveSphere v-if="canvas.loaded" :wings="canvas.wings" :drawers="canvas.drawers" />
+        <HiveSphere v-if="canvas.loaded" :realms="canvas.realms" :cells="canvas.cells" />
         <CyberBees />
         <HiveFloor />
       </TresCanvas>
@@ -2427,7 +2427,7 @@ onMounted(() => { if (!canvas.loaded) canvas.loadTopLevel() })
 </style>
 ```
 
-If the recycled HiveSphere has a different prop shape (e.g. expects a `palace` object), adapt it here — wrap with a thin passthrough or update the prop names in HiveSphere to accept `{ wings, drawers }`.
+If the recycled HiveSphere has a different prop shape (e.g. expects a `palace` object), adapt it here — wrap with a thin passthrough or update the prop names in HiveSphere to accept `{ realms, cells }`.
 
 - [ ] **Step 3: Verify bundle splits TresJS into its own chunk**
 
@@ -2457,19 +2457,19 @@ Create `knowledge-ui/src/composables/keybindings.ts`:
 import { useEventListener } from '@vueuse/core'
 import { useUiStore } from '../stores/ui'
 import { useReaderStore } from '../stores/reader'
-import { useDrawerStore } from '../stores/drawer'
+import { useCellStore } from '../stores/cell'
 
 export function useKeybindings() {
-  const ui = useUiStore(), reader = useReaderStore(), drawer = useDrawerStore()
+  const ui = useUiStore(), reader = useReaderStore(), cell = useCellStore()
   useEventListener('keydown', (e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault(); ui.activePanel = 'search'
     } else if (e.key === 'Escape') {
       if (reader.open) reader.close()
-      else if (drawer.currentId) drawer.clear()
+      else if (cell.currentId) cell.clear()
       else if (ui.activePanel) ui.activePanel = null
-    } else if (e.key === 'Enter' && drawer.currentId && !reader.open) {
-      reader.openReader(drawer.currentId)
+    } else if (e.key === 'Enter' && cell.currentId && !reader.open) {
+      reader.openReader(cell.currentId)
     } else if (e.key === '?' && !ui.showLoginDialog) {
       ui.pushToast('info', 'Cmd+K search · Esc back · Enter reader')
     }
@@ -2526,7 +2526,7 @@ Create `knowledge-ui/tests/e2e/smoke.spec.ts`:
 ```ts
 import { test, expect } from '@playwright/test'
 
-test('login → search → open drawer → reader → close', async ({ page }) => {
+test('login → search → open cell → reader → close', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('hivemem_mock', 'true'))
   await page.goto('/')
   await page.getByLabel('Use local mock data').click()
@@ -2631,9 +2631,9 @@ git push
 
 ## Self-review checklist
 
-- [x] Spec coverage: every section has a task. Architecture (Task 2-5). Pinia (Task 6). Auth (Task 7). Routing (Task 8). Shell (Task 9-10). Canvas (Task 11-16). Drawer detail (Task 17-20). Live-update (Task 21). Cinema (Task 22). Keybindings (Task 23). E2E (Task 24). Polish (Task 25).
+- [x] Spec coverage: every section has a task. Architecture (Task 2-5). Pinia (Task 6). Auth (Task 7). Routing (Task 8). Shell (Task 9-10). Canvas (Task 11-16). Cell detail (Task 17-20). Live-update (Task 21). Cinema (Task 22). Keybindings (Task 23). E2E (Task 24). Polish (Task 25).
 - [x] No "TBD" or "similar to Task N" placeholders.
-- [x] Type names consistent: `ApiClient`, `Drawer`, `Wing`, `Tunnel`, `Fact`, `HiveEvent`, `StatusSummary`, `Role`, `Relation` all defined in Task 2 and used consistently across tasks.
+- [x] Type names consistent: `ApiClient`, `Cell`, `Realm`, `Tunnel`, `Fact`, `HiveEvent`, `StatusSummary`, `Role`, `Relation` all defined in Task 2 and used consistently across tasks.
 - [x] File paths absolute from `knowledge-ui/`.
 - [x] Each code step shows actual code; each test step shows assertion.
 - [x] Commits frequent (one per task) and follow Conventional Commits.
