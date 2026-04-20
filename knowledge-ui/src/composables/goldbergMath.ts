@@ -120,21 +120,21 @@ function mergeVerticesFallback(geo: THREE.BufferGeometry): THREE.BufferGeometry 
 }
 
 /**
- * Deterministically assign cells to wings via BFS seeded at Fibonacci-sphere
+ * Deterministically assign cells to realms via BFS seeded at Fibonacci-sphere
  * anchors. Returns a map cellIndex → realmName (null for empty cells).
  */
-export function assignWings(
+export function assignRealms(
   cells: GoldbergCell[],
-  wings: { name: string; cellCount: number }[],
+  realms: { name: string; cellCount: number }[],
 ): Map<number, string | null> {
   const result = new Map<number, string | null>()
   for (const c of cells) result.set(c.index, null)
-  if (wings.length === 0) return result
+  if (realms.length === 0) return result
 
-  const sortedRealms = [...wings].sort((a, b) => b.cellCount - a.cellCount)
+  const sortedRealms = [...realms].sort((a, b) => b.cellCount - a.cellCount)
 
-  const perWingRaw = Math.floor(cells.length / sortedRealms.length)
-  const perWing = Math.max(2, Math.min(14, perWingRaw))
+  const perRealmRaw = Math.floor(cells.length / sortedRealms.length)
+  const perRealm = Math.max(2, Math.min(14, perRealmRaw))
 
   const golden = Math.PI * (3 - Math.sqrt(5))
   const claimed = new Set<number>()
@@ -159,7 +159,7 @@ export function assignWings(
     const realm = sortedRealms[i]
     const seed = seedFor(i)
     const frontier: number[] = [seed]
-    let remaining = perWing
+    let remaining = perRealm
     while (remaining > 0 && frontier.length > 0) {
       const current = frontier.shift()!
       if (claimed.has(current)) continue

@@ -9,7 +9,7 @@ const router = useRouter()
 
 const items: { id: Exclude<typeof ui.activePanel, null>; icon: string; role?: 'admin' }[] = [
   { id: 'search',   icon: 'mdi-magnify' },
-  { id: 'wings',    icon: 'mdi-star-four-points-outline' },
+  { id: 'realms',   icon: 'mdi-star-four-points-outline' },
   { id: 'reading',  icon: 'mdi-book-open-variant' },
   { id: 'stats',    icon: 'mdi-chart-donut', role: 'admin' },
   { id: 'history',  icon: 'mdi-history' },
