@@ -11,6 +11,12 @@ export class MockApiClient implements ApiClient {
   private timer: number | null = null
   private handlers: Record<string, Handler>
 
+  // Long-poll stream state — chronological cursor over the seeded dataset.
+  private streamQueue: Cell[] = []
+  private streamDelivered = new Set<string>()
+  private streamTunnelQueue: Tunnel[] = []
+  private streamInitialized = false
+
   constructor(config: MockConfig = {}) {
     this.config = { latencyMs: [50, 200], eventInterval: 15000, ...config }
     this.handlers = {
@@ -22,6 +28,7 @@ export class MockApiClient implements ApiClient {
       hivemem_quick_facts: (args: { subject: string }) => this.quickFacts(args),
       hivemem_traverse: (args: { cell_id: string; depth?: number }) => this.traverse(args),
       hivemem_list_tunnels: () => mockPalace.tunnels,
+      hivemem_stream_next: (args: { since?: string; timeout_ms?: number }) => this.streamNext(args),
       hivemem_reading_list: () => mockPalace.references ?? [],
       hivemem_pending_approvals: () => [],
       hivemem_list_agents: () => [],
@@ -52,11 +59,8 @@ export class MockApiClient implements ApiClient {
   }
 
   private startTicker() {
-    this.timer = setInterval(() => {
-      const existing = mockPalace.cells[Math.floor(Math.random() * mockPalace.cells.length)]
-      const ev: HiveEvent = { type: 'cell_added', cell: existing }
-      this.subscribers.forEach(s => s(ev))
-    }, this.config.eventInterval) as unknown as number
+    // Intentionally silent — streaming happens via hivemem_stream_next long-poll.
+    // Subscribers can still attach; they simply won't receive synthetic events.
   }
 
   private delay() {
@@ -100,6 +104,36 @@ export class MockApiClient implements ApiClient {
 
   private quickFacts(args: { subject: string }): Fact[] {
     return mockPalace.facts.filter(f => f.subject === args.subject)
+  }
+
+  // Long-poll: holds the request for up to `timeout_ms`, returning as soon as
+  // a new cell (and any now-ready tunnels) is available. Mirrors the contract
+  // expected from a real server-sent long-poll endpoint.
+  private async streamNext(args: { timeout_ms?: number }): Promise<{ cells: Cell[]; tunnels: Tunnel[]; done: boolean }> {
+    if (!this.streamInitialized) {
+      this.streamQueue = [...mockPalace.cells].sort((a, b) =>
+        (a.valid_from ?? '').localeCompare(b.valid_from ?? ''))
+      this.streamTunnelQueue = [...mockPalace.tunnels]
+      this.streamInitialized = true
+    }
+    // Simulate server-side blocking wait. First call returns ~instantly so the
+    // UI has seed data; subsequent calls wait ~1s before returning the next cell.
+    const firstCall = this.streamDelivered.size === 0
+    const wait = firstCall ? 0 : Math.min(args.timeout_ms ?? 25000, 900 + Math.random() * 500)
+    if (wait > 0) await new Promise(r => setTimeout(r, wait))
+
+    const next = this.streamQueue.shift()
+    if (!next) return { cells: [], tunnels: [], done: true }
+    this.streamDelivered.add(next.id)
+
+    const ready: Tunnel[] = []
+    const remaining: Tunnel[] = []
+    for (const t of this.streamTunnelQueue) {
+      if (this.streamDelivered.has(t.from_cell) && this.streamDelivered.has(t.to_cell)) ready.push(t)
+      else remaining.push(t)
+    }
+    this.streamTunnelQueue = remaining
+    return { cells: [next], tunnels: ready, done: this.streamQueue.length === 0 }
   }
 
   private traverse(args: { cell_id: string; depth?: number }): Tunnel[] {

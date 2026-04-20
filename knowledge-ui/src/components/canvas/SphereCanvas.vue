@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
-import { Application, Container, Sprite, Graphics } from 'pixi.js'
+import { Application, Container, Sprite, Graphics, Text, TextStyle } from 'pixi.js'
 import { realmTexture, cellTexture, colorForRealm, parseHsl } from './textures'
 import { focusFilter, hoverFilter, focusRing, godrays } from './filters'
 import { spawnDust } from './particles'
@@ -18,6 +18,19 @@ let world: Container | null = null
 let snapToRef: ((worldX: number, worldY: number, targetZoom: number, onDone: () => void) => void) | null = null
 let onCellClickRef: ((c: Cell) => void) | null = null
 let cleanup: (() => void) | null = null
+const renderedCellIds = new Set<string>()
+const renderedRealmNames = new Set<string>()
+const renderedSignalKeys = new Set<string>()
+const renderedRealmLabels = new Set<string>()
+const renderedSignalLabels = new Set<string>()
+let edgesGraphics: Graphics | null = null
+let realmLayer: Container | null = null
+let signalLayer: Container | null = null
+let cellLayer: Container | null = null
+let labelLayer: Container | null = null
+let cachedRealmPos: Map<string, { x: number; y: number }> | null = null
+let cachedRealmSig: string | null = null
+let cachedViewportSig: string | null = null
 
 onMounted(async () => {
   if (!root.value) return
@@ -25,6 +38,11 @@ onMounted(async () => {
   await app.init({ background: 0x050510, resizeTo: root.value, antialias: true, resolution: devicePixelRatio, autoDensity: true })
   root.value.appendChild(app.canvas)
   world = new Container(); app.stage.addChild(world)
+  realmLayer = new Container(); world.addChild(realmLayer)
+  signalLayer = new Container(); world.addChild(signalLayer)
+  edgesGraphics = new Graphics(); (edgesGraphics as any)._kind = 'edges'; world.addChild(edgesGraphics)
+  cellLayer = new Container(); world.addChild(cellLayer)
+  labelLayer = new Container(); world.addChild(labelLayer)
 
   // Add dust emitter
   const dustLayer = new Container(); app.stage.addChild(dustLayer)
@@ -50,23 +68,67 @@ onMounted(async () => {
     applyTransform()
   }, { passive: false })
 
-  let dragging = false, dragStartX = 0, dragStartY = 0, dragStartPanX = 0, dragStartPanY = 0
-  app.canvas.addEventListener('pointerdown', e => {
-    dragging = true; dragStartX = e.clientX; dragStartY = e.clientY
-    dragStartPanX = panX; dragStartPanY = panY
-  })
-  const onPointerUp = () => { dragging = false }
-  const onPointerMove = (e: PointerEvent) => {
-    if (!dragging) return
-    panX = dragStartPanX + (e.clientX - dragStartX)
-    panY = dragStartPanY + (e.clientY - dragStartY)
-    applyTransform()
+  const pointers = new Map<number, { x: number; y: number }>()
+  let panStartX = 0, panStartY = 0, panStartPanX = 0, panStartPanY = 0
+  let pinchStartDist = 0, pinchStartZoom = 1, pinchStartMidX = 0, pinchStartMidY = 0
+  let pinchStartPanX = 0, pinchStartPanY = 0
+
+  function canvasPos(e: PointerEvent) {
+    const r = app!.canvas.getBoundingClientRect()
+    return { x: e.clientX - r.left, y: e.clientY - r.top }
   }
-  window.addEventListener('pointerup', onPointerUp)
-  window.addEventListener('pointermove', onPointerMove)
+  function resetGesture() {
+    if (pointers.size === 1) {
+      const [p] = pointers.values()
+      panStartX = p.x; panStartY = p.y
+      panStartPanX = panX; panStartPanY = panY
+    } else if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()]
+      pinchStartDist = Math.hypot(a.x - b.x, a.y - b.y) || 1
+      pinchStartZoom = zoom
+      pinchStartMidX = (a.x + b.x) / 2
+      pinchStartMidY = (a.y + b.y) / 2
+      pinchStartPanX = panX; pinchStartPanY = panY
+    }
+  }
+
+  app.canvas.addEventListener('pointerdown', e => {
+    try { app!.canvas.setPointerCapture(e.pointerId) } catch { /* synthetic events */ }
+    pointers.set(e.pointerId, canvasPos(e))
+    resetGesture()
+  })
+  const onPointerMove = (e: PointerEvent) => {
+    if (!pointers.has(e.pointerId)) return
+    pointers.set(e.pointerId, canvasPos(e))
+    if (pointers.size === 1) {
+      const [p] = pointers.values()
+      panX = panStartPanX + (p.x - panStartX)
+      panY = panStartPanY + (p.y - panStartY)
+      applyTransform()
+    } else if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()]
+      const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1
+      const next = Math.min(6, Math.max(0.15, pinchStartZoom * (dist / pinchStartDist)))
+      const worldX = (pinchStartMidX - pinchStartPanX) / pinchStartZoom
+      const worldY = (pinchStartMidY - pinchStartPanY) / pinchStartZoom
+      const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2
+      panX = midX - worldX * next
+      panY = midY - worldY * next
+      zoom = next
+      applyTransform()
+    }
+  }
+  const onPointerUp = (e: PointerEvent) => {
+    pointers.delete(e.pointerId)
+    resetGesture()
+  }
+  app.canvas.addEventListener('pointermove', onPointerMove)
+  app.canvas.addEventListener('pointerup', onPointerUp)
+  app.canvas.addEventListener('pointercancel', onPointerUp)
   cleanup = () => {
-    window.removeEventListener('pointerup', onPointerUp)
-    window.removeEventListener('pointermove', onPointerMove)
+    app?.canvas.removeEventListener('pointermove', onPointerMove)
+    app?.canvas.removeEventListener('pointerup', onPointerUp)
+    app?.canvas.removeEventListener('pointercancel', onPointerUp)
   }
 
   function applyTransform() {
@@ -75,18 +137,26 @@ onMounted(async () => {
     const viewLeft = -panX / zoom, viewTop = -panY / zoom
     const viewRight = viewLeft + app.screen.width / zoom
     const viewBottom = viewTop + app.screen.height / zoom
-    for (const c of world.children) {
-      const s = c as any
-      if (s._kind === 'cell') {
-        let vis = cellVisibleAt(zoom)
-        if (vis) {
-          const r = Math.max(s.width, s.height)
-          vis = s.x + r > viewLeft && s.x - r < viewRight
-             && s.y + r > viewTop  && s.y - r < viewBottom
+    const walk = (container: Container | null) => {
+      if (!container) return
+      for (const c of container.children) {
+        const s = c as any
+        if (s._kind === 'cell') {
+          let vis = cellVisibleAt(zoom)
+          if (vis) {
+            const r = Math.max(s.width, s.height)
+            vis = s.x + r > viewLeft && s.x - r < viewRight
+               && s.y + r > viewTop  && s.y - r < viewBottom
+          }
+          s.visible = vis
+        } else if (s._kind === 'signal' || s._kind === 'signal-label') {
+          s.visible = zoom >= 0.7
+        } else if (s._kind === 'realm-label') {
+          s.visible = zoom <= 2.2
         }
-        s.visible = vis
       }
     }
+    walk(realmLayer); walk(signalLayer); walk(cellLayer); walk(labelLayer)
   }
 
   function snapTo(worldX: number, worldY: number, targetZoom: number, onDone: () => void) {
@@ -122,106 +192,189 @@ onBeforeUnmount(() => {
   app?.destroy(true, { children: true, texture: false }); app = null; world = null
 })
 
+function animateSpawn(sprite: any) {
+  const targetScale = sprite.scale.x
+  sprite.scale.set(0.01)
+  sprite.alpha = 0
+  const startT = performance.now()
+  const tick = (t: number) => {
+    const k = Math.min(1, (t - startT) / 520)
+    const e = 1 - Math.pow(1 - k, 3)
+    sprite.scale.set(targetScale * e * (1 + 0.25 * Math.sin(k * Math.PI)))
+    sprite.alpha = e
+    if (k < 1) requestAnimationFrame(tick)
+    else { sprite.scale.set(targetScale); sprite.alpha = 1 }
+  }
+  requestAnimationFrame(tick)
+}
+
+const REALM_STYLE = new TextStyle({ fill: 0xffffff, fontSize: 14, fontWeight: '600', align: 'center' })
+const SIGNAL_STYLE = new TextStyle({ fill: 0xdfe8ff, fontSize: 10, align: 'center' })
+const RELATION_COLOR: Record<string, number> = {
+  related_to: 0x9aa5ff,
+  builds_on: 0x4dc4ff,
+  contradicts: 0xff4d4d,
+  refines: 0x4dff9c,
+}
+
 function render() {
-  if (!world || !app) return
-  world.removeChildren()
+  if (!world || !app || !realmLayer || !signalLayer || !cellLayer || !labelLayer || !edgesGraphics) return
   const width = app.screen.width, height = app.screen.height
 
-  // 1. Group cells by realm
-  const cellsByRealm = new Map<string, Cell[]>()
+  // 1. Group cells by (realm, signal). Deterministic layout → stable positions.
+  const cellsByRealmSignal = new Map<string, Map<string, Cell[]>>()
   for (const c of canvasStore.cells) {
-    if (!cellsByRealm.has(c.realm)) cellsByRealm.set(c.realm, [])
-    cellsByRealm.get(c.realm)!.push(c)
+    if (!cellsByRealmSignal.has(c.realm)) cellsByRealmSignal.set(c.realm, new Map())
+    const sm = cellsByRealmSignal.get(c.realm)!
+    const sig = c.signal ?? '(none)'
+    if (!sm.has(sig)) sm.set(sig, [])
+    sm.get(sig)!.push(c)
   }
 
-  // 2. Compute positions
-  const relationColor: Record<string, number> = {
-    related_to: 0x5a5a5a,
-    builds_on: 0x4dc4ff,
-    contradicts: 0xff4d4d,
-    refines: 0x4dff9c
+  // 2. Realm positions — cached; recompute only on realm-set or viewport change.
+  const realmSig = canvasStore.realms.map(r => r.name).sort().join('|')
+  const viewportSig = `${width}x${height}`
+  let realmPos: Map<string, { x: number; y: number }>
+  if (cachedRealmPos && cachedRealmSig === realmSig && cachedViewportSig === viewportSig) {
+    realmPos = cachedRealmPos
+  } else {
+    realmPos = computeWingPositions(canvasStore.realms, canvasStore.cells, canvasStore.tunnels, { width, height })
+    cachedRealmPos = realmPos; cachedRealmSig = realmSig; cachedViewportSig = viewportSig
   }
+  const realmSize = new Map<string, number>()
+  for (const r of canvasStore.realms) realmSize.set(r.name, 120 + Math.log(1 + r.cell_count) * 30)
 
-  const realmPos = computeWingPositions(canvasStore.realms, canvasStore.cells, canvasStore.tunnels, { width, height })
+  // 3. Signal sub-centers + deterministic cell positions. Poisson with a fixed
+  // seed gives the same first-N points regardless of how large N grows, so
+  // earlier cells stay put as the signal's group fills up.
+  const signalPos = new Map<string, { x: number; y: number; realm: string; name: string }>()
   const cellPos = new Map<string, { x: number; y: number }>()
   for (const r of canvasStore.realms) {
-    const p = realmPos.get(r.name)
-    if (!p) continue
-    const group = cellsByRealm.get(r.name) ?? []
-    const pts = poissonDiskCells(group.length, { x: p.x, y: p.y, r: 70, minDist: 14, seed: r.name })
-    group.forEach((c, i) => cellPos.set(c.id, pts[i]))
+    const p = realmPos.get(r.name); if (!p) continue
+    const sm = cellsByRealmSignal.get(r.name)
+    // Use full signal set from realm metadata so positions exist even before the
+    // first cell of a signal arrives (stable layout as streams fill in).
+    const allSignals = (r.signals ?? []).map(s => s.name).sort((a, b) => a.localeCompare(b))
+    const ringR = allSignals.length > 1 ? Math.max(36, (realmSize.get(r.name) ?? 120) * 0.22) : 0
+    allSignals.forEach((sigName, i) => {
+      const angle = (i / allSignals.length) * Math.PI * 2 - Math.PI / 2
+      const sx = p.x + Math.cos(angle) * ringR
+      const sy = p.y + Math.sin(angle) * ringR
+      const key = r.name + '|' + sigName
+      signalPos.set(key, { x: sx, y: sy, realm: r.name, name: sigName })
+      const group = sm?.get(sigName) ?? []
+      if (!group.length) return
+      const pts = poissonDiskCells(group.length, { x: sx, y: sy, r: 26, minDist: 13, seed: key })
+      group.forEach((c, idx) => cellPos.set(c.id, pts[idx]))
+    })
   }
 
-  // 3. Draw edges under spheres
-  const edges = new Graphics()
-  ;(edges as any)._kind = 'edges'
-  for (const t of canvasStore.tunnels) {
-    const a = cellPos.get(t.from_cell)
-    const b = cellPos.get(t.to_cell)
-    if (!a || !b) continue
-    const col = relationColor[t.relation] ?? 0x666666
-    const w = Math.max(0.6, Math.log(2) * 1.3)
-    edges.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: w, color: col, alpha: 0.4 })
-  }
-  world!.addChild(edges)
-
-  // 4. Draw realms (on top of edges)
+  // 4. Add realm sprites + labels once.
   canvasStore.realms.forEach(r => {
-    const p = realmPos.get(r.name)
-    if (!p) return
-    const size = 120 + Math.log(1 + r.cell_count) * 30
-    const s: any = new Sprite(realmTexture(colorForRealm(r.name)))
-    s.anchor.set(0.5)
-    s.width = s.height = size
-    s.x = p.x
-    s.y = p.y
-    s._kind = 'realm'
-    s._name = r.name
-    world!.addChild(s)
+    const p = realmPos.get(r.name); if (!p) return
+    if (!renderedRealmNames.has(r.name)) {
+      const s: any = new Sprite(realmTexture(colorForRealm(r.name)))
+      s.anchor.set(0.5)
+      s.width = s.height = realmSize.get(r.name) ?? 140
+      s.x = p.x; s.y = p.y
+      s._kind = 'realm'; s._name = r.name
+      realmLayer!.addChild(s)
+      renderedRealmNames.add(r.name)
+    }
+    if (!renderedRealmLabels.has(r.name)) {
+      const label: any = new Text({ text: r.name, style: REALM_STYLE })
+      label.anchor.set(0.5)
+      label.x = p.x
+      label.y = p.y - (realmSize.get(r.name) ?? 120) / 2 - 10
+      label._kind = 'realm-label'
+      labelLayer!.addChild(label)
+      renderedRealmLabels.add(r.name)
+    }
   })
 
-  // 5. Draw cells (on top of everything)
-  for (const [_realmName, group] of cellsByRealm) {
-    group.forEach(c => {
-      const pt = cellPos.get(c.id)
-      if (!pt) return
-      const ds: any = new Sprite(cellTexture())
-      ds.anchor.set(0.5)
-      ds.width = ds.height = 14 + c.importance * 4
-      ds.tint = parseHsl(colorForRealm(c.realm))
-      ds.x = pt.x
-      ds.y = pt.y
-      ds._kind = 'cell'
-      ds._cellId = c.id
-      ds.eventMode = 'static'
-      ds.cursor = 'pointer'
-      let lastClick = 0
-      ds.on('pointertap', () => {
-        const now = performance.now()
-        if (now - lastClick < 320) {
-          useReaderStore().openReader(c.id)
-        } else {
-          snapToRef?.(pt.x, pt.y, 2.2, () => onCellClickRef?.(c))
-        }
-        lastClick = now
-      })
-      ds.on('pointerover', () => {
-        ds.filters = [hoverFilter()]
-      })
-      ds.on('pointerout', () => {
-        ds.filters = canvasStore.focusedId === c.id ? [focusFilter(), focusRing()] : []
-      })
-      world!.addChild(ds)
+  // 5. Signal halos + labels — added once per signal.
+  signalPos.forEach((sp, key) => {
+    if (!renderedSignalKeys.has(key)) {
+      const halo: any = new Sprite(realmTexture(colorForRealm(sp.realm)))
+      halo.anchor.set(0.5)
+      halo.width = halo.height = 60
+      halo.x = sp.x; halo.y = sp.y
+      halo.alpha = 0.35
+      halo._kind = 'signal'; halo._name = sp.name
+      signalLayer!.addChild(halo)
+      renderedSignalKeys.add(key)
+    }
+    if (!renderedSignalLabels.has(key)) {
+      const label: any = new Text({ text: sp.name, style: SIGNAL_STYLE })
+      label.anchor.set(0.5)
+      label.x = sp.x; label.y = sp.y - 30
+      label._kind = 'signal-label'
+      label.visible = false
+      labelLayer!.addChild(label)
+      renderedSignalLabels.add(key)
+    }
+  })
+  // Grow signal halos as the number of cells in them increases (cheap).
+  for (const halo of signalLayer.children) {
+    const key = (halo as any)._name && (halo as any)._kind === 'signal'
+      ? [...renderedSignalKeys].find(k => k.endsWith('|' + (halo as any)._name))
+      : null
+    if (!key) continue
+    const sm = cellsByRealmSignal.get(key.split('|')[0])
+    const count = sm?.get(key.split('|')[1])?.length ?? 0
+    ;(halo as any).width = (halo as any).height = 50 + count * 6
+  }
+
+  // 6. Rebuild edges (single Graphics object — cheap enough to redraw fully).
+  edgesGraphics.clear()
+  for (const tu of canvasStore.tunnels) {
+    const a = cellPos.get(tu.from_cell)
+    const b = cellPos.get(tu.to_cell)
+    if (!a || !b) continue
+    const col = RELATION_COLOR[tu.relation] ?? 0x888888
+    edgesGraphics.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 4, color: col, alpha: 0.22 })
+    edgesGraphics.moveTo(a.x, a.y).lineTo(b.x, b.y).stroke({ width: 1.4, color: col, alpha: 0.9 })
+  }
+
+  // 7. Add new cell sprites only (existing cells keep their sprite instances).
+  for (const c of canvasStore.cells) {
+    if (renderedCellIds.has(c.id)) continue
+    const pt = cellPos.get(c.id); if (!pt) continue
+    const ds: any = new Sprite(cellTexture())
+    ds.anchor.set(0.5)
+    ds.width = ds.height = 14 + c.importance * 4
+    ds.tint = parseHsl(colorForRealm(c.realm))
+    ds.x = pt.x; ds.y = pt.y
+    ds._kind = 'cell'; ds._cellId = c.id
+    ds.eventMode = 'static'
+    ds.cursor = 'pointer'
+    animateSpawn(ds)
+    let lastClick = 0
+    ds.on('pointertap', () => {
+      const now = performance.now()
+      if (now - lastClick < 320) {
+        useReaderStore().openReader(c.id)
+      } else {
+        snapToRef?.(pt.x, pt.y, 2.2, () => onCellClickRef?.(c))
+      }
+      lastClick = now
     })
+    ds.on('pointerover', () => { ds.filters = [hoverFilter()] })
+    ds.on('pointerout', () => {
+      ds.filters = canvasStore.focusedId === c.id ? [focusFilter(), focusRing()] : []
+    })
+    cellLayer!.addChild(ds)
+    renderedCellIds.add(c.id)
   }
 }
 
 watch(() => canvasStore.loaded, v => { if (v) render() })
 watch(() => canvasStore.cells.length, () => render())
+watch(() => canvasStore.tunnels.length, () => render())
 
 watch(() => canvasStore.focusedId, id => {
-  if (!world) return
-  for (const c of world.children) {
+  if (!cellLayer) return
+  for (const c of cellLayer.children) {
     const s = c as any
     if (s._kind !== 'cell') continue
     s.filters = s._cellId === id ? [focusFilter(), focusRing()] : []

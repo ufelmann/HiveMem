@@ -3,10 +3,12 @@
 backups/
 node_modules/
 *.png
+!knowledge-ui/docs/images/*.png
 CLAUDE.md
 AGENTS.md
 docs/
 !knowledge-ui/docs/
+!knowledge-ui/docs/images/
 .superpowers/
 .serena/
 .playwright-mcp/
