@@ -27,17 +27,17 @@ public class LinkReferenceToolHandler implements ToolHandler {
 
     @Override
     public String description() {
-        return "Link a reference to a drawer.";
+        return "Link a reference to a cell.";
     }
 
     @Override
     public Object call(AuthPrincipal principal, JsonNode arguments) {
-        UUID drawerId = WriteArgumentParser.requiredUuid(arguments, "drawer_id");
+        UUID cellId = WriteArgumentParser.requiredUuid(arguments, "cell_id");
         UUID referenceId = WriteArgumentParser.requiredUuid(arguments, "reference_id");
         String relation = WriteArgumentParser.optionalText(arguments, "relation");
         if (relation == null) {
             relation = "source";
         }
-        return writeToolService.linkReference(drawerId, referenceId, relation);
+        return writeToolService.linkReference(cellId, referenceId, relation);
     }
 }

@@ -55,14 +55,14 @@ class SchemaV2IntegrationTest {
             // The append-only contract is enforced at the application layer,
             // not by a database trigger. Verify the UPDATE succeeds.
             int updated = h.dsl().execute("""
-                    update drawers set content = 'Modified content'
+                    update cells set content = 'Modified content'
                     where id = ?::uuid
                     """, id);
 
             assertThat(updated).isEqualTo(1);
 
             String content = h.dsl().fetchOne("""
-                    select content from drawers where id = ?::uuid
+                    select content from cells where id = ?::uuid
                     """, id).get("content", String.class);
             assertThat(content).isEqualTo("Modified content");
         }
@@ -75,7 +75,7 @@ class SchemaV2IntegrationTest {
     // -------------------------------------------------------------------------
 
     // -------------------------------------------------------------------------
-    // Test 4 -- active_drawers excludes pending and expired drawers
+    // Test 4 -- active_cells excludes pending and expired drawers
     // -------------------------------------------------------------------------
 
     @Test
@@ -86,18 +86,18 @@ class SchemaV2IntegrationTest {
 
             // pending drawer
             h.dsl().execute("""
-                    insert into drawers (content, wing, status, created_by)
+                    insert into cells (content, realm, status, created_by)
                     values ('Pending drawer', 'test', 'pending', 'test')
                     """);
 
             // expired drawer (valid_until in the past)
             h.dsl().execute("""
-                    insert into drawers (content, wing, status, valid_until, created_by)
+                    insert into cells (content, realm, status, valid_until, created_by)
                     values ('Expired drawer', 'test', 'committed', now() - interval '1 day', 'test')
                     """);
 
             Result<Record> active = h.dsl().fetch("""
-                    select id::text from active_drawers where wing = 'test'
+                    select id::text from active_cells where realm = 'test'
                     """);
 
             List<String> activeIds = active.getValues(0, String.class);
@@ -146,20 +146,20 @@ class SchemaV2IntegrationTest {
 
             // committed + active tunnel
             String activeTunnelId = h.dsl().fetchOne("""
-                    insert into tunnels (from_drawer, to_drawer, relation, status, created_by)
+                    insert into tunnels (from_cell, to_cell, relation, status, created_by)
                     values (?::uuid, ?::uuid, 'related_to', 'committed', 'test')
                     returning id::text
                     """, drawerA, drawerB).get(0, String.class);
 
             // pending tunnel
             h.dsl().execute("""
-                    insert into tunnels (from_drawer, to_drawer, relation, status, created_by)
+                    insert into tunnels (from_cell, to_cell, relation, status, created_by)
                     values (?::uuid, ?::uuid, 'builds_on', 'pending', 'test')
                     """, drawerB, drawerC);
 
             // expired tunnel
             h.dsl().execute("""
-                    insert into tunnels (from_drawer, to_drawer, relation, status, valid_until, created_by)
+                    insert into tunnels (from_cell, to_cell, relation, status, valid_until, created_by)
                     values (?::uuid, ?::uuid, 'refines', 'committed', now() - interval '1 day', 'test')
                     """, drawerA, drawerC);
 
@@ -178,19 +178,19 @@ class SchemaV2IntegrationTest {
         try (SchemaHarness h = migrateFreshSchema()) {
             // active blueprint (valid_until IS NULL)
             String activeId = h.dsl().fetchOne("""
-                    insert into blueprints (wing, title, narrative, created_by)
+                    insert into blueprints (realm, title, narrative, created_by)
                     values ('eng', 'Active Blueprint', 'This is active', 'test')
                     returning id::text
                     """).get(0, String.class);
 
             // expired blueprint
             h.dsl().execute("""
-                    insert into blueprints (wing, title, narrative, valid_until, created_by)
+                    insert into blueprints (realm, title, narrative, valid_until, created_by)
                     values ('eng', 'Old Blueprint', 'This is expired', now() - interval '1 day', 'test')
                     """);
 
             Result<Record> active = h.dsl().fetch("""
-                    select id::text from active_blueprints where wing = 'eng'
+                    select id::text from active_blueprints where realm = 'eng'
                     """);
 
             List<String> activeIds = active.getValues(0, String.class);
@@ -207,7 +207,7 @@ class SchemaV2IntegrationTest {
         try (SchemaHarness h = migrateFreshSchema()) {
             // pending drawer
             h.dsl().execute("""
-                    insert into drawers (content, wing, hall, summary, status, created_by)
+                    insert into cells (content, realm, signal, summary, status, created_by)
                     values ('Pending drawer', 'test', 'test', 'Pending summary', 'pending', 'classifier')
                     """);
 
@@ -223,7 +223,7 @@ class SchemaV2IntegrationTest {
 
             // pending tunnel
             h.dsl().execute("""
-                    insert into tunnels (from_drawer, to_drawer, relation, status, created_by)
+                    insert into tunnels (from_cell, to_cell, relation, status, created_by)
                     values (?::uuid, ?::uuid, 'related_to', 'pending', 'agent-y')
                     """, drawerA, drawerB);
 
@@ -232,7 +232,7 @@ class SchemaV2IntegrationTest {
                     """);
 
             List<String> types = pending.getValues("type", String.class);
-            assertThat(types).containsExactly("drawer", "fact", "tunnel");
+            assertThat(types).containsExactly("cell", "fact", "tunnel");
 
             // verify created_by propagation
             List<String> creators = pending.getValues("created_by", String.class);
@@ -260,25 +260,25 @@ class SchemaV2IntegrationTest {
     void approvePendingDrawerMakesItActiveViaStatusUpdate() throws SQLException {
         try (SchemaHarness h = migrateFreshSchema()) {
             String pendingId = h.dsl().fetchOne("""
-                    insert into drawers (content, wing, hall, status, created_by)
+                    insert into cells (content, realm, signal, status, created_by)
                     values ('Needs approval', 'test', 'test', 'pending', 'classifier')
                     returning id::text
                     """).get(0, String.class);
 
-            // not in active_drawers yet
+            // not in active_cells yet
             int countBefore = h.dsl().fetchOne("""
-                    select count(*)::int as cnt from active_drawers where id = ?::uuid
+                    select count(*)::int as cnt from active_cells where id = ?::uuid
                     """, pendingId).get("cnt", Integer.class);
             assertThat(countBefore).isZero();
 
             // approve by setting status to committed
             h.dsl().execute("""
-                    update drawers set status = 'committed' where id = ?::uuid
+                    update cells set status = 'committed' where id = ?::uuid
                     """, pendingId);
 
-            // now in active_drawers
+            // now in active_cells
             int countAfter = h.dsl().fetchOne("""
-                    select count(*)::int as cnt from active_drawers where id = ?::uuid
+                    select count(*)::int as cnt from active_cells where id = ?::uuid
                     """, pendingId).get("cnt", Integer.class);
             assertThat(countAfter).isEqualTo(1);
 
@@ -305,7 +305,7 @@ class SchemaV2IntegrationTest {
 
             // v1
             String v1 = h.dsl().fetchOne("""
-                    insert into drawers (content, wing, summary, status, created_by,
+                    insert into cells (content, realm, summary, status, created_by,
                                          valid_until)
                     values ('Version 1', 'test', 'V1', 'committed', 'test', now())
                     returning id::text
@@ -313,7 +313,7 @@ class SchemaV2IntegrationTest {
 
             // v2 with parent_id = v1
             String v2 = h.dsl().fetchOne("""
-                    insert into drawers (content, wing, summary, status, created_by,
+                    insert into cells (content, realm, summary, status, created_by,
                                          parent_id, valid_until)
                     values ('Version 2', 'test', 'V2', 'committed', 'test', ?::uuid, now())
                     returning id::text
@@ -321,7 +321,7 @@ class SchemaV2IntegrationTest {
 
             // v3 with parent_id = v2
             String v3 = h.dsl().fetchOne("""
-                    insert into drawers (content, wing, summary, status, created_by,
+                    insert into cells (content, realm, summary, status, created_by,
                                          parent_id, valid_until)
                     values ('Version 3', 'test', 'V3', 'committed', 'test', ?::uuid, now())
                     returning id::text
@@ -329,7 +329,7 @@ class SchemaV2IntegrationTest {
 
             // v4 with parent_id = v3 (current/active version)
             String v4 = h.dsl().fetchOne("""
-                    insert into drawers (content, wing, summary, status, created_by,
+                    insert into cells (content, realm, summary, status, created_by,
                                          parent_id)
                     values ('Version 4', 'test', 'V4', 'committed', 'test', ?::uuid)
                     returning id::text
@@ -339,10 +339,10 @@ class SchemaV2IntegrationTest {
             Result<Record> chain = h.dsl().fetch("""
                     with recursive chain as (
                         select d.id, d.parent_id, d.summary, d.valid_from, 1 as depth
-                        from drawers d where d.id = ?::uuid
+                        from cells d where d.id = ?::uuid
                         union all
                         select d.id, d.parent_id, d.summary, d.valid_from, c.depth + 1
-                        from drawers d join chain c on d.id = c.parent_id
+                        from cells d join chain c on d.id = c.parent_id
                         where c.depth < 100
                     )
                     select summary from chain order by valid_from asc
@@ -370,7 +370,7 @@ class SchemaV2IntegrationTest {
                         v_curr uuid;
                     begin
                         for i in 1..150 loop
-                            insert into drawers (content, wing, summary, status, created_by,
+                            insert into cells (content, realm, summary, status, created_by,
                                                  parent_id, valid_until)
                             values ('V' || i, 'test', 'V' || i, 'committed', 'test',
                                     v_prev,
@@ -383,8 +383,8 @@ class SchemaV2IntegrationTest {
 
             // Find the leaf node (the one with no valid_until, i.e., the latest revision)
             String leafId = h.dsl().fetchOne("""
-                    select id::text from drawers
-                    where wing = 'test' and valid_until is null
+                    select id::text from cells
+                    where realm = 'test' and valid_until is null
                     order by created_at desc limit 1
                     """).get(0, String.class);
 
@@ -392,10 +392,10 @@ class SchemaV2IntegrationTest {
             int chainLength = h.dsl().fetchOne("""
                     with recursive chain as (
                         select d.id, d.parent_id, 1 as depth
-                        from drawers d where d.id = ?::uuid
+                        from cells d where d.id = ?::uuid
                         union all
                         select d.id, d.parent_id, c.depth + 1
-                        from drawers d join chain c on d.id = c.parent_id
+                        from cells d join chain c on d.id = c.parent_id
                         where c.depth < 100
                     )
                     select count(*)::int as cnt from chain
@@ -417,7 +417,7 @@ class SchemaV2IntegrationTest {
             insertDrawer(h.dsl(), "Active content");
 
             int count = h.dsl().fetchOne("""
-                    select count(*)::int as cnt from active_drawers where wing = 'test'
+                    select count(*)::int as cnt from active_cells where realm = 'test'
                     """).get("cnt", Integer.class);
 
             assertThat(count).isEqualTo(1);
@@ -428,12 +428,12 @@ class SchemaV2IntegrationTest {
     void pendingDrawerNotInActiveView() throws SQLException {
         try (SchemaHarness h = migrateFreshSchema()) {
             h.dsl().execute("""
-                    insert into drawers (content, wing, status, created_by)
+                    insert into cells (content, realm, status, created_by)
                     values ('Pending', 'test', 'pending', 'classifier')
                     """);
 
             int count = h.dsl().fetchOne("""
-                    select count(*)::int as cnt from active_drawers where wing = 'test'
+                    select count(*)::int as cnt from active_cells where realm = 'test'
                     """).get("cnt", Integer.class);
 
             assertThat(count).isZero();
@@ -473,17 +473,17 @@ class SchemaV2IntegrationTest {
             insertDrawerWithHall(h.dsl(), "D2", "eng", "auth");
             insertDrawerWithHall(h.dsl(), "D3", "eng", "infra");
 
-            long drawerCount = h.dsl().fetchOne("""
-                    select sum(drawer_count)::bigint as total
-                    from wing_stats where wing = 'eng'
+            long cellCount = h.dsl().fetchOne("""
+                    select sum(cell_count)::bigint as total
+                    from realm_stats where realm = 'eng'
                     """).get("total", Long.class);
 
             Result<Record> halls = h.dsl().fetch("""
-                    select distinct hall from wing_stats where wing = 'eng'
+                    select distinct signal from realm_stats where realm = 'eng'
                     """);
 
-            assertThat(drawerCount).isEqualTo(3);
-            assertThat(halls.getValues("hall", String.class))
+            assertThat(cellCount).isEqualTo(3);
+            assertThat(halls.getValues("signal", String.class))
                     .containsExactlyInAnyOrder("auth", "infra");
         }
     }
@@ -520,18 +520,18 @@ class SchemaV2IntegrationTest {
 
     private static String insertDrawer(DSLContext dsl, String content) {
         return dsl.fetchOne("""
-                insert into drawers (content, wing, status, created_by)
+                insert into cells (content, realm, status, created_by)
                 values (?, 'test', 'committed', 'test')
                 returning id::text
                 """, content).get(0, String.class);
     }
 
-    private static String insertDrawerWithHall(DSLContext dsl, String content, String wing, String hall) {
+    private static String insertDrawerWithHall(DSLContext dsl, String content, String realm, String signal) {
         return dsl.fetchOne("""
-                insert into drawers (content, wing, hall, status, created_by)
+                insert into cells (content, realm, signal, status, created_by)
                 values (?, ?, ?, 'committed', 'test')
                 returning id::text
-                """, content, wing, hall).get(0, String.class);
+                """, content, realm, signal).get(0, String.class);
     }
 
     private static String insertFact(DSLContext dsl, String subject, String predicate, String object) {

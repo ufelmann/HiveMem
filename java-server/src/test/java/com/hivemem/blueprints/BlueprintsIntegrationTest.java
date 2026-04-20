@@ -2,10 +2,10 @@ package com.hivemem.blueprints;
 
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
-import com.hivemem.drawers.DrawerReadRepository;
+import com.hivemem.cells.CellReadRepository;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
-import com.hivemem.search.DrawerSearchRepository;
+import com.hivemem.search.CellSearchRepository;
 import com.hivemem.search.KgSearchRepository;
 import com.hivemem.tools.read.ReadToolService;
 import com.hivemem.write.WriteToolRepository;
@@ -85,7 +85,7 @@ class BlueprintsIntegrationTest {
 
     @BeforeEach
     void resetDatabase() {
-        dslContext.execute("TRUNCATE TABLE agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
+        dslContext.execute("TRUNCATE TABLE agent_diary, cell_references, references_, blueprints, identity, agents, facts, tunnels, cells CASCADE");
     }
 
     // --- 1. getBlueprint returns latest active version ---
@@ -99,7 +99,7 @@ class BlueprintsIntegrationTest {
         List<Map<String, Object>> blueprints = readToolService.getBlueprint("engineering");
 
         assertThat(blueprints).hasSize(1);
-        assertThat(blueprints.get(0)).containsEntry("wing", "engineering");
+        assertThat(blueprints.get(0)).containsEntry("realm", "engineering");
         assertThat(blueprints.get(0)).containsEntry("title", "Engineering: Active Decisions");
         assertThat(blueprints.get(0)).containsEntry("narrative",
                 "Current focus is on auth migration and HiveMem development.");
@@ -153,7 +153,7 @@ class BlueprintsIntegrationTest {
         List<Record> allVersions = dslContext.fetch("""
                 SELECT title, valid_until
                 FROM blueprints
-                WHERE wing = 'eng'
+                WHERE realm = 'eng'
                 ORDER BY valid_from
                 """);
         assertThat(allVersions).hasSize(3);
@@ -188,7 +188,7 @@ class BlueprintsIntegrationTest {
         List<Record> allRows = dslContext.fetch("""
                 SELECT title, valid_until
                 FROM blueprints
-                WHERE wing = 'eng'
+                WHERE realm = 'eng'
                 ORDER BY valid_from
                 """);
         assertThat(allRows).hasSize(2);
@@ -213,14 +213,14 @@ class BlueprintsIntegrationTest {
         List<Map<String, Object>> wingA = readToolService.getBlueprint("wing-a");
         assertThat(wingA).hasSize(1);
         assertThat(wingA.get(0)).containsEntry("title", "A-V2");
-        assertThat(countRows("SELECT count(*) AS cnt FROM blueprints WHERE wing = ?", "wing-a"))
+        assertThat(countRows("SELECT count(*) AS cnt FROM blueprints WHERE realm = ?", "wing-a"))
                 .isEqualTo(2L);
 
         // Wing B: only B-V1 active, no history
         List<Map<String, Object>> wingB = readToolService.getBlueprint("wing-b");
         assertThat(wingB).hasSize(1);
         assertThat(wingB.get(0)).containsEntry("title", "B-V1");
-        assertThat(countRows("SELECT count(*) AS cnt FROM blueprints WHERE wing = ?", "wing-b"))
+        assertThat(countRows("SELECT count(*) AS cnt FROM blueprints WHERE realm = ?", "wing-b"))
                 .isEqualTo(1L);
 
         // Updating wing B does not affect wing A
@@ -243,7 +243,7 @@ class BlueprintsIntegrationTest {
         List<Map<String, Object>> all = readToolService.getBlueprint(null);
 
         assertThat(all).hasSize(2);
-        List<String> wings = all.stream().map(m -> (String) m.get("wing")).toList();
+        List<String> wings = all.stream().map(m -> (String) m.get("realm")).toList();
         assertThat(wings).containsExactlyInAnyOrder("eng", "personal");
     }
 
@@ -257,8 +257,8 @@ class BlueprintsIntegrationTest {
             WriteToolService.class,
             WriteToolRepository.class,
             ReadToolService.class,
-            DrawerReadRepository.class,
-            DrawerSearchRepository.class,
+            CellReadRepository.class,
+            CellSearchRepository.class,
             KgSearchRepository.class,
             AdminToolRepository.class,
             TestConfig.class
