@@ -20,8 +20,8 @@ public class PopularityRefreshScheduler {
     @Scheduled(fixedDelayString = "${hivemem.popularity.refresh-interval:PT1H}")
     public void refresh() {
         try {
-            long drawerCount = adminToolRepository.refreshPopularity();
-            log.info("Popularity materialized view refreshed: {} drawers", drawerCount);
+            long cellCount = adminToolRepository.refreshPopularity();
+            log.info("Popularity materialized view refreshed: {} cells", cellCount);
         } catch (Exception e) {
             log.error("Popularity refresh failed", e);
         }

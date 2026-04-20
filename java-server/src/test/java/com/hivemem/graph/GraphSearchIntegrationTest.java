@@ -2,10 +2,10 @@ package com.hivemem.graph;
 
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
-import com.hivemem.drawers.DrawerReadRepository;
+import com.hivemem.cells.CellReadRepository;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
-import com.hivemem.search.DrawerSearchRepository;
+import com.hivemem.search.CellSearchRepository;
 import com.hivemem.search.KgSearchRepository;
 import com.hivemem.tools.read.ReadToolService;
 import com.hivemem.write.WriteToolRepository;
@@ -85,7 +85,7 @@ class GraphSearchIntegrationTest {
 
     @BeforeEach
     void resetDatabase() {
-        dslContext.execute("TRUNCATE TABLE agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
+        dslContext.execute("TRUNCATE TABLE agent_diary, cell_references, references_, blueprints, identity, agents, facts, tunnels, cells CASCADE");
     }
 
     // ---- traverse: bidirectional ----
@@ -282,7 +282,7 @@ class GraphSearchIntegrationTest {
     // ---- helpers ----
 
     private Map<String, Object> createDrawer(String content) {
-        return writeToolService.addDrawer(
+        return writeToolService.addCell(
                 WRITER,
                 content,
                 "test",
@@ -308,8 +308,8 @@ class GraphSearchIntegrationTest {
     private static Set<UUID> collectAllDrawerIds(List<Map<String, Object>> edges) {
         Set<UUID> ids = new HashSet<>();
         for (Map<String, Object> edge : edges) {
-            ids.add(UUID.fromString((String) edge.get("from_drawer")));
-            ids.add(UUID.fromString((String) edge.get("to_drawer")));
+            ids.add(UUID.fromString((String) edge.get("from_cell")));
+            ids.add(UUID.fromString((String) edge.get("to_cell")));
         }
         return ids;
     }
@@ -317,7 +317,7 @@ class GraphSearchIntegrationTest {
     private static Set<UUID> collectToDrawerIds(List<Map<String, Object>> edges) {
         Set<UUID> ids = new HashSet<>();
         for (Map<String, Object> edge : edges) {
-            ids.add(UUID.fromString((String) edge.get("to_drawer")));
+            ids.add(UUID.fromString((String) edge.get("to_cell")));
         }
         return ids;
     }
@@ -328,8 +328,8 @@ class GraphSearchIntegrationTest {
             WriteToolService.class,
             WriteToolRepository.class,
             ReadToolService.class,
-            DrawerReadRepository.class,
-            DrawerSearchRepository.class,
+            CellReadRepository.class,
+            CellSearchRepository.class,
             KgSearchRepository.class,
             AdminToolRepository.class,
             TestConfig.class

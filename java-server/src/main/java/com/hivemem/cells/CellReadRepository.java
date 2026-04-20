@@ -1,4 +1,4 @@
-package com.hivemem.drawers;
+package com.hivemem.cells;
 
 import org.jooq.DSLContext;
 import org.jooq.Record;
@@ -15,80 +15,80 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public class DrawerReadRepository {
+public class CellReadRepository {
 
     private final DSLContext dslContext;
 
-    public DrawerReadRepository(DSLContext dslContext) {
+    public CellReadRepository(DSLContext dslContext) {
         this.dslContext = dslContext;
     }
 
     public Map<String, Object> statusSnapshot() {
         Record counts = dslContext.fetchOne("""
                 SELECT
-                    (SELECT count(*) FROM active_drawers) AS drawers,
+                    (SELECT count(*) FROM active_cells) AS cells,
                     (SELECT count(*) FROM active_facts) AS facts,
                     (SELECT count(*) FROM active_tunnels) AS tunnels,
                     (SELECT count(*) FROM pending_approvals) AS pending,
-                    (SELECT max(created_at) FROM drawers) AS last_activity
+                    (SELECT max(created_at) FROM cells) AS last_activity
                 """);
 
-        List<String> wings = dslContext.fetch("""
-                        SELECT DISTINCT wing
-                        FROM active_drawers
-                        WHERE wing IS NOT NULL
-                        ORDER BY wing
+        List<String> realms = dslContext.fetch("""
+                        SELECT DISTINCT realm
+                        FROM active_cells
+                        WHERE realm IS NOT NULL
+                        ORDER BY realm
                         """)
-                .map(record -> record.get("wing", String.class));
+                .map(record -> record.get("realm", String.class));
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("drawers", countValue(counts, "drawers"));
+        result.put("cells", countValue(counts, "cells"));
         result.put("facts", countValue(counts, "facts"));
         result.put("tunnels", countValue(counts, "tunnels"));
         result.put("pending", countValue(counts, "pending"));
         result.put("last_activity", timestampValue(counts, "last_activity"));
-        result.put("wings", wings);
+        result.put("realms", realms);
         return result;
     }
 
-    public List<Map<String, Object>> listWings() {
+    public List<Map<String, Object>> listRealms() {
         List<Map<String, Object>> results = new ArrayList<>();
         for (Record row : dslContext.fetch("""
-                SELECT wing,
-                       count(DISTINCT hall) AS hall_count,
-                       count(*) AS drawer_count
-                FROM active_drawers
-                WHERE wing IS NOT NULL
-                GROUP BY wing
-                ORDER BY wing
+                SELECT realm,
+                       count(DISTINCT signal) AS signal_count,
+                       count(*) AS cell_count
+                FROM active_cells
+                WHERE realm IS NOT NULL
+                GROUP BY realm
+                ORDER BY realm
                 """)) {
             Map<String, Object> result = new LinkedHashMap<>();
-            result.put("wing", row.get("wing", String.class));
-            result.put("hall_count", countValue(row, "hall_count"));
-            result.put("drawer_count", countValue(row, "drawer_count"));
+            result.put("realm", row.get("realm", String.class));
+            result.put("signal_count", countValue(row, "signal_count"));
+            result.put("cell_count", countValue(row, "cell_count"));
             results.add(result);
         }
         return results;
     }
 
-    public List<Map<String, Object>> listHalls(String wing) {
+    public List<Map<String, Object>> listSignals(String realm) {
         List<Map<String, Object>> results = new ArrayList<>();
         for (Record row : dslContext.fetch("""
-                SELECT hall, count(*) AS drawer_count
-                FROM active_drawers
-                WHERE wing = ? AND hall IS NOT NULL
-                GROUP BY hall
-                ORDER BY hall
-                """, wing)) {
+                SELECT signal, count(*) AS cell_count
+                FROM active_cells
+                WHERE realm = ? AND signal IS NOT NULL
+                GROUP BY signal
+                ORDER BY signal
+                """, realm)) {
             Map<String, Object> result = new LinkedHashMap<>();
-            result.put("hall", row.get("hall", String.class));
-            result.put("drawer_count", countValue(row, "drawer_count"));
+            result.put("signal", row.get("signal", String.class));
+            result.put("cell_count", countValue(row, "cell_count"));
             results.add(result);
         }
         return results;
     }
 
-    public List<Map<String, Object>> traverse(UUID drawerId, int maxDepth, String relationFilter) {
+    public List<Map<String, Object>> traverse(UUID cellId, int maxDepth, String relationFilter) {
         String normalizedRelationFilter = relationFilter == null || relationFilter.isBlank() ? null : relationFilter;
         List<Object> params = new ArrayList<>();
         String sql;
@@ -97,63 +97,63 @@ public class DrawerReadRepository {
             sql = """
                     WITH RECURSIVE
                     bidir AS (
-                        SELECT from_drawer AS node, to_drawer AS neighbor, from_drawer, to_drawer, relation, note
+                        SELECT from_cell AS node, to_cell AS neighbor, from_cell, to_cell, relation, note
                         FROM active_tunnels WHERE relation = ?
                         UNION ALL
-                        SELECT to_drawer AS node, from_drawer AS neighbor, from_drawer, to_drawer, relation, note
+                        SELECT to_cell AS node, from_cell AS neighbor, from_cell, to_cell, relation, note
                         FROM active_tunnels WHERE relation = ?
                     ),
                     graph AS (
-                        SELECT from_drawer, to_drawer, relation, note, neighbor, 1 AS depth
+                        SELECT from_cell, to_cell, relation, note, neighbor, 1 AS depth
                         FROM bidir
                         WHERE node = ?
                         UNION
-                        SELECT b.from_drawer, b.to_drawer, b.relation, b.note, b.neighbor, g.depth + 1
+                        SELECT b.from_cell, b.to_cell, b.relation, b.note, b.neighbor, g.depth + 1
                         FROM bidir b
                         JOIN graph g ON b.node = g.neighbor
                         WHERE g.depth < ?
                     )
-                    SELECT DISTINCT from_drawer, to_drawer, relation, note, depth
+                    SELECT DISTINCT from_cell, to_cell, relation, note, depth
                     FROM graph
-                    ORDER BY depth, from_drawer
+                    ORDER BY depth, from_cell
                     """;
             params.add(normalizedRelationFilter);
             params.add(normalizedRelationFilter);
-            params.add(drawerId);
+            params.add(cellId);
             params.add(maxDepth);
         } else {
             sql = """
                     WITH RECURSIVE
                     bidir AS (
-                        SELECT from_drawer AS node, to_drawer AS neighbor, from_drawer, to_drawer, relation, note
+                        SELECT from_cell AS node, to_cell AS neighbor, from_cell, to_cell, relation, note
                         FROM active_tunnels
                         UNION ALL
-                        SELECT to_drawer AS node, from_drawer AS neighbor, from_drawer, to_drawer, relation, note
+                        SELECT to_cell AS node, from_cell AS neighbor, from_cell, to_cell, relation, note
                         FROM active_tunnels
                     ),
                     graph AS (
-                        SELECT from_drawer, to_drawer, relation, note, neighbor, 1 AS depth
+                        SELECT from_cell, to_cell, relation, note, neighbor, 1 AS depth
                         FROM bidir
                         WHERE node = ?
                         UNION
-                        SELECT b.from_drawer, b.to_drawer, b.relation, b.note, b.neighbor, g.depth + 1
+                        SELECT b.from_cell, b.to_cell, b.relation, b.note, b.neighbor, g.depth + 1
                         FROM bidir b
                         JOIN graph g ON b.node = g.neighbor
                         WHERE g.depth < ?
                     )
-                    SELECT DISTINCT from_drawer, to_drawer, relation, note, depth
+                    SELECT DISTINCT from_cell, to_cell, relation, note, depth
                     FROM graph
-                    ORDER BY depth, from_drawer
+                    ORDER BY depth, from_cell
                     """;
-            params.add(drawerId);
+            params.add(cellId);
             params.add(maxDepth);
         }
 
         List<Map<String, Object>> results = new ArrayList<>();
         for (Record row : dslContext.fetch(sql, params.toArray())) {
             Map<String, Object> result = new LinkedHashMap<>();
-            result.put("from_drawer", uuidValue(row, "from_drawer"));
-            result.put("to_drawer", uuidValue(row, "to_drawer"));
+            result.put("from_cell", uuidValue(row, "from_cell"));
+            result.put("to_cell", uuidValue(row, "to_cell"));
             result.put("relation", row.get("relation", String.class));
             result.put("note", row.get("note", String.class));
             result.put("depth", countValue(row, "depth"));
@@ -235,23 +235,23 @@ public class DrawerReadRepository {
         return results;
     }
 
-    public List<Map<String, Object>> drawerHistory(UUID drawerId) {
+    public List<Map<String, Object>> cellHistory(UUID cellId) {
         List<Map<String, Object>> results = new ArrayList<>();
         for (Record row : dslContext.fetch("""
                 WITH RECURSIVE chain AS (
-                    SELECT d.id, d.parent_id, d.summary, d.created_by, d.valid_from, d.valid_until, d.ingested_at, 1 AS depth
-                    FROM drawers d
-                    WHERE d.id = ?
+                    SELECT c.id, c.parent_id, c.summary, c.created_by, c.valid_from, c.valid_until, c.ingested_at, 1 AS depth
+                    FROM cells c
+                    WHERE c.id = ?
                     UNION ALL
-                    SELECT d.id, d.parent_id, d.summary, d.created_by, d.valid_from, d.valid_until, d.ingested_at, c.depth + 1
-                    FROM drawers d
-                    JOIN chain c ON d.id = c.parent_id
-                    WHERE c.depth < 100
+                    SELECT c.id, c.parent_id, c.summary, c.created_by, c.valid_from, c.valid_until, c.ingested_at, ch.depth + 1
+                    FROM cells c
+                    JOIN chain ch ON c.id = ch.parent_id
+                    WHERE ch.depth < 100
                 )
                 SELECT id, parent_id, summary, created_by, valid_from, valid_until, ingested_at
                 FROM chain
                 ORDER BY valid_from ASC
-                """, drawerId)) {
+                """, cellId)) {
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("id", uuidValue(row, "id"));
             result.put("parent_id", uuidValue(row, "parent_id"));
@@ -300,7 +300,7 @@ public class DrawerReadRepository {
     public List<Map<String, Object>> pendingApprovals() {
         List<Map<String, Object>> results = new ArrayList<>();
         for (Record row : dslContext.fetch("""
-                SELECT type, id, description, wing, hall, created_by, created_at
+                SELECT type, id, description, realm, signal, created_by, created_at
                 FROM pending_approvals
                 ORDER BY created_at ASC
                 """)) {
@@ -308,8 +308,8 @@ public class DrawerReadRepository {
             result.put("type", row.get("type", String.class));
             result.put("id", uuidValue(row, "id"));
             result.put("description", row.get("description", String.class));
-            result.put("wing", row.get("wing", String.class));
-            result.put("hall", row.get("hall", String.class));
+            result.put("realm", row.get("realm", String.class));
+            result.put("signal", row.get("signal", String.class));
             result.put("created_by", row.get("created_by", String.class));
             result.put("created_at", timestampValue(row, "created_at"));
             results.add(result);
@@ -321,9 +321,9 @@ public class DrawerReadRepository {
         String normalizedRefType = refType == null || refType.isBlank() ? null : refType;
         String sql = """
                 SELECT r.id, r.title, r.url, r.author, r.ref_type, r.status, r.importance, r.created_at,
-                       count(dr.id) AS linked_drawers
+                       count(cr.id) AS linked_cells
                 FROM references_ r
-                LEFT JOIN drawer_references dr ON dr.reference_id = r.id
+                LEFT JOIN cell_references cr ON cr.reference_id = r.id
                 WHERE r.status IN ('unread', 'reading')
                 """;
         Object[] params;
@@ -349,7 +349,7 @@ public class DrawerReadRepository {
             result.put("ref_type", row.get("ref_type", String.class));
             result.put("status", row.get("status", String.class));
             result.put("importance", integerValue(row, "importance"));
-            result.put("linked_drawers", countValue(row, "linked_drawers"));
+            result.put("linked_cells", countValue(row, "linked_cells"));
             result.put("created_at", timestampValue(row, "created_at"));
             results.add(result);
         }
@@ -392,23 +392,23 @@ public class DrawerReadRepository {
         return results;
     }
 
-    public List<Map<String, Object>> getBlueprint(String wing) {
-        String normalizedWing = wing == null || wing.isBlank() ? null : wing;
+    public List<Map<String, Object>> getBlueprint(String realm) {
+        String normalizedRealm = realm == null || realm.isBlank() ? null : realm;
         List<Map<String, Object>> results = new ArrayList<>();
-        if (normalizedWing != null) {
+        if (normalizedRealm != null) {
             for (Record row : dslContext.fetch("""
-                    SELECT id, wing, title, narrative, hall_order, key_drawers, created_by, valid_from
+                    SELECT id, realm, title, narrative, hall_order, key_drawers, created_by, valid_from
                     FROM active_blueprints
-                    WHERE wing = ?
+                    WHERE realm = ?
                     ORDER BY valid_from DESC
-                    """, normalizedWing)) {
+                    """, normalizedRealm)) {
                 results.add(blueprintRow(row));
             }
         } else {
             for (Record row : dslContext.fetch("""
-                    SELECT id, wing, title, narrative, hall_order, key_drawers, created_by, valid_from
+                    SELECT id, realm, title, narrative, hall_order, key_drawers, created_by, valid_from
                     FROM active_blueprints
-                    ORDER BY wing, valid_from DESC
+                    ORDER BY realm, valid_from DESC
                     """)) {
                 results.add(blueprintRow(row));
             }
@@ -432,14 +432,14 @@ public class DrawerReadRepository {
         return result;
     }
 
-    public Optional<Map<String, Object>> findDrawer(UUID drawerId) {
+    public Optional<Map<String, Object>> findCell(UUID cellId) {
         Record row = dslContext.fetchOne("""
-                SELECT id, parent_id, content, wing, hall, room, source, tags,
+                SELECT id, parent_id, content, realm, signal, topic, source, tags,
                        importance, summary, key_points, insight, actionability,
                        status, created_by, created_at, valid_from, valid_until
-                FROM drawers
+                FROM cells
                 WHERE id = ?
-                """, drawerId);
+                """, cellId);
         if (row == null) {
             return Optional.empty();
         }
@@ -448,9 +448,9 @@ public class DrawerReadRepository {
         result.put("id", uuidValue(row, "id"));
         result.put("parent_id", uuidValue(row, "parent_id"));
         result.put("content", row.get("content", String.class));
-        result.put("wing", row.get("wing", String.class));
-        result.put("hall", row.get("hall", String.class));
-        result.put("room", row.get("room", String.class));
+        result.put("realm", row.get("realm", String.class));
+        result.put("signal", row.get("signal", String.class));
+        result.put("topic", row.get("topic", String.class));
         result.put("source", row.get("source", String.class));
         result.put("tags", stringArrayValue(row, "tags"));
         result.put("importance", integerValue(row, "importance"));
@@ -469,7 +469,7 @@ public class DrawerReadRepository {
     private static Map<String, Object> blueprintRow(Record row) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", uuidValue(row, "id"));
-        result.put("wing", row.get("wing", String.class));
+        result.put("realm", row.get("realm", String.class));
         result.put("title", row.get("title", String.class));
         result.put("narrative", row.get("narrative", String.class));
         result.put("hall_order", stringArrayValue(row, "hall_order"));

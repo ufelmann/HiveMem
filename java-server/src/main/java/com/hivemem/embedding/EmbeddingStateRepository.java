@@ -54,13 +54,13 @@ public class EmbeddingStateRepository {
 
     public int countDrawersWithContent() {
         Record row = dslContext.fetchOne(
-                "SELECT count(*) AS cnt FROM drawers WHERE content IS NOT NULL AND status = 'committed'");
+                "SELECT count(*) AS cnt FROM cells WHERE content IS NOT NULL AND status = 'committed'");
         return row == null ? 0 : row.get("cnt", Number.class).intValue();
     }
 
     public List<DrawerRow> fetchDrawerBatch(int offset, int batchSize) {
         return dslContext.fetch("""
-                SELECT id, content FROM drawers
+                SELECT id, content FROM cells
                 WHERE content IS NOT NULL AND status = 'committed'
                 ORDER BY created_at ASC
                 LIMIT ? OFFSET ?
@@ -68,21 +68,21 @@ public class EmbeddingStateRepository {
                 .map(r -> new DrawerRow(r.get("id", UUID.class), r.get("content", String.class)));
     }
 
-    public void updateEmbedding(UUID drawerId, List<Float> embedding) {
+    public void updateEmbedding(UUID cellId, List<Float> embedding) {
         Float[] embeddingArray = embedding.toArray(Float[]::new);
         dslContext.execute(
-                "UPDATE drawers SET embedding = ?::vector WHERE id = ?",
-                embeddingArray, drawerId);
+                "UPDATE cells SET embedding = ?::vector WHERE id = ?",
+                embeddingArray, cellId);
     }
 
     public void dropEmbeddingIndex() {
-        dslContext.execute("DROP INDEX IF EXISTS idx_drawers_embedding");
+        dslContext.execute("DROP INDEX IF EXISTS idx_cells_embedding");
     }
 
     public void createEmbeddingIndex(int dimension) {
         dslContext.execute(
-                "CREATE INDEX IF NOT EXISTS idx_drawers_embedding " +
-                "ON drawers USING hnsw ((embedding::vector(" + dimension + ")) vector_cosine_ops)");
+                "CREATE INDEX IF NOT EXISTS idx_cells_embedding " +
+                "ON cells USING hnsw ((embedding::vector(" + dimension + ")) vector_cosine_ops)");
     }
 
     public boolean tryAdvisoryLock(long lockId) {

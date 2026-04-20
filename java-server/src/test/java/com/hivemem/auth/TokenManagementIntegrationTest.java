@@ -241,7 +241,7 @@ class TokenManagementIntegrationTest {
         // Admin must include every read, write, and admin tool
         assertThat(adminTools).contains(
                 "hivemem_search", "hivemem_wake_up",
-                "hivemem_add_drawer", "hivemem_kg_add",
+                "hivemem_add_cell", "hivemem_kg_add",
                 "hivemem_approve_pending", "hivemem_health"
         );
     }
@@ -250,16 +250,16 @@ class TokenManagementIntegrationTest {
     void readerSeesOnlyReadTools() {
         Set<String> readerTools = toolPermissionService.allowedTools(AuthRole.READER);
         assertThat(readerTools).contains("hivemem_search", "hivemem_wake_up",
-                "hivemem_list_wings", "hivemem_pending_approvals");
+                "hivemem_list_realms", "hivemem_pending_approvals");
         assertThat(readerTools).doesNotContain(
-                "hivemem_add_drawer", "hivemem_kg_add",
+                "hivemem_add_cell", "hivemem_kg_add",
                 "hivemem_approve_pending", "hivemem_health");
     }
 
     @Test
     void writerCannotApprove() {
         Set<String> writerTools = toolPermissionService.allowedTools(AuthRole.WRITER);
-        assertThat(writerTools).contains("hivemem_add_drawer", "hivemem_kg_add");
+        assertThat(writerTools).contains("hivemem_add_cell", "hivemem_kg_add");
         assertThat(writerTools).doesNotContain("hivemem_approve_pending", "hivemem_health");
     }
 
@@ -299,7 +299,7 @@ class TokenManagementIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.tools[*].name", hasItem("hivemem_search")))
                 .andExpect(jsonPath("$.result.tools[*].name", hasItem("hivemem_wake_up")))
-                .andExpect(jsonPath("$.result.tools[*].name", not(hasItem("hivemem_add_drawer"))))
+                .andExpect(jsonPath("$.result.tools[*].name", not(hasItem("hivemem_add_cell"))))
                 .andExpect(jsonPath("$.result.tools[*].name", not(hasItem("hivemem_approve_pending"))))
                 .andExpect(jsonPath("$.result.tools[*].name", not(hasItem("hivemem_health"))));
     }
@@ -317,7 +317,7 @@ class TokenManagementIntegrationTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.tools[*].name", hasItem("hivemem_search")))
-                .andExpect(jsonPath("$.result.tools[*].name", hasItem("hivemem_add_drawer")))
+                .andExpect(jsonPath("$.result.tools[*].name", hasItem("hivemem_add_cell")))
                 .andExpect(jsonPath("$.result.tools[*].name", not(hasItem("hivemem_approve_pending"))))
                 .andExpect(jsonPath("$.result.tools[*].name", not(hasItem("hivemem_health"))));
     }
@@ -381,7 +381,7 @@ class TokenManagementIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"jsonrpc":"2.0","id":1,"method":"tools/call",
-                                 "params":{"name":"hivemem_add_drawer","arguments":{}}}
+                                 "params":{"name":"hivemem_add_cell","arguments":{}}}
                                 """))
                 .andExpect(status().isForbidden());
     }

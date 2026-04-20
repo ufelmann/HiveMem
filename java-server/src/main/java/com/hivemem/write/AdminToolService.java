@@ -30,15 +30,15 @@ public class AdminToolService {
         return result;
     }
 
-    public Map<String, Object> logAccess(UUID drawerId, UUID factId, String accessedBy) {
-        adminToolRepository.logAccess(drawerId, factId, accessedBy);
+    public Map<String, Object> logAccess(UUID cellId, UUID factId, String accessedBy) {
+        adminToolRepository.logAccess(cellId, factId, accessedBy);
         return Map.of("logged", true);
     }
 
     public Map<String, Object> refreshPopularity() {
         return Map.of(
                 "refreshed", true,
-                "drawer_count", adminToolRepository.refreshPopularity()
+                "cell_count", adminToolRepository.refreshPopularity()
         );
     }
 }

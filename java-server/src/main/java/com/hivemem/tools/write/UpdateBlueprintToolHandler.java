@@ -28,16 +28,16 @@ public class UpdateBlueprintToolHandler implements ToolHandler {
 
     @Override
     public String description() {
-        return "Create or update a blueprint for a wing.";
+        return "Create or update a blueprint for a realm.";
     }
 
     @Override
     public Object call(AuthPrincipal principal, JsonNode arguments) {
-        String wing = WriteArgumentParser.requiredText(arguments, "wing");
+        String realm = WriteArgumentParser.requiredText(arguments, "realm");
         String title = WriteArgumentParser.requiredText(arguments, "title");
         String narrative = WriteArgumentParser.requiredText(arguments, "narrative");
         List<String> hallOrder = WriteArgumentParser.optionalTextList(arguments, "hall_order");
         List<UUID> keyDrawers = WriteArgumentParser.optionalUuidList(arguments, "key_drawers");
-        return writeToolService.updateBlueprint(principal, wing, title, narrative, hallOrder, keyDrawers);
+        return writeToolService.updateBlueprint(principal, realm, title, narrative, hallOrder, keyDrawers);
     }
 }

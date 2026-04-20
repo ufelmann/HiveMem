@@ -212,10 +212,10 @@ class SecurityIntegrationTest {
             mockMvc.perform(post("/mcp")
                             .header(HttpHeaders.AUTHORIZATION, "Bearer reader-token")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(toolsCallRequest("hivemem_add_drawer", "{}")))
+                            .content(toolsCallRequest("hivemem_add_cell", "{}")))
                     .andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.error.code").value(-32003))
-                    .andExpect(jsonPath("$.error.message").value("Tool not permitted: hivemem_add_drawer"));
+                    .andExpect(jsonPath("$.error.message").value("Tool not permitted: hivemem_add_cell"));
         }
 
         @Test
@@ -419,7 +419,7 @@ class SecurityIntegrationTest {
 
         @Test
         void readerCannotAccessWriteTools() {
-            assertThat(service.isAllowed(AuthRole.READER, "hivemem_add_drawer")).isFalse();
+            assertThat(service.isAllowed(AuthRole.READER, "hivemem_add_cell")).isFalse();
             assertThat(service.isAllowed(AuthRole.READER, "hivemem_kg_add")).isFalse();
             assertThat(service.isAllowed(AuthRole.READER, "hivemem_add_tunnel")).isFalse();
         }

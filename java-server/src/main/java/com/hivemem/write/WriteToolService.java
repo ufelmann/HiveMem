@@ -28,12 +28,12 @@ public class WriteToolService {
         this.embeddingClient = embeddingClient;
     }
 
-    public Map<String, Object> addDrawer(
+    public Map<String, Object> addCell(
             AuthPrincipal principal,
             String content,
-            String wing,
-            String hall,
-            String room,
+            String realm,
+            String signal,
+            String topic,
             String source,
             List<String> tags,
             Integer importance,
@@ -49,7 +49,7 @@ public class WriteToolService {
         List<Float> embedding = embeddingClient.encodeDocument(content);
 
         if (dedupeThreshold != null) {
-            List<Map<String, Object>> duplicates = writeToolRepository.checkDuplicateDrawer(
+            List<Map<String, Object>> duplicates = writeToolRepository.checkDuplicateCell(
                     embedding.toString(), dedupeThreshold);
             if (!duplicates.isEmpty()) {
                 Map<String, Object> rejection = new java.util.LinkedHashMap<>();
@@ -59,12 +59,12 @@ public class WriteToolService {
             }
         }
 
-        Map<String, Object> inserted = writeToolRepository.addDrawer(
+        Map<String, Object> inserted = writeToolRepository.addCell(
                 content,
                 embedding,
-                wing,
-                hall,
-                room,
+                realm,
+                signal,
+                topic,
                 source,
                 tags,
                 importance,
@@ -143,10 +143,10 @@ public class WriteToolService {
         );
     }
 
-    public Map<String, Object> reviseDrawer(AuthPrincipal principal, UUID oldId, String newContent, String newSummary) {
+    public Map<String, Object> reviseCell(AuthPrincipal principal, UUID oldId, String newContent, String newSummary) {
         String status = principal.role() == AuthRole.AGENT ? STATUS_PENDING : STATUS_COMMITTED;
         List<Float> embedding = embeddingClient.encodeDocument(newContent);
-        return writeToolRepository.reviseDrawer(oldId, newContent, newSummary, embedding, principal.name(), status);
+        return writeToolRepository.reviseCell(oldId, newContent, newSummary, embedding, principal.name(), status);
     }
 
     public Map<String, Object> updateIdentity(String key, String content) {
@@ -169,8 +169,8 @@ public class WriteToolService {
         return writeToolRepository.addReference(title, url, author, refType, effectiveStatus, notes, tags, importance);
     }
 
-    public Map<String, Object> linkReference(UUID drawerId, UUID referenceId, String relation) {
-        return writeToolRepository.linkReference(drawerId, referenceId, relation);
+    public Map<String, Object> linkReference(UUID cellId, UUID referenceId, String relation) {
+        return writeToolRepository.linkReference(cellId, referenceId, relation);
     }
 
     public Map<String, Object> registerAgent(
@@ -190,25 +190,25 @@ public class WriteToolService {
 
     public Map<String, Object> updateBlueprint(
             AuthPrincipal principal,
-            String wing,
+            String realm,
             String title,
             String narrative,
             List<String> hallOrder,
             List<UUID> keyDrawers
     ) {
-        return writeToolRepository.updateBlueprint(principal.name(), wing, title, narrative, hallOrder, keyDrawers);
+        return writeToolRepository.updateBlueprint(principal.name(), realm, title, narrative, hallOrder, keyDrawers);
     }
 
     public Map<String, Object> addTunnel(
             AuthPrincipal principal,
-            UUID fromDrawer,
-            UUID toDrawer,
+            UUID fromCell,
+            UUID toCell,
             String relation,
             String note,
             String requestedStatus
     ) {
         String status = principal.role() == AuthRole.AGENT ? STATUS_PENDING : effectiveStatus(principal.role(), requestedStatus);
-        return writeToolRepository.addTunnel(fromDrawer, toDrawer, relation, note, status, principal.name());
+        return writeToolRepository.addTunnel(fromCell, toCell, relation, note, status, principal.name());
     }
 
     public Map<String, Object> removeTunnel(UUID tunnelId) {
