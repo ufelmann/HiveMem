@@ -1,4 +1,4 @@
-export interface WingPalette {
+export interface RealmPalette {
   glow: string
   base: string
   tint: string
@@ -44,7 +44,7 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${f(0)}${f(8)}${f(4)}`
 }
 
-export function paletteForWing(index: number, declaredColor?: string): WingPalette {
+export function paletteForRealm(index: number, declaredColor?: string): RealmPalette {
   const hex = declaredColor ?? (() => {
     const h = (200 + index * 137.5) % 360
     return hslToHex(h, 0.65, 0.55)

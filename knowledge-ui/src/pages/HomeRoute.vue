@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted } from 'vue'
 import IconRail from '../components/shell/IconRail.vue'
 import SlidePanel from '../components/shell/SlidePanel.vue'
 import SearchPanel from '../components/shell/SearchPanel.vue'
-import WingsPanel from '../components/shell/WingsPanel.vue'
+import RealmsPanel from '../components/shell/RealmsPanel.vue'
 import SettingsPanel from '../components/shell/SettingsPanel.vue'
 import SphereCanvas from '../components/canvas/SphereCanvas.vue'
 import ScanPanel from '../components/ScanPanel.vue'
@@ -20,7 +20,7 @@ let unsub: (() => void) | null = null
 onMounted(() => {
   if (!canvas.loaded) canvas.loadTopLevel()
   unsub = useApi().subscribe(e => {
-    if (e.type === 'status' || e.type === 'drawer_added' || e.type === 'tunnel_added') {
+    if (e.type === 'status' || e.type === 'cell_added' || e.type === 'tunnel_added') {
       ui.pushToast('info', 'New activity — click Reload to refresh')
     }
   })
@@ -33,11 +33,11 @@ useKeybindings()
   <div class="home-root">
     <IconRail />
     <SlidePanel id="search" title="Search"><SearchPanel /></SlidePanel>
-    <SlidePanel id="wings" title="Wings"><WingsPanel /></SlidePanel>
+    <SlidePanel id="realms" title="Realms"><RealmsPanel /></SlidePanel>
     <SlidePanel id="settings" title="Settings"><SettingsPanel /></SlidePanel>
     <main class="canvas-slot">
       <SphereCanvas v-if="canvas.loaded" />
-      <div v-else class="splash">Loading palace…</div>
+      <div v-else class="splash">Loading…</div>
     </main>
     <ScanPanel />
     <Reader />

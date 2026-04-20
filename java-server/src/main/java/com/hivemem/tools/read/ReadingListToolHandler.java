@@ -25,7 +25,7 @@ public class ReadingListToolHandler implements ToolHandler {
 
     @Override
     public String description() {
-        return "Unread and in-progress references with drawer linkage counts.";
+        return "Unread and in-progress references with cell linkage counts.";
     }
 
     @Override

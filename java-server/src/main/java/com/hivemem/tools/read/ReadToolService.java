@@ -1,9 +1,9 @@
 package com.hivemem.tools.read;
 
 import com.hivemem.auth.AuthPrincipal;
-import com.hivemem.drawers.DrawerReadRepository;
+import com.hivemem.cells.CellReadRepository;
 import com.hivemem.embedding.EmbeddingClient;
-import com.hivemem.search.DrawerSearchRepository;
+import com.hivemem.search.CellSearchRepository;
 import com.hivemem.search.KgSearchRepository;
 import com.hivemem.write.AdminToolService;
 import org.springframework.stereotype.Service;
@@ -20,44 +20,44 @@ import java.util.LinkedHashMap;
 @Service
 public class ReadToolService {
 
-    private final DrawerReadRepository drawerReadRepository;
+    private final CellReadRepository cellReadRepository;
     private final KgSearchRepository kgSearchRepository;
-    private final DrawerSearchRepository drawerSearchRepository;
+    private final CellSearchRepository cellSearchRepository;
     private final EmbeddingClient embeddingClient;
     private final AdminToolService adminToolService;
 
     public ReadToolService(
-            DrawerReadRepository drawerReadRepository,
+            CellReadRepository cellReadRepository,
             KgSearchRepository kgSearchRepository,
-            DrawerSearchRepository drawerSearchRepository,
+            CellSearchRepository cellSearchRepository,
             EmbeddingClient embeddingClient,
             AdminToolService adminToolService
     ) {
-        this.drawerReadRepository = drawerReadRepository;
+        this.cellReadRepository = cellReadRepository;
         this.kgSearchRepository = kgSearchRepository;
-        this.drawerSearchRepository = drawerSearchRepository;
+        this.cellSearchRepository = cellSearchRepository;
         this.embeddingClient = embeddingClient;
         this.adminToolService = adminToolService;
     }
 
     public Map<String, Object> status() {
-        return drawerReadRepository.statusSnapshot();
+        return cellReadRepository.statusSnapshot();
     }
 
-    public List<Map<String, Object>> listWings() {
-        return drawerReadRepository.listWings();
+    public List<Map<String, Object>> listRealms() {
+        return cellReadRepository.listRealms();
     }
 
-    public List<Map<String, Object>> listHalls(String wing) {
-        return drawerReadRepository.listHalls(wing);
+    public List<Map<String, Object>> listSignals(String realm) {
+        return cellReadRepository.listSignals(realm);
     }
 
     public List<Map<String, Object>> search(
             String query,
             int limit,
-            String wing,
-            String hall,
-            String room,
+            String realm,
+            String signal,
+            String topic,
             double weightSemantic,
             double weightKeyword,
             double weightRecency,
@@ -65,8 +65,8 @@ public class ReadToolService {
             double weightPopularity
     ) {
         List<Float> queryVector = embeddingClient.encodeQuery(query);
-        List<DrawerSearchRepository.SearchCandidate> candidates = drawerSearchRepository.searchCandidates(wing, hall, room);
-        long maxAccessCount = candidates.stream().mapToLong(DrawerSearchRepository.SearchCandidate::accessCount).max().orElse(0L);
+        List<CellSearchRepository.SearchCandidate> candidates = cellSearchRepository.searchCandidates(realm, signal, topic);
+        long maxAccessCount = candidates.stream().mapToLong(CellSearchRepository.SearchCandidate::accessCount).max().orElse(0L);
         OffsetDateTime now = OffsetDateTime.now();
 
         return candidates.stream()
@@ -93,58 +93,58 @@ public class ReadToolService {
         return kgSearchRepository.search(subject, predicate, object_, limit);
     }
 
-    public Map<String, Object> getDrawer(AuthPrincipal principal, UUID drawerId) {
-        Optional<Map<String, Object>> drawer = drawerReadRepository.findDrawer(drawerId);
-        drawer.ifPresent(d -> adminToolService.logAccess(drawerId, null, principal.name()));
-        return drawer.orElse(null);
+    public Map<String, Object> getCell(AuthPrincipal principal, UUID cellId) {
+        Optional<Map<String, Object>> cell = cellReadRepository.findCell(cellId);
+        cell.ifPresent(c -> adminToolService.logAccess(cellId, null, principal.name()));
+        return cell.orElse(null);
     }
 
-    public List<Map<String, Object>> traverse(UUID drawerId, int maxDepth, String relationFilter) {
-        return drawerReadRepository.traverse(drawerId, maxDepth, relationFilter);
+    public List<Map<String, Object>> traverse(UUID cellId, int maxDepth, String relationFilter) {
+        return cellReadRepository.traverse(cellId, maxDepth, relationFilter);
     }
 
     public List<Map<String, Object>> quickFacts(String entity) {
-        return drawerReadRepository.quickFacts(entity);
+        return cellReadRepository.quickFacts(entity);
     }
 
     public List<Map<String, Object>> timeMachine(String subject, OffsetDateTime asOf, OffsetDateTime asOfIngestion, int limit) {
-        return drawerReadRepository.timeMachine(subject, asOf, asOfIngestion, limit);
+        return cellReadRepository.timeMachine(subject, asOf, asOfIngestion, limit);
     }
 
-    public List<Map<String, Object>> drawerHistory(UUID drawerId) {
-        return drawerReadRepository.drawerHistory(drawerId);
+    public List<Map<String, Object>> cellHistory(UUID cellId) {
+        return cellReadRepository.cellHistory(cellId);
     }
 
     public List<Map<String, Object>> factHistory(UUID factId) {
-        return drawerReadRepository.factHistory(factId);
+        return cellReadRepository.factHistory(factId);
     }
 
     public List<Map<String, Object>> pendingApprovals() {
-        return drawerReadRepository.pendingApprovals();
+        return cellReadRepository.pendingApprovals();
     }
 
     public List<Map<String, Object>> readingList(String refType, int limit) {
-        return drawerReadRepository.readingList(refType, limit);
+        return cellReadRepository.readingList(refType, limit);
     }
 
     public List<Map<String, Object>> listAgents() {
-        return drawerReadRepository.listAgents();
+        return cellReadRepository.listAgents();
     }
 
     public List<Map<String, Object>> diaryRead(String agent, int lastN) {
-        return drawerReadRepository.diaryRead(agent, lastN);
+        return cellReadRepository.diaryRead(agent, lastN);
     }
 
-    public List<Map<String, Object>> getBlueprint(String wing) {
-        return drawerReadRepository.getBlueprint(wing);
+    public List<Map<String, Object>> getBlueprint(String realm) {
+        return cellReadRepository.getBlueprint(realm);
     }
 
     public Map<String, Object> wakeUp() {
-        return drawerReadRepository.wakeUp();
+        return cellReadRepository.wakeUp();
     }
 
     private static Map<String, Object> scoredResult(
-            DrawerSearchRepository.SearchCandidate candidate,
+            CellSearchRepository.SearchCandidate candidate,
             String query,
             List<Float> queryVector,
             List<Float> candidateVector,
@@ -171,9 +171,9 @@ public class ReadToolService {
         row.put("id", candidate.id().toString());
         row.put("content", candidate.content());
         row.put("summary", candidate.summary());
-        row.put("wing", candidate.wing());
-        row.put("hall", candidate.hall());
-        row.put("room", candidate.room());
+        row.put("realm", candidate.realm());
+        row.put("signal", candidate.signal());
+        row.put("topic", candidate.topic());
         row.put("tags", candidate.tags());
         row.put("importance", candidate.importance());
         row.put("created_at", candidate.createdAt() == null ? null : candidate.createdAt().toString());

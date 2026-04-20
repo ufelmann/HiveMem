@@ -144,12 +144,12 @@ class McpControllerTest {
                                   "jsonrpc":"2.0",
                                   "id":5,
                                   "method":"tools/call",
-                                  "params":{"name":"hivemem_add_drawer","arguments":{}}
+                                  "params":{"name":"hivemem_add_cell","arguments":{}}
                                 }
                                 """))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value(-32003))
-                .andExpect(jsonPath("$.error.message").value("Tool not permitted: hivemem_add_drawer"));
+                .andExpect(jsonPath("$.error.message").value("Tool not permitted: hivemem_add_cell"));
     }
 
     @Test

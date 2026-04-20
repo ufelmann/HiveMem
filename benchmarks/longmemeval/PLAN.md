@@ -20,7 +20,7 @@
 
 ## TL;DR
 
-We will measure HiveMem against **LongMemEval**, the ICLR-2025 benchmark for long-term memory in chat assistants (500 test questions across 6 reasoning categories plus abstention). A Python adapter ingests each LongMemEval conversation into a fresh HiveMem wing via MCP, queries with the test question, feeds retrieved summaries to an LLM to produce an answer, and scores it against ground truth using LongMemEval's **official** LLM-as-judge script.
+We will measure HiveMem against **LongMemEval**, the ICLR-2025 benchmark for long-term memory in chat assistants (500 test questions across 6 reasoning categories plus abstention). A Python adapter ingests each LongMemEval conversation into a fresh HiveMem realm via MCP, queries with the test question, feeds retrieved summaries to an LLM to produce an answer, and scores it against ground truth using LongMemEval's **official** LLM-as-judge script.
 
 The benchmark does **not** run on the production HiveMem host. It runs on a **dedicated Linux machine with an NVIDIA GPU**, which lets us:
 
@@ -137,7 +137,7 @@ Sources: [LongMemEval README](https://github.com/xiaowu0162/LongMemEval#-testing
 - **R@5 ≠ QA accuracy.** MemPalace reports retrieval recall (was the gold session in the top-5?). The Zep/Mem0/MemGPT numbers and the official LongMemEval judge report **end-to-end QA accuracy** (did the LLM answer correctly after retrieval?). These are different metrics; a system can have 99% R@5 and 60% QA accuracy if the LLM hallucinates despite being handed the right context. Our plan reports QA accuracy for headline numbers and R@5 as a secondary diagnostic.
 - **Adversarial category handling.** LongMemEval includes `*_abs` abstention questions. Including vs. excluding them in the accuracy denominator can swing numbers by 10+ points. Our loader keeps them by default (matches the official script's behavior); document any deviation.
 - **MEMTRACK independent signal.** An independent 2025 paper suggests that on top of GPT-5 / Gemini-2.5-Pro, *neither* Mem0 nor Zep adds meaningful accuracy, and Mem0 slightly degrades Gemini. Interpretation: strong base models already handle long-context recall; memory layers matter most for *small* answer LLMs. Record the answer-LLM tier in the results JSON so this signal surfaces.
-- **Terminology note on MemPalace.** MemPalace uses the identical spatial metaphor (Wings / Halls / Rooms / Drawers / Tunnels) that HiveMem uses. Origin and relationship of the two projects is outside this plan's scope; record it only as a factual observation.
+- **Terminology note on MemPalace.** MemPalace uses the identical spatial metaphor (Realms / Signals / Topics / Cells / Tunnels) that HiveMem uses. Origin and relationship of the two projects is outside this plan's scope; record it only as a factual observation.
 
 ### What this tells us to expect for HiveMem Phase 1
 
@@ -165,7 +165,7 @@ All four use LLMs for ingestion. The only difference is which side of the librar
 
 ### Why a raw-dump adapter would be unfair to HiveMem
 
-A naive adapter that pipes LongMemEval turns straight into `hivemem_add_drawer` would:
+A naive adapter that pipes LongMemEval turns straight into `hivemem_add_cell` would:
 - Store raw `"user: ...\nassistant: ..."` blobs as L0 `content`
 - Use the first 200 characters as a fake `summary`
 - Skip `key_points`, `insight`, `actionability` entirely
@@ -175,7 +175,7 @@ That is **not** how HiveMem is used in practice. It produces garbage embeddings 
 
 ### The adapter must include an LLM curation stage
 
-For a defensible benchmark, Task 4's adapter and Task 5's LLM client must cooperate: before each `hivemem_add_drawer` call, a gpt-4o-mini curation pass reads the raw session and produces the L0-L3 layers plus an optional list of fact triples. This matches Zep's `gpt-4o-mini-2024-07-18` "graph construction" stage and keeps the benchmark honest.
+For a defensible benchmark, Task 4's adapter and Task 5's LLM client must cooperate: before each `hivemem_add_cell` call, a gpt-4o-mini curation pass reads the raw session and produces the L0-L3 layers plus an optional list of fact triples. This matches Zep's `gpt-4o-mini-2024-07-18` "graph construction" stage and keeps the benchmark honest.
 
 Concretely, Task 5's `LlmClient` gets a second method alongside `generate_answer`:
 
@@ -185,7 +185,7 @@ def curate_session(self, *, session_turns, session_date) -> CuratedSession:
        as HiveMem would expect the user-agent to fill in."""
 ```
 
-Task 6's harness calls `curate_session` per session, then feeds the curated payload into `hivemem_add_drawer` and `hivemem_kg_add`.
+Task 6's harness calls `curate_session` per session, then feeds the curated payload into `hivemem_add_cell` and `hivemem_kg_add`.
 
 ### Budget impact of curated ingestion
 
@@ -206,7 +206,7 @@ Section 3.4's A/B adds a **third axis**: ingestion mode. Unlike my earlier stanc
 |---|---|---|---|
 | `raw` | Dump raw turns as L0, no L1-L3, no facts, no KG | **MemPalace raw** (96.6% R@5 claim), vanilla-ChromaDB baselines | Yes — reported as a separate headline |
 | `curated` (default) | gpt-4o-mini fills L0-L3 + extracts 0-3 facts per session | **Zep** (gpt-4o-mini graph construction), Mem0 (LLM extraction), MemMachine | Yes — primary headline |
-| `curated+tunnels` | Above plus post-hoc `hivemem_add_tunnel` between semantically close drawers | HiveMem-specific graph signal showcase | Optional, may overfit |
+| `curated+tunnels` | Above plus post-hoc `hivemem_add_tunnel` between semantically close cells | HiveMem-specific graph signal showcase | Optional, may overfit |
 
 **Always report both modes.** A big curated-over-raw delta means the LLM curation is doing real work; a small delta means either the dataset is too easy or your retrieval stack is already saturating the signal. Both findings are informative and neither is embarrassing. Just be explicit in the results JSON which mode produced which number.
 
@@ -499,7 +499,7 @@ pythonpath = ["src"]
 hivemem:
   endpoint: "http://localhost:8421/mcp"
   token_env: "HIVEMEM_BENCH_TOKEN"
-  wing: "benchmark_longmemeval"
+  realm: "benchmark_longmemeval"
   search_limit: 10
 
 openai:
@@ -701,7 +701,7 @@ def test_add_drawer_sends_jsonrpc_envelope(httpx_mock, client):
               "result": {"content": [{"type": "text", "text": '{"inserted": true, "id": "abc"}'}]}}
     )
     result = client.add_drawer(
-        content="x", summary="s", wing="w", hall="h", room="r",
+        content="x", summary="s", realm="w", signal="h", topic="r",
         importance=1, valid_from="2025-01-01T00:00:00Z",
     )
     assert result["id"] == "abc"
@@ -709,7 +709,7 @@ def test_add_drawer_sends_jsonrpc_envelope(httpx_mock, client):
     assert request.headers["authorization"] == "Bearer t0ken"
     body = request.json()
     assert body["method"] == "tools/call"
-    assert body["params"]["name"] == "hivemem_add_drawer"
+    assert body["params"]["name"] == "hivemem_add_cell"
 
 
 def test_search_parses_text_payload(httpx_mock, client):
@@ -717,7 +717,7 @@ def test_search_parses_text_payload(httpx_mock, client):
         json={"jsonrpc": "2.0", "id": 1,
               "result": {"content": [{"type": "text", "text": '[{"id": "d1", "summary": "hit", "score_total": 0.8}]'}]}}
     )
-    results = client.search(query="alice berlin", limit=3, wing="benchmark")
+    results = client.search(query="alice berlin", limit=3, realm="benchmark")
     assert len(results) == 1
     assert results[0]["summary"] == "hit"
 ```
@@ -765,21 +765,21 @@ class HiveMemClient:
             return None
         return json.loads(texts[0]["text"])
 
-    def add_drawer(self, *, content, summary, wing, hall, room, importance, valid_from,
+    def add_drawer(self, *, content, summary, realm, signal, topic, importance, valid_from,
                    key_points=None, tags=None, dedupe_threshold=None):
         args = {
             "content": content, "summary": summary,
-            "wing": wing, "hall": hall, "room": room,
+            "realm": realm, "signal": signal, "topic": topic,
             "importance": importance, "valid_from": valid_from,
         }
         if key_points is not None: args["key_points"] = key_points
         if tags is not None: args["tags"] = tags
         if dedupe_threshold is not None: args["dedupe_threshold"] = dedupe_threshold
-        return self._call("hivemem_add_drawer", args)
+        return self._call("hivemem_add_cell", args)
 
-    def search(self, *, query, limit=10, wing=None):
+    def search(self, *, query, limit=10, realm=None):
         args: Dict[str, Any] = {"query": query, "limit": limit}
-        if wing is not None: args["wing"] = wing
+        if realm is not None: args["realm"] = realm
         return self._call("hivemem_search", args) or []
 
     def wake_up(self):
@@ -792,7 +792,7 @@ class HiveMemClient:
 
 ### Task 4 — Adapter: Case → DrawerWrite list (TDD)
 
-One drawer per session (batching turns) — keeps embedding calls bounded at ~40 per case. Turns are joined as `role: content`. `valid_from` uses the session's date so the recency signal reflects the conversation timeline, not the benchmark run time. Sessions that contain `has_answer` turns get `importance=2` (higher priority), others stay at `importance=3`.
+One cell per session (batching turns) — keeps embedding calls bounded at ~40 per case. Turns are joined as `role: content`. `valid_from` uses the session's date so the recency signal reflects the conversation timeline, not the benchmark run time. Sessions that contain `has_answer` turns get `importance=2` (higher priority), others stay at `importance=3`.
 
 ```python
 # tests/test_adapter.py
@@ -817,18 +817,18 @@ def _case():
 
 
 def test_one_drawer_per_session():
-    writes = to_drawer_writes(_case(), wing="bench")
+    writes = to_drawer_writes(_case(), realm="bench")
     assert len(writes) == 2
 
 
 def test_turns_are_joined_in_order():
-    writes = to_drawer_writes(_case(), wing="bench")
+    writes = to_drawer_writes(_case(), realm="bench")
     assert "user: hi" in writes[0].content
     assert "assistant: hello" in writes[0].content
 
 
 def test_valid_from_from_session_date():
-    writes = to_drawer_writes(_case(), wing="bench")
+    writes = to_drawer_writes(_case(), realm="bench")
     assert writes[0].valid_from == "2025-01-01T00:00:00Z"
     assert writes[1].valid_from == "2025-02-01T00:00:00Z"
 
@@ -836,14 +836,14 @@ def test_valid_from_from_session_date():
 def test_answer_session_boosts_importance():
     # Session 0 has has_answer=True on one turn → importance=2
     # Session 1 has none → importance=3
-    writes = to_drawer_writes(_case(), wing="bench")
+    writes = to_drawer_writes(_case(), realm="bench")
     assert writes[0].importance == 2
     assert writes[1].importance == 3
 
 
 def test_room_is_question_id():
-    writes = to_drawer_writes(_case(), wing="bench")
-    assert all(w.room == "q1" for w in writes)
+    writes = to_drawer_writes(_case(), realm="bench")
+    assert all(w.topic == "q1" for w in writes)
 ```
 
 ```python
@@ -859,15 +859,15 @@ from .loader import Case
 class DrawerWrite:
     content: str
     summary: str
-    wing: str
-    hall: str
-    room: str
+    realm: str
+    signal: str
+    topic: str
     importance: int
     valid_from: str
     key_points: List[str]
 
 
-def to_drawer_writes(case: Case, *, wing: str, hall: str = "conversations") -> List[DrawerWrite]:
+def to_drawer_writes(case: Case, *, realm: str, signal: str = "conversations") -> List[DrawerWrite]:
     writes: List[DrawerWrite] = []
     for idx, session in enumerate(case.sessions):
         date = case.session_dates[idx] if idx < len(case.session_dates) else "2025-01-01T00:00:00Z"
@@ -878,9 +878,9 @@ def to_drawer_writes(case: Case, *, wing: str, hall: str = "conversations") -> L
             DrawerWrite(
                 content=content,
                 summary=summary,
-                wing=wing,
-                hall=hall,
-                room=case.question_id,
+                realm=realm,
+                signal=signal,
+                topic=case.question_id,
                 importance=importance,
                 valid_from=date,
                 key_points=[t.content[:80] for t in session[:3]],
@@ -927,9 +927,9 @@ class _FakeClient:
 def test_generate_answer_returns_text():
     fake = _FakeClient("Alice moved in January 2025.")
     llm = LlmClient(fake, answer_model="gpt-4o-mini", curation_model="gpt-4o-mini")
-    answer = llm.generate_answer(context="drawer text", question="When?")
+    answer = llm.generate_answer(context="cell text", question="When?")
     assert "January 2025" in answer
-    assert any("drawer text" in m["content"] for m in fake.chat.completions.last_messages)
+    assert any("cell text" in m["content"] for m in fake.chat.completions.last_messages)
 
 
 def test_curate_session_parses_structured_payload():
@@ -1126,7 +1126,7 @@ def _case():
 
 def test_curated_mode_calls_llm_per_session_and_stores_facts():
     hm, llm = _StubHiveMem(), _StubLlm()
-    result = run_case(_case(), hivemem=hm, llm=llm, wing="bench",
+    result = run_case(_case(), hivemem=hm, llm=llm, realm="bench",
                       search_limit=3, mode="curated")
     assert result["hypothesis"] == "January 2025"
     assert result["ingestion_mode"] == "curated"
@@ -1141,7 +1141,7 @@ def test_curated_mode_calls_llm_per_session_and_stores_facts():
 
 def test_raw_mode_skips_curation_and_facts():
     hm, llm = _StubHiveMem(), _StubLlm()
-    result = run_case(_case(), hivemem=hm, llm=llm, wing="bench",
+    result = run_case(_case(), hivemem=hm, llm=llm, realm="bench",
                       search_limit=3, mode="raw")
     assert result["ingestion_mode"] == "raw"
     assert llm.curate_calls == []  # no curation in raw mode
@@ -1167,12 +1167,12 @@ def run_case(
     *,
     hivemem,
     llm,
-    wing: str,
+    realm: str,
     search_limit: int = 10,
     mode: Mode = "curated",
 ) -> Dict[str, Any]:
     start = time.monotonic()
-    raw_writes = to_drawer_writes(case, wing=wing)
+    raw_writes = to_drawer_writes(case, realm=realm)
 
     for idx, w in enumerate(raw_writes):
         turns = [
@@ -1199,9 +1199,9 @@ def run_case(
         hivemem.add_drawer(
             content=drawer_content,
             summary=summary,
-            wing=w.wing,
-            hall=w.hall,
-            room=w.room,
+            realm=w.realm,
+            signal=w.signal,
+            topic=w.topic,
             importance=w.importance,
             valid_from=w.valid_from,
             key_points=key_points,
@@ -1218,7 +1218,7 @@ def run_case(
                     valid_from=session_date,
                 )
 
-    hits = hivemem.search(query=case.question, limit=search_limit, wing=wing)
+    hits = hivemem.search(query=case.question, limit=search_limit, realm=realm)
     context = "\n\n".join(h.get("summary") or h.get("content", "") for h in hits)
     hypothesis = llm.generate_answer(context=context, question=case.question)
 
@@ -1267,7 +1267,7 @@ from longmemeval_hivemem.runner import run
 
 def test_dry_run_emits_config(tmp_path, fixtures_dir, capsys, monkeypatch):
     cfg = {
-        "hivemem": {"endpoint": "http://x/mcp", "token_env": "T", "wing": "w", "search_limit": 3},
+        "hivemem": {"endpoint": "http://x/mcp", "token_env": "T", "realm": "w", "search_limit": 3},
         "openai": {"api_key_env": "O", "answer_model": "gpt-4o-mini"},
         "longmemeval": {"root": str(tmp_path), "dataset_file": "sample.json", "subset": "temporal-reasoning"},
         "run": {"max_examples": 1, "results_dir": str(tmp_path)},
@@ -1343,7 +1343,7 @@ def run(argv: Optional[List[str]] = None) -> int:
     mode = cfg["run"].get("ingestion_mode", "curated")
     results = [
         run_case(c, hivemem=hm, llm=llm,
-                 wing=cfg["hivemem"]["wing"],
+                 realm=cfg["hivemem"]["realm"],
                  search_limit=cfg["hivemem"]["search_limit"],
                  mode=mode)
         for c in cases
@@ -1421,7 +1421,7 @@ Replace the scaffolded `benchmarks/longmemeval/README.md` with a complete walkth
 - Full subset (150 temporal cases, ~$0.30-0.80)
 - How to invoke the official judge
 - How to interpret results: overall accuracy, per-subset accuracy, p50/p95 latency, hit counts
-- Known limits (one subset in Phase 1, LLM-as-judge variance, wing-cleanup between runs)
+- Known limits (one subset in Phase 1, LLM-as-judge variance, realm-cleanup between runs)
 
 **Commit:** `docs(benchmarks): longmemeval phase 1 setup + interpretation (#23)`
 
@@ -1451,12 +1451,12 @@ python3 src/evaluation/evaluate_qa.py \
   data/longmemeval_s_cleaned.json
 ```
 
-Between runs, purge the benchmark wing to avoid contamination:
+Between runs, purge the benchmark realm to avoid contamination:
 
 ```sql
 -- Connect to the HiveMem postgres on the benchmark host:
-DELETE FROM drawers WHERE wing = 'benchmark_longmemeval';
-DELETE FROM access_log WHERE drawer_id NOT IN (SELECT id FROM drawers);
+DELETE FROM cells WHERE realm = 'benchmark_longmemeval';
+DELETE FROM access_log WHERE cell_id NOT IN (SELECT id FROM cells);
 ```
 
 Or (simpler) restart the HiveMem container with a fresh volume.
@@ -1517,7 +1517,7 @@ Setting `OPENAI_ORG` or a hard spend limit on the OpenAI account before running 
 - CI gate that fails on >5% accuracy regression (needs a stable baseline first)
 - Full 5-subset sweep with aggregated score dashboard
 - DMR and LoCoMo benchmarks (mentioned in ticket as nice-to-have)
-- Automatic wing cleanup between runs
+- Automatic realm cleanup between runs
 - Multi-embedding A/B: run the same cases with different embedding models and diff the scores
 - Integration with the knowledge-UI (issue #2) for visual result inspection
 
@@ -1540,7 +1540,7 @@ Setting `OPENAI_ORG` or a hard spend limit on the OpenAI account before running 
 - [x] No placeholders — every code block is runnable.
 - [x] Dataset download path matches the HF reality (verified via `gh api`).
 - [x] Official judge is invoked, not re-implemented.
-- [x] Benchmark isolation is explicit (separate host, wing, purge).
+- [x] Benchmark isolation is explicit (separate host, realm, purge).
 - [x] Variance and calibration explained so readers do not misinterpret low early numbers.
 
 ---
@@ -1592,7 +1592,7 @@ All external resources cited in this plan, collated for quick lookup.
 - Finding: both Mem0 and Zep show no significant improvement over base GPT-5 / Gemini-2.5-Pro, with slight degradation in some Gemini+Mem0 configurations. Memory layers matter more for smaller answer LLMs.
 
 ### MemPalace (released April 2026, 48k+ stars, raw-mode-focused)
-- Repo: <https://github.com/MemPalace/mempalace> — 29 MCP tools, Wings/Halls/Rooms/Drawers/Tunnels hierarchy, ChromaDB + SQLite backend, Python 3.9+
+- Repo: <https://github.com/MemPalace/mempalace> — 29 MCP tools, Realms/Signals/Topics/Cells/Tunnels hierarchy, ChromaDB + SQLite backend, Python 3.9+
 - Author note in third-party article: co-created by Ben Sigman and (per article) Milla Jovovich as conceptual co-author
 - Glossary article (independent coverage): <https://nevercodealone.de/de/glossare/ki-tools-2026/mempalace-milla-jovovich-open-source-ki-memory-gegen-ki-amnesie>
 - Score correction thread: [MemPalace issue #214 — "Benchmarks do not exercise MemPalace — headline 96.6% is a ChromaDB score"](https://github.com/MemPalace/mempalace/issues/214)

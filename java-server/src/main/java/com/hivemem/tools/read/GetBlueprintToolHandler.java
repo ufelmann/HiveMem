@@ -23,13 +23,13 @@ public class GetBlueprintToolHandler implements ToolHandler {
 
     @Override
     public String description() {
-        return "Active blueprints for a wing.";
+        return "Active blueprints for a realm.";
     }
 
     @Override
     public Object call(AuthPrincipal principal, JsonNode arguments) {
-        String wing = optionalText(arguments, "wing");
-        return readToolService.getBlueprint(wing);
+        String realm = optionalText(arguments, "realm");
+        return readToolService.getBlueprint(realm);
     }
 
     private static String optionalText(JsonNode arguments, String field) {

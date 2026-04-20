@@ -12,22 +12,22 @@ import java.util.UUID;
 
 @Component
 @Order(33)
-public class ReviseDrawerToolHandler implements ToolHandler {
+public class ReviseCellToolHandler implements ToolHandler {
 
     private final WriteToolService writeToolService;
 
-    public ReviseDrawerToolHandler(WriteToolService writeToolService) {
+    public ReviseCellToolHandler(WriteToolService writeToolService) {
         this.writeToolService = writeToolService;
     }
 
     @Override
     public String name() {
-        return "hivemem_revise_drawer";
+        return "hivemem_revise_cell";
     }
 
     @Override
     public String description() {
-        return "Revise a drawer by closing the current version and inserting a new one.";
+        return "Revise a cell by closing the current version and inserting a new one.";
     }
 
     @Override
@@ -35,6 +35,6 @@ public class ReviseDrawerToolHandler implements ToolHandler {
         UUID oldId = WriteArgumentParser.requiredUuid(arguments, "old_id");
         String newContent = WriteArgumentParser.requiredText(arguments, "new_content");
         String newSummary = WriteArgumentParser.optionalText(arguments, "new_summary");
-        return writeToolService.reviseDrawer(principal, oldId, newContent, newSummary);
+        return writeToolService.reviseCell(principal, oldId, newContent, newSummary);
     }
 }

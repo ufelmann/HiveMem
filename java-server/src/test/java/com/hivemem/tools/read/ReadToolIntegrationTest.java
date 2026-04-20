@@ -91,7 +91,7 @@ class ReadToolIntegrationTest {
     @BeforeEach
     void resetDatabase() {
         rateLimiter.clearAll();
-        dslContext.execute("TRUNCATE TABLE agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
+        dslContext.execute("TRUNCATE TABLE agent_diary, cell_references, references_, blueprints, identity, agents, facts, tunnels, cells CASCADE");
     }
 
     @Test
@@ -106,8 +106,8 @@ class ReadToolIntegrationTest {
                 .andExpect(jsonPath("$.result.tools[0].name").value("hivemem_status"))
                 .andExpect(jsonPath("$.result.tools[1].name").value("hivemem_search"))
                 .andExpect(jsonPath("$.result.tools[2].name").value("hivemem_search_kg"))
-                .andExpect(jsonPath("$.result.tools[3].name").value("hivemem_get_drawer"))
-                .andExpect(jsonPath("$.result.tools[4].name").value("hivemem_list_wings"))
+                .andExpect(jsonPath("$.result.tools[3].name").value("hivemem_get_cell"))
+                .andExpect(jsonPath("$.result.tools[4].name").value("hivemem_list_realms"))
                 .andExpect(jsonPath("$.result.tools[5].name").value("hivemem_traverse"))
                 .andExpect(jsonPath("$.result.tools[6].name").value("hivemem_quick_facts"))
                 .andExpect(jsonPath("$.result.tools[7].name").value("hivemem_time_machine"))
@@ -125,13 +125,13 @@ class ReadToolIntegrationTest {
         seedStatusRows();
 
         JsonNode content = callToolContent("hivemem_status", Map.of());
-        assertThat(content.path("drawers").asInt()).isEqualTo(2);
+        assertThat(content.path("cells").asInt()).isEqualTo(2);
         assertThat(content.path("facts").asInt()).isEqualTo(2);
         assertThat(content.path("tunnels").asInt()).isEqualTo(1);
         assertThat(content.path("pending").asInt()).isEqualTo(3);
         assertThat(content.path("last_activity").asText()).isEqualTo("2026-04-03T12:00:00Z");
-        assertThat(content.path("wings").get(0).asText()).isEqualTo("alpha");
-        assertThat(content.path("wings").get(1).asText()).isEqualTo("beta");
+        assertThat(content.path("realms").get(0).asText()).isEqualTo("alpha");
+        assertThat(content.path("realms").get(1).asText()).isEqualTo("beta");
     }
 
     @Test
@@ -141,8 +141,8 @@ class ReadToolIntegrationTest {
                 null,
                 "Semantic oracle drawer",
                 "alpha",
-                "search",
                 "facts",
+                "oracle",
                 "system",
                 1,
                 "Semantic oracle summary",
@@ -159,8 +159,8 @@ class ReadToolIntegrationTest {
                 null,
                 "Keyword oracle drawer",
                 "alpha",
-                "search",
                 "facts",
+                "oracle",
                 "system",
                 5,
                 "Keyword oracle summary",
@@ -233,8 +233,8 @@ class ReadToolIntegrationTest {
                 null,
                 "The JVM migration plan",
                 "alpha",
-                "planning",
                 "facts",
+                "jvm",
                 "system",
                 4,
                 "Java migration slice",
@@ -247,7 +247,7 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_get_drawer", Map.of("drawer_id", "00000000-0000-0000-0000-000000000111"));
+        JsonNode content = callToolContent("hivemem_get_cell", Map.of("cell_id", "00000000-0000-0000-0000-000000000111"));
         assertThat(content.path("id").asText()).isEqualTo("00000000-0000-0000-0000-000000000111");
         assertThat(content.path("parent_id").isNull()).isTrue();
         assertThat(content.path("content").asText()).isEqualTo("The JVM migration plan");
@@ -260,40 +260,40 @@ class ReadToolIntegrationTest {
 
     @Test
     void getDrawerToolReturnsNullWhenDrawerDoesNotExist() throws Exception {
-        JsonNode content = callToolContent("hivemem_get_drawer", Map.of("drawer_id", "00000000-0000-0000-0000-000000000999"));
+        JsonNode content = callToolContent("hivemem_get_cell", Map.of("cell_id", "00000000-0000-0000-0000-000000000999"));
         assertThat(content.isNull()).isTrue();
     }
 
     @Test
     void getDrawerLogsAccessAutomatically() {
         UUID drawerId = UUID.fromString(
-            (String) writeToolService.addDrawer(
+            (String) writeToolService.addCell(
                 new AuthPrincipal("fixture-writer", AuthRole.WRITER),
                 "test drawer for auto-log",
-                "testing", "autolog", "base",
+                "testing", "facts", "base",
                 null, null, null, null, null, null, null, null, null, null
             ).get("id"));
 
         long beforeCount = dslContext.fetchCount(
             DSL.table("access_log"),
-            DSL.field("drawer_id").eq(drawerId)
+            DSL.field("cell_id").eq(drawerId)
         );
 
-        readToolService.getDrawer(
+        readToolService.getCell(
             new AuthPrincipal("test-writer", AuthRole.WRITER),
             drawerId
         );
 
         long afterCount = dslContext.fetchCount(
             DSL.table("access_log"),
-            DSL.field("drawer_id").eq(drawerId)
+            DSL.field("cell_id").eq(drawerId)
         );
         org.junit.jupiter.api.Assertions.assertEquals(beforeCount + 1, afterCount);
 
         String accessedBy = dslContext
             .select(DSL.field("accessed_by", String.class))
             .from("access_log")
-            .where(DSL.field("drawer_id").eq(drawerId))
+            .where(DSL.field("cell_id").eq(drawerId))
             .orderBy(DSL.field("accessed_at").desc())
             .limit(1)
             .fetchOne(DSL.field("accessed_by", String.class));
@@ -308,7 +308,7 @@ class ReadToolIntegrationTest {
                 null,
                 "Alpha strategy drawer",
                 "alpha",
-                "strategy",
+                "events",
                 "notes",
                 "system",
                 2,
@@ -322,11 +322,11 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_list_wings", Map.of());
-        assertThat(content.get(0).path("wing").asText()).isEqualTo("alpha");
-        assertThat(content.get(0).path("hall_count").asInt()).isEqualTo(2);
-        assertThat(content.get(0).path("drawer_count").asInt()).isEqualTo(2);
-        assertThat(content.get(1).path("wing").asText()).isEqualTo("beta");
+        JsonNode content = callToolContent("hivemem_list_realms", Map.of());
+        assertThat(content.get(0).path("realm").asText()).isEqualTo("alpha");
+        assertThat(content.get(0).path("signal_count").asInt()).isEqualTo(2);
+        assertThat(content.get(0).path("cell_count").asInt()).isEqualTo(2);
+        assertThat(content.get(1).path("realm").asText()).isEqualTo("beta");
         assertThat(content).hasSize(2);
     }
 
@@ -338,7 +338,7 @@ class ReadToolIntegrationTest {
                 null,
                 "Alpha strategy drawer",
                 "alpha",
-                "strategy",
+                "events",
                 "notes",
                 "system",
                 2,
@@ -352,11 +352,11 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_list_wings", Map.of("wing", "alpha"));
-        assertThat(content.get(0).path("hall").asText()).isEqualTo("planning");
-        assertThat(content.get(0).path("drawer_count").asInt()).isEqualTo(1);
-        assertThat(content.get(1).path("hall").asText()).isEqualTo("strategy");
-        assertThat(content.get(1).path("drawer_count").asInt()).isEqualTo(1);
+        JsonNode content = callToolContent("hivemem_list_realms", Map.of("realm", "alpha"));
+        assertThat(content.get(0).path("signal").asText()).isEqualTo("events");
+        assertThat(content.get(0).path("cell_count").asInt()).isEqualTo(1);
+        assertThat(content.get(1).path("signal").asText()).isEqualTo("facts");
+        assertThat(content.get(1).path("cell_count").asInt()).isEqualTo(1);
     }
 
     @Test
@@ -368,7 +368,7 @@ class ReadToolIntegrationTest {
                 null,
                 "Third committed drawer",
                 "alpha",
-                "ops",
+                "facts",
                 "notes",
                 "system",
                 1,
@@ -394,13 +394,13 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_traverse", Map.of("drawer_id", "00000000-0000-0000-0000-000000000002", "max_depth", 1));
-        assertThat(content.get(0).path("from_drawer").asText()).isEqualTo("00000000-0000-0000-0000-000000000001");
-        assertThat(content.get(0).path("to_drawer").asText()).isEqualTo("00000000-0000-0000-0000-000000000002");
+        JsonNode content = callToolContent("hivemem_traverse", Map.of("cell_id", "00000000-0000-0000-0000-000000000002", "max_depth", 1));
+        assertThat(content.get(0).path("from_cell").asText()).isEqualTo("00000000-0000-0000-0000-000000000001");
+        assertThat(content.get(0).path("to_cell").asText()).isEqualTo("00000000-0000-0000-0000-000000000002");
         assertThat(content.get(0).path("relation").asText()).isEqualTo("related_to");
         assertThat(content.get(0).path("depth").asInt()).isEqualTo(1);
-        assertThat(content.get(1).path("from_drawer").asText()).isEqualTo("00000000-0000-0000-0000-000000000002");
-        assertThat(content.get(1).path("to_drawer").asText()).isEqualTo("00000000-0000-0000-0000-000000000004");
+        assertThat(content.get(1).path("from_cell").asText()).isEqualTo("00000000-0000-0000-0000-000000000002");
+        assertThat(content.get(1).path("to_cell").asText()).isEqualTo("00000000-0000-0000-0000-000000000004");
         assertThat(content).hasSize(2);
     }
 
@@ -516,14 +516,14 @@ class ReadToolIntegrationTest {
         UUID originalId = UUID.fromString("00000000-0000-0000-0000-000000000801");
         UUID revisedId = UUID.fromString("00000000-0000-0000-0000-000000000802");
         insertDrawer(
-                originalId, null, "Initial", "alpha", "bitemp", "facts", "system", 3,
+                originalId, null, "Initial", "alpha", "facts", "bitemp", "system", 3,
                 "V1", null, null, "committed", "writer",
                 OffsetDateTime.parse("2025-01-01T00:00:00Z"),
                 OffsetDateTime.parse("2025-01-01T00:00:00Z"),
                 null
         );
         insertDrawer(
-                revisedId, originalId, "Revised", "alpha", "bitemp", "facts", "system", 3,
+                revisedId, originalId, "Revised", "alpha", "facts", "bitemp", "system", 3,
                 "V2", null, null, "committed", "writer",
                 OffsetDateTime.parse("2025-03-01T00:00:00Z"),
                 OffsetDateTime.parse("2025-02-01T00:00:00Z"),
@@ -531,7 +531,7 @@ class ReadToolIntegrationTest {
         );
 
         JsonNode content = callToolContent("hivemem_history", Map.of(
-                "type", "drawer",
+                "type", "cell",
                 "id", "00000000-0000-0000-0000-000000000802"
         ));
         assertThat(content).hasSize(2);
@@ -548,8 +548,8 @@ class ReadToolIntegrationTest {
                 null,
                 "Original drawer content",
                 "alpha",
-                "history",
                 "facts",
+                "history",
                 "system",
                 3,
                 "Drawer V1",
@@ -566,8 +566,8 @@ class ReadToolIntegrationTest {
                 originalId,
                 "Revised drawer content",
                 "alpha",
-                "history",
                 "facts",
+                "history",
                 "system",
                 3,
                 "Drawer V2",
@@ -580,7 +580,7 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_history", Map.of("type", "drawer", "id", "00000000-0000-0000-0000-000000000302"));
+        JsonNode content = callToolContent("hivemem_history", Map.of("type", "cell", "id", "00000000-0000-0000-0000-000000000302"));
         assertThat(content).hasSize(2);
         assertThat(content.get(0).path("summary").asText()).isEqualTo("Drawer V1");
         assertThat(content.get(1).path("summary").asText()).isEqualTo("Drawer V2");
@@ -657,7 +657,7 @@ class ReadToolIntegrationTest {
 
         JsonNode content = callToolContent("hivemem_pending_approvals", Map.of());
         assertThat(content).hasSize(3);
-        assertThat(content.get(0).path("type").asText()).isEqualTo("drawer");
+        assertThat(content.get(0).path("type").asText()).isEqualTo("cell");
         assertThat(content.get(0).path("description").asText()).isEqualTo("Pending summary");
         assertThat(content.get(1).path("type").asText()).isEqualTo("fact");
         assertThat(content.get(1).path("description").asText()).isEqualTo("HiveMem -> runs on -> Python");
@@ -732,10 +732,10 @@ class ReadToolIntegrationTest {
         JsonNode content = callToolContent("hivemem_reading_list", Map.of());
         assertThat(content).hasSize(2);
         assertThat(content.get(0).path("title").asText()).isEqualTo("PostgreSQL guide");
-        assertThat(content.get(0).path("linked_drawers").asInt()).isEqualTo(1);
+        assertThat(content.get(0).path("linked_cells").asInt()).isEqualTo(1);
         assertThat(content.get(0).path("status").asText()).isEqualTo("unread");
         assertThat(content.get(1).path("title").asText()).isEqualTo("Java migration notes");
-        assertThat(content.get(1).path("linked_drawers").asInt()).isEqualTo(2);
+        assertThat(content.get(1).path("linked_cells").asInt()).isEqualTo(2);
         assertThat(content.get(1).path("status").asText()).isEqualTo("reading");
 
         JsonNode filtered = callToolContent("hivemem_reading_list", Map.of("ref_type", "article"));
@@ -826,7 +826,7 @@ class ReadToolIntegrationTest {
         assertThat(diaryLimited).hasSize(1);
         assertThat(diaryLimited.get(0).path("entry").asText()).isEqualTo("Second diary entry");
 
-        JsonNode blueprint = callToolContent("hivemem_get_blueprint", Map.of("wing", "alpha"));
+        JsonNode blueprint = callToolContent("hivemem_get_blueprint", Map.of("realm", "alpha"));
         assertThat(blueprint).hasSize(2);
         assertThat(blueprint.get(0).path("id").asText()).isEqualTo(blueprintTwo.toString());
         assertThat(blueprint.get(0).path("hall_order").get(2).asText()).isEqualTo("archive");
@@ -838,7 +838,7 @@ class ReadToolIntegrationTest {
         assertThat(allBlueprints.get(0).path("id").asText()).isEqualTo(blueprintTwo.toString());
         assertThat(allBlueprints.get(1).path("id").asText()).isEqualTo(blueprintOne.toString());
         assertThat(allBlueprints.get(2).path("id").asText()).isEqualTo(blueprintThree.toString());
-        assertThat(allBlueprints.get(2).path("wing").asText()).isEqualTo("beta");
+        assertThat(allBlueprints.get(2).path("realm").asText()).isEqualTo("beta");
 
         JsonNode wakeUp = callToolContent("hivemem_wake_up", Map.of());
         assertThat(wakeUp.path("l0_identity").path("content").asText()).isEqualTo("You are Alice.");
@@ -976,8 +976,8 @@ class ReadToolIntegrationTest {
                 null,
                 "First committed drawer",
                 "alpha",
-                "planning",
                 "facts",
+                "milestones",
                 "system",
                 3,
                 "Alpha summary",
@@ -994,8 +994,8 @@ class ReadToolIntegrationTest {
                 committedDrawer,
                 "Second committed drawer",
                 "beta",
-                "delivery",
                 "events",
+                "milestones",
                 "system",
                 2,
                 "Beta summary",
@@ -1012,8 +1012,8 @@ class ReadToolIntegrationTest {
                 null,
                 "Pending drawer",
                 "gamma",
-                "intake",
                 "facts",
+                "pending-items",
                 "system",
                 1,
                 "Pending summary",
@@ -1143,9 +1143,9 @@ class ReadToolIntegrationTest {
             UUID id,
             UUID parentId,
             String content,
-            String wing,
-            String hall,
-            String room,
+            String realm,
+            String signal,
+            String topic,
             String source,
             Integer importance,
             String summary,
@@ -1159,12 +1159,12 @@ class ReadToolIntegrationTest {
     ) {
         dslContext.execute(
                 """
-                INSERT INTO drawers (
-                    id, parent_id, content, wing, hall, room, source, importance, summary,
+                INSERT INTO cells (
+                    id, parent_id, content, realm, signal, topic, source, importance, summary,
                     insight, actionability, status, created_by, created_at, valid_from, valid_until
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz, ?::timestamptz)
                 """,
-                id, parentId, content, wing, hall, room, source, importance, summary,
+                id, parentId, content, realm, signal, topic, source, importance, summary,
                 insight, actionability, status, createdBy, createdAt, validFrom, validUntil
         );
     }
@@ -1210,7 +1210,7 @@ class ReadToolIntegrationTest {
         dslContext.execute(
                 """
                 INSERT INTO tunnels (
-                    id, from_drawer, to_drawer, relation, note, status, created_by, created_at, valid_from, valid_until
+                    id, from_cell, to_cell, relation, note, status, created_by, created_at, valid_from, valid_until
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz, ?::timestamptz)
                 """,
                 id, fromDrawer, toDrawer, relation, note, status, createdBy, createdAt, validFrom, validUntil
@@ -1248,8 +1248,8 @@ class ReadToolIntegrationTest {
     ) {
         dslContext.execute(
                 """
-                INSERT INTO drawer_references (
-                    id, drawer_id, reference_id, relation, created_at
+                INSERT INTO cell_references (
+                    id, cell_id, reference_id, relation, created_at
                 ) VALUES (?, ?, ?, ?, ?::timestamptz)
                 """,
                 id, drawerId, referenceId, relation, createdAt
@@ -1290,7 +1290,7 @@ class ReadToolIntegrationTest {
 
     private void insertBlueprint(
             UUID id,
-            String wing,
+            String realm,
             String title,
             String narrative,
             String[] hallOrder,
@@ -1303,10 +1303,10 @@ class ReadToolIntegrationTest {
         dslContext.execute(
                 """
                 INSERT INTO blueprints (
-                    id, wing, title, narrative, hall_order, key_drawers, created_by, created_at, valid_from, valid_until
+                    id, realm, title, narrative, hall_order, key_drawers, created_by, created_at, valid_from, valid_until
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz, ?::timestamptz)
                 """,
-                id, wing, title, narrative, hallOrder, keyDrawers, createdBy, createdAt, validFrom, validUntil
+                id, realm, title, narrative, hallOrder, keyDrawers, createdBy, createdAt, validFrom, validUntil
         );
     }
 

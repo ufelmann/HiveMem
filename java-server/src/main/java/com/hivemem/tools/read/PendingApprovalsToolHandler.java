@@ -23,7 +23,7 @@ public class PendingApprovalsToolHandler implements ToolHandler {
 
     @Override
     public String description() {
-        return "Pending drawers, facts, and tunnels awaiting approval.";
+        return "Pending cells, facts, and tunnels awaiting approval.";
     }
 
     @Override

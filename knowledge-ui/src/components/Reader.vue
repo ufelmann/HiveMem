@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useReaderStore } from '../stores/reader'
-import { useDrawerStore } from '../stores/drawer'
+import { useCellStore } from '../stores/cell'
 import MarkdownTab from './readers/MarkdownTab.vue'
 import PdfTab from './readers/PdfTab.vue'
 import EmlTab from './readers/EmlTab.vue'
 
 const reader = useReaderStore()
-const drawer = useDrawerStore()
+const cellStore = useCellStore()
 
 const attachments = computed(() => {
-  // Populated later from drawer references; empty in SP1 v1
+  // Populated later from cell references; empty in SP1 v1
   return [] as { id: string; title: string; url: string; kind: 'pdf' | 'eml' }[]
 })
 
@@ -20,7 +20,7 @@ function urlOf(tab: string) { return attachments.value.find(a => a.id === tab)?.
 
 <template>
   <v-dialog v-model="reader.open" fullscreen transition="dialog-bottom-transition" persistent>
-    <div class="reader-shell" v-if="drawer.current">
+    <div class="reader-shell" v-if="cellStore.current">
       <header>
         <v-btn icon="mdi-arrow-left" variant="text" @click="reader.close()" />
         <v-tabs v-model="reader.activeTab" density="compact" color="primary">
@@ -31,7 +31,7 @@ function urlOf(tab: string) { return attachments.value.find(a => a.id === tab)?.
         <v-btn icon="mdi-pencil" variant="text" disabled title="Editor — SP4" />
       </header>
       <main class="reader-body">
-        <MarkdownTab v-if="reader.activeTab === 'markdown'" :content="drawer.current.drawer.content" />
+        <MarkdownTab v-if="reader.activeTab === 'markdown'" :content="cellStore.current.cell.content" />
         <PdfTab v-else-if="kindOf(reader.activeTab) === 'pdf'" :url="urlOf(reader.activeTab)" />
         <EmlTab v-else-if="kindOf(reader.activeTab) === 'eml'" :url="urlOf(reader.activeTab)" />
       </main>

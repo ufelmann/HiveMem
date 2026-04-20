@@ -8,36 +8,36 @@ import org.springframework.stereotype.Component;
 
 @Component
 @Order(5)
-public class ListWingsToolHandler implements ToolHandler {
+public class ListRealmsToolHandler implements ToolHandler {
 
     private final ReadToolService readToolService;
 
-    public ListWingsToolHandler(ReadToolService readToolService) {
+    public ListRealmsToolHandler(ReadToolService readToolService) {
         this.readToolService = readToolService;
     }
 
     @Override
     public String name() {
-        return "hivemem_list_wings";
+        return "hivemem_list_realms";
     }
 
     @Override
     public String description() {
-        return "Wings with counts, or halls of a specific wing when 'wing' is provided.";
+        return "Realms with counts, or signals of a specific realm when 'realm' is provided.";
     }
 
     @Override
     public Object call(AuthPrincipal principal, JsonNode arguments) {
-        String wing = null;
-        if (arguments != null && arguments.hasNonNull("wing")) {
-            String value = arguments.get("wing").asText();
+        String realm = null;
+        if (arguments != null && arguments.hasNonNull("realm")) {
+            String value = arguments.get("realm").asText();
             if (!value.isBlank()) {
-                wing = value;
+                realm = value;
             }
         }
-        if (wing == null) {
-            return readToolService.listWings();
+        if (realm == null) {
+            return readToolService.listRealms();
         }
-        return readToolService.listHalls(wing);
+        return readToolService.listSignals(realm);
     }
 }
