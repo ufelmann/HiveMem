@@ -3,11 +3,13 @@ package com.hivemem.tools.write;
 import tools.jackson.databind.JsonNode;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.mcp.ToolHandler;
+import com.hivemem.mcp.ToolInputSchema;
 import com.hivemem.write.WriteArgumentParser;
 import com.hivemem.write.WriteToolService;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
 import java.util.UUID;
 
 @Component
@@ -28,6 +30,16 @@ public class LinkReferenceToolHandler implements ToolHandler {
     @Override
     public String description() {
         return "Link a reference to a cell.";
+    }
+
+    @Override
+    public Map<String, Object> inputSchema() {
+        return ToolInputSchema.object()
+                .requiredUuid("cell_id", "UUID of the cell to link to")
+                .requiredUuid("reference_id", "UUID of the reference to link")
+                .optionalEnumString("relation", "Link relation (default: source)",
+                        "source", "inspired_by", "contradicts", "extends")
+                .build();
     }
 
     @Override

@@ -3,8 +3,11 @@ package com.hivemem.tools.read;
 import tools.jackson.databind.JsonNode;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.mcp.ToolHandler;
+import com.hivemem.mcp.ToolInputSchema;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+
+import java.util.Map;
 
 @Component
 @Order(13)
@@ -26,6 +29,14 @@ public class ReadingListToolHandler implements ToolHandler {
     @Override
     public String description() {
         return "Unread and in-progress references with cell linkage counts.";
+    }
+
+    @Override
+    public Map<String, Object> inputSchema() {
+        return ToolInputSchema.object()
+                .optionalString("ref_type", "Filter by reference type")
+                .optionalInteger("limit", "Maximum number of results (default 20, max 100)")
+                .build();
     }
 
     @Override
