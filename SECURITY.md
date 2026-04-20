@@ -14,7 +14,7 @@ If you discover a security vulnerability, please report it via [GitHub Issues](h
 
 ## Privacy & Data Sovereignty
 
-- **Local Storage:** All your knowledge (drawers, facts, tunnels) is stored locally in your PostgreSQL instance. No data is sent to external APIs for storage or processing.
+- **Local Storage:** All your knowledge (cells, facts, tunnels) is stored locally in your PostgreSQL instance. No data is sent to external APIs for storage or processing.
 - **Embeddings:** Vector embeddings are computed by an external ONNX-based embedding service that you self-host. The embedding model runs entirely within your infrastructure.
 - **Network Access:** HiveMem communicates only with your PostgreSQL database and your self-hosted embedding service. There are no outbound calls to external APIs or cloud services.
 - **Telemetry:** HiveMem does **not** collect any telemetry or usage statistics.
