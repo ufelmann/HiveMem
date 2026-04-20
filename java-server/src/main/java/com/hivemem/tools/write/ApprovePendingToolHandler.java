@@ -3,12 +3,14 @@ package com.hivemem.tools.write;
 import tools.jackson.databind.JsonNode;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.mcp.ToolHandler;
+import com.hivemem.mcp.ToolInputSchema;
 import com.hivemem.write.WriteArgumentParser;
 import com.hivemem.write.WriteToolService;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Component
@@ -31,6 +33,15 @@ public class ApprovePendingToolHandler implements ToolHandler {
     @Override
     public String description() {
         return "Approve or reject pending cells, facts, and tunnels by ID.";
+    }
+
+    @Override
+    public Map<String, Object> inputSchema() {
+        return ToolInputSchema.object()
+                .requiredUuidList("ids", "UUIDs of pending items to approve or reject")
+                .requiredEnumString("decision", "Decision",
+                        "committed", "rejected")
+                .build();
     }
 
     @Override

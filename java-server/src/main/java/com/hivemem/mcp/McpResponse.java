@@ -50,15 +50,7 @@ record McpTool(
         String description,
         Map<String, Object> inputSchema
 ) {
-    static McpTool of(String name, String description) {
-        return new McpTool(
-                name,
-                description,
-                Map.of(
-                        "type", "object",
-                        "properties", Map.of(),
-                        "additionalProperties", Boolean.TRUE
-                )
-        );
+    static McpTool of(String name, String description, Map<String, Object> inputSchema) {
+        return new McpTool(name, description, inputSchema);
     }
 }

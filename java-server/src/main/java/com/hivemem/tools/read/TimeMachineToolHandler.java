@@ -3,10 +3,12 @@ package com.hivemem.tools.read;
 import tools.jackson.databind.JsonNode;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.mcp.ToolHandler;
+import com.hivemem.mcp.ToolInputSchema;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
+import java.util.Map;
 
 @Component
 @Order(9)
@@ -28,6 +30,16 @@ public class TimeMachineToolHandler implements ToolHandler {
     @Override
     public String description() {
         return "Historical knowledge retrieval. Supports bi-temporal queries: 'as_of' filters by event time (when a fact was true); 'as_of_ingestion' filters by transaction time (when HiveMem learned of the fact).";
+    }
+
+    @Override
+    public Map<String, Object> inputSchema() {
+        return ToolInputSchema.object()
+                .requiredString("subject", "Entity name to query")
+                .optionalDateTime("as_of", "Event time filter (ISO-8601 date-time)")
+                .optionalDateTime("as_of_ingestion", "Ingestion time filter (ISO-8601 date-time)")
+                .optionalInteger("limit", "Maximum number of results (default 100, max 100)")
+                .build();
     }
 
     @Override

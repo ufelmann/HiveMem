@@ -3,6 +3,7 @@ package com.hivemem.tools.write;
 import tools.jackson.databind.JsonNode;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.mcp.ToolHandler;
+import com.hivemem.mcp.ToolInputSchema;
 import com.hivemem.write.WriteArgumentParser;
 import com.hivemem.write.WriteToolService;
 import org.springframework.core.annotation.Order;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Component
 @Order(18)
@@ -29,6 +31,29 @@ public class AddCellToolHandler implements ToolHandler {
     @Override
     public String description() {
         return "Create a new cell with progressive layers and embedding.";
+    }
+
+    @Override
+    public Map<String, Object> inputSchema() {
+        return ToolInputSchema.object()
+                .requiredString("content", "Raw content of the cell (L0 layer)")
+                .optionalString("realm", "Realm to assign the cell to (free-form)")
+                .optionalEnumString("signal", "Signal classification",
+                        "facts", "events", "discoveries", "preferences", "advice")
+                .optionalString("topic", "Topic tag (free-form)")
+                .optionalString("source", "Source reference or URL")
+                .optionalStringList("tags", "Free-form tags")
+                .optionalIntegerInRange("importance", "Importance score (1-5)", 1, 5)
+                .optionalString("summary", "L1 summary (auto-generated if omitted)")
+                .optionalStringList("key_points", "L2 key points")
+                .optionalString("insight", "L3 insight")
+                .optionalEnumString("actionability", "L3 actionability bucket (omit for none)",
+                        "actionable", "reference", "someday", "archive")
+                .optionalEnumString("status", "Initial status (default: committed)",
+                        "pending", "committed", "rejected")
+                .optionalDateTime("valid_from", "Event time for the cell (ISO-8601 date-time)")
+                .optionalNumber("dedupe_threshold", "Cosine similarity threshold for deduplication [-1, 1]")
+                .build();
     }
 
     @Override

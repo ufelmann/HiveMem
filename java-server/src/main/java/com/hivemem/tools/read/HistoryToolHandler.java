@@ -3,9 +3,11 @@ package com.hivemem.tools.read;
 import tools.jackson.databind.JsonNode;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.mcp.ToolHandler;
+import com.hivemem.mcp.ToolInputSchema;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
 import java.util.UUID;
 
 @Component
@@ -26,6 +28,14 @@ public class HistoryToolHandler implements ToolHandler {
     @Override
     public String description() {
         return "Trace revisions of a cell or fact by id.";
+    }
+
+    @Override
+    public Map<String, Object> inputSchema() {
+        return ToolInputSchema.object()
+                .requiredString("type", "Entity type: 'cell' or 'fact'")
+                .requiredUuid("id", "UUID of the cell or fact")
+                .build();
     }
 
     @Override
