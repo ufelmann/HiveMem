@@ -160,11 +160,11 @@ class ReferencesIntegrationTest {
     @Test
     void linkOneReferenceToMultipleDrawers() {
         Map<String, Object> drawerA = writeToolService.addCell(
-                WRITER, "Drawer A content", "eng", "search", "refs", "system",
+                WRITER, "Drawer A content", "eng", "facts", "refs", "system",
                 List.of(), 1, "Drawer A", List.of(), null, null, "committed",
                 OffsetDateTime.parse("2026-04-10T10:00:00Z"), null);
         Map<String, Object> drawerB = writeToolService.addCell(
-                WRITER, "Drawer B content", "eng", "search", "refs", "system",
+                WRITER, "Drawer B content", "eng", "facts", "refs", "system",
                 List.of(), 1, "Drawer B", List.of(), null, null, "committed",
                 OffsetDateTime.parse("2026-04-10T10:01:00Z"), null);
 

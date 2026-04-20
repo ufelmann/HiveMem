@@ -94,8 +94,8 @@ class CrossFeatureParityIntegrationTest {
         JsonNode drawer = callTool("writer-token", "hivemem_add_cell", Map.of(
                 "content", "Original content about auth migration",
                 "realm", "eng",
-                "signal", "auth",
-                "topic", "facts",
+                "signal", "facts",
+                "topic", "auth",
                 "summary", "Auth migration v1",
                 "key_points", List.of("Migrate from Camunda", "Use Temporal", "Q3 deadline"),
                 "insight", "This unblocks the Go rewrite",
@@ -125,8 +125,8 @@ class CrossFeatureParityIntegrationTest {
         JsonNode drawer = callTool("writer-token", "hivemem_add_cell", Map.of(
                 "content", "Source drawer for fact",
                 "realm", "eng",
-                "signal", "test",
-                "topic", "facts"
+                "signal", "facts",
+                "topic", "test"
         ));
 
         JsonNode fact = callTool("writer-token", "hivemem_kg_add", Map.of(
@@ -152,8 +152,8 @@ class CrossFeatureParityIntegrationTest {
         JsonNode drawer = callTool("writer-token", "hivemem_add_cell", Map.of(
                 "content", "Content about Docker container orchestration",
                 "realm", "eng",
-                "signal", "infra",
-                "topic", "facts",
+                "signal", "facts",
+                "topic", "infra",
                 "summary", "Docker orchestration"
         ));
 
@@ -181,8 +181,8 @@ class CrossFeatureParityIntegrationTest {
         JsonNode drawer = callTool("writer-token", "hivemem_add_cell", Map.of(
                 "content", "Important drawer",
                 "realm", "eng",
-                "signal", "arch",
-                "topic", "facts",
+                "signal", "facts",
+                "topic", "arch",
                 "summary", "Key architecture decision"
         ));
         String originalDrawerId = drawer.path("id").asText();
@@ -233,8 +233,8 @@ class CrossFeatureParityIntegrationTest {
         JsonNode drawer = callTool("agent-token", "hivemem_add_cell", Map.of(
                 "content", "Curated summary of authentication patterns",
                 "realm", "eng",
-                "signal", "auth",
-                "topic", "facts",
+                "signal", "facts",
+                "topic", "auth",
                 "summary", "Auth patterns curated",
                 "status", "committed"
         ));

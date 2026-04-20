@@ -92,7 +92,7 @@ class PopularityRefreshSchedulerTest {
         Float[] embedding = client.encodeDocument("test content").toArray(Float[]::new);
         dslContext.execute("""
                 INSERT INTO cells (id, content, embedding, realm, signal, topic, status, created_by, valid_from)
-                VALUES (?, ?, ?::vector, 'eng', 'infra', 'facts', 'committed', 'test', now())
+                VALUES (?, ?, ?::vector, 'eng', 'facts', 'infra', 'committed', 'test', now())
                 """, drawerId, "test content", embedding);
 
         dslContext.execute("INSERT INTO access_log (cell_id, accessed_by) VALUES (?, 'test')", drawerId);

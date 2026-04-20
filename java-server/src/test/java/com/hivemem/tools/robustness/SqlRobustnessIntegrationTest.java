@@ -94,8 +94,8 @@ class SqlRobustnessIntegrationTest {
                     WRITER,
                     "Pending " + i,
                     "test",
-                    "batch",
                     "facts",
+                    "batch",
                     "system",
                     List.of(),
                     1,
@@ -164,16 +164,16 @@ class SqlRobustnessIntegrationTest {
     void traverseDoesNotBlowUpOnDiamond() {
         // Build diamond: A -> B, A -> C, B -> D, C -> D
         Map<String, Object> dA = writeToolService.addCell(
-                WRITER, "Diamond A", "test", "graph", null, "system",
+                WRITER, "Diamond A", "test", "facts", null, "system",
                 List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME, null);
         Map<String, Object> dB = writeToolService.addCell(
-                WRITER, "Diamond B", "test", "graph", null, "system",
+                WRITER, "Diamond B", "test", "facts", null, "system",
                 List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(1), null);
         Map<String, Object> dC = writeToolService.addCell(
-                WRITER, "Diamond C", "test", "graph", null, "system",
+                WRITER, "Diamond C", "test", "facts", null, "system",
                 List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(2), null);
         Map<String, Object> dD = writeToolService.addCell(
-                WRITER, "Diamond D", "test", "graph", null, "system",
+                WRITER, "Diamond D", "test", "facts", null, "system",
                 List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(3), null);
 
         UUID idA = UUID.fromString((String) dA.get("id"));
