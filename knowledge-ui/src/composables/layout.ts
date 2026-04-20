@@ -1,25 +1,25 @@
 import * as d3 from 'd3-force'
-import type { Wing, Drawer, Tunnel } from '../api/types'
+import type { Realm, Cell, Tunnel } from '../api/types'
 
 export interface Point { x: number; y: number }
 
 export function computeWingPositions(
-  wings: Wing[], drawers: Drawer[], tunnels: Tunnel[],
+  realms: Realm[], cells: Cell[], tunnels: Tunnel[],
   viewport: { width: number; height: number }
 ): Map<string, Point> {
   type N = d3.SimulationNodeDatum & { id: string; size: number }
-  const nodes: N[] = wings.map(w => ({ id: w.name, size: Math.log(1 + w.drawer_count) * 10 + 40 }))
+  const nodes: N[] = realms.map(r => ({ id: r.name, size: Math.log(1 + r.cell_count) * 10 + 40 }))
 
-  const drawerWing = new Map<string, string>()
-  for (const d of drawers) drawerWing.set(d.id, d.wing)
-  const wingPairCount = new Map<string, number>()
+  const cellRealm = new Map<string, string>()
+  for (const c of cells) cellRealm.set(c.id, c.realm)
+  const realmPairCount = new Map<string, number>()
   for (const t of tunnels) {
-    const a = drawerWing.get(t.from_drawer); const b = drawerWing.get(t.to_drawer)
+    const a = cellRealm.get(t.from_cell); const b = cellRealm.get(t.to_cell)
     if (!a || !b || a === b) continue
     const k = [a, b].sort().join('|')
-    wingPairCount.set(k, (wingPairCount.get(k) ?? 0) + 1)
+    realmPairCount.set(k, (realmPairCount.get(k) ?? 0) + 1)
   }
-  const links = [...wingPairCount.entries()].map(([k, count]) => {
+  const links = [...realmPairCount.entries()].map(([k, count]) => {
     const [source, target] = k.split('|')
     return { source, target, strength: Math.min(1, count / 10) }
   })
