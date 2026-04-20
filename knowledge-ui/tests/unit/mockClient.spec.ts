@@ -21,7 +21,7 @@ describe('MockApiClient', () => {
   it('get_cell returns cell with matching id', async () => {
     const c = new MockApiClient()
     const all = await c.call<Cell[]>('hivemem_search', { query: '' })
-    const cell = await c.call<Cell>('hivemem_get_cell', { id: all[0].id })
+    const cell = await c.call<Cell>('hivemem_get_cell', { cell_id: all[0].id })
     expect(cell.id).toBe(all[0].id)
   })
 
