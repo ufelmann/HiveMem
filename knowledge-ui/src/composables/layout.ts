@@ -37,7 +37,7 @@ export function computeWingPositions(
   return out
 }
 
-export function poissonDiskDrawers(
+export function poissonDiskCells(
   count: number,
   spec: { x: number; y: number; r: number; minDist: number; seed: string }
 ): Point[] {

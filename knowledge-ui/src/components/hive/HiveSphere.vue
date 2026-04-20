@@ -2,7 +2,7 @@
 import { computed, onMounted, shallowRef } from 'vue'
 import { buildGoldbergCells, assignWings } from '../../composables/goldbergMath'
 import type { GoldbergCell } from '../../composables/goldbergMath'
-import { paletteForWing, type WingPalette } from '../../composables/wingPalette'
+import { paletteForRealm, type RealmPalette } from '../../composables/wingPalette'
 import type { Realm, Cell } from '../../api/types'
 import HiveCell from './HiveCell.vue'
 
@@ -12,7 +12,7 @@ const R = 3
 
 const goldbergCells = shallowRef<GoldbergCell[]>([])
 const realmAssignment = shallowRef<Map<number, string | null>>(new Map())
-const palettes = shallowRef<Map<string, WingPalette>>(new Map())
+const palettes = shallowRef<Map<string, RealmPalette>>(new Map())
 
 function rebuild() {
   goldbergCells.value = buildGoldbergCells(R, 1)
@@ -21,11 +21,11 @@ function rebuild() {
   for (const c of props.cells) counts.set(c.realm, (counts.get(c.realm) ?? 0) + 1)
   const realmInput = props.realms.map((r) => ({
     name: r.name,
-    drawerCount: r.cell_count || counts.get(r.name) || 0,
+    cellCount: r.cell_count || counts.get(r.name) || 0,
   }))
   realmAssignment.value = assignWings(goldbergCells.value, realmInput)
-  const pmap = new Map<string, WingPalette>()
-  props.realms.forEach((r, i) => pmap.set(r.name, paletteForWing(i)))
+  const pmap = new Map<string, RealmPalette>()
+  props.realms.forEach((r, i) => pmap.set(r.name, paletteForRealm(i)))
   palettes.value = pmap
 }
 
@@ -37,7 +37,7 @@ const cellList = computed(() => {
     const pal = rn ? palettes.value.get(rn) ?? null : null
     const isPink = (c.index % 13) === 0 && rn !== null
     const isViolet = !isPink && (c.index % 17) === 0 && rn !== null
-    return { cell: c, wingName: rn, palette: pal, isAccentPink: isPink, isAccentViolet: isViolet }
+    return { cell: c, realmName: rn, palette: pal, isAccentPink: isPink, isAccentViolet: isViolet }
   })
 })
 </script>
@@ -48,7 +48,7 @@ const cellList = computed(() => {
       v-for="item in cellList"
       :key="item.cell.index"
       :cell="item.cell"
-      :wing-name="item.wingName"
+      :realm-name="item.realmName"
       :palette="item.palette"
       :is-accent-pink="item.isAccentPink"
       :is-accent-violet="item.isAccentViolet"
