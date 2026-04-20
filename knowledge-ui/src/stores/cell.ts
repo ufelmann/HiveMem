@@ -1,15 +1,15 @@
 import { defineStore } from 'pinia'
 import { useApi } from '../api/useApi'
-import type { Drawer, Fact, Tunnel } from '../api/types'
+import type { Cell, Fact, Tunnel } from '../api/types'
 
-export const useDrawerStore = defineStore('drawer', {
+export const useCellStore = defineStore('cell', {
   state: () => ({
-    cache: new Map<string, { drawer: Drawer; facts: Fact[]; tunnels: Tunnel[] }>(),
+    cache: new Map<string, { cell: Cell; facts: Fact[]; tunnels: Tunnel[] }>(),
     currentId: null as string | null,
     loading: false
   }),
   getters: {
-    current(s): { drawer: Drawer; facts: Fact[]; tunnels: Tunnel[] } | null {
+    current(s): { cell: Cell; facts: Fact[]; tunnels: Tunnel[] } | null {
       return s.currentId ? s.cache.get(s.currentId) ?? null : null
     }
   },
@@ -19,12 +19,12 @@ export const useDrawerStore = defineStore('drawer', {
       try {
         if (!this.cache.has(id)) {
           const api = useApi()
-          const [drawer, tunnels] = await Promise.all([
-            api.call<Drawer>('hivemem_get_drawer', { id }),
-            api.call<Tunnel[]>('hivemem_traverse', { drawer_id: id, depth: 1 }).catch(() => [])
+          const [cell, tunnels] = await Promise.all([
+            api.call<Cell>('hivemem_get_cell', { cell_id: id }),
+            api.call<Tunnel[]>('hivemem_traverse', { cell_id: id, depth: 1 }).catch(() => [])
           ])
-          const facts = await api.call<Fact[]>('hivemem_quick_facts', { subject: drawer.title }).catch(() => [])
-          this.cache.set(id, { drawer, facts, tunnels })
+          const facts = await api.call<Fact[]>('hivemem_quick_facts', { subject: cell.title }).catch(() => [])
+          this.cache.set(id, { cell, facts, tunnels })
           if (this.cache.size > 50) {
             const first = this.cache.keys().next().value
             if (first) this.cache.delete(first)

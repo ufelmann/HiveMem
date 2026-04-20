@@ -2,10 +2,10 @@ package com.hivemem.agents;
 
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
-import com.hivemem.drawers.DrawerReadRepository;
+import com.hivemem.cells.CellReadRepository;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
-import com.hivemem.search.DrawerSearchRepository;
+import com.hivemem.search.CellSearchRepository;
 import com.hivemem.search.KgSearchRepository;
 import com.hivemem.tools.read.ReadToolService;
 import com.hivemem.write.WriteToolRepository;
@@ -85,7 +85,7 @@ class AgentFleetIntegrationTest {
 
     @BeforeEach
     void resetDatabase() {
-        dslContext.execute("TRUNCATE TABLE agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
+        dslContext.execute("TRUNCATE TABLE agent_diary, cell_references, references_, blueprints, identity, agents, facts, tunnels, cells CASCADE");
     }
 
     // -----------------------------------------------------------------------
@@ -242,12 +242,12 @@ class AgentFleetIntegrationTest {
     @Test
     void mixedApproveRejectBatchTransitionsCorrectly() {
         // Create 2 pending drawers from agent
-        Map<String, Object> drawer1 = writeToolService.addDrawer(
-                AGENT, "Agent suggestion 1", "eng", "test", "facts", "system",
+        Map<String, Object> drawer1 = writeToolService.addCell(
+                AGENT, "Agent suggestion 1", "eng", "facts", "test", "system",
                 List.of(), 1, "Summary 1", List.of(), null, null, "committed", BASE_TIME, null
         );
-        Map<String, Object> drawer2 = writeToolService.addDrawer(
-                AGENT, "Agent suggestion 2", "eng", "test", "facts", "system",
+        Map<String, Object> drawer2 = writeToolService.addCell(
+                AGENT, "Agent suggestion 2", "eng", "facts", "test", "system",
                 List.of(), 1, "Summary 2", List.of(), null, null, "committed", BASE_TIME.plusSeconds(1), null
         );
 
@@ -282,16 +282,16 @@ class AgentFleetIntegrationTest {
         );
         assertThat(((Number) rejectResult.get("count")).intValue()).isEqualTo(2);
 
-        // Verify drawer1 committed, visible in active_drawers
-        assertThat(dslContext.fetchOne("SELECT status FROM drawers WHERE id = ?", drawer1Id)
+        // Verify drawer1 committed, visible in active_cells
+        assertThat(dslContext.fetchOne("SELECT status FROM cells WHERE id = ?", drawer1Id)
                 .get("status", String.class)).isEqualTo("committed");
-        assertThat(dslContext.fetchOne("SELECT count(*) AS cnt FROM active_drawers WHERE id = ?", drawer1Id)
+        assertThat(dslContext.fetchOne("SELECT count(*) AS cnt FROM active_cells WHERE id = ?", drawer1Id)
                 .get("cnt", Long.class)).isEqualTo(1L);
 
-        // Verify drawer2 rejected, NOT in active_drawers
-        assertThat(dslContext.fetchOne("SELECT status FROM drawers WHERE id = ?", drawer2Id)
+        // Verify drawer2 rejected, NOT in active_cells
+        assertThat(dslContext.fetchOne("SELECT status FROM cells WHERE id = ?", drawer2Id)
                 .get("status", String.class)).isEqualTo("rejected");
-        assertThat(dslContext.fetchOne("SELECT count(*) AS cnt FROM active_drawers WHERE id = ?", drawer2Id)
+        assertThat(dslContext.fetchOne("SELECT count(*) AS cnt FROM active_cells WHERE id = ?", drawer2Id)
                 .get("cnt", Long.class)).isEqualTo(0L);
 
         // Verify fact1 committed, visible in active_facts
@@ -317,8 +317,8 @@ class AgentFleetIntegrationTest {
             WriteToolService.class,
             WriteToolRepository.class,
             ReadToolService.class,
-            DrawerReadRepository.class,
-            DrawerSearchRepository.class,
+            CellReadRepository.class,
+            CellSearchRepository.class,
             KgSearchRepository.class,
             AdminToolRepository.class,
             TestConfig.class

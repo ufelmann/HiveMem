@@ -27,23 +27,23 @@ public class TraverseToolHandler implements ToolHandler {
 
     @Override
     public String description() {
-        return "Bidirectional drawer-to-drawer graph traversal.";
+        return "Bidirectional cell-to-cell graph traversal.";
     }
 
     @Override
     public Object call(AuthPrincipal principal, JsonNode arguments) {
-        if (arguments == null || !arguments.hasNonNull("drawer_id")) {
-            throw new IllegalArgumentException("Missing drawer_id");
+        if (arguments == null || !arguments.hasNonNull("cell_id")) {
+            throw new IllegalArgumentException("Missing cell_id");
         }
 
-        String drawerId = arguments.get("drawer_id").asText();
-        if (drawerId.isBlank()) {
-            throw new IllegalArgumentException("Missing drawer_id");
+        String cellId = arguments.get("cell_id").asText();
+        if (cellId.isBlank()) {
+            throw new IllegalArgumentException("Missing cell_id");
         }
 
         String relationFilter = textValue(arguments, "relation_filter");
         int maxDepth = intValue(arguments, "max_depth");
-        return readToolService.traverse(UUID.fromString(drawerId), maxDepth, relationFilter);
+        return readToolService.traverse(UUID.fromString(cellId), maxDepth, relationFilter);
     }
 
     private static String textValue(JsonNode arguments, String field) {

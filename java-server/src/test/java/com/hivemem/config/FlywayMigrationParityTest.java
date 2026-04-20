@@ -38,7 +38,7 @@ class FlywayMigrationParityTest {
         try (SchemaHarness harness = migrateFreshSchema()) {
             assertThat(harness.flyway().info().pending()).isEmpty();
             assertThat(harness.dsl().fetchCount(DSL.table("migration_baseline"))).isEqualTo(1);
-            assertThat(harness.dsl().fetchCount(DSL.table("flyway_schema_history"))).isEqualTo(9);
+            assertThat(harness.dsl().fetchCount(DSL.table("flyway_schema_history"))).isEqualTo(10);
         }
     }
 
@@ -46,7 +46,7 @@ class FlywayMigrationParityTest {
     void migrationsAreIdempotentOnSecondRun() throws SQLException {
         try (SchemaHarness harness = migrateFreshSchema()) {
             assertThat(harness.flyway().migrate().migrationsExecuted).isZero();
-            assertThat(harness.dsl().fetchCount(DSL.table("flyway_schema_history"))).isEqualTo(9);
+            assertThat(harness.dsl().fetchCount(DSL.table("flyway_schema_history"))).isEqualTo(10);
         }
     }
 
@@ -62,18 +62,18 @@ class FlywayMigrationParityTest {
                     """, harness.schema()).getValues(0, String.class);
 
             assertThat(columns).contains(
-                    "from_drawer",
-                    "to_drawer",
+                    "from_cell",
+                    "to_cell",
                     "relation",
                     "status",
                     "valid_until"
             );
 
-            String drawerA = insertDrawer(harness.dsl(), "Drawer A");
-            String drawerB = insertDrawer(harness.dsl(), "Drawer B");
+            String cellA = insertCell(harness.dsl(), "Cell A");
+            String cellB = insertCell(harness.dsl(), "Cell B");
 
             assertThatThrownBy(() -> harness.dsl().execute("""
-                            insert into tunnels (from_drawer, to_drawer, relation, created_by)
+                            insert into tunnels (from_cell, to_cell, relation, created_by)
                             values (?::uuid, ?::uuid, 'related_to', 'test')
                             """,
                     "00000000-0000-0000-0000-000000000001",
@@ -81,19 +81,19 @@ class FlywayMigrationParityTest {
                     .isInstanceOf(DataAccessException.class);
 
             assertThatThrownBy(() -> harness.dsl().execute("""
-                            insert into tunnels (from_drawer, to_drawer, relation, created_by)
+                            insert into tunnels (from_cell, to_cell, relation, created_by)
                             values (?::uuid, ?::uuid, 'invalid', 'test')
                             """,
-                    drawerA,
-                    drawerB))
+                    cellA,
+                    cellB))
                     .isInstanceOf(DataAccessException.class);
 
             assertThatThrownBy(() -> harness.dsl().execute("""
-                            insert into tunnels (from_drawer, to_drawer, relation, status, created_by)
+                            insert into tunnels (from_cell, to_cell, relation, status, created_by)
                             values (?::uuid, ?::uuid, 'related_to', 'invalid', 'test')
                             """,
-                    drawerA,
-                    drawerB))
+                    cellA,
+                    cellB))
                     .isInstanceOf(DataAccessException.class);
         }
     }
@@ -111,7 +111,7 @@ class FlywayMigrationParityTest {
 
             assertThat(viewNames).contains(
                     "active_blueprints",
-                    "active_drawers",
+                    "active_cells",
                     "active_facts",
                     "active_tunnels"
             );
@@ -145,9 +145,9 @@ class FlywayMigrationParityTest {
         return new SchemaHarness(schema, flyway, schemaConnection, dsl);
     }
 
-    private static String insertDrawer(DSLContext dsl, String content) {
+    private static String insertCell(DSLContext dsl, String content) {
         return dsl.fetchOne("""
-                insert into drawers (content, wing, created_by)
+                insert into cells (content, realm, created_by)
                 values (?, 'test', 'test')
                 returning id::text
                 """, content).get(0, String.class);

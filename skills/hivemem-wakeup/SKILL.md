@@ -16,9 +16,9 @@ This skill ensures that the agent has a complete understanding of the user's cur
 
 1.  **Initial Wakeup:** Always call `hivemem_wake_up` first to load L0 (Identity) and L1 (Critical) context.
 2.  **Analyze Intent:** Identify the user's current project or problem area.
-3.  **Search Relevance:** Call `hivemem_search` with the session topic to retrieve relevant historical drawers.
+3.  **Search Relevance:** Call `hivemem_search` with the session topic to retrieve relevant historical cells.
 4.  **Traverse Context:** If the topic is an entity, call `hivemem_traverse` and `hivemem_quick_facts` to see current relationships and valid-from dates.
-5.  **Blueprint Review:** Call `hivemem_get_blueprint` for the current wing to understand the narrative overview of the area.
+5.  **Blueprint Review:** Call `hivemem_get_blueprint` for the current realm to understand the narrative overview of the area.
 6.  **Synthesize:** Start the response with a brief summary of what you've retrieved ("I've loaded your context for [Project] from HiveMem...").
 
 ## Security & Transparency

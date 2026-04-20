@@ -2,9 +2,9 @@
 import { ref } from 'vue'
 
 defineProps<{
-  drawerCount?: number
+  cellCount?: number
   factCount?: number
-  wingCount?: number
+  realmCount?: number
 }>()
 
 const q = ref('')
@@ -14,7 +14,7 @@ const q = ref('')
   <div class="hive-hud">
     <div class="hive-hud__logo">HiveMem</div>
     <div class="hive-hud__stats">
-      {{ drawerCount ?? 0 }} drawers · {{ factCount ?? 0 }} facts · {{ wingCount ?? 0 }} wings
+      {{ cellCount ?? 0 }} cells · {{ factCount ?? 0 }} facts · {{ realmCount ?? 0 }} realms
     </div>
     <div class="hive-hud__search">
       <v-text-field
@@ -22,7 +22,7 @@ const q = ref('')
         variant="solo-filled"
         density="compact"
         rounded="lg"
-        placeholder="Search palace…"
+        placeholder="Search…"
         hide-details
         disabled
         title="Coming soon"

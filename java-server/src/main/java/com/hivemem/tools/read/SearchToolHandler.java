@@ -27,16 +27,16 @@ public class SearchToolHandler implements ToolHandler {
 
     @Override
     public String description() {
-        return "5-signal ranked search over committed drawers.";
+        return "5-signal ranked search over committed cells.";
     }
 
     @Override
     public Object call(AuthPrincipal principal, JsonNode arguments) {
         String query = WriteArgumentParser.requiredText(arguments, "query");
         int limit = boundedLimit(arguments, "limit", DEFAULT_LIMIT, MAX_LIMIT);
-        String wing = WriteArgumentParser.optionalText(arguments, "wing");
-        String hall = WriteArgumentParser.optionalText(arguments, "hall");
-        String room = WriteArgumentParser.optionalText(arguments, "room");
+        String realm = WriteArgumentParser.optionalText(arguments, "realm");
+        String signal = WriteArgumentParser.optionalText(arguments, "signal");
+        String topic = WriteArgumentParser.optionalText(arguments, "topic");
         double weightSemantic = optionalWeight(arguments, "weight_semantic", 0.35d);
         double weightKeyword = optionalWeight(arguments, "weight_keyword", 0.15d);
         double weightRecency = optionalWeight(arguments, "weight_recency", 0.20d);
@@ -45,9 +45,9 @@ public class SearchToolHandler implements ToolHandler {
         return readToolService.search(
                 query,
                 limit,
-                wing,
-                hall,
-                room,
+                realm,
+                signal,
+                topic,
                 weightSemantic,
                 weightKeyword,
                 weightRecency,

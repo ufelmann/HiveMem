@@ -85,8 +85,8 @@ class EmbeddingMigrationIntegrationTest {
     @BeforeEach
     void resetDatabase() {
         rateLimiter.clearAll();
-        dslContext.execute("TRUNCATE TABLE access_log, agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
-        dslContext.execute("REFRESH MATERIALIZED VIEW drawer_popularity");
+        dslContext.execute("TRUNCATE TABLE access_log, agent_diary, cell_references, references_, blueprints, identity, agents, facts, tunnels, cells CASCADE");
+        dslContext.execute("REFRESH MATERIALIZED VIEW cell_popularity");
     }
 
     @Test
@@ -107,7 +107,7 @@ class EmbeddingMigrationIntegrationTest {
 
     @Test
     void searchWorksWhenNoReencodingActive() throws Exception {
-        insertDrawer("test content for search", "eng", "infra", "facts");
+        insertDrawer("test content for search", "eng", "facts", "infra");
 
         JsonNode result = callTool("writer-token", "hivemem_search", Map.of(
                 "query", "test content",
@@ -139,23 +139,23 @@ class EmbeddingMigrationIntegrationTest {
 
     @Test
     void countDrawersWithContentReturnsCorrectCount() {
-        insertDrawer("content A", "eng", "infra", "facts");
-        insertDrawer("content B", "eng", "infra", "facts");
+        insertDrawer("content A", "eng", "facts", "infra");
+        insertDrawer("content B", "eng", "facts", "infra");
 
-        int count = stateRepository.countDrawersWithContent();
+        int count = stateRepository.countCellsWithContent();
         assertThat(count).isEqualTo(2);
     }
 
     @Test
     void fetchDrawerBatchReturnsBatchedResults() {
-        insertDrawer("batch content 1", "eng", "infra", "facts");
-        insertDrawer("batch content 2", "eng", "infra", "facts");
-        insertDrawer("batch content 3", "eng", "infra", "facts");
+        insertDrawer("batch content 1", "eng", "facts", "infra");
+        insertDrawer("batch content 2", "eng", "facts", "infra");
+        insertDrawer("batch content 3", "eng", "facts", "infra");
 
-        var batch1 = stateRepository.fetchDrawerBatch(0, 2);
+        var batch1 = stateRepository.fetchCellBatch(0, 2);
         assertThat(batch1).hasSize(2);
 
-        var batch2 = stateRepository.fetchDrawerBatch(2, 2);
+        var batch2 = stateRepository.fetchCellBatch(2, 2);
         assertThat(batch2).hasSize(1);
     }
 
@@ -165,8 +165,8 @@ class EmbeddingMigrationIntegrationTest {
         // (this mirrors the production flow: index is dropped before re-encoding)
         stateRepository.dropEmbeddingIndex();
 
-        insertDrawer("embedding update test", "eng", "infra", "facts");
-        var rows = stateRepository.fetchDrawerBatch(0, 1);
+        insertDrawer("embedding update test", "eng", "facts", "infra");
+        var rows = stateRepository.fetchCellBatch(0, 1);
         assertThat(rows).hasSize(1);
 
         FixedEmbeddingClient client = new FixedEmbeddingClient(512, "new-model");
@@ -174,7 +174,7 @@ class EmbeddingMigrationIntegrationTest {
         stateRepository.updateEmbedding(rows.getFirst().id(), embedding);
 
         var result = dslContext.fetchOne(
-                "SELECT array_length(embedding::real[], 1) AS dim FROM drawers WHERE id = ?",
+                "SELECT array_length(embedding::real[], 1) AS dim FROM cells WHERE id = ?",
                 rows.getFirst().id());
         assertThat(result).isNotNull();
         assertThat(result.get("dim", Integer.class)).isEqualTo(512);
@@ -194,16 +194,16 @@ class EmbeddingMigrationIntegrationTest {
 
     @Test
     void indexDropAndRecreateWorks() {
-        insertDrawer("index test content", "eng", "infra", "facts");
+        insertDrawer("index test content", "eng", "facts", "infra");
 
         stateRepository.dropEmbeddingIndex();
-        insertDrawer("after drop content", "eng", "infra", "facts");
+        insertDrawer("after drop content", "eng", "facts", "infra");
 
         stateRepository.createEmbeddingIndex(1024);
 
         var result = dslContext.fetchOne("""
                 SELECT count(*) AS cnt FROM pg_indexes
-                WHERE tablename = 'drawers' AND indexname = 'idx_drawers_embedding'
+                WHERE tablename = 'cells' AND indexname = 'idx_cells_embedding'
                 """);
         assertThat(result).isNotNull();
         assertThat(result.get("cnt", Number.class).intValue()).isEqualTo(1);
@@ -217,19 +217,19 @@ class EmbeddingMigrationIntegrationTest {
 
         UUID id1 = UUID.randomUUID();
         dslContext.execute("""
-                INSERT INTO drawers (id, content, embedding, wing, hall, room, status, created_by, valid_from)
-                VALUES (?, 'small vec', ?::vector, 'eng', 'test', 'test', 'committed', 'test', now())
+                INSERT INTO cells (id, content, embedding, realm, signal, topic, status, created_by, valid_from)
+                VALUES (?, 'small vec', ?::vector, 'eng', 'facts', 'test', 'committed', 'test', now())
                 """, id1, new Float[]{0.1f, 0.2f, 0.3f});
 
         UUID id2 = UUID.randomUUID();
         Float[] largeVec = new Float[2048];
         for (int i = 0; i < 2048; i++) largeVec[i] = 0.01f;
         dslContext.execute("""
-                INSERT INTO drawers (id, content, embedding, wing, hall, room, status, created_by, valid_from)
-                VALUES (?, 'large vec', ?::vector, 'eng', 'test', 'test', 'committed', 'test', now())
+                INSERT INTO cells (id, content, embedding, realm, signal, topic, status, created_by, valid_from)
+                VALUES (?, 'large vec', ?::vector, 'eng', 'facts', 'test', 'committed', 'test', now())
                 """, id2, largeVec);
 
-        var result = dslContext.fetchOne("SELECT count(*) AS cnt FROM drawers WHERE id IN (?, ?)", id1, id2);
+        var result = dslContext.fetchOne("SELECT count(*) AS cnt FROM cells WHERE id IN (?, ?)", id1, id2);
         assertThat(result.get("cnt", Number.class).intValue()).isEqualTo(2);
     }
 
@@ -238,7 +238,7 @@ class EmbeddingMigrationIntegrationTest {
         var embedding = client.encodeDocument(content);
         Float[] embeddingArray = embedding.toArray(Float[]::new);
         dslContext.execute("""
-                INSERT INTO drawers (id, content, embedding, wing, hall, room, status, created_by, valid_from)
+                INSERT INTO cells (id, content, embedding, realm, signal, topic, status, created_by, valid_from)
                 VALUES (?, ?, ?::vector, ?, ?, ?, 'committed', 'test', now())
                 """, UUID.randomUUID(), content, embeddingArray, wing, hall, room);
     }

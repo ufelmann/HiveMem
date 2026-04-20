@@ -121,25 +121,25 @@ function mergeVerticesFallback(geo: THREE.BufferGeometry): THREE.BufferGeometry 
 
 /**
  * Deterministically assign cells to wings via BFS seeded at Fibonacci-sphere
- * anchors. Returns a map cellIndex → wingName (null for empty cells).
+ * anchors. Returns a map cellIndex → realmName (null for empty cells).
  */
 export function assignWings(
   cells: GoldbergCell[],
-  wings: { name: string; drawerCount: number }[],
+  wings: { name: string; cellCount: number }[],
 ): Map<number, string | null> {
   const result = new Map<number, string | null>()
   for (const c of cells) result.set(c.index, null)
   if (wings.length === 0) return result
 
-  const sortedWings = [...wings].sort((a, b) => b.drawerCount - a.drawerCount)
+  const sortedRealms = [...wings].sort((a, b) => b.cellCount - a.cellCount)
 
-  const perWingRaw = Math.floor(cells.length / sortedWings.length)
+  const perWingRaw = Math.floor(cells.length / sortedRealms.length)
   const perWing = Math.max(2, Math.min(14, perWingRaw))
 
   const golden = Math.PI * (3 - Math.sqrt(5))
   const claimed = new Set<number>()
   const seedFor = (i: number): number => {
-    const y = 1 - (i + 0.5) * (2 / sortedWings.length)
+    const y = 1 - (i + 0.5) * (2 / sortedRealms.length)
     const r = Math.sqrt(Math.max(0, 1 - y * y))
     const theta = golden * i
     const sx = r * Math.cos(theta), sy = y, sz = r * Math.sin(theta)
@@ -155,8 +155,8 @@ export function assignWings(
     return best
   }
 
-  for (let i = 0; i < sortedWings.length; i++) {
-    const wing = sortedWings[i]
+  for (let i = 0; i < sortedRealms.length; i++) {
+    const realm = sortedRealms[i]
     const seed = seedFor(i)
     const frontier: number[] = [seed]
     let remaining = perWing
@@ -164,7 +164,7 @@ export function assignWings(
       const current = frontier.shift()!
       if (claimed.has(current)) continue
       claimed.add(current)
-      result.set(current, wing.name)
+      result.set(current, realm.name)
       remaining--
       if (remaining === 0) break
       for (const nb of cells[current].neighbours) {
