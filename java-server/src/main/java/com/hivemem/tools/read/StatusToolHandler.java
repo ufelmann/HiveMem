@@ -25,7 +25,7 @@ public class StatusToolHandler implements ToolHandler {
 
     @Override
     public String description() {
-        return "Counts of drawers, facts, tunnels, wings list, and last activity.";
+        return "Counts of cells, facts, tunnels, realms list, and last activity.";
     }
 
     @Override

@@ -52,13 +52,13 @@ public class EmbeddingStateRepository {
         dslContext.execute("DELETE FROM identity WHERE key = ?", "reencoding_progress");
     }
 
-    public int countDrawersWithContent() {
+    public int countCellsWithContent() {
         Record row = dslContext.fetchOne(
                 "SELECT count(*) AS cnt FROM cells WHERE content IS NOT NULL AND status = 'committed'");
         return row == null ? 0 : row.get("cnt", Number.class).intValue();
     }
 
-    public List<DrawerRow> fetchDrawerBatch(int offset, int batchSize) {
+    public List<DrawerRow> fetchCellBatch(int offset, int batchSize) {
         return dslContext.fetch("""
                 SELECT id, content FROM cells
                 WHERE content IS NOT NULL AND status = 'committed'

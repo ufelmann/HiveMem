@@ -30,7 +30,7 @@ public class ApprovePendingToolHandler implements ToolHandler {
 
     @Override
     public String description() {
-        return "Approve or reject pending drawers, facts, and tunnels by ID.";
+        return "Approve or reject pending cells, facts, and tunnels by ID.";
     }
 
     @Override
