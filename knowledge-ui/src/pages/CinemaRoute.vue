@@ -23,7 +23,7 @@ onMounted(() => { if (!canvas.loaded) canvas.loadTopLevel() })
       <TresCanvas clear-color="#000010" :dpr="1.5">
         <TresPerspectiveCamera :position="[0, 0, 14]" />
         <TresAmbientLight :intensity="0.3" />
-        <HiveSphere v-if="canvas.loaded" :wings="canvas.wings" :drawers="canvas.drawers" />
+        <HiveSphere v-if="canvas.loaded" :realms="canvas.realms" :cells="canvas.cells" />
         <CyberBees />
         <HiveFloor />
       </TresCanvas>

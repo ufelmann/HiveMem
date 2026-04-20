@@ -1,11 +1,11 @@
 import { defineStore } from 'pinia'
 import { useApi } from '../api/useApi'
-import type { Drawer, Wing, Tunnel } from '../api/types'
+import type { Cell, Realm, Tunnel } from '../api/types'
 
 export const useCanvasStore = defineStore('canvas', {
   state: () => ({
-    wings: [] as Wing[],
-    drawers: [] as Drawer[],
+    realms: [] as Realm[],
+    cells: [] as Cell[],
     tunnels: [] as Tunnel[],
     loaded: false,
     zoom: 1,
@@ -16,11 +16,11 @@ export const useCanvasStore = defineStore('canvas', {
   actions: {
     async loadTopLevel() {
       const api = useApi()
-      const [wings, drawers] = await Promise.all([
-        api.call<Wing[]>('hivemem_list_wings'),
-        api.call<Drawer[]>('hivemem_search', { query: '', limit: 500 })
+      const [realms, cells] = await Promise.all([
+        api.call<Realm[]>('hivemem_list_realms'),
+        api.call<Cell[]>('hivemem_search', { query: '', limit: 500 })
       ])
-      this.wings = wings; this.drawers = drawers; this.loaded = true
+      this.realms = realms; this.cells = cells; this.loaded = true
       try { this.tunnels = await api.call<Tunnel[]>('hivemem_list_tunnels') }
       catch { this.tunnels = [] }
     },

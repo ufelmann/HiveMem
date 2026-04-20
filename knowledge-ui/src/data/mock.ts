@@ -1,7 +1,7 @@
 // AUTO-GENERATED from HiveMem snapshot on 2026-04-18. Do not edit by hand.
 import type {
-  Drawer as NewDrawer,
-  Wing as NewWing,
+  Cell as NewCell,
+  Realm as NewRealm,
   Tunnel as NewTunnel,
   Fact as NewFact,
   Reference as NewReference,
@@ -25,6 +25,7 @@ interface RawFact {
 
 interface RawTunnel {
   id?: string
+  to_cell?: string
   to_drawer?: string
   to?: string
   targetId?: string
@@ -1109,12 +1110,12 @@ const drawers: RawDrawer[] = [
 // Adapter: convert raw snapshot shape into the new api/types.ts shape
 // ---------------------------------------------------------------------------
 
-function adaptDrawer(raw: RawDrawer): NewDrawer {
+function adaptCell(raw: RawDrawer): NewCell {
   return {
     id: raw.id,
-    wing: raw.wing,
-    hall: raw.hall ?? null,
-    room: raw.room ?? null,
+    realm: raw.wing,
+    signal: raw.hall ?? null,
+    topic: raw.room ?? null,
     title: raw.title,
     content: raw.content ?? '',
     summary: raw.summary ?? null,
@@ -1122,7 +1123,7 @@ function adaptDrawer(raw: RawDrawer): NewDrawer {
     insight: raw.insight || null,
     tags: raw.tags ?? [],
     importance: (raw.importance ?? 2) as 1 | 2 | 3,
-    status: (raw.status ?? 'committed') as NewDrawer['status'],
+    status: (raw.status ?? 'committed') as NewCell['status'],
     created_by: raw.created_by ?? 'mock',
     created_at: raw.validFrom ?? raw.valid_from ?? raw.created_at ?? new Date().toISOString(),
     valid_from: raw.validFrom ?? raw.valid_from ?? new Date().toISOString(),
@@ -1130,21 +1131,21 @@ function adaptDrawer(raw: RawDrawer): NewDrawer {
   }
 }
 
-const allDrawers: NewDrawer[] = drawers.map(adaptDrawer)
+const allCells: NewCell[] = drawers.map(adaptCell)
 
-// Aggregate wings from drawers
-const wingMap = new Map<string, { hallCounts: Map<string, number>; total: number }>()
-for (const d of allDrawers) {
-  if (!wingMap.has(d.wing)) wingMap.set(d.wing, { hallCounts: new Map(), total: 0 })
-  const w = wingMap.get(d.wing)!
-  w.total++
-  const h = d.hall ?? '(none)'
-  w.hallCounts.set(h, (w.hallCounts.get(h) ?? 0) + 1)
+// Aggregate realms from cells
+const realmMap = new Map<string, { signalCounts: Map<string, number>; total: number }>()
+for (const c of allCells) {
+  if (!realmMap.has(c.realm)) realmMap.set(c.realm, { signalCounts: new Map(), total: 0 })
+  const r = realmMap.get(c.realm)!
+  r.total++
+  const s = c.signal ?? '(none)'
+  r.signalCounts.set(s, (r.signalCounts.get(s) ?? 0) + 1)
 }
-const allWings: NewWing[] = [...wingMap.entries()].map(([name, agg]) => ({
+const allRealms: NewRealm[] = [...realmMap.entries()].map(([name, agg]) => ({
   name,
-  drawer_count: agg.total,
-  halls: [...agg.hallCounts.entries()].map(([hn, hc]) => ({ name: hn, drawer_count: hc, rooms: [] })),
+  cell_count: agg.total,
+  signals: [...agg.signalCounts.entries()].map(([sn, sc]) => ({ name: sn, cell_count: sc, topics: [] })),
 }))
 
 // Tunnels: flatten from drawer.tunnels arrays if present; otherwise empty
@@ -1152,11 +1153,11 @@ const allTunnels: NewTunnel[] = []
 for (const raw of drawers) {
   const tls = raw.tunnels ?? []
   for (const t of tls) {
-    const toId = t.to_drawer ?? t.to ?? t.targetId ?? ''
+    const toId = t.to_cell ?? t.to_drawer ?? t.to ?? t.targetId ?? ''
     allTunnels.push({
       id: t.id ?? `${raw.id}-${toId}`,
-      from_drawer: raw.id,
-      to_drawer: toId,
+      from_cell: raw.id,
+      to_cell: toId,
       relation: (t.relation ?? 'related_to') as NewTunnel['relation'],
       note: t.note ?? null,
       status: 'committed',
@@ -1183,8 +1184,8 @@ for (const raw of drawers) {
 }
 
 export const palace = {
-  drawers: allDrawers,
-  wings: allWings,
+  cells: allCells,
+  realms: allRealms,
   tunnels: allTunnels,
   facts: allFacts,
   references: [] as NewReference[],
