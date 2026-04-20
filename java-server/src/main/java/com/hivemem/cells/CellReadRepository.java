@@ -397,7 +397,7 @@ public class CellReadRepository {
         List<Map<String, Object>> results = new ArrayList<>();
         if (normalizedRealm != null) {
             for (Record row : dslContext.fetch("""
-                    SELECT id, realm, title, narrative, hall_order, key_drawers, created_by, valid_from
+                    SELECT id, realm, title, narrative, signal_order, key_cells, created_by, valid_from
                     FROM active_blueprints
                     WHERE realm = ?
                     ORDER BY valid_from DESC
@@ -406,7 +406,7 @@ public class CellReadRepository {
             }
         } else {
             for (Record row : dslContext.fetch("""
-                    SELECT id, realm, title, narrative, hall_order, key_drawers, created_by, valid_from
+                    SELECT id, realm, title, narrative, signal_order, key_cells, created_by, valid_from
                     FROM active_blueprints
                     ORDER BY realm, valid_from DESC
                     """)) {
@@ -472,8 +472,8 @@ public class CellReadRepository {
         result.put("realm", row.get("realm", String.class));
         result.put("title", row.get("title", String.class));
         result.put("narrative", row.get("narrative", String.class));
-        result.put("hall_order", stringArrayValue(row, "hall_order"));
-        result.put("key_drawers", uuidArrayValue(row, "key_drawers"));
+        result.put("signal_order", stringArrayValue(row, "signal_order"));
+        result.put("key_cells", uuidArrayValue(row, "key_cells"));
         result.put("created_by", row.get("created_by", String.class));
         result.put("valid_from", timestampValue(row, "valid_from"));
         return result;

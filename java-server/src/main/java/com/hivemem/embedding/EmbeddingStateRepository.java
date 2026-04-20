@@ -58,14 +58,14 @@ public class EmbeddingStateRepository {
         return row == null ? 0 : row.get("cnt", Number.class).intValue();
     }
 
-    public List<DrawerRow> fetchCellBatch(int offset, int batchSize) {
+    public List<CellRow> fetchCellBatch(int offset, int batchSize) {
         return dslContext.fetch("""
                 SELECT id, content FROM cells
                 WHERE content IS NOT NULL AND status = 'committed'
                 ORDER BY created_at ASC
                 LIMIT ? OFFSET ?
                 """, batchSize, offset)
-                .map(r -> new DrawerRow(r.get("id", UUID.class), r.get("content", String.class)));
+                .map(r -> new CellRow(r.get("id", UUID.class), r.get("content", String.class)));
     }
 
     public void updateEmbedding(UUID cellId, List<Float> embedding) {
@@ -106,6 +106,6 @@ public class EmbeddingStateRepository {
                 """, key, content, tokenCount);
     }
 
-    public record DrawerRow(UUID id, String content) {
+    public record CellRow(UUID id, String content) {
     }
 }

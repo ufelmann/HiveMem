@@ -36,8 +36,8 @@ public class UpdateBlueprintToolHandler implements ToolHandler {
         String realm = WriteArgumentParser.requiredText(arguments, "realm");
         String title = WriteArgumentParser.requiredText(arguments, "title");
         String narrative = WriteArgumentParser.requiredText(arguments, "narrative");
-        List<String> hallOrder = WriteArgumentParser.optionalTextList(arguments, "hall_order");
-        List<UUID> keyDrawers = WriteArgumentParser.optionalUuidList(arguments, "key_drawers");
-        return writeToolService.updateBlueprint(principal, realm, title, narrative, hallOrder, keyDrawers);
+        List<String> signalOrder = WriteArgumentParser.optionalTextList(arguments, "signal_order");
+        List<UUID> keyCells = WriteArgumentParser.optionalUuidList(arguments, "key_cells");
+        return writeToolService.updateBlueprint(principal, realm, title, narrative, signalOrder, keyCells);
     }
 }

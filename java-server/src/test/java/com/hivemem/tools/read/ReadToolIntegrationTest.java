@@ -829,9 +829,9 @@ class ReadToolIntegrationTest {
         JsonNode blueprint = callToolContent("hivemem_get_blueprint", Map.of("realm", "alpha"));
         assertThat(blueprint).hasSize(2);
         assertThat(blueprint.get(0).path("id").asText()).isEqualTo(blueprintTwo.toString());
-        assertThat(blueprint.get(0).path("hall_order").get(2).asText()).isEqualTo("archive");
+        assertThat(blueprint.get(0).path("signal_order").get(2).asText()).isEqualTo("archive");
         assertThat(blueprint.get(1).path("id").asText()).isEqualTo(blueprintOne.toString());
-        assertThat(blueprint.get(1).path("key_drawers").get(0).asText()).isEqualTo("00000000-0000-0000-0000-000000000001");
+        assertThat(blueprint.get(1).path("key_cells").get(0).asText()).isEqualTo("00000000-0000-0000-0000-000000000001");
 
         JsonNode allBlueprints = callToolContent("hivemem_get_blueprint", Map.of());
         assertThat(allBlueprints).hasSize(3);
@@ -1293,8 +1293,8 @@ class ReadToolIntegrationTest {
             String realm,
             String title,
             String narrative,
-            String[] hallOrder,
-            UUID[] keyDrawers,
+            String[] signalOrder,
+            UUID[] keyCells,
             String createdBy,
             OffsetDateTime createdAt,
             OffsetDateTime validFrom,
@@ -1303,10 +1303,10 @@ class ReadToolIntegrationTest {
         dslContext.execute(
                 """
                 INSERT INTO blueprints (
-                    id, realm, title, narrative, hall_order, key_drawers, created_by, created_at, valid_from, valid_until
+                    id, realm, title, narrative, signal_order, key_cells, created_by, created_at, valid_from, valid_until
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz, ?::timestamptz)
                 """,
-                id, realm, title, narrative, hallOrder, keyDrawers, createdBy, createdAt, validFrom, validUntil
+                id, realm, title, narrative, signalOrder, keyCells, createdBy, createdAt, validFrom, validUntil
         );
     }
 
