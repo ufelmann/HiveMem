@@ -13,6 +13,8 @@
 -- This migration is idempotent: column renames are guarded by existence
 -- checks so re-running against an already-migrated database is a no-op.
 
+DROP VIEW IF EXISTS active_blueprints CASCADE;
+
 DO $$
 BEGIN
     IF EXISTS (
@@ -33,3 +35,8 @@ BEGIN
         ALTER TABLE blueprints RENAME COLUMN key_drawers TO key_cells;
     END IF;
 END $$;
+
+CREATE VIEW active_blueprints AS
+SELECT *
+FROM blueprints
+WHERE valid_until IS NULL OR valid_until > now();
