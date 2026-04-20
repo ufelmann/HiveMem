@@ -468,7 +468,7 @@ class WriteToolsIntegrationTest {
     void writerCanReviseCommittedFactAndPreserveFactHistory() throws Exception {
         UUID oldId = UUID.fromString("00000000-0000-0000-0000-000000000401");
         UUID sourceDrawerId = UUID.fromString("00000000-0000-0000-0000-000000000402");
-        insertDrawer(sourceDrawerId, null, "Fact source", "alpha", "planning", "facts", "system", 1,
+        insertDrawer(sourceDrawerId, null, "Fact source", "alpha", "facts", "planning", "system", 1,
                 "Source summary", null, null, "committed", "writer-1",
                 OffsetDateTime.parse("2026-04-05T09:59:00Z"),
                 OffsetDateTime.parse("2026-04-05T09:59:00Z"),
@@ -620,7 +620,7 @@ class WriteToolsIntegrationTest {
     @Test
     void writerCanAddReferenceAndLinkItToDrawer() throws Exception {
         UUID drawerId = UUID.fromString("00000000-0000-0000-0000-000000000501");
-        insertDrawer(drawerId, null, "Reference drawer", "eng", "docs", "refs", "system", 2,
+        insertDrawer(drawerId, null, "Reference drawer", "eng", "facts", "refs", "system", 2,
                 "Reference summary", null, null, "committed", "writer-1",
                 OffsetDateTime.parse("2026-04-05T13:00:00Z"),
                 OffsetDateTime.parse("2026-04-05T13:00:00Z"),
@@ -742,7 +742,7 @@ class WriteToolsIntegrationTest {
     @Test
     void writerCanReviseDrawerAndPreserveDrawerHistory() throws Exception {
         UUID drawerId = UUID.fromString("00000000-0000-0000-0000-000000000550");
-        insertDrawer(drawerId, null, "Drawer V1", "eng", "docs", "facts", "system", 3,
+        insertDrawer(drawerId, null, "Drawer V1", "eng", "facts", "docs", "system", 3,
                 "Summary V1", new String[]{"docs"}, new String[]{"v1"}, "committed", "writer-1",
                 OffsetDateTime.parse("2026-04-05T13:30:00Z"),
                 OffsetDateTime.parse("2026-04-05T13:30:00Z"),
@@ -782,12 +782,12 @@ class WriteToolsIntegrationTest {
     void agentAddTunnelForcesPendingAndRemoveTunnelClosesIt() throws Exception {
         UUID fromDrawerId = UUID.fromString("00000000-0000-0000-0000-000000000601");
         UUID toDrawerId = UUID.fromString("00000000-0000-0000-0000-000000000602");
-        insertDrawer(fromDrawerId, null, "Tunnel from", "eng", "graph", "refs", "system", 2,
+        insertDrawer(fromDrawerId, null, "Tunnel from", "eng", "facts", "refs", "system", 2,
                 "From summary", null, null, "committed", "writer-1",
                 OffsetDateTime.parse("2026-04-05T14:00:00Z"),
                 OffsetDateTime.parse("2026-04-05T14:00:00Z"),
                 null);
-        insertDrawer(toDrawerId, null, "Tunnel to", "eng", "graph", "refs", "system", 2,
+        insertDrawer(toDrawerId, null, "Tunnel to", "eng", "facts", "refs", "system", 2,
                 "To summary", null, null, "committed", "writer-1",
                 OffsetDateTime.parse("2026-04-05T14:00:00Z"),
                 OffsetDateTime.parse("2026-04-05T14:00:00Z"),
@@ -828,7 +828,7 @@ class WriteToolsIntegrationTest {
     @Test
     void adminCanLogAccessAndCheckHealth() throws Exception {
         UUID drawerId = UUID.fromString("00000000-0000-0000-0000-000000000701");
-        insertDrawer(drawerId, null, "Popular drawer", "eng", "search", "facts", "system", 4,
+        insertDrawer(drawerId, null, "Popular drawer", "eng", "facts", "popularity", "system", 4,
                 "Popular summary", null, null, "committed", "writer-1",
                 OffsetDateTime.parse("2026-04-05T15:00:00Z"),
                 OffsetDateTime.parse("2026-04-05T15:00:00Z"),
@@ -910,17 +910,17 @@ class WriteToolsIntegrationTest {
         UUID toDrawerId = UUID.fromString("00000000-0000-0000-0000-000000000304");
         UUID tunnelId = UUID.fromString("00000000-0000-0000-0000-000000000305");
 
-        insertDrawer(fromDrawerId, null, "From drawer", "alpha", "planning", "facts", "system", 2,
+        insertDrawer(fromDrawerId, null, "From drawer", "alpha", "facts", "planning", "system", 2,
                 "From summary", null, null, "committed", "writer-1",
                 OffsetDateTime.parse("2026-04-01T09:00:00Z"),
                 OffsetDateTime.parse("2026-04-01T09:00:00Z"),
                 null);
-        insertDrawer(toDrawerId, null, "To drawer", "alpha", "planning", "facts", "system", 2,
+        insertDrawer(toDrawerId, null, "To drawer", "alpha", "facts", "planning", "system", 2,
                 "To summary", null, null, "committed", "writer-1",
                 OffsetDateTime.parse("2026-04-01T09:00:00Z"),
                 OffsetDateTime.parse("2026-04-01T09:00:00Z"),
                 null);
-        insertDrawer(drawerId, null, "Pending drawer", "alpha", "planning", "facts", "system", 2,
+        insertDrawer(drawerId, null, "Pending drawer", "alpha", "facts", "planning", "system", 2,
                 "Pending summary", null, null, "pending", "agent-1",
                 OffsetDateTime.parse("2026-04-01T09:00:00Z"),
                 OffsetDateTime.parse("2026-04-01T09:00:00Z"),

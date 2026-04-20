@@ -286,7 +286,7 @@ class GraphSearchIntegrationTest {
                 WRITER,
                 content,
                 "test",
-                "graph",
+                "facts",
                 null,
                 "system",
                 List.of(),

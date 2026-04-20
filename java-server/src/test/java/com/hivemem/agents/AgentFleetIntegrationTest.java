@@ -243,11 +243,11 @@ class AgentFleetIntegrationTest {
     void mixedApproveRejectBatchTransitionsCorrectly() {
         // Create 2 pending drawers from agent
         Map<String, Object> drawer1 = writeToolService.addCell(
-                AGENT, "Agent suggestion 1", "eng", "test", "facts", "system",
+                AGENT, "Agent suggestion 1", "eng", "facts", "test", "system",
                 List.of(), 1, "Summary 1", List.of(), null, null, "committed", BASE_TIME, null
         );
         Map<String, Object> drawer2 = writeToolService.addCell(
-                AGENT, "Agent suggestion 2", "eng", "test", "facts", "system",
+                AGENT, "Agent suggestion 2", "eng", "facts", "test", "system",
                 List.of(), 1, "Summary 2", List.of(), null, null, "committed", BASE_TIME.plusSeconds(1), null
         );
 

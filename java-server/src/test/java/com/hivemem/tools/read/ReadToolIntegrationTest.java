@@ -141,8 +141,8 @@ class ReadToolIntegrationTest {
                 null,
                 "Semantic oracle drawer",
                 "alpha",
-                "search",
                 "facts",
+                "oracle",
                 "system",
                 1,
                 "Semantic oracle summary",
@@ -159,8 +159,8 @@ class ReadToolIntegrationTest {
                 null,
                 "Keyword oracle drawer",
                 "alpha",
-                "search",
                 "facts",
+                "oracle",
                 "system",
                 5,
                 "Keyword oracle summary",
@@ -233,8 +233,8 @@ class ReadToolIntegrationTest {
                 null,
                 "The JVM migration plan",
                 "alpha",
-                "planning",
                 "facts",
+                "jvm",
                 "system",
                 4,
                 "Java migration slice",
@@ -270,7 +270,7 @@ class ReadToolIntegrationTest {
             (String) writeToolService.addCell(
                 new AuthPrincipal("fixture-writer", AuthRole.WRITER),
                 "test drawer for auto-log",
-                "testing", "autolog", "base",
+                "testing", "facts", "base",
                 null, null, null, null, null, null, null, null, null, null
             ).get("id"));
 
@@ -308,7 +308,7 @@ class ReadToolIntegrationTest {
                 null,
                 "Alpha strategy drawer",
                 "alpha",
-                "strategy",
+                "events",
                 "notes",
                 "system",
                 2,
@@ -338,7 +338,7 @@ class ReadToolIntegrationTest {
                 null,
                 "Alpha strategy drawer",
                 "alpha",
-                "strategy",
+                "events",
                 "notes",
                 "system",
                 2,
@@ -353,9 +353,9 @@ class ReadToolIntegrationTest {
         );
 
         JsonNode content = callToolContent("hivemem_list_realms", Map.of("realm", "alpha"));
-        assertThat(content.get(0).path("signal").asText()).isEqualTo("planning");
+        assertThat(content.get(0).path("signal").asText()).isEqualTo("events");
         assertThat(content.get(0).path("cell_count").asInt()).isEqualTo(1);
-        assertThat(content.get(1).path("signal").asText()).isEqualTo("strategy");
+        assertThat(content.get(1).path("signal").asText()).isEqualTo("facts");
         assertThat(content.get(1).path("cell_count").asInt()).isEqualTo(1);
     }
 
@@ -368,7 +368,7 @@ class ReadToolIntegrationTest {
                 null,
                 "Third committed drawer",
                 "alpha",
-                "ops",
+                "facts",
                 "notes",
                 "system",
                 1,
@@ -516,14 +516,14 @@ class ReadToolIntegrationTest {
         UUID originalId = UUID.fromString("00000000-0000-0000-0000-000000000801");
         UUID revisedId = UUID.fromString("00000000-0000-0000-0000-000000000802");
         insertDrawer(
-                originalId, null, "Initial", "alpha", "bitemp", "facts", "system", 3,
+                originalId, null, "Initial", "alpha", "facts", "bitemp", "system", 3,
                 "V1", null, null, "committed", "writer",
                 OffsetDateTime.parse("2025-01-01T00:00:00Z"),
                 OffsetDateTime.parse("2025-01-01T00:00:00Z"),
                 null
         );
         insertDrawer(
-                revisedId, originalId, "Revised", "alpha", "bitemp", "facts", "system", 3,
+                revisedId, originalId, "Revised", "alpha", "facts", "bitemp", "system", 3,
                 "V2", null, null, "committed", "writer",
                 OffsetDateTime.parse("2025-03-01T00:00:00Z"),
                 OffsetDateTime.parse("2025-02-01T00:00:00Z"),
@@ -548,8 +548,8 @@ class ReadToolIntegrationTest {
                 null,
                 "Original drawer content",
                 "alpha",
-                "history",
                 "facts",
+                "history",
                 "system",
                 3,
                 "Drawer V1",
@@ -566,8 +566,8 @@ class ReadToolIntegrationTest {
                 originalId,
                 "Revised drawer content",
                 "alpha",
-                "history",
                 "facts",
+                "history",
                 "system",
                 3,
                 "Drawer V2",
@@ -976,8 +976,8 @@ class ReadToolIntegrationTest {
                 null,
                 "First committed drawer",
                 "alpha",
-                "planning",
                 "facts",
+                "milestones",
                 "system",
                 3,
                 "Alpha summary",
@@ -994,8 +994,8 @@ class ReadToolIntegrationTest {
                 committedDrawer,
                 "Second committed drawer",
                 "beta",
-                "delivery",
                 "events",
+                "milestones",
                 "system",
                 2,
                 "Beta summary",
@@ -1012,8 +1012,8 @@ class ReadToolIntegrationTest {
                 null,
                 "Pending drawer",
                 "gamma",
-                "intake",
                 "facts",
+                "pending-items",
                 "system",
                 1,
                 "Pending summary",
