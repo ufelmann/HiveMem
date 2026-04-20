@@ -18,7 +18,7 @@ export class MockApiClient implements ApiClient {
       hivemem_wake_up: () => this.wakeUp(),
       hivemem_list_realms: (args: { realm?: string }) => this.listRealms(args),
       hivemem_search: (args: { query?: string; limit?: number }) => this.search(args),
-      hivemem_get_cell: (args: { id: string }) => this.getCell(args),
+      hivemem_get_cell: (args: { cell_id: string }) => this.getCell(args),
       hivemem_quick_facts: (args: { subject: string }) => this.quickFacts(args),
       hivemem_traverse: (args: { cell_id: string; depth?: number }) => this.traverse(args),
       hivemem_list_tunnels: () => mockPalace.tunnels,
@@ -92,9 +92,9 @@ export class MockApiClient implements ApiClient {
     return all.slice(0, args.limit ?? 100)
   }
 
-  private getCell(args: { id: string }): Cell {
-    const c = mockPalace.cells.find(x => x.id === args.id)
-    if (!c) throw new Error(`Cell not found: ${args.id}`)
+  private getCell(args: { cell_id: string }): Cell {
+    const c = mockPalace.cells.find(x => x.id === args.cell_id)
+    if (!c) throw new Error(`Cell not found: ${args.cell_id}`)
     return c
   }
 
