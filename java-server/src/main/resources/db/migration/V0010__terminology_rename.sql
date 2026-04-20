@@ -138,6 +138,17 @@ BEGIN
     END IF;
 END $$;
 
+-- Normalize legacy free-text signal values before adding CHECK constraint.
+-- Historical Java baseline lacked this constraint (Python schema had it); prod
+-- accumulated topic-like values (e.g., "hivemem", "software", "ui"). Move those
+-- into the topic column if topic is empty, and reset signal to the default
+-- 'facts' enum value so the CHECK constraint can be applied without data loss.
+UPDATE cells
+SET topic = COALESCE(topic, signal),
+    signal = 'facts'
+WHERE signal IS NOT NULL
+  AND signal NOT IN ('facts', 'events', 'discoveries', 'preferences', 'advice');
+
 -- Add cells_signal_check (guarded: idempotent if constraint was somehow already created)
 DO $$
 BEGIN
