@@ -23,8 +23,8 @@ public class ToolPermissionService {
             "hivemem_status",
             "hivemem_search",
             "hivemem_search_kg",
-            "hivemem_get_drawer",
-            "hivemem_list_wings",
+            "hivemem_get_cell",
+            "hivemem_list_realms",
             "hivemem_traverse",
             "hivemem_quick_facts",
             "hivemem_time_machine",
@@ -38,7 +38,7 @@ public class ToolPermissionService {
     );
 
     private static final Set<String> WRITE_TOOLS = tools(
-            "hivemem_add_drawer",
+            "hivemem_add_cell",
             "hivemem_add_tunnel",
             "hivemem_kg_add",
             "hivemem_kg_invalidate",
@@ -46,7 +46,7 @@ public class ToolPermissionService {
             "hivemem_add_reference",
             "hivemem_link_reference",
             "hivemem_remove_tunnel",
-            "hivemem_revise_drawer",
+            "hivemem_revise_cell",
             "hivemem_revise_fact",
             "hivemem_register_agent",
             "hivemem_diary_write",

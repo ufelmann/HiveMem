@@ -85,17 +85,17 @@ class CrossFeatureParityIntegrationTest {
     @BeforeEach
     void resetDatabase() {
         rateLimiter.clearAll();
-        dslContext.execute("TRUNCATE TABLE access_log, agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
-        dslContext.execute("REFRESH MATERIALIZED VIEW drawer_popularity");
+        dslContext.execute("TRUNCATE TABLE access_log, agent_diary, cell_references, references_, blueprints, identity, agents, facts, tunnels, cells CASCADE");
+        dslContext.execute("REFRESH MATERIALIZED VIEW cell_popularity");
     }
 
     @Test
     void reviseDrawerPreservesProgressiveLayers() throws Exception {
-        JsonNode drawer = callTool("writer-token", "hivemem_add_drawer", Map.of(
+        JsonNode drawer = callTool("writer-token", "hivemem_add_cell", Map.of(
                 "content", "Original content about auth migration",
-                "wing", "eng",
-                "hall", "auth",
-                "room", "facts",
+                "realm", "eng",
+                "signal", "auth",
+                "topic", "facts",
                 "summary", "Auth migration v1",
                 "key_points", List.of("Migrate from Camunda", "Use Temporal", "Q3 deadline"),
                 "insight", "This unblocks the Go rewrite",
@@ -104,12 +104,12 @@ class CrossFeatureParityIntegrationTest {
         ));
         String drawerId = drawer.path("id").asText();
 
-        JsonNode revision = callTool("writer-token", "hivemem_revise_drawer", Map.of(
+        JsonNode revision = callTool("writer-token", "hivemem_revise_cell", Map.of(
                 "old_id", drawerId,
                 "new_content", "Updated content about auth migration complete"
         ));
-        JsonNode revisedDrawer = callTool("writer-token", "hivemem_get_drawer", Map.of(
-                "drawer_id", revision.path("new_id").asText()
+        JsonNode revisedDrawer = callTool("writer-token", "hivemem_get_cell", Map.of(
+                "cell_id", revision.path("new_id").asText()
         ));
 
         assertThat(revisedDrawer.path("summary").asText()).isEqualTo("Auth migration v1");
@@ -122,11 +122,11 @@ class CrossFeatureParityIntegrationTest {
 
     @Test
     void reviseFactPreservesSourceId() throws Exception {
-        JsonNode drawer = callTool("writer-token", "hivemem_add_drawer", Map.of(
+        JsonNode drawer = callTool("writer-token", "hivemem_add_cell", Map.of(
                 "content", "Source drawer for fact",
-                "wing", "eng",
-                "hall", "test",
-                "room", "facts"
+                "realm", "eng",
+                "signal", "test",
+                "topic", "facts"
         ));
 
         JsonNode fact = callTool("writer-token", "hivemem_kg_add", Map.of(
@@ -149,11 +149,11 @@ class CrossFeatureParityIntegrationTest {
 
     @Test
     void popularityStaysZeroBeforeRefresh() throws Exception {
-        JsonNode drawer = callTool("writer-token", "hivemem_add_drawer", Map.of(
+        JsonNode drawer = callTool("writer-token", "hivemem_add_cell", Map.of(
                 "content", "Content about Docker container orchestration",
-                "wing", "eng",
-                "hall", "infra",
-                "room", "facts",
+                "realm", "eng",
+                "signal", "infra",
+                "topic", "facts",
                 "summary", "Docker orchestration"
         ));
 
@@ -178,36 +178,36 @@ class CrossFeatureParityIntegrationTest {
 
     @Test
     void blueprintKeyDrawersRemainResolvableAfterDrawerRevision() throws Exception {
-        JsonNode drawer = callTool("writer-token", "hivemem_add_drawer", Map.of(
+        JsonNode drawer = callTool("writer-token", "hivemem_add_cell", Map.of(
                 "content", "Important drawer",
-                "wing", "eng",
-                "hall", "arch",
-                "room", "facts",
+                "realm", "eng",
+                "signal", "arch",
+                "topic", "facts",
                 "summary", "Key architecture decision"
         ));
         String originalDrawerId = drawer.path("id").asText();
 
         callTool("writer-token", "hivemem_update_blueprint", Map.of(
-                "wing", "eng",
+                "realm", "eng",
                 "title", "Engineering Overview",
                 "narrative", "Architecture decisions",
                 "key_drawers", List.of(originalDrawerId)
         ));
 
-        JsonNode revision = callTool("writer-token", "hivemem_revise_drawer", Map.of(
+        JsonNode revision = callTool("writer-token", "hivemem_revise_cell", Map.of(
                 "old_id", originalDrawerId,
                 "new_content", "Updated important drawer"
         ));
         String revisedDrawerId = revision.path("new_id").asText();
 
         JsonNode blueprints = callTool("writer-token", "hivemem_get_blueprint", Map.of(
-                "wing", "eng"
+                "realm", "eng"
         ));
         assertThat(textValues(blueprints.get(0).path("key_drawers"))).contains(originalDrawerId);
         assertThat(textValues(blueprints.get(0).path("key_drawers"))).doesNotContain(revisedDrawerId);
 
-        JsonNode originalDrawer = callTool("writer-token", "hivemem_get_drawer", Map.of(
-                "drawer_id", originalDrawerId
+        JsonNode originalDrawer = callTool("writer-token", "hivemem_get_cell", Map.of(
+                "cell_id", originalDrawerId
         ));
         assertThat(originalDrawer.path("id").asText()).isEqualTo(originalDrawerId);
         assertThat(originalDrawer.path("valid_until").isNull()).isFalse();
@@ -230,11 +230,11 @@ class CrossFeatureParityIntegrationTest {
         assertThat(diary).hasSize(1);
         assertThat(diary.get(0).path("entry").asText()).isEqualTo("Found duplicate content in engineering wing");
 
-        JsonNode drawer = callTool("agent-token", "hivemem_add_drawer", Map.of(
+        JsonNode drawer = callTool("agent-token", "hivemem_add_cell", Map.of(
                 "content", "Curated summary of authentication patterns",
-                "wing", "eng",
-                "hall", "auth",
-                "room", "facts",
+                "realm", "eng",
+                "signal", "auth",
+                "topic", "facts",
                 "summary", "Auth patterns curated",
                 "status", "committed"
         ));

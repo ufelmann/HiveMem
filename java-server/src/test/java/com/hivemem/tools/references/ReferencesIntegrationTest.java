@@ -2,10 +2,10 @@ package com.hivemem.tools.references;
 
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
-import com.hivemem.drawers.DrawerReadRepository;
+import com.hivemem.cells.CellReadRepository;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
-import com.hivemem.search.DrawerSearchRepository;
+import com.hivemem.search.CellSearchRepository;
 import com.hivemem.search.KgSearchRepository;
 import com.hivemem.tools.read.ReadToolService;
 import com.hivemem.write.WriteToolRepository;
@@ -79,7 +79,7 @@ class ReferencesIntegrationTest {
 
     @BeforeEach
     void resetDatabase() {
-        dslContext.execute("TRUNCATE TABLE agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
+        dslContext.execute("TRUNCATE TABLE agent_diary, cell_references, references_, blueprints, identity, agents, facts, tunnels, cells CASCADE");
     }
 
     // --- Python: test_add_reference ---
@@ -159,11 +159,11 @@ class ReferencesIntegrationTest {
     // --- User request: link one reference to multiple drawers ---
     @Test
     void linkOneReferenceToMultipleDrawers() {
-        Map<String, Object> drawerA = writeToolService.addDrawer(
+        Map<String, Object> drawerA = writeToolService.addCell(
                 WRITER, "Drawer A content", "eng", "search", "refs", "system",
                 List.of(), 1, "Drawer A", List.of(), null, null, "committed",
                 OffsetDateTime.parse("2026-04-10T10:00:00Z"), null);
-        Map<String, Object> drawerB = writeToolService.addDrawer(
+        Map<String, Object> drawerB = writeToolService.addCell(
                 WRITER, "Drawer B content", "eng", "search", "refs", "system",
                 List.of(), 1, "Drawer B", List.of(), null, null, "committed",
                 OffsetDateTime.parse("2026-04-10T10:01:00Z"), null);
@@ -178,16 +178,16 @@ class ReferencesIntegrationTest {
         Map<String, Object> linkA = writeToolService.linkReference(drawerAId, refId, "source");
         Map<String, Object> linkB = writeToolService.linkReference(drawerBId, refId, "extends");
 
-        assertThat(linkA).containsEntry("drawer_id", drawerAId.toString());
+        assertThat(linkA).containsEntry("cell_id", drawerAId.toString());
         assertThat(linkA).containsEntry("reference_id", refId.toString());
         assertThat(linkA).containsEntry("relation", "source");
-        assertThat(linkB).containsEntry("drawer_id", drawerBId.toString());
+        assertThat(linkB).containsEntry("cell_id", drawerBId.toString());
         assertThat(linkB).containsEntry("reference_id", refId.toString());
         assertThat(linkB).containsEntry("relation", "extends");
 
         long linkCount = dslContext.fetchOne("""
                 SELECT count(*) AS cnt
-                FROM drawer_references
+                FROM cell_references
                 WHERE reference_id = ?
                 """, refId).get("cnt", Long.class);
         assertThat(linkCount).isEqualTo(2L);
@@ -195,7 +195,7 @@ class ReferencesIntegrationTest {
         // Reading list should show linked_drawers = 2 for this reference
         List<Map<String, Object>> reading = readToolService.readingList(null, 20);
         assertThat(reading).hasSize(1);
-        assertThat(reading.getFirst()).containsEntry("linked_drawers", 2L);
+        assertThat(reading.getFirst()).containsEntry("linked_cells", 2L);
     }
 
     // --- User request: reading list respects limit parameter ---
@@ -224,7 +224,7 @@ class ReferencesIntegrationTest {
         assertThat(count).isZero();
     }
 
-    // Not ported: test_link_reference_to_drawer — already covered in WriteToolsIntegrationTest.writerCanAddReferenceAndLinkItToDrawer
+    // Not ported: test_link_reference_to_cell — already covered in WriteToolsIntegrationTest.writerCanAddReferenceAndLinkItToDrawer
 
     @SpringBootConfiguration
     @EnableAutoConfiguration
@@ -232,8 +232,8 @@ class ReferencesIntegrationTest {
             WriteToolService.class,
             WriteToolRepository.class,
             ReadToolService.class,
-            DrawerReadRepository.class,
-            DrawerSearchRepository.class,
+            CellReadRepository.class,
+            CellSearchRepository.class,
             KgSearchRepository.class,
             AdminToolRepository.class,
             TestConfig.class

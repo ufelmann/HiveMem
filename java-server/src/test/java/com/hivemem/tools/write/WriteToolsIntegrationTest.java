@@ -97,7 +97,7 @@ class WriteToolsIntegrationTest {
     @BeforeEach
     void resetDatabase() {
         rateLimiter.clearAll();
-        dslContext.execute("TRUNCATE TABLE agent_diary, drawer_references, references_, blueprints, identity, agents, facts, tunnels, drawers CASCADE");
+        dslContext.execute("TRUNCATE TABLE agent_diary, cell_references, references_, blueprints, identity, agents, facts, tunnels, cells CASCADE");
     }
 
     @Test
@@ -127,11 +127,11 @@ class WriteToolsIntegrationTest {
 
     @Test
     void writerCanAddDrawerWithEmbeddingAndProgressiveLayers() throws Exception {
-        JsonNode content = callToolContent("writer-token", "hivemem_add_drawer", Map.ofEntries(
+        JsonNode content = callToolContent("writer-token", "hivemem_add_cell", Map.ofEntries(
                 Map.entry("content", "Semantic oracle drawer"),
-                Map.entry("wing", "alpha"),
-                Map.entry("hall", "facts"),
-                Map.entry("room", "search"),
+                Map.entry("realm", "alpha"),
+                Map.entry("signal", "facts"),
+                Map.entry("topic", "search"),
                 Map.entry("source", "system"),
                 Map.entry("tags", List.of("semantic", "oracle")),
                 Map.entry("importance", 2),
@@ -142,18 +142,18 @@ class WriteToolsIntegrationTest {
                 Map.entry("valid_from", "2026-04-03T12:00:00Z")
         ));
         assertThat(content.path("status").asText()).isEqualTo("committed");
-        assertThat(content.path("wing").asText()).isEqualTo("alpha");
-        assertThat(content.path("hall").asText()).isEqualTo("facts");
+        assertThat(content.path("realm").asText()).isEqualTo("alpha");
+        assertThat(content.path("signal").asText()).isEqualTo("facts");
 
         Record row = dslContext.fetchOne("""
-                SELECT content, wing, hall, room, source, tags, importance, summary, key_points, insight, actionability, status, created_by, embedding
-                FROM drawers
+                SELECT content, realm, signal, topic, source, tags, importance, summary, key_points, insight, actionability, status, created_by, embedding
+                FROM cells
                 WHERE content = ?
                 """, "Semantic oracle drawer");
         org.junit.jupiter.api.Assertions.assertNotNull(row);
-        org.junit.jupiter.api.Assertions.assertEquals("alpha", row.get("wing", String.class));
-        org.junit.jupiter.api.Assertions.assertEquals("facts", row.get("hall", String.class));
-        org.junit.jupiter.api.Assertions.assertEquals("search", row.get("room", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("alpha", row.get("realm", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("facts", row.get("signal", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("search", row.get("topic", String.class));
         org.junit.jupiter.api.Assertions.assertEquals("system", row.get("source", String.class));
         org.junit.jupiter.api.Assertions.assertEquals("Semantic oracle summary", row.get("summary", String.class));
         org.junit.jupiter.api.Assertions.assertEquals("Used for semantic search", row.get("insight", String.class));
@@ -165,11 +165,11 @@ class WriteToolsIntegrationTest {
 
     @Test
     void addDrawerWithoutDedupeThresholdAlwaysInserts() throws Exception {
-        JsonNode content = callToolContent("writer-token", "hivemem_add_drawer", Map.of(
+        JsonNode content = callToolContent("writer-token", "hivemem_add_cell", Map.of(
                 "content", "Unique drawer content without dedupe",
-                "wing", "alpha",
-                "hall", "facts",
-                "room", "search"
+                "realm", "alpha",
+                "signal", "facts",
+                "topic", "search"
         ));
         assertThat(content.path("inserted").asBoolean()).isTrue();
         assertThat(content.path("id").asText()).isNotBlank();
@@ -177,11 +177,11 @@ class WriteToolsIntegrationTest {
 
     @Test
     void addDrawerWithDedupeThresholdInsertsWhenNoMatch() throws Exception {
-        JsonNode content = callToolContent("writer-token", "hivemem_add_drawer", Map.of(
+        JsonNode content = callToolContent("writer-token", "hivemem_add_cell", Map.of(
                 "content", "Unique content with no near duplicates xyz987",
-                "wing", "alpha",
-                "hall", "facts",
-                "room", "search",
+                "realm", "alpha",
+                "signal", "facts",
+                "topic", "search",
                 "dedupe_threshold", 0.99
         ));
         assertThat(content.path("inserted").asBoolean()).isTrue();
@@ -191,20 +191,20 @@ class WriteToolsIntegrationTest {
     @Test
     void addDrawerWithDedupeThresholdSkipsInsertWhenDuplicateExists() throws Exception {
         // First insert
-        callToolContent("writer-token", "hivemem_add_drawer", Map.of(
+        callToolContent("writer-token", "hivemem_add_cell", Map.of(
                 "content", "Duplicate oracle alpha",
-                "wing", "alpha",
-                "hall", "facts",
-                "room", "search",
+                "realm", "alpha",
+                "signal", "facts",
+                "topic", "search",
                 "summary", "Duplicate oracle alpha"
         ));
 
         // Second attempt with dedupe_threshold should detect duplicate and skip
-        JsonNode content = callToolContent("writer-token", "hivemem_add_drawer", Map.of(
+        JsonNode content = callToolContent("writer-token", "hivemem_add_cell", Map.of(
                 "content", "Duplicate oracle beta",
-                "wing", "alpha",
-                "hall", "facts",
-                "room", "search",
+                "realm", "alpha",
+                "signal", "facts",
+                "topic", "search",
                 "dedupe_threshold", 0.80
         ));
         assertThat(content.path("inserted").asBoolean()).isFalse();
@@ -220,11 +220,11 @@ class WriteToolsIntegrationTest {
         FixedEmbeddingClient fixedClient = (FixedEmbeddingClient) embeddingClient;
         int countBefore = fixedClient.getEncodeDocumentCallCount();
 
-        callToolContent("writer-token", "hivemem_add_drawer", Map.of(
+        callToolContent("writer-token", "hivemem_add_cell", Map.of(
                 "content", "Duplicate oracle alpha",
-                "wing", "alpha",
-                "hall", "facts",
-                "room", "search",
+                "realm", "alpha",
+                "signal", "facts",
+                "topic", "search",
                 "dedupe_threshold", 0.5
         ));
 
@@ -650,18 +650,18 @@ class WriteToolsIntegrationTest {
         org.junit.jupiter.api.Assertions.assertEquals("unread", referenceRow.get("status", String.class));
 
         JsonNode linkContent = callToolContent("writer-token", "hivemem_link_reference", Map.of(
-                "drawer_id", "00000000-0000-0000-0000-000000000501",
+                "cell_id", "00000000-0000-0000-0000-000000000501",
                 "reference_id", refId,
                 "relation", "source"
         ));
-        assertThat(linkContent.path("drawer_id").asText()).isEqualTo(drawerId.toString());
+        assertThat(linkContent.path("cell_id").asText()).isEqualTo(drawerId.toString());
         assertThat(linkContent.path("reference_id").asText()).isEqualTo(refId);
         assertThat(linkContent.path("relation").asText()).isEqualTo("source");
 
         Record linkRow = dslContext.fetchOne("""
-                SELECT drawer_id, reference_id, relation
-                FROM drawer_references
-                WHERE drawer_id = ? AND reference_id = ?
+                SELECT cell_id, reference_id, relation
+                FROM cell_references
+                WHERE cell_id = ? AND reference_id = ?
                 """, drawerId, UUID.fromString(refId));
         org.junit.jupiter.api.Assertions.assertNotNull(linkRow);
         org.junit.jupiter.api.Assertions.assertEquals("source", linkRow.get("relation", String.class));
@@ -707,16 +707,16 @@ class WriteToolsIntegrationTest {
     @Test
     void writerCanAppendBlueprintsAndClosePreviousVersion() throws Exception {
         JsonNode v1 = callToolContent("writer-token", "hivemem_update_blueprint", Map.of(
-                "wing", "eng",
+                "realm", "eng",
                 "title", "V1",
                 "narrative", "First version",
                 "hall_order", List.of("auth", "search")
         ));
-        assertThat(v1.path("wing").asText()).isEqualTo("eng");
+        assertThat(v1.path("realm").asText()).isEqualTo("eng");
         assertThat(v1.path("title").asText()).isEqualTo("V1");
 
         JsonNode v2 = callToolContent("writer-token", "hivemem_update_blueprint", Map.of(
-                "wing", "eng",
+                "realm", "eng",
                 "title", "V2",
                 "narrative", "Updated version",
                 "hall_order", List.of("auth", "search", "infra")
@@ -726,7 +726,7 @@ class WriteToolsIntegrationTest {
         Record activeRow = dslContext.fetchOne("""
                 SELECT title, valid_until, created_by
                 FROM blueprints
-                WHERE wing = ? AND valid_until IS NULL
+                WHERE realm = ? AND valid_until IS NULL
                 """, "eng");
         org.junit.jupiter.api.Assertions.assertNotNull(activeRow);
         org.junit.jupiter.api.Assertions.assertEquals("V2", activeRow.get("title", String.class));
@@ -735,7 +735,7 @@ class WriteToolsIntegrationTest {
         org.junit.jupiter.api.Assertions.assertEquals(2L, dslContext.fetchOne("""
                 SELECT count(*) AS cnt
                 FROM blueprints
-                WHERE wing = ?
+                WHERE realm = ?
                 """, "eng").get("cnt", Long.class));
     }
 
@@ -748,7 +748,7 @@ class WriteToolsIntegrationTest {
                 OffsetDateTime.parse("2026-04-05T13:30:00Z"),
                 null);
 
-        JsonNode reviseContent = callToolContent("writer-token", "hivemem_revise_drawer", Map.of(
+        JsonNode reviseContent = callToolContent("writer-token", "hivemem_revise_cell", Map.of(
                 "old_id", "00000000-0000-0000-0000-000000000550",
                 "new_content", "Drawer V2",
                 "new_summary", "Summary V2"
@@ -758,7 +758,7 @@ class WriteToolsIntegrationTest {
         String newId = reviseContent.path("new_id").asText();
         Record oldRow = dslContext.fetchOne("""
                 SELECT valid_until
-                FROM drawers
+                FROM cells
                 WHERE id = ?
                 """, drawerId);
         org.junit.jupiter.api.Assertions.assertNotNull(oldRow);
@@ -766,7 +766,7 @@ class WriteToolsIntegrationTest {
 
         Record newRow = dslContext.fetchOne("""
                 SELECT parent_id, content, summary, importance, created_by, status
-                FROM drawers
+                FROM cells
                 WHERE id = ?
                 """, UUID.fromString(newId));
         org.junit.jupiter.api.Assertions.assertNotNull(newRow);
@@ -794,8 +794,8 @@ class WriteToolsIntegrationTest {
                 null);
 
         JsonNode tunnelContent = callToolContent("agent-token", "hivemem_add_tunnel", Map.of(
-                "from_drawer", "00000000-0000-0000-0000-000000000601",
-                "to_drawer", "00000000-0000-0000-0000-000000000602",
+                "from_cell", "00000000-0000-0000-0000-000000000601",
+                "to_cell", "00000000-0000-0000-0000-000000000602",
                 "relation", "related_to",
                 "note", "context link",
                 "status", "committed"
@@ -804,7 +804,7 @@ class WriteToolsIntegrationTest {
 
         String tunnelId = tunnelContent.path("id").asText();
         Record tunnelRow = dslContext.fetchOne("""
-                SELECT from_drawer, to_drawer, relation, note, status, created_by, valid_until
+                SELECT from_cell, to_cell, relation, note, status, created_by, valid_until
                 FROM tunnels
                 WHERE id = ?
                 """, UUID.fromString(tunnelId));
@@ -841,22 +841,22 @@ class WriteToolsIntegrationTest {
         // Popularity refresh is now done by the scheduler; call the service directly
         Map<String, Object> refreshResult = adminToolService.refreshPopularity();
         assertThat((Boolean) refreshResult.get("refreshed")).isTrue();
-        assertThat(refreshResult.get("drawer_count")).isInstanceOf(Number.class);
+        assertThat(refreshResult.get("cell_count")).isInstanceOf(Number.class);
 
         JsonNode healthContent = callToolContent("admin-token", "hivemem_health", Map.of());
         assertThat(healthContent.path("db_connected").asBoolean()).isTrue();
-        assertThat(healthContent.path("drawers").asInt()).isEqualTo(1);
+        assertThat(healthContent.path("cells").asInt()).isEqualTo(1);
         assertThat(healthContent.path("facts").asInt()).isEqualTo(0);
 
         org.junit.jupiter.api.Assertions.assertEquals(1L, dslContext.fetchOne("""
                 SELECT count(*) AS cnt
                 FROM access_log
-                WHERE drawer_id = ?
+                WHERE cell_id = ?
                 """, drawerId).get("cnt", Long.class));
         org.junit.jupiter.api.Assertions.assertEquals(1L, dslContext.fetchOne("""
                 SELECT access_count
-                FROM drawer_popularity
-                WHERE drawer_id = ?
+                FROM cell_popularity
+                WHERE cell_id = ?
                 """, drawerId).get("access_count", Long.class));
     }
 
@@ -946,7 +946,7 @@ class WriteToolsIntegrationTest {
         assertThat(approveContent.path("count").asInt()).isEqualTo(3);
 
         org.junit.jupiter.api.Assertions.assertEquals("committed", dslContext.fetchOne("""
-                SELECT status FROM drawers WHERE id = ?
+                SELECT status FROM cells WHERE id = ?
                 """, drawerId).get("status", String.class));
         org.junit.jupiter.api.Assertions.assertEquals("committed", dslContext.fetchOne("""
                 SELECT status FROM facts WHERE id = ?
@@ -1068,9 +1068,9 @@ class WriteToolsIntegrationTest {
             UUID id,
             UUID parentId,
             String content,
-            String wing,
-            String hall,
-            String room,
+            String realm,
+            String signal,
+            String topic,
             String source,
             Integer importance,
             String summary,
@@ -1083,10 +1083,10 @@ class WriteToolsIntegrationTest {
             OffsetDateTime validUntil
     ) {
         dslContext.execute("""
-                INSERT INTO drawers (id, parent_id, content, wing, hall, room, source, importance,
+                INSERT INTO cells (id, parent_id, content, realm, signal, topic, source, importance,
                                      summary, tags, key_points, status, created_by, valid_from, created_at, valid_until)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz, ?::timestamptz)
-                """, id, parentId, content, wing, hall, room, source, importance, summary, tags, keyPoints, status, createdBy, validFrom, createdAt, validUntil);
+                """, id, parentId, content, realm, signal, topic, source, importance, summary, tags, keyPoints, status, createdBy, validFrom, createdAt, validUntil);
     }
 
     private void insertTunnel(
@@ -1102,7 +1102,7 @@ class WriteToolsIntegrationTest {
             OffsetDateTime validUntil
     ) {
         dslContext.execute("""
-                INSERT INTO tunnels (id, from_drawer, to_drawer, relation, note, status, created_by, valid_from, created_at, valid_until)
+                INSERT INTO tunnels (id, from_cell, to_cell, relation, note, status, created_by, valid_from, created_at, valid_until)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?::timestamptz, ?::timestamptz, ?::timestamptz)
                 """, id, fromDrawer, toDrawer, relation, note, status, createdBy, validFrom, createdAt, validUntil);
     }
