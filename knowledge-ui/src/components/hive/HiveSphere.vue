@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, shallowRef } from 'vue'
-import { buildGoldbergCells, assignWings } from '../../composables/goldbergMath'
+import { buildGoldbergCells, assignRealms } from '../../composables/goldbergMath'
 import type { GoldbergCell } from '../../composables/goldbergMath'
 import { paletteForRealm, type RealmPalette } from '../../composables/wingPalette'
 import type { Realm, Cell } from '../../api/types'
@@ -23,7 +23,7 @@ function rebuild() {
     name: r.name,
     cellCount: r.cell_count || counts.get(r.name) || 0,
   }))
-  realmAssignment.value = assignWings(goldbergCells.value, realmInput)
+  realmAssignment.value = assignRealms(goldbergCells.value, realmInput)
   const pmap = new Map<string, RealmPalette>()
   props.realms.forEach((r, i) => pmap.set(r.name, paletteForRealm(i)))
   palettes.value = pmap
