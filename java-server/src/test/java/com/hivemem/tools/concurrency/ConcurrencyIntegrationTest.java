@@ -89,8 +89,8 @@ class ConcurrencyIntegrationTest {
                 WRITER,
                 "Concurrent drawer " + index,
                 "test",
-                "concurrency",
                 "facts",
+                "concurrency",
                 "system",
                 List.of("concurrency"),
                 1,
@@ -107,7 +107,7 @@ class ConcurrencyIntegrationTest {
                 .extracting(result -> result.get("id"))
                 .doesNotHaveDuplicates()
                 .hasSize(6);
-        assertThat(countRows("SELECT count(*) AS cnt FROM cells WHERE realm = ? AND signal = ?", "test", "concurrency"))
+        assertThat(countRows("SELECT count(*) AS cnt FROM cells WHERE realm = ? AND signal = ?", "test", "facts"))
                 .isEqualTo(6L);
     }
 
@@ -141,8 +141,8 @@ class ConcurrencyIntegrationTest {
                     WRITER,
                     "Pending drawer " + index,
                     "test",
-                    "approve",
                     "facts",
+                    "approve",
                     "system",
                     List.of(),
                     1,
@@ -165,7 +165,7 @@ class ConcurrencyIntegrationTest {
         assertThat(countRows(
                 "SELECT count(*) AS cnt FROM cells WHERE realm = ? AND signal = ? AND status = 'committed'",
                 "test",
-                "approve"
+                "facts"
         ))
                 .isEqualTo(5L);
     }
@@ -196,8 +196,8 @@ class ConcurrencyIntegrationTest {
                 WRITER,
                 "Original content",
                 "test",
-                "revise",
                 "facts",
+                "revise",
                 "system",
                 List.of(),
                 1,
@@ -359,11 +359,11 @@ class ConcurrencyIntegrationTest {
     void concurrentAddTunnelWithIdenticalEndpointsBothSucceed() throws Exception {
         // Create two drawers to link
         Map<String, Object> drawerA = writeToolService.addCell(
-                WRITER, "Drawer A", "test", "tunnels", "a", "system",
+                WRITER, "Drawer A", "test", "facts", "a", "system",
                 List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME, null
         );
         Map<String, Object> drawerB = writeToolService.addCell(
-                WRITER, "Drawer B", "test", "tunnels", "b", "system",
+                WRITER, "Drawer B", "test", "facts", "b", "system",
                 List.of(), 1, null, List.of(), null, null, "committed", BASE_TIME.plusSeconds(1), null
         );
         UUID idA = UUID.fromString((String) drawerA.get("id"));
