@@ -16,15 +16,15 @@ describe('stores', () => {
   it('ui defaults: dark theme, no panel open, size metric = count', () => {
     const s = useUiStore()
     expect(s.activePanel).toBe(null)
-    expect(s.sizeMetric).toBe('drawer_count')
+    expect(s.sizeMetric).toBe('cell_count')
     expect(s.theme).toBe('dark')
   })
 
-  it('canvas loadTopLevel populates wings + drawers from api', async () => {
+  it('canvas loadTopLevel populates realms + cells from api', async () => {
     localStorage.setItem('hivemem_mock', 'true')
     const s = useCanvasStore()
     await s.loadTopLevel()
-    expect(s.wings.length).toBeGreaterThan(0)
-    expect(s.drawers.length).toBeGreaterThan(0)
+    expect(s.realms.length).toBeGreaterThan(0)
+    expect(s.cells.length).toBeGreaterThan(0)
   })
 })
