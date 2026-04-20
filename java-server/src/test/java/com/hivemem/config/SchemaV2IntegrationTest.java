@@ -208,7 +208,7 @@ class SchemaV2IntegrationTest {
             // pending drawer
             h.dsl().execute("""
                     insert into cells (content, realm, signal, summary, status, created_by)
-                    values ('Pending drawer', 'test', 'test', 'Pending summary', 'pending', 'classifier')
+                    values ('Pending drawer', 'test', 'facts', 'Pending summary', 'pending', 'classifier')
                     """);
 
             // pending fact
@@ -261,7 +261,7 @@ class SchemaV2IntegrationTest {
         try (SchemaHarness h = migrateFreshSchema()) {
             String pendingId = h.dsl().fetchOne("""
                     insert into cells (content, realm, signal, status, created_by)
-                    values ('Needs approval', 'test', 'test', 'pending', 'classifier')
+                    values ('Needs approval', 'test', 'facts', 'pending', 'classifier')
                     returning id::text
                     """).get(0, String.class);
 
@@ -469,9 +469,9 @@ class SchemaV2IntegrationTest {
     @Test
     void wingStatsReflectsActiveDrawers() throws SQLException {
         try (SchemaHarness h = migrateFreshSchema()) {
-            insertDrawerWithHall(h.dsl(), "D1", "eng", "auth");
-            insertDrawerWithHall(h.dsl(), "D2", "eng", "auth");
-            insertDrawerWithHall(h.dsl(), "D3", "eng", "infra");
+            insertDrawerWithHall(h.dsl(), "D1", "eng", "facts");
+            insertDrawerWithHall(h.dsl(), "D2", "eng", "facts");
+            insertDrawerWithHall(h.dsl(), "D3", "eng", "events");
 
             long cellCount = h.dsl().fetchOne("""
                     select sum(cell_count)::bigint as total
@@ -484,7 +484,7 @@ class SchemaV2IntegrationTest {
 
             assertThat(cellCount).isEqualTo(3);
             assertThat(halls.getValues("signal", String.class))
-                    .containsExactlyInAnyOrder("auth", "infra");
+                    .containsExactlyInAnyOrder("facts", "events");
         }
     }
 

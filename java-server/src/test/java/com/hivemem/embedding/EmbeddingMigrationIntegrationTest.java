@@ -107,7 +107,7 @@ class EmbeddingMigrationIntegrationTest {
 
     @Test
     void searchWorksWhenNoReencodingActive() throws Exception {
-        insertDrawer("test content for search", "eng", "infra", "facts");
+        insertDrawer("test content for search", "eng", "facts", "infra");
 
         JsonNode result = callTool("writer-token", "hivemem_search", Map.of(
                 "query", "test content",
@@ -139,8 +139,8 @@ class EmbeddingMigrationIntegrationTest {
 
     @Test
     void countDrawersWithContentReturnsCorrectCount() {
-        insertDrawer("content A", "eng", "infra", "facts");
-        insertDrawer("content B", "eng", "infra", "facts");
+        insertDrawer("content A", "eng", "facts", "infra");
+        insertDrawer("content B", "eng", "facts", "infra");
 
         int count = stateRepository.countDrawersWithContent();
         assertThat(count).isEqualTo(2);
@@ -148,9 +148,9 @@ class EmbeddingMigrationIntegrationTest {
 
     @Test
     void fetchDrawerBatchReturnsBatchedResults() {
-        insertDrawer("batch content 1", "eng", "infra", "facts");
-        insertDrawer("batch content 2", "eng", "infra", "facts");
-        insertDrawer("batch content 3", "eng", "infra", "facts");
+        insertDrawer("batch content 1", "eng", "facts", "infra");
+        insertDrawer("batch content 2", "eng", "facts", "infra");
+        insertDrawer("batch content 3", "eng", "facts", "infra");
 
         var batch1 = stateRepository.fetchDrawerBatch(0, 2);
         assertThat(batch1).hasSize(2);
@@ -165,7 +165,7 @@ class EmbeddingMigrationIntegrationTest {
         // (this mirrors the production flow: index is dropped before re-encoding)
         stateRepository.dropEmbeddingIndex();
 
-        insertDrawer("embedding update test", "eng", "infra", "facts");
+        insertDrawer("embedding update test", "eng", "facts", "infra");
         var rows = stateRepository.fetchDrawerBatch(0, 1);
         assertThat(rows).hasSize(1);
 
@@ -194,10 +194,10 @@ class EmbeddingMigrationIntegrationTest {
 
     @Test
     void indexDropAndRecreateWorks() {
-        insertDrawer("index test content", "eng", "infra", "facts");
+        insertDrawer("index test content", "eng", "facts", "infra");
 
         stateRepository.dropEmbeddingIndex();
-        insertDrawer("after drop content", "eng", "infra", "facts");
+        insertDrawer("after drop content", "eng", "facts", "infra");
 
         stateRepository.createEmbeddingIndex(1024);
 
@@ -218,7 +218,7 @@ class EmbeddingMigrationIntegrationTest {
         UUID id1 = UUID.randomUUID();
         dslContext.execute("""
                 INSERT INTO cells (id, content, embedding, realm, signal, topic, status, created_by, valid_from)
-                VALUES (?, 'small vec', ?::vector, 'eng', 'test', 'test', 'committed', 'test', now())
+                VALUES (?, 'small vec', ?::vector, 'eng', 'facts', 'test', 'committed', 'test', now())
                 """, id1, new Float[]{0.1f, 0.2f, 0.3f});
 
         UUID id2 = UUID.randomUUID();
@@ -226,7 +226,7 @@ class EmbeddingMigrationIntegrationTest {
         for (int i = 0; i < 2048; i++) largeVec[i] = 0.01f;
         dslContext.execute("""
                 INSERT INTO cells (id, content, embedding, realm, signal, topic, status, created_by, valid_from)
-                VALUES (?, 'large vec', ?::vector, 'eng', 'test', 'test', 'committed', 'test', now())
+                VALUES (?, 'large vec', ?::vector, 'eng', 'facts', 'test', 'committed', 'test', now())
                 """, id2, largeVec);
 
         var result = dslContext.fetchOne("SELECT count(*) AS cnt FROM cells WHERE id IN (?, ?)", id1, id2);

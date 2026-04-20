@@ -138,6 +138,19 @@ BEGIN
     END IF;
 END $$;
 
+-- Add cells_signal_check (guarded: idempotent if constraint was somehow already created)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'cells_signal_check'
+          AND conrelid = 'cells'::regclass
+    ) THEN
+        ALTER TABLE cells ADD CONSTRAINT cells_signal_check
+            CHECK (signal IN ('facts', 'events', 'discoveries', 'preferences', 'advice'));
+    END IF;
+END $$;
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 7. Rename indexes
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -319,6 +332,88 @@ BEGIN
     ) sub
     WHERE (1 - sub.dist)::REAL > threshold
     ORDER BY sub.dist ASC LIMIT 5;
+END;
+$$ LANGUAGE plpgsql;
+
+-- revise_cell: close current version and insert a new child, returning both ids
+CREATE OR REPLACE FUNCTION revise_cell(
+    p_old_id       UUID,
+    p_new_content  TEXT,
+    p_new_summary  TEXT DEFAULT NULL,
+    p_embedding    vector DEFAULT NULL,
+    p_created_by   TEXT DEFAULT NULL,
+    p_status       TEXT DEFAULT 'committed'
+)
+RETURNS TABLE (old_id UUID, new_id UUID) AS $$
+DECLARE
+    v_ts           TIMESTAMPTZ;
+    v_realm        TEXT;
+    v_signal       TEXT;
+    v_topic        TEXT;
+    v_source       TEXT;
+    v_tags         TEXT[];
+    v_importance   SMALLINT;
+    v_summary      TEXT;
+    v_key_points   TEXT[];
+    v_insight      TEXT;
+    v_actionability TEXT;
+    v_new_id       UUID;
+BEGIN
+    SELECT now() INTO v_ts;
+
+    UPDATE cells
+    SET valid_until = v_ts
+    WHERE id = p_old_id
+      AND valid_until IS NULL
+    RETURNING realm, signal, topic, source, tags, importance,
+              summary, key_points, insight, actionability
+    INTO v_realm, v_signal, v_topic, v_source, v_tags, v_importance,
+         v_summary, v_key_points, v_insight, v_actionability;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Cell % not found or already revised', p_old_id;
+    END IF;
+
+    INSERT INTO cells (
+        parent_id, content, embedding, realm, signal, topic, source, tags,
+        importance, summary, key_points, insight, actionability,
+        status, created_by, valid_from
+    ) VALUES (
+        p_old_id, p_new_content, p_embedding, v_realm, v_signal, v_topic,
+        v_source, v_tags, v_importance,
+        COALESCE(p_new_summary, v_summary),
+        v_key_points, v_insight, v_actionability,
+        p_status, p_created_by, v_ts
+    )
+    RETURNING id INTO v_new_id;
+
+    RETURN QUERY SELECT p_old_id, v_new_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- cell_history: trace the revision chain for a cell (recursive CTE, depth cap 100)
+CREATE OR REPLACE FUNCTION cell_history(p_cell_id UUID)
+RETURNS TABLE (
+    id UUID, parent_id UUID, summary TEXT, created_by TEXT,
+    valid_from TIMESTAMPTZ, valid_until TIMESTAMPTZ, ingested_at TIMESTAMPTZ
+) AS $$
+BEGIN
+    RETURN QUERY
+    WITH RECURSIVE chain AS (
+        SELECT c.id, c.parent_id, c.summary, c.created_by,
+               c.valid_from, c.valid_until, c.ingested_at, 1 AS depth
+        FROM cells c WHERE c.id = p_cell_id
+        UNION ALL
+        SELECT c.id, c.parent_id, c.summary, c.created_by,
+               c.valid_from, c.valid_until, c.ingested_at, ch.depth + 1
+        FROM cells c
+        JOIN chain ch ON c.id = ch.parent_id
+        WHERE ch.depth < 100
+    )
+    SELECT chain.id, chain.parent_id, chain.summary, chain.created_by,
+           chain.valid_from, chain.valid_until, chain.ingested_at
+    FROM chain
+    ORDER BY chain.valid_from ASC;
 END;
 $$ LANGUAGE plpgsql;
 

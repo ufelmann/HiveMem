@@ -100,8 +100,8 @@ class ProgressiveSummarizationIntegrationTest {
                 WRITER,
                 "We decided to migrate BOGIS from Camunda 7 to Temporal. Better DX and native Go support.",
                 "engineering",
-                "bogis",
                 "facts",
+                "bogis",
                 "claude-code",
                 List.of("migration", "temporal"),
                 1,
@@ -138,8 +138,8 @@ class ProgressiveSummarizationIntegrationTest {
                 WRITER,
                 "Minimal drawer without progressive layers",
                 "test",
-                "test",
                 "facts",
+                "test",
                 null,
                 List.of(),
                 null,
@@ -178,7 +178,7 @@ class ProgressiveSummarizationIntegrationTest {
         Map<String, Object> created = writeToolService.addCell(
                 WRITER,
                 "Actionable drawer",
-                "test", "test", "facts",
+                "test", "facts", "test",
                 null, List.of(), null, "summary", List.of(), null,
                 "actionable",
                 "committed", BASE_TIME, null
@@ -193,7 +193,7 @@ class ProgressiveSummarizationIntegrationTest {
         Map<String, Object> created = writeToolService.addCell(
                 WRITER,
                 "Reference drawer",
-                "test", "test", "facts",
+                "test", "facts", "test",
                 null, List.of(), null, "summary", List.of(), null,
                 "reference",
                 "committed", BASE_TIME, null
@@ -208,7 +208,7 @@ class ProgressiveSummarizationIntegrationTest {
         Map<String, Object> created = writeToolService.addCell(
                 WRITER,
                 "Someday drawer",
-                "test", "test", "facts",
+                "test", "facts", "test",
                 null, List.of(), null, "summary", List.of(), null,
                 "someday",
                 "committed", BASE_TIME, null
@@ -223,7 +223,7 @@ class ProgressiveSummarizationIntegrationTest {
         Map<String, Object> created = writeToolService.addCell(
                 WRITER,
                 "Archive drawer",
-                "test", "test", "facts",
+                "test", "facts", "test",
                 null, List.of(), null, "summary", List.of(), null,
                 "archive",
                 "committed", BASE_TIME, null
@@ -243,7 +243,7 @@ class ProgressiveSummarizationIntegrationTest {
         assertThatThrownBy(() -> writeToolService.addCell(
                 WRITER,
                 "Bad actionability drawer",
-                "test", "test", "facts",
+                "test", "facts", "test",
                 null, List.of(), null, "summary", List.of(), null,
                 "invalid_value",
                 "committed", BASE_TIME, null
@@ -255,7 +255,7 @@ class ProgressiveSummarizationIntegrationTest {
         Map<String, Object> created = writeToolService.addCell(
                 WRITER,
                 "Null actionability drawer",
-                "test", "test", "facts",
+                "test", "facts", "test",
                 null, List.of(), null, "summary", List.of(), null,
                 null,
                 "committed", BASE_TIME, null
@@ -278,7 +278,7 @@ class ProgressiveSummarizationIntegrationTest {
         writeToolService.addCell(
                 WRITER,
                 "Duplicate oracle alpha",
-                "test", "dup", "facts",
+                "test", "facts", "dup",
                 null, List.of(), null,
                 "Duplicate oracle alpha",
                 List.of(), null, null,
@@ -290,7 +290,7 @@ class ProgressiveSummarizationIntegrationTest {
         Map<String, Object> result = writeToolService.addCell(
                 WRITER,
                 "Duplicate oracle beta",
-                "test", "dup", "facts",
+                "test", "facts", "dup",
                 null, List.of(), null, null,
                 List.of(), null, null,
                 "committed", BASE_TIME.plusSeconds(1), 0.5);
@@ -306,7 +306,7 @@ class ProgressiveSummarizationIntegrationTest {
         writeToolService.addCell(
                 WRITER,
                 "Duplicate oracle alpha",
-                "test", "dup", "facts",
+                "test", "facts", "dup",
                 null, List.of(), null,
                 "Duplicate oracle alpha",
                 List.of(), null, null,
@@ -319,7 +319,7 @@ class ProgressiveSummarizationIntegrationTest {
         Map<String, Object> highThresholdResult = writeToolService.addCell(
                 WRITER,
                 "Duplicate oracle beta",
-                "test", "dup", "facts",
+                "test", "facts", "dup",
                 null, List.of(), null, null,
                 List.of(), null, null,
                 "committed", BASE_TIME.plusSeconds(1), 0.99);
@@ -332,7 +332,7 @@ class ProgressiveSummarizationIntegrationTest {
         Map<String, Object> noMatchResult = writeToolService.addCell(
                 WRITER,
                 "Cooking Italian pasta recipes for dinner tonight",
-                "test", "dup", "facts",
+                "test", "facts", "dup",
                 null, List.of(), null, null,
                 List.of(), null, null,
                 "committed", BASE_TIME.plusSeconds(2), 0.9);
@@ -345,7 +345,7 @@ class ProgressiveSummarizationIntegrationTest {
         writeToolService.addCell(
                 WRITER,
                 "PostgreSQL vector search with pgvector",
-                "eng", "db", "facts",
+                "eng", "facts", "db",
                 null, List.of(), null, "pgvector search",
                 List.of(), null, null,
                 "committed", BASE_TIME, null
@@ -355,7 +355,7 @@ class ProgressiveSummarizationIntegrationTest {
         Map<String, Object> result = writeToolService.addCell(
                 WRITER,
                 "PostgreSQL vector search with pgvector",
-                "eng", "db", "facts",
+                "eng", "facts", "db",
                 null, List.of(), null, "pgvector search",
                 List.of(), null, null,
                 "committed", BASE_TIME.plusSeconds(1), null);
@@ -372,7 +372,7 @@ class ProgressiveSummarizationIntegrationTest {
         Map<String, Object> original = writeToolService.addCell(
                 WRITER,
                 "Original content about auth migration",
-                "eng", "auth", "facts",
+                "eng", "facts", "auth",
                 "system",
                 List.of("auth", "migration"),
                 1,
@@ -413,7 +413,7 @@ class ProgressiveSummarizationIntegrationTest {
         Map<String, Object> original = writeToolService.addCell(
                 WRITER,
                 "Content about database optimization",
-                "eng", "db", "facts",
+                "eng", "facts", "db",
                 "system",
                 List.of("db"),
                 2,
@@ -448,7 +448,7 @@ class ProgressiveSummarizationIntegrationTest {
         Map<String, Object> original = writeToolService.addCell(
                 WRITER,
                 "Version 1 content",
-                "eng", "docs", "facts",
+                "eng", "facts", "docs",
                 "system",
                 List.of(),
                 3,
@@ -489,7 +489,7 @@ class ProgressiveSummarizationIntegrationTest {
         Map<String, Object> created = writeToolService.addCell(
                 WRITER,
                 "Edge case drawer with empty arrays",
-                "test", "edge", "facts",
+                "test", "facts", "edge",
                 null, List.of(), null,
                 "Has a summary",
                 List.of(),    // empty key_points
@@ -512,26 +512,26 @@ class ProgressiveSummarizationIntegrationTest {
     void multipleDrawersWithDifferentLayerCombinations() {
         // L0 only
         Map<String, Object> l0Only = writeToolService.addCell(
-                WRITER, "L0 only content", "test", "layers", "facts",
+                WRITER, "L0 only content", "test", "facts", "layers",
                 null, List.of(), null, null, List.of(), null, null,
                 "committed", BASE_TIME, null);
 
         // L0 + L1
         Map<String, Object> l0l1 = writeToolService.addCell(
-                WRITER, "L0 plus L1 content", "test", "layers", "facts",
+                WRITER, "L0 plus L1 content", "test", "facts", "layers",
                 null, List.of(), null, "Has summary only", List.of(), null, null,
                 "committed", BASE_TIME.plusSeconds(1), null);
 
         // L0 + L1 + L2
         Map<String, Object> l0l1l2 = writeToolService.addCell(
-                WRITER, "L0 plus L1 plus L2 content", "test", "layers", "facts",
+                WRITER, "L0 plus L1 plus L2 content", "test", "facts", "layers",
                 null, List.of(), null, "Summary present",
                 List.of("point-1", "point-2"), null, null,
                 "committed", BASE_TIME.plusSeconds(2), null);
 
         // L0 + L1 + L2 + L3 (all layers)
         Map<String, Object> allLayers = writeToolService.addCell(
-                WRITER, "All layers present", "test", "layers", "facts",
+                WRITER, "All layers present", "test", "facts", "layers",
                 null, List.of(), null, "Full summary",
                 List.of("key-a", "key-b", "key-c"), "Deep insight", "actionable",
                 "committed", BASE_TIME.plusSeconds(3), null);
