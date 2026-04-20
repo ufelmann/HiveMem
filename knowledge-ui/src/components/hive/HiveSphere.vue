@@ -2,7 +2,7 @@
 import { computed, onMounted, shallowRef } from 'vue'
 import { buildGoldbergCells, assignRealms } from '../../composables/goldbergMath'
 import type { GoldbergCell } from '../../composables/goldbergMath'
-import { paletteForRealm, type RealmPalette } from '../../composables/wingPalette'
+import { paletteForRealm, type RealmPalette } from '../../composables/realmPalette'
 import type { Realm, Cell } from '../../api/types'
 import HiveCell from './HiveCell.vue'
 
