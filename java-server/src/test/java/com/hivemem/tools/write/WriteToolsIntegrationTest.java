@@ -710,7 +710,7 @@ class WriteToolsIntegrationTest {
                 "realm", "eng",
                 "title", "V1",
                 "narrative", "First version",
-                "hall_order", List.of("auth", "search")
+                "signal_order", List.of("auth", "search")
         ));
         assertThat(v1.path("realm").asText()).isEqualTo("eng");
         assertThat(v1.path("title").asText()).isEqualTo("V1");
@@ -719,7 +719,7 @@ class WriteToolsIntegrationTest {
                 "realm", "eng",
                 "title", "V2",
                 "narrative", "Updated version",
-                "hall_order", List.of("auth", "search", "infra")
+                "signal_order", List.of("auth", "search", "infra")
         ));
         assertThat(v2.path("title").asText()).isEqualTo("V2");
 

@@ -178,8 +178,8 @@ public class WriteToolRepository {
             String realm,
             String title,
             String narrative,
-            List<String> hallOrder,
-            List<UUID> keyDrawers
+            List<String> signalOrder,
+            List<UUID> keyCells
     ) {
         return dslContext.transactionResult(configuration -> {
             DSLContext tx = DSL.using(configuration);
@@ -191,13 +191,13 @@ public class WriteToolRepository {
                     WHERE realm = ?
                       AND valid_until IS NULL
                     """, timestamp, realm);
-            String[] hallOrderArray = hallOrder == null ? new String[0] : hallOrder.toArray(String[]::new);
-            UUID[] keyDrawerArray = keyDrawers == null ? new UUID[0] : keyDrawers.toArray(UUID[]::new);
+            String[] signalOrderArray = signalOrder == null ? new String[0] : signalOrder.toArray(String[]::new);
+            UUID[] keyCellArray = keyCells == null ? new UUID[0] : keyCells.toArray(UUID[]::new);
             Record row = tx.fetchOne("""
-                    INSERT INTO blueprints (realm, title, narrative, hall_order, key_drawers, created_by, valid_from)
+                    INSERT INTO blueprints (realm, title, narrative, signal_order, key_cells, created_by, valid_from)
                     VALUES (?, ?, ?, ?, ?, ?, ?::timestamptz)
                     RETURNING id, realm, title
-                    """, realm, title, narrative, hallOrderArray, keyDrawerArray, createdBy, timestamp);
+                    """, realm, title, narrative, signalOrderArray, keyCellArray, createdBy, timestamp);
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("id", uuidValue(row, "id"));
             result.put("realm", row.get("realm", String.class));

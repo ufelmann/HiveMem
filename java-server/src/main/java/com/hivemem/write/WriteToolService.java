@@ -193,10 +193,10 @@ public class WriteToolService {
             String realm,
             String title,
             String narrative,
-            List<String> hallOrder,
-            List<UUID> keyDrawers
+            List<String> signalOrder,
+            List<UUID> keyCells
     ) {
-        return writeToolRepository.updateBlueprint(principal.name(), realm, title, narrative, hallOrder, keyDrawers);
+        return writeToolRepository.updateBlueprint(principal.name(), realm, title, narrative, signalOrder, keyCells);
     }
 
     public Map<String, Object> addTunnel(

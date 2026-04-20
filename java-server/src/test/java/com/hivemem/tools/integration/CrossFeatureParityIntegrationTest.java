@@ -191,7 +191,7 @@ class CrossFeatureParityIntegrationTest {
                 "realm", "eng",
                 "title", "Engineering Overview",
                 "narrative", "Architecture decisions",
-                "key_drawers", List.of(originalDrawerId)
+                "key_cells", List.of(originalDrawerId)
         ));
 
         JsonNode revision = callTool("writer-token", "hivemem_revise_cell", Map.of(
@@ -203,8 +203,8 @@ class CrossFeatureParityIntegrationTest {
         JsonNode blueprints = callTool("writer-token", "hivemem_get_blueprint", Map.of(
                 "realm", "eng"
         ));
-        assertThat(textValues(blueprints.get(0).path("key_drawers"))).contains(originalDrawerId);
-        assertThat(textValues(blueprints.get(0).path("key_drawers"))).doesNotContain(revisedDrawerId);
+        assertThat(textValues(blueprints.get(0).path("key_cells"))).contains(originalDrawerId);
+        assertThat(textValues(blueprints.get(0).path("key_cells"))).doesNotContain(revisedDrawerId);
 
         JsonNode originalDrawer = callTool("writer-token", "hivemem_get_cell", Map.of(
                 "cell_id", originalDrawerId
