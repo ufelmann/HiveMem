@@ -3,9 +3,12 @@ package com.hivemem.tools.read;
 import tools.jackson.databind.JsonNode;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.mcp.ToolHandler;
+import com.hivemem.mcp.ToolInputSchema;
 import com.hivemem.write.WriteArgumentParser;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+
+import java.util.Map;
 
 @Component
 @Order(2)
@@ -28,6 +31,22 @@ public class SearchToolHandler implements ToolHandler {
     @Override
     public String description() {
         return "5-signal ranked search over committed cells.";
+    }
+
+    @Override
+    public Map<String, Object> inputSchema() {
+        return ToolInputSchema.object()
+                .requiredString("query", "Full-text search query")
+                .optionalInteger("limit", "Maximum number of results (default 10, max 100)")
+                .optionalString("realm", "Restrict search to this realm")
+                .optionalString("signal", "Restrict search to this signal")
+                .optionalString("topic", "Restrict search to this topic")
+                .optionalNumber("weight_semantic", "Semantic similarity weight (default 0.35)")
+                .optionalNumber("weight_keyword", "Keyword match weight (default 0.15)")
+                .optionalNumber("weight_recency", "Recency weight (default 0.20)")
+                .optionalNumber("weight_importance", "Importance weight (default 0.15)")
+                .optionalNumber("weight_popularity", "Popularity weight (default 0.15)")
+                .build();
     }
 
     @Override

@@ -257,6 +257,21 @@ class McpControllerTest {
     }
 
     @Test
+    void toolsListExposesNonEmptyInputSchemaPropertiesForParameterisedTools() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"jsonrpc":"2.0","id":20,"method":"tools/list"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.tools[1].name").value("hivemem_search"))
+                .andExpect(jsonPath("$.result.tools[1].inputSchema.properties.query").exists())
+                .andExpect(jsonPath("$.result.tools[1].inputSchema.properties.limit").exists())
+                .andExpect(jsonPath("$.result.tools[1].inputSchema.required").isArray());
+    }
+
+    @Test
     void unknownMethodReturnsMethodNotFound() throws Exception {
         mockMvc.perform(post("/mcp")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
@@ -331,6 +346,14 @@ class McpControllerTest {
                 @Override
                 public String description() {
                     return "5-signal ranked search.";
+                }
+
+                @Override
+                public java.util.Map<String, Object> inputSchema() {
+                    return ToolInputSchema.object()
+                            .requiredString("query", "Full-text search query")
+                            .optionalInteger("limit", "Maximum results")
+                            .build();
                 }
 
                 @Override

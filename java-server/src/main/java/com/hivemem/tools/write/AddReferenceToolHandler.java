@@ -3,10 +3,13 @@ package com.hivemem.tools.write;
 import tools.jackson.databind.JsonNode;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.mcp.ToolHandler;
+import com.hivemem.mcp.ToolInputSchema;
 import com.hivemem.write.WriteArgumentParser;
 import com.hivemem.write.WriteToolService;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+
+import java.util.Map;
 
 @Component
 @Order(25)
@@ -26,6 +29,22 @@ public class AddReferenceToolHandler implements ToolHandler {
     @Override
     public String description() {
         return "Add a source reference.";
+    }
+
+    @Override
+    public Map<String, Object> inputSchema() {
+        return ToolInputSchema.object()
+                .requiredString("title", "Title of the reference")
+                .optionalString("url", "URL of the reference")
+                .optionalString("author", "Author of the reference")
+                .optionalEnumString("ref_type", "Reference type",
+                        "article", "paper", "book", "video", "podcast", "tweet", "repo", "conversation", "internal", "other")
+                .optionalEnumString("status", "Reading status (default: read)",
+                        "unread", "reading", "read", "archived")
+                .optionalString("notes", "Notes about the reference")
+                .optionalStringList("tags", "Free-form tags")
+                .optionalIntegerInRange("importance", "Importance score (1-5)", 1, 5)
+                .build();
     }
 
     @Override

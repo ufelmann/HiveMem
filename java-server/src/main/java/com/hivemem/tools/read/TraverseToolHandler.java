@@ -3,9 +3,11 @@ package com.hivemem.tools.read;
 import tools.jackson.databind.JsonNode;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.mcp.ToolHandler;
+import com.hivemem.mcp.ToolInputSchema;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
 import java.util.UUID;
 
 @Component
@@ -28,6 +30,15 @@ public class TraverseToolHandler implements ToolHandler {
     @Override
     public String description() {
         return "Bidirectional cell-to-cell graph traversal.";
+    }
+
+    @Override
+    public Map<String, Object> inputSchema() {
+        return ToolInputSchema.object()
+                .requiredUuid("cell_id", "UUID of the starting cell")
+                .optionalString("relation_filter", "Limit traversal to this relation type")
+                .optionalInteger("max_depth", "Maximum traversal depth (default 2, max 100)")
+                .build();
     }
 
     @Override
