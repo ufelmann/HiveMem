@@ -48,4 +48,9 @@ public class LoginRateLimiter {
     public void clearFailures(String ip) {
         failures.remove(ip);
     }
+
+    /** Clears all tracked failures. Intended for test setup. */
+    public void clearAll() {
+        failures.clear();
+    }
 }
