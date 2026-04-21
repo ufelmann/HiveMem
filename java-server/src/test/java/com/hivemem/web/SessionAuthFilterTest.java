@@ -88,9 +88,20 @@ class SessionAuthFilterTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void mcpPathWithInvalidSessionContinuesChain() throws Exception {
+        MockHttpSession session = new MockHttpSession();
+        session.setAttribute(LoginController.SESSION_TOKEN_KEY, "bad-token");
+
+        // Invalid session token on /mcp: SessionAuthFilter invalidates session and passes to AuthFilter,
+        // which returns 401 (no Bearer token present).
+        mockMvc.perform(get("/mcp").session(session))
+                .andExpect(status().isUnauthorized());
+    }
+
     @RestController
     static class TestController {
-        @GetMapping({"/some-page", "/login"})
+        @GetMapping({"/some-page", "/login", "/mcp"})
         String index() { return "ok"; }
     }
 }
