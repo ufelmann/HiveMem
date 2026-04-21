@@ -3,10 +3,13 @@ package com.hivemem.tools.write;
 import tools.jackson.databind.JsonNode;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.mcp.ToolHandler;
+import com.hivemem.mcp.ToolInputSchema;
 import com.hivemem.write.WriteArgumentParser;
 import com.hivemem.write.WriteToolService;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+
+import java.util.Map;
 
 @Component
 @Order(28)
@@ -26,6 +29,14 @@ public class DiaryWriteToolHandler implements ToolHandler {
     @Override
     public String description() {
         return "Write an entry to an agent diary.";
+    }
+
+    @Override
+    public Map<String, Object> inputSchema() {
+        return ToolInputSchema.object()
+                .requiredString("agent", "Agent name to write the diary entry for")
+                .requiredString("entry", "Diary entry content")
+                .build();
     }
 
     @Override

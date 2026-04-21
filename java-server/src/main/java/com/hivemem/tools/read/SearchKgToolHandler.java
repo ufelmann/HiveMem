@@ -3,8 +3,11 @@ package com.hivemem.tools.read;
 import tools.jackson.databind.JsonNode;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.mcp.ToolHandler;
+import com.hivemem.mcp.ToolInputSchema;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+
+import java.util.Map;
 
 @Component
 @Order(3)
@@ -26,6 +29,16 @@ public class SearchKgToolHandler implements ToolHandler {
     @Override
     public String description() {
         return "ILIKE search on active facts.";
+    }
+
+    @Override
+    public Map<String, Object> inputSchema() {
+        return ToolInputSchema.object()
+                .optionalString("subject", "Filter by subject (ILIKE pattern)")
+                .optionalString("predicate", "Filter by predicate (ILIKE pattern)")
+                .optionalString("object_", "Filter by object (ILIKE pattern)")
+                .optionalInteger("limit", "Maximum number of results (default 100, max 100)")
+                .build();
     }
 
     @Override

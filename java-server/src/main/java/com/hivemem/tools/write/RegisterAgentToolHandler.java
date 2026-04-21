@@ -3,10 +3,13 @@ package com.hivemem.tools.write;
 import tools.jackson.databind.JsonNode;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.mcp.ToolHandler;
+import com.hivemem.mcp.ToolInputSchema;
 import com.hivemem.write.WriteArgumentParser;
 import com.hivemem.write.WriteToolService;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+
+import java.util.Map;
 
 @Component
 @Order(27)
@@ -26,6 +29,18 @@ public class RegisterAgentToolHandler implements ToolHandler {
     @Override
     public String description() {
         return "Register or update an agent in the fleet.";
+    }
+
+    @Override
+    public Map<String, Object> inputSchema() {
+        return ToolInputSchema.object()
+                .requiredString("name", "Unique agent name")
+                .requiredString("focus", "Agent focus description")
+                .optionalString("schedule", "Cron or interval schedule")
+                .optionalString("autonomy", "Autonomy config as JSON object")
+                .optionalString("model_routing", "Model routing config as JSON object")
+                .optionalStringList("tools", "List of tool names the agent may use")
+                .build();
     }
 
     @Override

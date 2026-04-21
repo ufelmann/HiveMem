@@ -3,11 +3,13 @@ package com.hivemem.tools.write;
 import tools.jackson.databind.JsonNode;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.mcp.ToolHandler;
+import com.hivemem.mcp.ToolInputSchema;
 import com.hivemem.write.WriteArgumentParser;
 import com.hivemem.write.WriteToolService;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
 import java.util.UUID;
 
 @Component
@@ -28,6 +30,19 @@ public class AddTunnelToolHandler implements ToolHandler {
     @Override
     public String description() {
         return "Create a cell-to-cell tunnel.";
+    }
+
+    @Override
+    public Map<String, Object> inputSchema() {
+        return ToolInputSchema.object()
+                .requiredUuid("from_cell", "UUID of the source cell")
+                .requiredUuid("to_cell", "UUID of the target cell")
+                .requiredEnumString("relation", "Tunnel relation",
+                        "related_to", "builds_on", "contradicts", "refines")
+                .optionalString("note", "Optional note about this tunnel")
+                .optionalEnumString("status", "Initial status (default: committed)",
+                        "pending", "committed", "rejected")
+                .build();
     }
 
     @Override

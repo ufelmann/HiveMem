@@ -29,7 +29,7 @@ public class ToolRegistry {
         Set<String> allowed = permissionService.allowedTools(role);
         return handlers.stream()
                 .filter(handler -> allowed.contains(handler.name()))
-                .map(handler -> McpTool.of(handler.name(), handler.description()))
+                .map(handler -> McpTool.of(handler.name(), handler.description(), handler.inputSchema()))
                 .collect(Collectors.toUnmodifiableList());
     }
 
