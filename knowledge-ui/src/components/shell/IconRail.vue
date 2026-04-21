@@ -32,6 +32,7 @@ function visible(it: typeof items[number]) { return !it.role || auth.role === it
       />
     </template>
     <div class="spacer" />
+    <v-btn icon="mdi-graph-outline" variant="text" @click="router.push('/graph')" />
     <v-btn icon="mdi-rotate-3d-variant" variant="text" @click="router.push('/cinema')" />
   </div>
 </template>
