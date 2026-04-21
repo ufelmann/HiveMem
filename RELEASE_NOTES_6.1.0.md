@@ -17,7 +17,7 @@ flag, and the remaining UI rename stragglers landed since 6.0.1.
 - **Housekeeping** carried over from 6.0.1:
   - `knowledge-ui/src/data/mock.ts` replaced with synthetic demo data — no
     real production content leaks through the mock client any more.
-  - Run command now sets `--security-opt apparmor=unconfined` on CT 102 to
+  - Run command now sets `--security-opt apparmor=unconfined` on a container to
     avoid the Java NIO `UnixDispatcher: Permission denied` failure on
     unprivileged LXC.
   - UI rename stragglers fixed: `IconRail` panel id `'wings'` → `'realms'`,
