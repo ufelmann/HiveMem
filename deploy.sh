@@ -16,7 +16,7 @@ if [ -z "${HIVEMEM_JDBC_URL:-}" ] || [ -z "${HIVEMEM_DB_USER:-}" ] || [ -z "${HI
 fi
 
 echo "Building frontend..."
-(cd knowledge-ui && npm ci && npm run build)
+(cd knowledge-ui && npm ci && npx vite build)
 mkdir -p java-server/src/main/resources/static
 cp -r knowledge-ui/dist/. java-server/src/main/resources/static/
 
