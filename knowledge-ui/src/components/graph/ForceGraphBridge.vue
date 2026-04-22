@@ -26,6 +26,22 @@ function updateSize(measurement?: { width: number; height: number }) {
   }
 }
 
+async function focusLoadedCell(id: string) {
+  const previousFocus = canvas.focusedId
+  canvas.setHover(null)
+
+  try {
+    const result = cell.load(id)
+    if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+      await result
+    }
+    canvas.setFocus(id)
+  } catch {
+    canvas.setFocus(previousFocus)
+    canvas.setHover(null)
+  }
+}
+
 function renderReact() {
   if (!root) return
 
@@ -38,11 +54,7 @@ function renderReact() {
     hoveredId: canvas.hoveredId,
     onNodeHover: id => canvas.setHover(id),
     onNodeClick: id => {
-      canvas.setFocus(id)
-      void Promise.resolve(cell.load(id)).catch(() => {
-        canvas.setFocus(null)
-        canvas.setHover(null)
-      })
+      void focusLoadedCell(id)
     }
   }))
 }

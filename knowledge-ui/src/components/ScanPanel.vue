@@ -10,13 +10,20 @@ const canvas = useCanvasStore()
 const d = computed(() => cellStore.current)
 
 function openReader() { if (d.value) reader.openReader(d.value.cell.id) }
-function jumpTo(id: string) {
-  canvas.setFocus(id)
+async function jumpTo(id: string) {
+  const previousFocus = canvas.focusedId
   canvas.setHover(null)
-  void Promise.resolve(cellStore.load(id)).catch(() => {
-    canvas.setFocus(null)
+
+  try {
+    const result = cellStore.load(id)
+    if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+      await result
+    }
+    canvas.setFocus(id)
+  } catch {
+    canvas.setFocus(previousFocus)
     canvas.setHover(null)
-  })
+  }
 }
 function close() {
   cellStore.clear()
