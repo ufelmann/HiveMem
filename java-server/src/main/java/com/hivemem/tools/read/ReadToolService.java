@@ -52,6 +52,14 @@ public class ReadToolService {
         return cellReadRepository.listSignals(realm);
     }
 
+    public List<Map<String, Object>> listTopics(String realm, String signal) {
+        return cellReadRepository.listTopics(realm, signal);
+    }
+
+    public List<Map<String, Object>> listCellsInTopic(String realm, String signal, String topic) {
+        return cellReadRepository.listCellsInTopic(realm, signal, topic);
+    }
+
     public List<Map<String, Object>> search(
             String query,
             int limit,

@@ -24,7 +24,7 @@ public class ToolPermissionService {
             "hivemem_search",
             "hivemem_search_kg",
             "hivemem_get_cell",
-            "hivemem_list_realms",
+            "hivemem_list",
             "hivemem_traverse",
             "hivemem_quick_facts",
             "hivemem_time_machine",
