@@ -15,13 +15,17 @@ const ForceGraph2DComponent = ForceGraph2D as unknown as ForceGraphComponent
 export function ForceGraphRoot(props: {
   nodes: GraphNode[]
   links: GraphLink[]
+  width: number
+  height: number
   onNodeHover: (id: string | null) => void
   onNodeClick: (id: string) => void
 }) {
   return createElement(ForceGraph2DComponent, {
     graphData: { nodes: props.nodes, links: props.links },
+    width: props.width,
+    height: props.height,
     nodeLabel: 'label',
-    nodeAutoColorBy: 'realm',
+    nodeColor: 'color',
     linkColor: (link: ForceGraphLink) => link.color,
     onNodeHover: (node: ForceGraphNode | null) =>
       props.onNodeHover(typeof node?.id === 'string' ? node.id : null),

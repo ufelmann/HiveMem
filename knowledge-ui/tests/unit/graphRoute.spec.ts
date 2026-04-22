@@ -12,6 +12,21 @@ const reactRoot = {
   render: vi.fn(),
   unmount: vi.fn()
 }
+const resizeObserverState = {
+  callback: null as ResizeObserverCallback | null,
+  disconnect: vi.fn(),
+  observe: vi.fn((target: Element) => {
+    resizeObserverState.callback?.([
+      {
+        target,
+        contentRect: {
+          width: 640,
+          height: 480
+        }
+      } as ResizeObserverEntry
+    ], {} as ResizeObserver)
+  })
+}
 const canvasState = reactive({
   cells: [],
   loaded: false,
@@ -24,6 +39,21 @@ const canvasState = reactive({
 vi.mock('react-dom/client', () => ({
   createRoot: vi.fn(() => reactRoot)
 }))
+
+class ResizeObserverMock {
+  constructor(callback: ResizeObserverCallback) {
+    resizeObserverState.callback = callback
+  }
+
+  observe = resizeObserverState.observe
+  disconnect = resizeObserverState.disconnect
+}
+
+Object.defineProperty(globalThis, 'ResizeObserver', {
+  value: ResizeObserverMock,
+  configurable: true,
+  writable: true
+})
 
 vi.mock('../../src/stores/ui', () => ({
   useUiStore: () => ({
@@ -134,6 +164,13 @@ describe('graph route', () => {
     const reactElement = reactRoot.render.mock.calls.at(-1)?.[0]
     expect(reactElement?.props.nodes).toHaveLength(2)
     expect(reactElement?.props.links).toHaveLength(1)
+    expect(reactElement?.props.width).toBe(640)
+    expect(reactElement?.props.height).toBe(480)
+    expect(reactElement?.props.nodes[0]?.color).toBeTruthy()
+
+    const forceGraphElement = reactElement?.type(reactElement.props)
+    expect(forceGraphElement?.props.nodeColor).toBe('color')
+    expect(forceGraphElement?.props.nodeAutoColorBy).toBeUndefined()
 
     reactElement.props.onNodeHover('cell-1')
     reactElement.props.onNodeClick('cell-2')
@@ -161,5 +198,6 @@ describe('graph route', () => {
 
     wrapper.unmount()
     expect(reactRoot.unmount).toHaveBeenCalledTimes(1)
+    expect(resizeObserverState.disconnect).toHaveBeenCalledTimes(1)
   })
 })
