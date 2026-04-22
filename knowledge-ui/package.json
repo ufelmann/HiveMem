@@ -38,6 +38,8 @@
     "@types/d3-force": "^3.0.10",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^24.12.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@types/three": "^0.184.0",
     "@vitejs/plugin-vue": "^6.0.5",
     "@vue/test-utils": "^2.4.6",
