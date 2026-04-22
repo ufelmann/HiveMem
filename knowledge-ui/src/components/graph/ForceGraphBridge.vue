@@ -39,7 +39,10 @@ function renderReact() {
     onNodeHover: id => canvas.setHover(id),
     onNodeClick: id => {
       canvas.setFocus(id)
-      void cell.load(id)
+      void Promise.resolve(cell.load(id)).catch(() => {
+        canvas.setFocus(null)
+        canvas.setHover(null)
+      })
     }
   }))
 }

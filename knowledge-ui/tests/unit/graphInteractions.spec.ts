@@ -85,6 +85,11 @@ function makeGraphNode(id: string, overrides: Partial<GraphNode> = {}): GraphNod
   }
 }
 
+async function flushPromises() {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 describe('graph interactions', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -220,6 +225,35 @@ describe('graph interactions', () => {
     expect(resizeObserverState.disconnect).toHaveBeenCalledTimes(1)
   })
 
+  it('resets shared interaction state when bridge detail loading fails', async () => {
+    const canvas = useCanvasStore()
+    const cell = useCellStore()
+    cell.load = vi.fn().mockRejectedValue(new Error('load failed'))
+
+    canvas.cells = [makeCell('cell-1', 'Alpha', 5)] as any
+    canvas.tunnels = [] as any
+
+    const wrapper = mount(ForceGraphBridge)
+    await nextTick()
+
+    const reactElement = reactRoot.render.mock.calls.at(-1)?.[0]
+    reactElement.props.onNodeHover('cell-1')
+    await nextTick()
+    reactElement.props.onNodeClick('cell-1')
+    await flushPromises()
+    await nextTick()
+
+    expect(cell.load).toHaveBeenCalledWith('cell-1')
+    expect(canvas.focusedId).toBe(null)
+    expect(canvas.hoveredId).toBe(null)
+
+    const rerenderedReactElement = reactRoot.render.mock.calls.at(-1)?.[0]
+    expect(rerenderedReactElement.props.focusedId).toBe(null)
+    expect(rerenderedReactElement.props.hoveredId).toBe(null)
+
+    wrapper.unmount()
+  })
+
   it('scan panel close clears cell detail and shared hover/focus state', async () => {
     const canvas = useCanvasStore()
     const cell = useCellStore()
@@ -294,6 +328,50 @@ describe('graph interactions', () => {
 
     expect(cell.load).toHaveBeenCalledWith('cell-2')
     expect(canvas.focusedId).toBe('cell-2')
+    expect(canvas.hoveredId).toBe(null)
+  })
+
+  it('resets shared interaction state when scan panel navigation loading fails', async () => {
+    const canvas = useCanvasStore()
+    const cell = useCellStore()
+    cell.load = vi.fn().mockRejectedValue(new Error('load failed'))
+
+    cell.cache.set('cell-1', {
+      cell: makeCell('cell-1'),
+      facts: [],
+      tunnels: [
+        {
+          id: 'tunnel-1',
+          from_cell: 'cell-1',
+          to_cell: 'cell-2',
+          relation: 'related_to',
+          note: null
+        }
+      ]
+    } as any)
+    cell.currentId = 'cell-1'
+    canvas.setFocus('cell-1')
+    canvas.setHover('cell-1')
+
+    const wrapper = mount(ScanPanel, {
+      global: {
+        stubs: {
+          'v-btn': defineComponent({
+            emits: ['click'],
+            template: '<button v-bind="$attrs" @click="$emit(\'click\')" />'
+          }),
+          'v-chip': true
+        }
+      }
+    })
+    await nextTick()
+
+    await wrapper.get('.tunnel').trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    expect(cell.load).toHaveBeenCalledWith('cell-2')
+    expect(canvas.focusedId).toBe(null)
     expect(canvas.hoveredId).toBe(null)
   })
 
