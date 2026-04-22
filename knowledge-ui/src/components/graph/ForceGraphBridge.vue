@@ -34,7 +34,7 @@ onMounted(() => {
   renderReact()
 })
 
-watch(graph, renderReact, { deep: true })
+watch(graph, renderReact)
 
 onBeforeUnmount(() => {
   root?.unmount()

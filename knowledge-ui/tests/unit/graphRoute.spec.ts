@@ -1,26 +1,28 @@
-import { describe, it, expect, vi } from 'vitest'
-import { defineComponent, nextTick } from 'vue'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+import { nextTick, reactive } from 'vue'
 import { mount } from '@vue/test-utils'
+import { createRoot } from 'react-dom/client'
 import GraphRoute from '../../src/pages/GraphRoute.vue'
 
 const loadTopLevel = vi.fn()
 const loadCell = vi.fn()
 const setHover = vi.fn()
 const setFocus = vi.fn()
-const canvasState = {
+const reactRoot = {
+  render: vi.fn(),
+  unmount: vi.fn()
+}
+const canvasState = reactive({
   cells: [],
   loaded: false,
   loadTopLevel,
   setFocus,
   setHover,
   tunnels: []
-}
+})
 
-vi.mock('../../src/components/graph/ForceGraphBridge.vue', () => ({
-  default: defineComponent({
-    name: 'ForceGraphBridge',
-    template: '<div data-testid="force-graph-bridge" class="graph-bridge-stub" />'
-  })
+vi.mock('react-dom/client', () => ({
+  createRoot: vi.fn(() => reactRoot)
 }))
 
 vi.mock('../../src/stores/ui', () => ({
@@ -46,6 +48,13 @@ vi.mock('../../src/composables/keybindings', () => ({
 }))
 
 describe('graph route', () => {
+  beforeEach(() => {
+    canvasState.loaded = false
+    canvasState.cells = []
+    canvasState.tunnels = []
+    vi.clearAllMocks()
+  })
+
   it('registers a /graph route', async () => {
     const { router } = await import('../../src/router')
     const match = router.resolve('/graph')
@@ -53,11 +62,6 @@ describe('graph route', () => {
   })
 
   it('renders the graph skeleton and triggers the initial load', async () => {
-    canvasState.loaded = false
-    canvasState.cells = []
-    canvasState.tunnels = []
-    loadTopLevel.mockClear()
-
     const wrapper = mount(GraphRoute, {
       global: {
         stubs: {
@@ -76,13 +80,38 @@ describe('graph route', () => {
     expect(wrapper.find('aside.panel').exists()).toBe(true)
     expect(wrapper.find('header strong').text()).toBe('Search')
     expect(wrapper.find('main.graph-slot').text()).toBe('Loading…')
+    expect(createRoot).not.toHaveBeenCalled()
     expect(loadTopLevel).toHaveBeenCalledTimes(1)
   })
 
-  it('renders a graph mount surface', () => {
+  it('mounts the real graph bridge and wires React root props', async () => {
     canvasState.loaded = true
-    canvasState.cells = []
-    canvasState.tunnels = []
+    canvasState.cells = [
+      {
+        id: 'cell-1',
+        title: 'Alpha',
+        realm: 'ops',
+        signal: null,
+        topic: null,
+        importance: 3
+      },
+      {
+        id: 'cell-2',
+        title: 'Beta',
+        realm: 'ops',
+        signal: null,
+        topic: null,
+        importance: 1
+      }
+    ] as any
+    canvasState.tunnels = [
+      {
+        id: 'tunnel-1',
+        from_cell: 'cell-1',
+        to_cell: 'cell-2',
+        relation: 'related_to'
+      }
+    ] as any
 
     const wrapper = mount(GraphRoute, {
       global: {
@@ -97,7 +126,40 @@ describe('graph route', () => {
         }
       }
     })
+    await nextTick()
 
     expect(wrapper.find('[data-testid="force-graph-bridge"]').exists()).toBe(true)
+    expect(createRoot).toHaveBeenCalled()
+
+    const reactElement = reactRoot.render.mock.calls.at(-1)?.[0]
+    expect(reactElement?.props.nodes).toHaveLength(2)
+    expect(reactElement?.props.links).toHaveLength(1)
+
+    reactElement.props.onNodeHover('cell-1')
+    reactElement.props.onNodeClick('cell-2')
+
+    expect(setHover).toHaveBeenCalledWith('cell-1')
+    expect(setFocus).toHaveBeenCalledWith('cell-2')
+    expect(loadCell).toHaveBeenCalledWith('cell-2')
+
+    reactRoot.render.mockClear()
+    canvasState.cells = [
+      ...canvasState.cells,
+      {
+        id: 'cell-3',
+        title: 'Gamma',
+        realm: 'research',
+        signal: null,
+        topic: null,
+        importance: 2
+      }
+    ] as any
+    await nextTick()
+
+    const rerenderedElement = reactRoot.render.mock.calls.at(-1)?.[0]
+    expect(rerenderedElement?.props.nodes).toHaveLength(3)
+
+    wrapper.unmount()
+    expect(reactRoot.unmount).toHaveBeenCalledTimes(1)
   })
 })
