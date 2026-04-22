@@ -7,8 +7,9 @@ const relationColors: Record<Relation, string> = {
   refines: '#4dff9c'
 }
 
-export function colorForRelation(relation: Relation) {
-  return relationColors[relation]
+export function colorForRelation(relation: Relation): string
+export function colorForRelation(relation: string) {
+  return relationColors[relation as Relation] ?? '#7f8aa3'
 }
 
 export function colorForRealm(name: string): string {
