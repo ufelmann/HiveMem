@@ -71,6 +71,13 @@ class SpaRoutingTest {
     }
 
     @Test
+    void singleSegmentDeepLinkForwardsToIndexHtml() throws Exception {
+        mockMvc.perform(get("/about").session(validSession()))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("app")));
+    }
+
+    @Test
     void deepLinkWithoutSessionRedirectsToLogin() throws Exception {
         mockMvc.perform(get("/some/deep/route"))
                 .andExpect(status().is3xxRedirection())
