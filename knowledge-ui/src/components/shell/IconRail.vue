@@ -22,6 +22,7 @@ function visible(it: typeof items[number]) { return !it.role || auth.role === it
 <template>
   <div class="rail">
     <div class="logo">H</div>
+    <v-btn icon="mdi-home-outline" variant="text" @click="router.push('/')" />
     <template v-for="it in items" :key="it.id">
       <v-btn
         v-if="visible(it)"
