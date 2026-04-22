@@ -16,15 +16,22 @@ export class HttpApiClient implements ApiClient {
 
   async call<T>(tool: string, args: Record<string, unknown> = {}): Promise<T> {
     const id = this.nextId++
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    }
+    if (this.config.token) {
+      headers['Authorization'] = `Bearer ${this.config.token}`
+    }
     const res = await fetch(this.config.endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${this.config.token}`
-      },
+      headers,
       body: JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: tool, arguments: args } })
     })
+    if (res.status === 401) {
+      window.location.href = '/login'
+      throw new Error('Session expired')
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const json = await res.json() as { result?: T; error?: { message: string } }
     if (json.error) throw new Error(json.error.message)
