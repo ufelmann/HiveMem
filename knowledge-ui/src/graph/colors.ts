@@ -1,12 +1,14 @@
-const relationColors: Record<string, string> = {
+import type { Relation } from '../api/types'
+
+const relationColors: Record<Relation, string> = {
   related_to: '#9aa5ff',
   builds_on: '#4dc4ff',
   contradicts: '#ff4d4d',
   refines: '#4dff9c'
 }
 
-export function colorForRelation(relation: string) {
-  return relationColors[relation] ?? '#7f8aa3'
+export function colorForRelation(relation: Relation) {
+  return relationColors[relation]
 }
 
 export function colorForRealm(name: string): string {
