@@ -17,6 +17,8 @@ export function ForceGraphRoot(props: {
   links: GraphLink[]
   width: number
   height: number
+  focusedId: string | null
+  hoveredId: string | null
   onNodeHover: (id: string | null) => void
   onNodeClick: (id: string) => void
 }) {
@@ -26,6 +28,16 @@ export function ForceGraphRoot(props: {
     height: props.height,
     nodeLabel: 'label',
     nodeColor: 'color',
+    nodeCanvasObject: (node: ForceGraphNode, ctx: CanvasRenderingContext2D) => {
+      const isFocused = node.id === props.focusedId
+      const isHovered = node.id === props.hoveredId
+      const radius = isFocused ? 8 : isHovered ? 6 : 4
+
+      ctx.beginPath()
+      ctx.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI)
+      ctx.fillStyle = node.color ?? '#888888'
+      ctx.fill()
+    },
     linkColor: (link: ForceGraphLink) => link.color,
     onNodeHover: (node: ForceGraphNode | null) =>
       props.onNodeHover(typeof node?.id === 'string' ? node.id : null),

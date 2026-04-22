@@ -34,6 +34,8 @@ function renderReact() {
     links: graph.value.links,
     width: size.value.width,
     height: size.value.height,
+    focusedId: canvas.focusedId,
+    hoveredId: canvas.hoveredId,
     onNodeHover: id => canvas.setHover(id),
     onNodeClick: id => {
       canvas.setFocus(id)
@@ -51,7 +53,7 @@ onMounted(() => {
   renderReact()
 })
 
-watch([graph, size], renderReact)
+watch([graph, size, () => canvas.focusedId, () => canvas.hoveredId], renderReact)
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
