@@ -1,18 +1,20 @@
+import type { Cell, Tunnel } from '../api/types'
+
 export interface GraphNode {
-  id: string
-  label: string
-  realm: string
-  signal: string | null
-  topic: string | null
-  importance: number
+  id: Cell['id']
+  label: Cell['title']
+  realm: Cell['realm']
+  signal: Cell['signal']
+  topic: Cell['topic']
+  importance: Cell['importance']
   val: number
   color: string
 }
 
 export interface GraphLink {
-  id: string
-  source: string
-  target: string
-  relation: string
+  id: Tunnel['id']
+  source: Tunnel['from_cell']
+  target: Tunnel['to_cell']
+  relation: Tunnel['relation']
   color: string
 }
