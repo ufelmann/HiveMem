@@ -136,4 +136,8 @@ describe('mapCanvasToForceGraph', () => {
       expect.objectContaining({ id: 'a', importance: 0, val: 1 })
     ])
   })
+
+  it('returns the fallback color for unknown relations', () => {
+    expect(colorForRelation('unknown_relation')).toBe('#7f8aa3')
+  })
 })
