@@ -13,7 +13,7 @@ import java.io.IOException;
 import java.util.Optional;
 
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE)
+@Order(Ordered.HIGHEST_PRECEDENCE + 1)
 public class AuthFilter extends OncePerRequestFilter {
 
     public static final String PRINCIPAL_ATTRIBUTE = AuthPrincipal.class.getName();
@@ -39,6 +39,11 @@ public class AuthFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
+        if (request.getAttribute(PRINCIPAL_ATTRIBUTE) != null) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         String clientIp = request.getRemoteAddr();
 
         long retryAfter = rateLimiter.checkRateLimit(clientIp);

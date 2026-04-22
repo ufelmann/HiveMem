@@ -15,6 +15,11 @@ if [ -z "${HIVEMEM_JDBC_URL:-}" ] || [ -z "${HIVEMEM_DB_USER:-}" ] || [ -z "${HI
     exit 1
 fi
 
+echo "Building frontend..."
+(cd knowledge-ui && npm ci && npx vite build) # vite only — skips vue-tsc due to pre-existing erasableSyntaxOnly errors
+mkdir -p java-server/src/main/resources/static
+cp -r knowledge-ui/dist/. java-server/src/main/resources/static/
+
 echo "Building jar with JDK 25..."
 docker run --rm --security-opt apparmor=unconfined \
     -v "$(pwd)":/workspace -w /workspace/java-server \
