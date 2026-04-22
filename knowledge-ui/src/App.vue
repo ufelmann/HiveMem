@@ -3,17 +3,16 @@ import { onMounted } from 'vue'
 import { useAuthStore } from './stores/auth'
 import { useUiStore } from './stores/ui'
 import { useCanvasStore } from './stores/canvas'
-import LoginDialog from './components/LoginDialog.vue'
 
 const auth = useAuthStore()
 const ui = useUiStore()
 const canvas = useCanvasStore()
 
 onMounted(async () => {
-  if (!auth.token) {
-    ui.showLoginDialog = true
-  } else {
-    try { await auth.login(auth.token) } catch { ui.showLoginDialog = true }
+  try {
+    await auth.init()
+  } catch {
+    // httpClient redirects to /login on 401; other errors leave the splash screen
   }
 })
 </script>
@@ -24,7 +23,6 @@ onMounted(async () => {
       <router-view v-if="auth.isAuthenticated" />
       <div v-else class="splash">Connecting…</div>
     </v-main>
-    <LoginDialog />
     <v-snackbar v-if="ui.toast" :color="ui.toast.kind" :model-value="!!ui.toast" timeout="8000">
       {{ ui.toast.text }}
       <template #actions>

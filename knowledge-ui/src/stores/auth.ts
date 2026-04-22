@@ -4,24 +4,23 @@ import { useApi, resetApi } from '../api/useApi'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
-    token: (typeof localStorage !== 'undefined' ? localStorage.getItem('hivemem_token') : null) as string | null,
     role: null as Role | null,
     identity: null as string | null
   }),
-  getters: { isAuthenticated: (s) => !!s.token && !!s.role },
+  getters: { isAuthenticated: (s) => !!s.role },
   actions: {
-    async login(token: string) {
-      localStorage.setItem('hivemem_token', token)
-      this.token = token
-      resetApi()
+    async init() {
       const api = useApi()
       const w = await api.call<{ role: Role; identity: string }>('hivemem_wake_up')
-      this.role = w.role; this.identity = w.identity
+      this.role = w.role
+      this.identity = w.identity
     },
-    logout() {
-      localStorage.removeItem('hivemem_token')
-      this.token = null; this.role = null; this.identity = null
+    async logout() {
+      await fetch('/logout', { method: 'POST' })
+      this.role = null
+      this.identity = null
       resetApi()
+      window.location.href = '/login'
     }
   }
 })

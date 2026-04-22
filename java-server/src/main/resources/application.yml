@@ -23,3 +23,11 @@ hivemem:
 
 server:
   port: ${SERVER_PORT:8421}
+  servlet:
+    session:
+      timeout: 24h
+      cookie:
+        name: s
+        http-only: true
+        secure: ${SESSION_COOKIE_SECURE:true}
+        same-site: strict

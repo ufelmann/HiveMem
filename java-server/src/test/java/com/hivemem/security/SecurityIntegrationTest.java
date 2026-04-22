@@ -30,6 +30,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import com.hivemem.auth.LoginController;
+import org.springframework.mock.web.MockHttpSession;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.OffsetDateTime;
@@ -405,6 +408,48 @@ class SecurityIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(toolsCallRequest("hivemem_health", "{}")))
                     .andExpect(status().isUnauthorized());
+        }
+    }
+
+    // ================================================================
+    // McpEndpointAuth: regression + new session-cookie path
+    // ================================================================
+
+    @Nested
+    class McpEndpointAuth {
+
+        @Test
+        void bearerTokenStillWorksAfterSessionFilterAdded() throws Exception {
+            insertToken("admin-user", "admin-token", "admin");
+
+            mockMvc.perform(post("/mcp")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer admin-token")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(TOOLS_LIST_REQUEST))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        void noAuthReturns401AfterSessionFilterAdded() throws Exception {
+            mockMvc.perform(post("/mcp")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(TOOLS_LIST_REQUEST))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        void sessionCookieGrantsAccessToMcp() throws Exception {
+            insertToken("admin-user", "admin-token", "admin");
+
+            MockHttpSession session = new MockHttpSession();
+            session.setAttribute(LoginController.SESSION_TOKEN_KEY, "admin-token");
+
+            mockMvc.perform(post("/mcp")
+                            .session(session)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(TOOLS_LIST_REQUEST))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.result.tools").isArray());
         }
     }
 
