@@ -1,7 +1,6 @@
 import type { Cell, Tunnel } from '../api/types'
 import type { GraphLink, GraphNode } from './types'
-import { colorForRelation } from './colors'
-import { colorForRealm } from '../components/canvas/textures'
+import { colorForRelation, colorForRealm } from './colors'
 
 export function mapCanvasToForceGraph(input: { cells: Cell[]; tunnels: Tunnel[] }) {
   const nodes: GraphNode[] = input.cells.map(cell => ({
