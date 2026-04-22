@@ -23,7 +23,7 @@ function close() {
     <aside v-if="d" class="scan">
       <header>
         <strong>{{ d.cell.title }}</strong>
-        <v-btn icon="mdi-close" size="small" variant="text" @click="close" />
+        <v-btn data-testid="scan-panel-close" icon="mdi-close" size="small" variant="text" @click="close" />
       </header>
       <div class="body">
         <div class="chips">

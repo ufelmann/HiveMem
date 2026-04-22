@@ -31,7 +31,9 @@ export function ForceGraphRoot(props: {
     nodeCanvasObject: (node: ForceGraphNode, ctx: CanvasRenderingContext2D) => {
       const isFocused = node.id === props.focusedId
       const isHovered = node.id === props.hoveredId
-      const radius = isFocused ? 8 : isHovered ? 6 : 4
+      const baseRadius = Math.max(node.val ?? 1, 1)
+      const emphasis = isFocused ? 4 : isHovered ? 2 : 0
+      const radius = baseRadius + emphasis
 
       ctx.beginPath()
       ctx.arc(node.x ?? 0, node.y ?? 0, radius, 0, 2 * Math.PI)

@@ -3,6 +3,8 @@ import { defineComponent, nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRoot } from 'react-dom/client'
+import type { GraphNode } from '../../src/graph/types'
+import { ForceGraphRoot } from '../../src/components/graph/ForceGraphRoot'
 import ForceGraphBridge from '../../src/components/graph/ForceGraphBridge.vue'
 import ScanPanel from '../../src/components/ScanPanel.vue'
 import { useKeybindings } from '../../src/composables/keybindings'
@@ -58,14 +60,28 @@ const TestKeybindingsHost = defineComponent({
   }
 })
 
-function makeCell(id: string, title = 'Alpha') {
+function makeCell(id: string, title = 'Alpha', importance = 3) {
   return {
     id,
     title,
     realm: 'ops',
     signal: null,
     topic: null,
-    importance: 3
+    importance
+  }
+}
+
+function makeGraphNode(id: string, overrides: Partial<GraphNode> = {}): GraphNode {
+  return {
+    id,
+    label: id,
+    realm: 'ops',
+    signal: null,
+    topic: null,
+    importance: 3,
+    val: 3,
+    color: '#123456',
+    ...overrides
   }
 }
 
@@ -90,12 +106,74 @@ describe('graph interactions', () => {
     ui.$reset()
   })
 
+  it('translates ForceGraph2D hover and click events and preserves base node size', () => {
+    const onNodeHover = vi.fn()
+    const onNodeClick = vi.fn()
+    const node = makeGraphNode('cell-1', { val: 5, x: 10, y: 20 })
+
+    const hoveredGraphElement = ForceGraphRoot({
+      nodes: [node],
+      links: [],
+      width: 640,
+      height: 480,
+      focusedId: null,
+      hoveredId: 'cell-1',
+      onNodeHover,
+      onNodeClick
+    })
+
+    const forceGraphProps = hoveredGraphElement.props as any
+    expect(forceGraphProps.graphData.nodes).toEqual([node])
+
+    forceGraphProps.onNodeHover(node)
+    forceGraphProps.onNodeHover(null)
+    forceGraphProps.onNodeClick(node)
+    forceGraphProps.onNodeClick({ id: 42 })
+
+    expect(onNodeHover).toHaveBeenNthCalledWith(1, 'cell-1')
+    expect(onNodeHover).toHaveBeenNthCalledWith(2, null)
+    expect(onNodeClick).toHaveBeenCalledTimes(1)
+    expect(onNodeClick).toHaveBeenCalledWith('cell-1')
+
+    const hoveredCtx = {
+      beginPath: vi.fn(),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      fillStyle: ''
+    }
+
+    forceGraphProps.nodeCanvasObject(node, hoveredCtx, 1)
+    expect(hoveredCtx.arc).toHaveBeenCalledWith(10, 20, 7, 0, 2 * Math.PI)
+
+    const focusedGraphElement = ForceGraphRoot({
+      nodes: [node],
+      links: [],
+      width: 640,
+      height: 480,
+      focusedId: 'cell-1',
+      hoveredId: null,
+      onNodeHover,
+      onNodeClick
+    })
+
+    const focusedProps = focusedGraphElement.props as any
+    const focusedCtx = {
+      beginPath: vi.fn(),
+      arc: vi.fn(),
+      fill: vi.fn(),
+      fillStyle: ''
+    }
+
+    focusedProps.nodeCanvasObject(node, focusedCtx, 1)
+    expect(focusedCtx.arc).toHaveBeenCalledWith(10, 20, 9, 0, 2 * Math.PI)
+  })
+
   it('wires bridge hover and click through shared interaction state', async () => {
     const canvas = useCanvasStore()
     const cell = useCellStore()
     cell.load = vi.fn().mockResolvedValue(undefined)
 
-    canvas.cells = [makeCell('cell-1'), makeCell('cell-2', 'Beta')] as any
+    canvas.cells = [makeCell('cell-1', 'Alpha', 5), makeCell('cell-2', 'Beta', 2)] as any
     canvas.tunnels = [
       {
         id: 'tunnel-1',
@@ -116,52 +194,23 @@ describe('graph interactions', () => {
 
     initialReactElement.props.onNodeHover('cell-1')
     await nextTick()
-
     expect(canvas.hoveredId).toBe('cell-1')
 
     const hoveredReactElement = reactRoot.render.mock.calls.at(-1)?.[0]
-    const hoveredForceGraphElement = hoveredReactElement.type(hoveredReactElement.props)
-    const hoveredCtx = {
-      beginPath: vi.fn(),
-      arc: vi.fn(),
-      fill: vi.fn(),
-      fillStyle: ''
-    }
-
-    hoveredForceGraphElement.props.nodeCanvasObject({
-      id: 'cell-1',
-      x: 10,
-      y: 20,
-      color: '#123456'
-    }, hoveredCtx, 1)
-
     expect(hoveredReactElement.props.hoveredId).toBe('cell-1')
-    expect(hoveredCtx.arc).toHaveBeenCalledWith(10, 20, 6, 0, 2 * Math.PI)
 
-    hoveredReactElement.props.onNodeClick('cell-1')
+    hoveredReactElement.props.onNodeHover(null)
+    await nextTick()
+    expect(canvas.hoveredId).toBe(null)
+
+    const clearedReactElement = reactRoot.render.mock.calls.at(-1)?.[0]
+    expect(clearedReactElement.props.hoveredId).toBe(null)
+
+    clearedReactElement.props.onNodeClick('cell-1')
     await nextTick()
 
     expect(canvas.focusedId).toBe('cell-1')
     expect(cell.load).toHaveBeenCalledWith('cell-1')
-
-    const focusedReactElement = reactRoot.render.mock.calls.at(-1)?.[0]
-    const focusedForceGraphElement = focusedReactElement.type(focusedReactElement.props)
-    const focusedCtx = {
-      beginPath: vi.fn(),
-      arc: vi.fn(),
-      fill: vi.fn(),
-      fillStyle: ''
-    }
-
-    focusedForceGraphElement.props.nodeCanvasObject({
-      id: 'cell-1',
-      x: 10,
-      y: 20,
-      color: '#123456'
-    }, focusedCtx, 1)
-
-    expect(focusedReactElement.props.focusedId).toBe('cell-1')
-    expect(focusedCtx.arc).toHaveBeenCalledWith(10, 20, 8, 0, 2 * Math.PI)
 
     wrapper.unmount()
     expect(reactRoot.unmount).toHaveBeenCalledTimes(1)
@@ -186,7 +235,7 @@ describe('graph interactions', () => {
         stubs: {
           'v-btn': defineComponent({
             emits: ['click'],
-            template: '<button data-testid="close" @click="$emit(\'click\')" />'
+            template: '<button v-bind="$attrs" @click="$emit(\'click\')" />'
           }),
           'v-chip': true
         }
@@ -196,7 +245,7 @@ describe('graph interactions', () => {
 
     expect(wrapper.find('aside.scan').exists()).toBe(true)
 
-    await wrapper.get('[data-testid="close"]').trigger('click')
+    await wrapper.get('[data-testid="scan-panel-close"]').trigger('click')
 
     expect(cell.currentId).toBe(null)
     expect(canvas.focusedId).toBe(null)
