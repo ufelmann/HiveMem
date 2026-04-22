@@ -10,7 +10,11 @@ const canvas = useCanvasStore()
 const d = computed(() => cellStore.current)
 
 function openReader() { if (d.value) reader.openReader(d.value.cell.id) }
-function jumpTo(id: string) { cellStore.load(id); canvas.setFocus(id) }
+function jumpTo(id: string) {
+  cellStore.load(id)
+  canvas.setFocus(id)
+  canvas.setHover(null)
+}
 function close() {
   cellStore.clear()
   canvas.setFocus(null)

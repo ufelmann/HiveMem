@@ -212,6 +212,9 @@ describe('graph interactions', () => {
     expect(canvas.focusedId).toBe('cell-1')
     expect(cell.load).toHaveBeenCalledWith('cell-1')
 
+    const focusedReactElement = reactRoot.render.mock.calls.at(-1)?.[0]
+    expect(focusedReactElement.props.focusedId).toBe('cell-1')
+
     wrapper.unmount()
     expect(reactRoot.unmount).toHaveBeenCalledTimes(1)
     expect(resizeObserverState.disconnect).toHaveBeenCalledTimes(1)
@@ -249,6 +252,48 @@ describe('graph interactions', () => {
 
     expect(cell.currentId).toBe(null)
     expect(canvas.focusedId).toBe(null)
+    expect(canvas.hoveredId).toBe(null)
+  })
+
+  it('scan panel tunnel navigation clears stale hover while moving focus', async () => {
+    const canvas = useCanvasStore()
+    const cell = useCellStore()
+    cell.load = vi.fn().mockResolvedValue(undefined)
+
+    cell.cache.set('cell-1', {
+      cell: makeCell('cell-1'),
+      facts: [],
+      tunnels: [
+        {
+          id: 'tunnel-1',
+          from_cell: 'cell-1',
+          to_cell: 'cell-2',
+          relation: 'related_to',
+          note: null
+        }
+      ]
+    } as any)
+    cell.currentId = 'cell-1'
+    canvas.setFocus('cell-1')
+    canvas.setHover('cell-1')
+
+    const wrapper = mount(ScanPanel, {
+      global: {
+        stubs: {
+          'v-btn': defineComponent({
+            emits: ['click'],
+            template: '<button v-bind="$attrs" @click="$emit(\'click\')" />'
+          }),
+          'v-chip': true
+        }
+      }
+    })
+    await nextTick()
+
+    await wrapper.get('.tunnel').trigger('click')
+
+    expect(cell.load).toHaveBeenCalledWith('cell-2')
+    expect(canvas.focusedId).toBe('cell-2')
     expect(canvas.hoveredId).toBe(null)
   })
 
