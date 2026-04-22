@@ -54,17 +54,16 @@ public class CellReadRepository {
     public List<Map<String, Object>> listRealms() {
         List<Map<String, Object>> results = new ArrayList<>();
         for (Record row : dslContext.fetch("""
-                SELECT realm,
-                       count(DISTINCT signal) AS signal_count,
-                       count(*) AS cell_count
+                SELECT realm, count(*) AS cell_count
                 FROM active_cells
                 WHERE realm IS NOT NULL
                 GROUP BY realm
                 ORDER BY realm
                 """)) {
+            String realm = row.get("realm", String.class);
             Map<String, Object> result = new LinkedHashMap<>();
-            result.put("realm", row.get("realm", String.class));
-            result.put("signal_count", countValue(row, "signal_count"));
+            result.put("value", realm);
+            result.put("label", realm);
             result.put("cell_count", countValue(row, "cell_count"));
             results.add(result);
         }
@@ -80,9 +79,48 @@ public class CellReadRepository {
                 GROUP BY signal
                 ORDER BY signal
                 """, realm)) {
+            String signal = row.get("signal", String.class);
             Map<String, Object> result = new LinkedHashMap<>();
-            result.put("signal", row.get("signal", String.class));
+            result.put("value", signal);
+            result.put("label", signal);
             result.put("cell_count", countValue(row, "cell_count"));
+            results.add(result);
+        }
+        return results;
+    }
+
+    public List<Map<String, Object>> listTopics(String realm, String signal) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (Record row : dslContext.fetch("""
+                SELECT topic, count(*) AS cell_count
+                FROM active_cells
+                WHERE realm = ? AND signal = ? AND topic IS NOT NULL
+                GROUP BY topic
+                ORDER BY topic
+                """, realm, signal)) {
+            String topic = row.get("topic", String.class);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("value", topic);
+            result.put("label", topic);
+            result.put("cell_count", countValue(row, "cell_count"));
+            results.add(result);
+        }
+        return results;
+    }
+
+    public List<Map<String, Object>> listCellsInTopic(String realm, String signal, String topic) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (Record row : dslContext.fetch("""
+                SELECT id, summary, importance, created_at
+                FROM active_cells
+                WHERE realm = ? AND signal = ? AND topic = ?
+                ORDER BY created_at DESC
+                """, realm, signal, topic)) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("id", uuidValue(row, "id"));
+            result.put("summary", row.get("summary", String.class));
+            result.put("importance", integerValue(row, "importance"));
+            result.put("created_at", timestampValue(row, "created_at"));
             results.add(result);
         }
         return results;

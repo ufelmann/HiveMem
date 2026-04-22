@@ -107,7 +107,7 @@ class ReadToolIntegrationTest {
                 .andExpect(jsonPath("$.result.tools[1].name").value("hivemem_search"))
                 .andExpect(jsonPath("$.result.tools[2].name").value("hivemem_search_kg"))
                 .andExpect(jsonPath("$.result.tools[3].name").value("hivemem_get_cell"))
-                .andExpect(jsonPath("$.result.tools[4].name").value("hivemem_list_realms"))
+                .andExpect(jsonPath("$.result.tools[4].name").value("hivemem_list"))
                 .andExpect(jsonPath("$.result.tools[5].name").value("hivemem_traverse"))
                 .andExpect(jsonPath("$.result.tools[6].name").value("hivemem_quick_facts"))
                 .andExpect(jsonPath("$.result.tools[7].name").value("hivemem_time_machine"))
@@ -301,37 +301,20 @@ class ReadToolIntegrationTest {
     }
 
     @Test
-    void listWingsToolReturnsWingAndCountStats() throws Exception {
+    void listToolNoParamsReturnsRealmsWithCellCount() throws Exception {
         seedStatusRows();
-        insertDrawer(
-                UUID.fromString("00000000-0000-0000-0000-000000000004"),
-                null,
-                "Alpha strategy drawer",
-                "alpha",
-                "events",
-                "notes",
-                "system",
-                2,
-                "Strategy summary",
-                null,
-                null,
-                "committed",
-                "writer",
-                OffsetDateTime.parse("2026-04-03T11:00:00Z"),
-                OffsetDateTime.parse("2026-04-03T11:00:00Z"),
-                null
-        );
 
-        JsonNode content = callToolContent("hivemem_list_realms", Map.of());
-        assertThat(content.get(0).path("realm").asText()).isEqualTo("alpha");
-        assertThat(content.get(0).path("signal_count").asInt()).isEqualTo(2);
-        assertThat(content.get(0).path("cell_count").asInt()).isEqualTo(2);
-        assertThat(content.get(1).path("realm").asText()).isEqualTo("beta");
+        JsonNode content = callToolContent("hivemem_list", Map.of());
+        assertThat(content.get(0).path("value").asText()).isEqualTo("alpha");
+        assertThat(content.get(0).path("label").asText()).isEqualTo("alpha");
+        assertThat(content.get(0).path("cell_count").asInt()).isEqualTo(1);
+        assertThat(content.get(1).path("value").asText()).isEqualTo("beta");
+        assertThat(content.get(1).path("cell_count").asInt()).isEqualTo(1);
         assertThat(content).hasSize(2);
     }
 
     @Test
-    void listWingsWithWingParamReturnsHalls() throws Exception {
+    void listToolWithRealmReturnsSignalsWithCellCount() throws Exception {
         seedStatusRows();
         insertDrawer(
                 UUID.fromString("00000000-0000-0000-0000-000000000004"),
@@ -352,11 +335,92 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_list_realms", Map.of("realm", "alpha"));
-        assertThat(content.get(0).path("signal").asText()).isEqualTo("events");
+        JsonNode content = callToolContent("hivemem_list", Map.of("realm", "alpha"));
+        assertThat(content.get(0).path("value").asText()).isEqualTo("events");
+        assertThat(content.get(0).path("label").asText()).isEqualTo("events");
         assertThat(content.get(0).path("cell_count").asInt()).isEqualTo(1);
-        assertThat(content.get(1).path("signal").asText()).isEqualTo("facts");
+        assertThat(content.get(1).path("value").asText()).isEqualTo("facts");
         assertThat(content.get(1).path("cell_count").asInt()).isEqualTo(1);
+        assertThat(content).hasSize(2);
+    }
+
+    @Test
+    void listToolWithRealmAndSignalReturnsTopicsWithCellCount() throws Exception {
+        seedStatusRows();
+        insertDrawer(
+                UUID.fromString("00000000-0000-0000-0000-000000000004"),
+                null,
+                "Alpha facts second topic",
+                "alpha",
+                "facts",
+                "archive",
+                "system",
+                2,
+                "Archive summary",
+                null,
+                null,
+                "committed",
+                "writer",
+                OffsetDateTime.parse("2026-04-03T11:00:00Z"),
+                OffsetDateTime.parse("2026-04-03T11:00:00Z"),
+                null
+        );
+
+        JsonNode content = callToolContent("hivemem_list", Map.of("realm", "alpha", "signal", "facts"));
+        assertThat(content.get(0).path("value").asText()).isEqualTo("archive");
+        assertThat(content.get(0).path("label").asText()).isEqualTo("archive");
+        assertThat(content.get(0).path("cell_count").asInt()).isEqualTo(1);
+        assertThat(content.get(1).path("value").asText()).isEqualTo("milestones");
+        assertThat(content.get(1).path("cell_count").asInt()).isEqualTo(1);
+        assertThat(content).hasSize(2);
+    }
+
+    @Test
+    void listToolWithRealmSignalTopicReturnsCellMetadata() throws Exception {
+        seedStatusRows();
+
+        JsonNode content = callToolContent("hivemem_list", Map.of("realm", "alpha", "signal", "facts", "topic", "milestones"));
+        assertThat(content).hasSize(1);
+        assertThat(content.get(0).path("id").asText()).isEqualTo("00000000-0000-0000-0000-000000000001");
+        assertThat(content.get(0).path("summary").asText()).isEqualTo("Alpha summary");
+        assertThat(content.get(0).path("importance").asInt()).isEqualTo(3);
+        assertThat(content.get(0).path("created_at").asText()).isNotBlank();
+    }
+
+    @Test
+    void listToolRejectsSignalWithoutRealm() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":60,
+                                  "method":"tools/call",
+                                  "params":{"name":"hivemem_list","arguments":{"signal":"facts"}}
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value(-32602))
+                .andExpect(jsonPath("$.error.message").value("signal requires realm"));
+    }
+
+    @Test
+    void listToolRejectsTopicWithoutSignal() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0",
+                                  "id":61,
+                                  "method":"tools/call",
+                                  "params":{"name":"hivemem_list","arguments":{"realm":"alpha","topic":"milestones"}}
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value(-32602))
+                .andExpect(jsonPath("$.error.message").value("topic requires realm and signal"));
     }
 
     @Test
