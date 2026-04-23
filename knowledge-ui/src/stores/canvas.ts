@@ -2,8 +2,6 @@ import { defineStore } from 'pinia'
 import { useApi } from '../api/useApi'
 import type { Cell, Realm, Tunnel } from '../api/types'
 
-interface StreamResponse { cells: Cell[]; tunnels: Tunnel[]; done: boolean }
-
 export const useCanvasStore = defineStore('canvas', {
   state: () => ({
     realms: [] as Realm[],
@@ -20,33 +18,18 @@ export const useCanvasStore = defineStore('canvas', {
   actions: {
     async loadTopLevel() {
       const api = useApi()
-      this.realms = await api.call<Realm[]>('hivemem_list_realms')
+      const rows = await api.call<Array<{ value: string; label?: string; cell_count: number }>>('hivemem_list')
+      this.realms = rows.map(r => ({ name: r.value, cell_count: r.cell_count, signals: [] }))
       this.cells = []
       this.tunnels = []
       this.loaded = true
-      this._streamAbort = false
-      void this._longPoll()
+      this._streamAbort = true
+      this.streamActive = false
     },
     async _longPoll() {
-      const api = useApi()
-      this.streamActive = true
-      try {
-        while (!this._streamAbort) {
-          let resp: StreamResponse
-          try {
-            resp = await api.call<StreamResponse>('hivemem_stream_next', { timeout_ms: 25000 })
-          } catch {
-            // Transient error — back off briefly and retry (long-poll recovery).
-            await new Promise(r => setTimeout(r, 2000))
-            continue
-          }
-          if (resp.cells?.length) this.cells = [...this.cells, ...resp.cells]
-          if (resp.tunnels?.length) this.tunnels = [...this.tunnels, ...resp.tunnels]
-          if (resp.done) break
-        }
-      } finally {
-        this.streamActive = false
-      }
+      // Streaming endpoint is not implemented server-side; top-level load is static.
+      this._streamAbort = true
+      this.streamActive = false
     },
     stopStream() { this._streamAbort = true },
     setFocus(id: string | null) { this.focusedId = id },

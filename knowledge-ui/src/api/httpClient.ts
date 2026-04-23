@@ -37,9 +37,18 @@ export class HttpApiClient implements ApiClient {
       throw new Error('Session expired')
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const json = await res.json() as { result?: T; error?: { message: string } }
+    const json = await res.json() as {
+      result?: { content?: Array<{ text?: string; type?: string }> }
+      error?: { message: string }
+    }
     if (json.error) throw new Error(json.error.message)
-    return json.result as T
+    const text = json.result?.content?.[0]?.text
+    if (text === undefined) return undefined as T
+    try {
+      return JSON.parse(text) as T
+    } catch {
+      return text as T
+    }
   }
 
   subscribe(onEvent: (e: HiveEvent) => void): () => void {

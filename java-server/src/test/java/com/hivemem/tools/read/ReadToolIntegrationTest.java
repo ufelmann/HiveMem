@@ -958,10 +958,13 @@ class ReadToolIntegrationTest {
         assertThat(allBlueprints.get(2).path("realm").asText()).isEqualTo("beta");
 
         JsonNode wakeUp = callToolContent("hivemem_wake_up", Map.of());
-        assertThat(wakeUp.path("l0_identity").path("content").asText()).isEqualTo("You are Alice.");
-        assertThat(wakeUp.path("l0_identity").path("token_count").asInt()).isEqualTo(3);
-        assertThat(wakeUp.path("l1_critical").path("content").asText()).isEqualTo("Remember the migration plan.");
-        assertThat(wakeUp.path("l1_critical").path("token_count").asInt()).isEqualTo(4);
+        assertThat(wakeUp.path("identity").asText()).isNotEmpty();
+        assertThat(wakeUp.path("role").asText()).isNotEmpty();
+        JsonNode context = wakeUp.path("context");
+        assertThat(context.path("l0_identity").path("content").asText()).isEqualTo("You are Alice.");
+        assertThat(context.path("l0_identity").path("token_count").asInt()).isEqualTo(3);
+        assertThat(context.path("l1_critical").path("content").asText()).isEqualTo("Remember the migration plan.");
+        assertThat(context.path("l1_critical").path("token_count").asInt()).isEqualTo(4);
     }
 
     @Test
