@@ -73,6 +73,12 @@ npm install
 npm run dev       # http://localhost:5173
 ```
 
+## Views
+
+- `/` — Pixi canvas view
+- `/graph` — Obsidian-like force graph view using `react-force-graph`
+- `/cinema` — 3D presentation route
+
 By default the UI boots against the **mock backend**. Toggle the checkbox in
 the connect dialog; all demo data (26 cells, 20 tunnels, 15 facts, 16
 references) lives in `src/data/mock.ts`.
