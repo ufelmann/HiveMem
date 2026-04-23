@@ -17,7 +17,7 @@ MCP server backed by PostgreSQL (pgvector) with external embeddings service. 30 
 [![License: Sustainable Use](https://img.shields.io/badge/license-Sustainable%20Use-blue)](https://github.com/visterion/HiveMem/blob/main/LICENSE)
 [![SafeSkill](https://safeskill.dev/api/badge/visterion-hivemem)](https://safeskill.dev/scan/visterion-hivemem)
 
-**Docker images:** [`ghcr.io/visterion/hivemem:main`](https://github.com/visterion/HiveMem/pkgs/container/hivemem) for the rolling `main` branch, plus semver tags such as `ghcr.io/visterion/hivemem:6.1.0` for cut releases.
+**Docker images:** [`ghcr.io/visterion/hivemem:main`](https://github.com/visterion/HiveMem/pkgs/container/hivemem) for the rolling `main` branch, plus semver tags such as `ghcr.io/visterion/hivemem:6.2.0` for cut releases.
 
 ## Vision & Research
 
@@ -119,14 +119,14 @@ services:
     restart: unless-stopped
 
   hivemem-embeddings:
-    image: ghcr.io/visterion/hivemem-embeddings:main
+    image: ghcr.io/visterion/hivemem-embeddings:6.2.0
     container_name: hivemem-embeddings
     networks:
       - hivemem-net
     restart: unless-stopped
 
   hivemem:
-    image: ghcr.io/visterion/hivemem:main
+    image: ghcr.io/visterion/hivemem:6.2.0
     container_name: hivemem
     ports:
       - "8421:8421"
@@ -166,7 +166,7 @@ docker exec hivemem hivemem-token create my-admin --role admin
 
 That's it. Three containers, all images from GHCR, no build needed.
 
-For a pinned production rollout, swap `:main` for a release tag such as `:6.1.0` or the next semver release once published.
+For a pinned production rollout, use the current release tags such as `:6.2.0`. Use `:main` only if you explicitly want the rolling branch build.
 
 ### Build from source (optional)
 
