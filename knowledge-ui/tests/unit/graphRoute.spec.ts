@@ -114,6 +114,26 @@ describe('graph route', () => {
     expect(loadTopLevel).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps shared detail surfaces on the graph route', () => {
+    canvasState.loaded = true
+    const wrapper = mount(GraphRoute, {
+      global: {
+        stubs: {
+          IconRail: true,
+          SearchPanel: true,
+          RealmsPanel: true,
+          SettingsPanel: true,
+          ScanPanel: true,
+          Reader: true,
+          ForceGraphBridge: true,
+          'v-btn': true
+        }
+      }
+    })
+
+    expect(wrapper.html()).toContain('force-graph-bridge')
+  })
+
   it('mounts the real graph bridge and wires React root props', async () => {
     canvasState.loaded = true
     canvasState.cells = [
