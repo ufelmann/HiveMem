@@ -12,7 +12,11 @@ export class HttpApiClient implements ApiClient {
   private timer: number | null = null
   private lastActivity: string | null = null
 
-  constructor(private config: HttpApiConfig) {}
+  private config: HttpApiConfig
+
+  constructor(config: HttpApiConfig) {
+    this.config = config
+  }
 
   async call<T>(tool: string, args: Record<string, unknown> = {}): Promise<T> {
     const id = this.nextId++
@@ -33,9 +37,18 @@ export class HttpApiClient implements ApiClient {
       throw new Error('Session expired')
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const json = await res.json() as { result?: T; error?: { message: string } }
+    const json = await res.json() as {
+      result?: { content?: Array<{ text?: string; type?: string }> }
+      error?: { message: string }
+    }
     if (json.error) throw new Error(json.error.message)
-    return json.result as T
+    const text = json.result?.content?.[0]?.text
+    if (text === undefined) return undefined as T
+    try {
+      return JSON.parse(text) as T
+    } catch {
+      return text as T
+    }
   }
 
   subscribe(onEvent: (e: HiveEvent) => void): () => void {
