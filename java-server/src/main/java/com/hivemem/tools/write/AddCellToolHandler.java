@@ -36,7 +36,7 @@ public class AddCellToolHandler implements ToolHandler {
     @Override
     public Map<String, Object> inputSchema() {
         return ToolInputSchema.object()
-                .requiredString("content", "Raw content of the cell (L0 layer)")
+                .requiredString("content", "Full cell content")
                 .optionalString("realm", "Realm to assign the cell to (free-form)")
                 .optionalEnumString("signal", "Signal classification",
                         "facts", "events", "discoveries", "preferences", "advice")
@@ -44,10 +44,10 @@ public class AddCellToolHandler implements ToolHandler {
                 .optionalString("source", "Source reference or URL")
                 .optionalStringList("tags", "Free-form tags")
                 .optionalIntegerInRange("importance", "Importance score (1-5)", 1, 5)
-                .optionalString("summary", "L1 summary (auto-generated if omitted)")
-                .optionalStringList("key_points", "L2 key points")
-                .optionalString("insight", "L3 insight")
-                .optionalEnumString("actionability", "L3 actionability bucket (omit for none)",
+                .optionalString("summary", "Cell summary (auto-generated if omitted)")
+                .optionalStringList("key_points", "Key points")
+                .optionalString("insight", "Insight")
+                .optionalEnumString("actionability", "Actionability bucket (omit for none)",
                         "actionable", "reference", "someday", "archive")
                 .optionalEnumString("status", "Initial status (default: committed)",
                         "pending", "committed", "rejected")

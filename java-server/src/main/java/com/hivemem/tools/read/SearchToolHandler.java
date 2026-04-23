@@ -16,6 +16,8 @@ public class SearchToolHandler implements ToolHandler {
 
     private static final int DEFAULT_LIMIT = 10;
     private static final int MAX_LIMIT = 100;
+    private static final String[] INCLUDE_FIELDS =
+            CellFieldSelection.searchIncludeFields().toArray(new String[0]);
 
     private final ReadToolService readToolService;
 
@@ -30,7 +32,7 @@ public class SearchToolHandler implements ToolHandler {
 
     @Override
     public String description() {
-        return "5-signal ranked search over committed cells.";
+        return "5-signal ranked search over committed cells with metadata by default; use include to request extra fields such as content.";
     }
 
     @Override
@@ -41,6 +43,7 @@ public class SearchToolHandler implements ToolHandler {
                 .optionalString("realm", "Restrict search to this realm")
                 .optionalString("signal", "Restrict search to this signal")
                 .optionalString("topic", "Restrict search to this topic")
+                .optionalEnumStringList("include", "Optional fields to return. Defaults to summary, tags, importance, created_at.", INCLUDE_FIELDS)
                 .optionalNumber("weight_semantic", "Semantic similarity weight (default 0.35)")
                 .optionalNumber("weight_keyword", "Keyword match weight (default 0.15)")
                 .optionalNumber("weight_recency", "Recency weight (default 0.20)")
@@ -56,6 +59,7 @@ public class SearchToolHandler implements ToolHandler {
         String realm = WriteArgumentParser.optionalText(arguments, "realm");
         String signal = WriteArgumentParser.optionalText(arguments, "signal");
         String topic = WriteArgumentParser.optionalText(arguments, "topic");
+        CellFieldSelection selection = CellFieldSelection.forSearch(CellFieldSelection.parseInclude(arguments));
         double weightSemantic = optionalWeight(arguments, "weight_semantic", 0.35d);
         double weightKeyword = optionalWeight(arguments, "weight_keyword", 0.15d);
         double weightRecency = optionalWeight(arguments, "weight_recency", 0.20d);
@@ -67,6 +71,7 @@ public class SearchToolHandler implements ToolHandler {
                 realm,
                 signal,
                 topic,
+                selection,
                 weightSemantic,
                 weightKeyword,
                 weightRecency,

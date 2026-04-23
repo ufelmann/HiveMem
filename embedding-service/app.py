@@ -1,41 +1,10 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-from sentence_transformers import SentenceTransformer
+import json
+from http.server import HTTPServer
 
-app = FastAPI()
-
-MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-model = SentenceTransformer(MODEL_NAME)
-MODEL_DIMENSION = model.get_sentence_embedding_dimension()
+from app_onnx import Handler, INFO
 
 
-class EmbeddingRequest(BaseModel):
-    text: str
-    mode: str = "document"
-
-
-class EmbeddingResponse(BaseModel):
-    vector: list[float]
-    model: str
-    dimension: int
-
-
-class InfoResponse(BaseModel):
-    model: str
-    dimension: int
-
-
-@app.get("/info")
-def info() -> InfoResponse:
-    return InfoResponse(model=MODEL_NAME, dimension=MODEL_DIMENSION)
-
-
-@app.post("/embeddings")
-def embed(req: EmbeddingRequest) -> EmbeddingResponse:
-    vector = model.encode(req.text).tolist()
-    return EmbeddingResponse(vector=vector, model=MODEL_NAME, dimension=MODEL_DIMENSION)
-
-
-@app.get("/health")
-def health():
-    return {"status": "ok", "model": MODEL_NAME, "dimensions": MODEL_DIMENSION}
+if __name__ == "__main__":
+    print("[bootstrap] /info =", json.dumps(INFO, indent=2), flush=True)
+    print("Embedding service listening on port 80", flush=True)
+    HTTPServer(("0.0.0.0", 80), Handler).serve_forever()

@@ -113,6 +113,14 @@ public final class ToolInputSchema {
         return addArray(name, "string", null, description, false);
     }
 
+    public ToolInputSchema requiredEnumStringList(String name, String description, String... values) {
+        return addEnumArray(name, description, values, true);
+    }
+
+    public ToolInputSchema optionalEnumStringList(String name, String description, String... values) {
+        return addEnumArray(name, description, values, false);
+    }
+
     public ToolInputSchema requiredUuidList(String name, String description) {
         return addArray(name, "string", "uuid", description, true);
     }
@@ -193,6 +201,27 @@ public final class ToolInputSchema {
         prop.put("items", Map.copyOf(itemSchema));
         if (description != null && !description.isBlank()) {
             prop.put("description", description);
+        }
+        properties.put(name, Map.copyOf(prop));
+        if (isRequired) {
+            required.add(name);
+        }
+        return this;
+    }
+
+    private ToolInputSchema addEnumArray(String name, String description, String[] values, boolean isRequired) {
+        if (values == null || values.length == 0) {
+            throw new IllegalArgumentException("enum values must not be empty for property '" + name + "'");
+        }
+        Map<String, Object> itemSchema = new LinkedHashMap<>();
+        itemSchema.put("type", "string");
+        itemSchema.put("enum", List.of(values));
+        Map<String, Object> prop = new LinkedHashMap<>();
+        prop.put("type", "array");
+        prop.put("items", Map.copyOf(itemSchema));
+        String mergedDescription = appendEnumHint(description, values);
+        if (!mergedDescription.isBlank()) {
+            prop.put("description", mergedDescription);
         }
         properties.put(name, Map.copyOf(prop));
         if (isRequired) {

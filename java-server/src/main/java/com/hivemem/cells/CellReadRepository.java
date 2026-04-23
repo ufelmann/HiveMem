@@ -1,5 +1,6 @@
 package com.hivemem.cells;
 
+import com.hivemem.tools.read.CellFieldSelection;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 import org.springframework.stereotype.Repository;
@@ -470,38 +471,97 @@ public class CellReadRepository {
         return result;
     }
 
-    public Optional<Map<String, Object>> findCell(UUID cellId) {
-        Record row = dslContext.fetchOne("""
-                SELECT id, parent_id, content, realm, signal, topic, source, tags,
-                       importance, summary, key_points, insight, actionability,
-                       status, created_by, created_at, valid_from, valid_until
-                FROM cells
-                WHERE id = ?
-                """, cellId);
+    public Optional<Map<String, Object>> findCell(UUID cellId, CellFieldSelection selection) {
+        List<String> projections = new ArrayList<>(List.of("id", "realm", "signal", "topic"));
+        projections.add(uuidProjection("parent_id", selection));
+        projections.add(textProjection("content", selection));
+        projections.add(textProjection("source", selection));
+        projections.add(textArrayProjection("tags", selection));
+        projections.add(integerProjection("importance", selection));
+        projections.add(textProjection("summary", selection));
+        projections.add(textArrayProjection("key_points", selection));
+        projections.add(textProjection("insight", selection));
+        projections.add(textProjection("actionability", selection));
+        projections.add(textProjection("status", selection));
+        projections.add(textProjection("created_by", selection));
+        projections.add(timestampProjection("created_at", selection));
+        projections.add(timestampProjection("valid_from", selection));
+        projections.add(timestampProjection("valid_until", selection));
+
+        String sql = "SELECT " + String.join(", ", projections) + " FROM cells WHERE id = ?";
+        Record row = dslContext.fetchOne(sql, cellId);
         if (row == null) {
             return Optional.empty();
         }
 
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("id", uuidValue(row, "id"));
-        result.put("parent_id", uuidValue(row, "parent_id"));
-        result.put("content", row.get("content", String.class));
-        result.put("realm", row.get("realm", String.class));
-        result.put("signal", row.get("signal", String.class));
-        result.put("topic", row.get("topic", String.class));
-        result.put("source", row.get("source", String.class));
-        result.put("tags", stringArrayValue(row, "tags"));
-        result.put("importance", integerValue(row, "importance"));
-        result.put("summary", row.get("summary", String.class));
-        result.put("key_points", stringArrayValue(row, "key_points"));
-        result.put("insight", row.get("insight", String.class));
-        result.put("actionability", row.get("actionability", String.class));
-        result.put("status", row.get("status", String.class));
-        result.put("created_by", row.get("created_by", String.class));
-        result.put("created_at", timestampValue(row, "created_at"));
-        result.put("valid_from", timestampValue(row, "valid_from"));
-        result.put("valid_until", timestampValue(row, "valid_until"));
-        return Optional.of(result);
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("id", uuidValue(row, "id"));
+        values.put("realm", row.get("realm", String.class));
+        values.put("signal", row.get("signal", String.class));
+        values.put("topic", row.get("topic", String.class));
+        if (selection.includes("parent_id")) {
+            values.put("parent_id", uuidValue(row, "parent_id"));
+        }
+        if (selection.includes("content")) {
+            values.put("content", row.get("content", String.class));
+        }
+        if (selection.includes("source")) {
+            values.put("source", row.get("source", String.class));
+        }
+        if (selection.includes("tags")) {
+            values.put("tags", stringArrayValue(row, "tags"));
+        }
+        if (selection.includes("importance")) {
+            values.put("importance", integerValue(row, "importance"));
+        }
+        if (selection.includes("summary")) {
+            values.put("summary", row.get("summary", String.class));
+        }
+        if (selection.includes("key_points")) {
+            values.put("key_points", stringArrayValue(row, "key_points"));
+        }
+        if (selection.includes("insight")) {
+            values.put("insight", row.get("insight", String.class));
+        }
+        if (selection.includes("actionability")) {
+            values.put("actionability", row.get("actionability", String.class));
+        }
+        if (selection.includes("status")) {
+            values.put("status", row.get("status", String.class));
+        }
+        if (selection.includes("created_by")) {
+            values.put("created_by", row.get("created_by", String.class));
+        }
+        if (selection.includes("created_at")) {
+            values.put("created_at", timestampValue(row, "created_at"));
+        }
+        if (selection.includes("valid_from")) {
+            values.put("valid_from", timestampValue(row, "valid_from"));
+        }
+        if (selection.includes("valid_until")) {
+            values.put("valid_until", timestampValue(row, "valid_until"));
+        }
+        return Optional.of(selection.project(values));
+    }
+
+    private static String textProjection(String field, CellFieldSelection selection) {
+        return selection.includes(field) ? "%s AS %s".formatted(field, field) : "NULL::text AS %s".formatted(field);
+    }
+
+    private static String textArrayProjection(String field, CellFieldSelection selection) {
+        return selection.includes(field) ? "%s AS %s".formatted(field, field) : "NULL::text[] AS %s".formatted(field);
+    }
+
+    private static String integerProjection(String field, CellFieldSelection selection) {
+        return selection.includes(field) ? "%s AS %s".formatted(field, field) : "NULL::integer AS %s".formatted(field);
+    }
+
+    private static String timestampProjection(String field, CellFieldSelection selection) {
+        return selection.includes(field) ? "%s AS %s".formatted(field, field) : "NULL::timestamptz AS %s".formatted(field);
+    }
+
+    private static String uuidProjection(String field, CellFieldSelection selection) {
+        return selection.includes(field) ? "%s AS %s".formatted(field, field) : "NULL::uuid AS %s".formatted(field);
     }
 
     private static Map<String, Object> blueprintRow(Record row) {
