@@ -1,7 +1,9 @@
-"""Combined embedding benchmark: how fast, and how good.
+"""Combined embedding benchmark: how fast, and how good, on HiveMem-shaped data.
 
-Runs both the latency sampler and the STS-Benchmark quality check against an
-HiveMem embedding service and prints a single consolidated report.
+Runs a latency sampler and a gold-scored similarity check against an HiveMem
+embedding service using paragraph-length, mixed-language (EN/DE) samples that
+mirror real HiveMem content. Emits a single consolidated report with
+bucketed verdicts for speed and quality.
 
 Usage:
     python run.py                                      # http://localhost:8080
@@ -19,21 +21,7 @@ import os
 import time
 import urllib.request
 
-from sts_pairs import STS_PAIRS
-
-
-LATENCY_SENTENCES = [
-    "A plane is taking off.",
-    "An air plane is taking off.",
-    "A man is playing a large flute.",
-    "A man is playing a flute.",
-    "A man is spreading shredded cheese on a pizza.",
-    "A man is spreading shredded cheese on an uncooked pizza.",
-    "Three men are playing chess.",
-    "Two men are playing chess.",
-    "A man is playing the cello.",
-    "A man seated is playing the cello.",
-]
+from data import LATENCY_KEYS, PAIRS, PARAGRAPHS
 
 
 def embed(url: str, text: str) -> tuple[list[float], float]:
@@ -105,12 +93,12 @@ def speed_verdict(p50_ms: float) -> str:
 
 def quality_verdict(rho: float) -> str:
     if rho >= 0.80:
-        return "excellent — on par with dedicated sentence encoders"
+        return "excellent — model separates HiveMem-shaped content cleanly"
     if rho >= 0.70:
-        return "good — typical for small multilingual models"
+        return "good — acceptable for paragraph-length mixed-language memories"
     if rho >= 0.50:
-        return "weak — usable but consider a stronger model"
-    return "poor — check model, pooling, tokenizer, or transport"
+        return "weak — truncation or language coverage may be hurting recall"
+    return "poor — check model / pooling / tokenizer / transport"
 
 
 def main() -> None:
@@ -124,12 +112,12 @@ def main() -> None:
         "--rounds",
         type=int,
         default=3,
-        help="Repeat latency sentences this many times (default: %(default)s).",
+        help="Repeat latency paragraphs this many times (default: %(default)s).",
     )
     parser.add_argument(
         "--show-pairs",
         action="store_true",
-        help="Print every STS pair with gold + predicted similarity.",
+        help="Print every pair with gold + predicted similarity.",
     )
     args = parser.parse_args()
 
@@ -142,7 +130,8 @@ def main() -> None:
         with urllib.request.urlopen(info_url) as r:
             info = json.loads(r.read())
         print(
-            f"Model: {info.get('model')}  dim={info.get('dimension')}  pooling={info.get('pooling')}"
+            f"Model: {info.get('model')}  dim={info.get('dimension')}  "
+            f"pooling={info.get('pooling')}  max_length={info.get('max_length')}"
         )
     except Exception as exc:
         print(f"(could not fetch {info_url}: {exc})")
@@ -150,56 +139,67 @@ def main() -> None:
     # Warm-up
     embed(embeddings_url, "warmup")
 
-    # --- Speed ---
+    # Speed
     latencies: list[float] = []
     for _ in range(args.rounds):
-        for sentence in LATENCY_SENTENCES:
-            _, ms = embed(embeddings_url, sentence)
+        for key in LATENCY_KEYS:
+            _, ms = embed(embeddings_url, PARAGRAPHS[key])
             latencies.append(ms)
     latencies.sort()
     total_ms = sum(latencies)
     p50 = percentile(latencies, 0.50)
 
-    # --- Quality ---
+    # Quality
     cache: dict[str, list[float]] = {}
 
-    def embed_cached(text: str) -> list[float]:
-        if text not in cache:
-            cache[text] = embed(embeddings_url, text)[0]
-        return cache[text]
+    def embed_cached(key: str) -> list[float]:
+        if key not in cache:
+            cache[key] = embed(embeddings_url, PARAGRAPHS[key])[0]
+        return cache[key]
 
     gold: list[float] = []
     predicted: list[float] = []
-    for a, b, score in STS_PAIRS:
+    for a, b, score, _ in PAIRS:
         gold.append(score)
         predicted.append(cosine(embed_cached(a), embed_cached(b)))
     rho = spearman(predicted, gold)
     r = pearson(predicted, gold)
 
-    # --- Report ---
-    print()
-    print("Speed (serial requests, warmup excluded):")
-    print(f"  samples    : {len(latencies)}")
-    print(f"  min        : {min(latencies):6.2f} ms")
-    print(f"  p50        : {p50:6.2f} ms")
-    print(f"  p95        : {percentile(latencies, 0.95):6.2f} ms")
-    print(f"  max        : {max(latencies):6.2f} ms")
-    print(f"  mean       : {total_ms / len(latencies):6.2f} ms")
-    print(f"  throughput : {len(latencies) * 1000 / total_ms:.1f} req/s")
-    print(f"  verdict    : {speed_verdict(p50)}")
+    avg_chars = sum(len(PARAGRAPHS[k]) for k in LATENCY_KEYS) / len(LATENCY_KEYS)
 
     print()
-    print("Quality (STS-Benchmark sample):")
-    print(f"  pairs      : {len(STS_PAIRS)}")
-    print(f"  Spearman ρ : {rho:.4f}")
-    print(f"  Pearson  r : {r:.4f}")
-    print(f"  verdict    : {quality_verdict(rho)}")
+    print("Speed (paragraph-length samples, serial requests, warmup excluded):")
+    print(f"  samples     : {len(latencies)} (avg {int(avg_chars)} chars)")
+    print(f"  min         : {min(latencies):6.2f} ms")
+    print(f"  p50         : {p50:6.2f} ms")
+    print(f"  p95         : {percentile(latencies, 0.95):6.2f} ms")
+    print(f"  max         : {max(latencies):6.2f} ms")
+    print(f"  mean        : {total_ms / len(latencies):6.2f} ms")
+    print(f"  throughput  : {len(latencies) * 1000 / total_ms:.1f} req/s")
+    print(f"  verdict     : {speed_verdict(p50)}")
+
+    print()
+    print("Quality (HiveMem-shaped gold pairs):")
+    print(f"  pairs       : {len(PAIRS)}")
+    print(f"  Spearman rho: {rho:.4f}")
+    print(f"  Pearson  r  : {r:.4f}")
+    print(f"  verdict     : {quality_verdict(rho)}")
+
+    # Separate indicator: cross-lingual pairs only.
+    cl_gold = [g for (a, b, g, _), _ in zip(PAIRS, predicted) if a.endswith("_en") and b.endswith("_de")]
+    cl_pred = [p for (a, b, _, _), p in zip(PAIRS, predicted) if a.endswith("_en") and b.endswith("_de")]
+    if cl_gold:
+        print()
+        print("Cross-lingual (EN<->DE translation pairs only):")
+        for (a, b, g, _), p in zip(PAIRS, predicted):
+            if a.endswith("_en") and b.endswith("_de"):
+                print(f"  {a} <-> {b}   gold={g:.2f}  pred={p:.4f}")
 
     if args.show_pairs:
         print()
-        print(f"  {'gold':>5}  {'pred':>6}  pair")
-        for (a, b, g), p in zip(STS_PAIRS, predicted):
-            print(f"  {g:5.2f}  {p:6.4f}  {a!r:55s} vs {b!r}")
+        print(f"  {'gold':>5}  {'pred':>6}  reasoning")
+        for (a, b, g, why), p in zip(PAIRS, predicted):
+            print(f"  {g:5.2f}  {p:6.4f}  {a} <-> {b}  ({why})")
 
 
 if __name__ == "__main__":
