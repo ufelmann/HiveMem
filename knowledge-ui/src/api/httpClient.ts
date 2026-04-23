@@ -12,7 +12,11 @@ export class HttpApiClient implements ApiClient {
   private timer: number | null = null
   private lastActivity: string | null = null
 
-  constructor(private config: HttpApiConfig) {}
+  private config: HttpApiConfig
+
+  constructor(config: HttpApiConfig) {
+    this.config = config
+  }
 
   async call<T>(tool: string, args: Record<string, unknown> = {}): Promise<T> {
     const id = this.nextId++

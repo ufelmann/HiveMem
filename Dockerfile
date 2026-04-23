@@ -1,9 +1,18 @@
+FROM node:22-alpine AS ui-build
+
+WORKDIR /ui
+COPY knowledge-ui/package.json knowledge-ui/package-lock.json ./
+RUN npm ci
+COPY knowledge-ui/ ./
+RUN npm run build
+
 FROM maven:3.9.13-eclipse-temurin-25 AS build
 
 WORKDIR /workspace
 COPY java-server/pom.xml java-server/mvnw java-server/mvnw.cmd ./
 COPY java-server/.mvn .mvn
 COPY java-server/src src
+COPY --from=ui-build /ui/dist src/main/resources/static
 
 RUN chmod +x mvnw && ./mvnw -q -DskipTests package
 

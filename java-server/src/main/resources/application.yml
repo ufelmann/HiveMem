@@ -26,8 +26,9 @@ server:
   servlet:
     session:
       timeout: 24h
+      tracking-modes: cookie
       cookie:
         name: s
         http-only: true
-        secure: ${SESSION_COOKIE_SECURE:true}
+        secure: ${SESSION_COOKIE_SECURE:false}
         same-site: strict
