@@ -12,12 +12,12 @@ MCP server backed by PostgreSQL (pgvector) with external embeddings service. 30 
 [![Java](https://img.shields.io/badge/java-25-blue)](https://openjdk.org)
 [![Spring Boot](https://img.shields.io/badge/spring%20boot-4.0.5-6DB33F)](https://spring.io/projects/spring-boot)
 [![PostgreSQL](https://img.shields.io/badge/postgresql-17-336791)](https://postgresql.org)
-[![Tests](https://img.shields.io/badge/tests-264%20passed-brightgreen)](https://github.com/ufelmann/HiveMem/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-JUnit%20%2B%20Testcontainers-brightgreen)](https://github.com/ufelmann/HiveMem/actions/workflows/ci.yml)
 [![MCP Tools](https://img.shields.io/badge/MCP%20tools-30-orange)](https://github.com/ufelmann/HiveMem#tool-list-full)
 [![License: Sustainable Use](https://img.shields.io/badge/license-Sustainable%20Use-blue)](https://github.com/ufelmann/HiveMem/blob/main/LICENSE)
 [![SafeSkill](https://safeskill.dev/api/badge/ufelmann-hivemem)](https://safeskill.dev/scan/ufelmann-hivemem)
 
-**Docker image:** [`ghcr.io/ufelmann/hivemem:main`](https://github.com/ufelmann/HiveMem/pkgs/container/hivemem)
+**Docker images:** [`ghcr.io/ufelmann/hivemem:main`](https://github.com/ufelmann/HiveMem/pkgs/container/hivemem) for the rolling `main` branch, plus semver tags such as `ghcr.io/ufelmann/hivemem:6.1.0` for cut releases.
 
 ## Vision & Research
 
@@ -71,7 +71,7 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 - **References & reading list** -- track sources, link to cells, filter by type/status
 - **Spring Boot 4.0.5 + Java 25** -- MCP server with jOOQ, Flyway migrations, Caffeine cache
 - **Automatic embedding reencoding** -- detects model changes at startup, re-encodes all vectors with backup and progress tracking
-- **264 tests** with Testcontainers -- unit, integration, HTTP end-to-end, performance, security, concurrency
+- **Comprehensive JUnit + Testcontainers suite** -- unit, integration, HTTP end-to-end, performance, security, concurrency
 
 ## Prerequisites
 
@@ -165,6 +165,8 @@ docker exec hivemem hivemem-token create my-admin --role admin
 ```
 
 That's it. Three containers, all images from GHCR, no build needed.
+
+For a pinned production rollout, swap `:main` for a release tag such as `:6.1.0` or the next semver release once published.
 
 ### Build from source (optional)
 
@@ -691,9 +693,7 @@ cd java-server
 mvn test
 ```
 
-```
-264 tests passed
-```
+The exact test count changes over time; use the CI badge and workflow runs above as the current source of truth.
 
 ### Deploy changes
 
