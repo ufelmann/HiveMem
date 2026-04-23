@@ -79,8 +79,6 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 - An external PostgreSQL database with pgvector extension (e.g. `pgvector/pgvector:pg17`)
 - An external embeddings service reachable via HTTP (see below)
 
-**Proxmox LXC users:** Docker containers running JDK 25 inside unprivileged LXC containers require `--security-opt apparmor=unconfined` (or `security_opt: [apparmor=unconfined]` in Compose). This applies to all services, not just HiveMem.
-
 ## Embedding Service
 
 HiveMem requires an external embedding service. An ONNX-based service is included in `embedding-service/` and can be configured via environment variables instead of code changes.
@@ -688,9 +686,6 @@ To automate daily backups:
 ```bash
 # crontab -e
 45 1 * * * docker exec hivemem-db pg_dump -U hivemem hivemem | gzip > /path/to/backups/hivemem-$(date +\%Y\%m\%d).sql.gz
-```
-
-**LXC/Proxmox users:** Schedule a vzdump at 02:00 to capture the full container including the database dumps. This gives you both logical (pg_dump) and physical (filesystem) backup coverage.
 
 ## Development
 
