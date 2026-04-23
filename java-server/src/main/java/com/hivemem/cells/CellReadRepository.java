@@ -455,6 +455,73 @@ public class CellReadRepository {
         return results;
     }
 
+    public Map<String, Object> streamSnapshot(int cellLimit, int tunnelLimit) {
+        List<Map<String, Object>> cells = new ArrayList<>();
+        for (Record row : dslContext.fetch("""
+                SELECT id, realm, signal, topic, content, summary, key_points, insight,
+                       tags, importance, status, created_by, created_at, valid_from, valid_until
+                FROM active_cells
+                ORDER BY created_at DESC
+                LIMIT ?
+                """, cellLimit)) {
+            Map<String, Object> cell = new LinkedHashMap<>();
+            cell.put("id", uuidValue(row, "id"));
+            cell.put("realm", row.get("realm", String.class));
+            cell.put("signal", row.get("signal", String.class));
+            cell.put("topic", row.get("topic", String.class));
+            cell.put("title", deriveTitle(row.get("summary", String.class), row.get("content", String.class)));
+            cell.put("content", row.get("content", String.class));
+            cell.put("summary", row.get("summary", String.class));
+            cell.put("key_points", stringArrayValue(row, "key_points"));
+            cell.put("insight", row.get("insight", String.class));
+            cell.put("tags", stringArrayValue(row, "tags"));
+            cell.put("importance", integerValue(row, "importance"));
+            cell.put("status", row.get("status", String.class));
+            cell.put("created_by", row.get("created_by", String.class));
+            cell.put("created_at", timestampValue(row, "created_at"));
+            cell.put("valid_from", timestampValue(row, "valid_from"));
+            cell.put("valid_until", timestampValue(row, "valid_until"));
+            cells.add(cell);
+        }
+
+        List<Map<String, Object>> tunnels = new ArrayList<>();
+        for (Record row : dslContext.fetch("""
+                SELECT id, from_cell, to_cell, relation, note, status, created_at, valid_until
+                FROM active_tunnels
+                ORDER BY created_at DESC
+                LIMIT ?
+                """, tunnelLimit)) {
+            Map<String, Object> tunnel = new LinkedHashMap<>();
+            tunnel.put("id", uuidValue(row, "id"));
+            tunnel.put("from_cell", uuidValue(row, "from_cell"));
+            tunnel.put("to_cell", uuidValue(row, "to_cell"));
+            tunnel.put("relation", row.get("relation", String.class));
+            tunnel.put("note", row.get("note", String.class));
+            tunnel.put("status", row.get("status", String.class));
+            tunnel.put("created_at", timestampValue(row, "created_at"));
+            tunnel.put("valid_until", timestampValue(row, "valid_until"));
+            tunnels.add(tunnel);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("cells", cells);
+        result.put("tunnels", tunnels);
+        result.put("done", true);
+        return result;
+    }
+
+    private static String deriveTitle(String summary, String content) {
+        if (summary != null && !summary.isBlank()) {
+            String firstLine = summary.strip().split("\\R", 2)[0];
+            return firstLine.length() > 80 ? firstLine.substring(0, 80) : firstLine;
+        }
+        if (content != null && !content.isBlank()) {
+            String firstLine = content.strip().split("\\R", 2)[0];
+            return firstLine.length() > 80 ? firstLine.substring(0, 80) : firstLine;
+        }
+        return "(untitled)";
+    }
+
     public Map<String, Object> wakeUp() {
         Map<String, Object> result = new LinkedHashMap<>();
         for (Record row : dslContext.fetch("""
