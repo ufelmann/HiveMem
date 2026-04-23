@@ -37,7 +37,7 @@ public class ReviseCellToolHandler implements ToolHandler {
         return ToolInputSchema.object()
                 .requiredUuid("old_id", "UUID of the cell version to close")
                 .requiredString("new_content", "New content for the revised cell")
-                .optionalString("new_summary", "New L1 summary (auto-generated if omitted)")
+                .optionalString("new_summary", "New summary (auto-generated if omitted)")
                 .build();
     }
 

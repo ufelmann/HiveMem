@@ -63,7 +63,7 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 - **30 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
 - **5-signal ranked search** -- semantic similarity + keyword match + recency + importance + popularity
 - **Append-only versioning** -- never lose history, revise with parent_id chains, point-in-time queries
-- **Progressive summarization** (L0-L3) -- content, summary, key_points, insight per cell
+- **Progressive summarization** -- content, summary, key_points, insight per cell
 - **Temporal knowledge graph** -- facts with valid_from/valid_until, contradiction detection, multi-hop traversal
 - **Role-based token auth** -- multiple tokens, 4 roles (admin/writer/reader/agent), per-role tool visibility
 - **Agent fleet** with approval workflow -- agents write pending suggestions, only admins approve
@@ -83,7 +83,7 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 
 ## Embedding Service
 
-HiveMem requires an external embedding service. The default model is `paraphrase-multilingual-MiniLM-L12-v2` (384 dimensions). An ONNX-based service is included in `embedding-service/`.
+HiveMem requires an external embedding service. An ONNX-based service is included in `embedding-service/` and can be configured via environment variables instead of code changes.
 
 The service must expose:
 - `POST /embeddings` — `{"text": "...", "mode": "document"}` → `{"vector": [...], "model": "...", "dimension": N}`
@@ -91,11 +91,19 @@ The service must expose:
 
 **Automatic reencoding:** When HiveMem detects a model change at startup (different model name or dimension), it automatically backs up the database, re-encodes all cells, and rebuilds the HNSW index. Search is blocked (503) during reencoding.
 
+Key environment variables:
+- `MODEL_PATH` — mounted directory with local model files; preferred for manual installs
+- `MODEL_REPO` — HF repo used when `MODEL_PATH` is unset
+- `MODEL_NAME` — model identifier reported by `/info`
+- `ONNX_FILE` / `TOKENIZER_FILE` — optional explicit filenames inside the model directory
+- `POOLING` — `mean` or `cls`
+- `MAX_LENGTH` — tokenizer truncation/padding length
+- `QUERY_PREFIX` / `DOCUMENT_PREFIX` — optional retrieval prefixes
+
 To build the embedding service:
 
 ```bash
 cd embedding-service
-# You need model files (tokenizer.json + model_quantized.onnx) in slim-model/
 docker build -t hivemem-embeddings .
 ```
 
@@ -301,7 +309,7 @@ Wake_up is a snapshot, not a subscription. As the conversation evolves, the rele
 ### Classification
 - Use existing realms and signals. Call `list_realms` before inventing new ones (pass the `realm` param to get signals within a specific realm).
 - Realm = major life area, Signal = broad category, Topic = specific topic.
-- One cell per topic. Fill ALL layers: content (L0), summary (L1), key_points (L2), insight (L3).
+- One cell per topic. Fill all four progressive fields: content, summary, key_points, insight.
 - Every fact needs `valid_from`. Knowledge without timestamps is useless.
 
 ### What to archive
@@ -335,7 +343,7 @@ graph TB
             subgraph Signal1["Signal: Software"]
                 direction LR
                 subgraph Topic1A["Topic: HiveMem"]
-                    D1["Cell<br/><i>L0: content</i><br/><i>L1: summary</i><br/><i>L2: key points</i><br/><i>L3: insight</i>"]
+                    D1["Cell<br/><i>content</i><br/><i>summary</i><br/><i>key points</i><br/><i>insight</i>"]
                     D2["Cell"]
                 end
                 subgraph Topic1B["Topic: Website"]
@@ -398,14 +406,14 @@ graph TB
 | **Realm** | Top-level category | "Projects", "Knowledge", "Cooking" |
 | **Signal** | A signal within a realm | "Software", "Italian Cuisine" |
 | **Topic** | A topic within a signal | "HiveMem", "Pasta Recipes" |
-| **Cell** | Single knowledge item with 4 layers (L0-L3) | A design decision, a recipe, a meeting note |
+| **Cell** | Single knowledge item with content, summary, key points, and insight | A design decision, a recipe, a meeting note |
 | **Tunnel** | Passage connecting two cells | `builds_on`, `related_to`, `contradicts`, `refines` |
 | **Fact** | Atomic knowledge triple in the knowledge graph | "HiveMem → uses → PostgreSQL" with temporal validity |
 | **Blueprint** | Narrative overview of a realm | How signals, topics, and key cells in a realm connect |
 
 ### How it works
 
-1. **Store** -- Content is classified into realm/signal/topic and stored as a cell with progressive summarization (L0: full content, L1: summary, L2: key points, L3: insight)
+1. **Store** -- Content is classified into realm/signal/topic and stored as a cell with progressive summarization (content, summary, key points, insight)
 2. **Connect** -- Tunnels link related cells across the structure; facts capture atomic relationships in the knowledge graph
 3. **Search** -- 5-signal ranked search finds cells by meaning, keywords, recency, importance, and popularity
 4. **Traverse** -- Follow tunnels to discover hidden connections; use time machine to see what was known at any point
@@ -559,9 +567,9 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 **Read (15):**
 
 1. `hivemem_status`: System overview and counts.
-2. `hivemem_search`: Semantic similarity + keyword search.
+2. `hivemem_search`: Semantic similarity + keyword search; returns metadata by default and supports `include` for optional fields.
 3. `hivemem_search_kg`: Knowledge graph triple lookup.
-4. `hivemem_get_cell`: Read single knowledge item (logs access automatically).
+4. `hivemem_get_cell`: Read a single knowledge item (logs access automatically); supports `include` for optional fields including content.
 5. `hivemem_list_realms`: Realms with counts; signals of one realm when `realm` is provided.
 6. `hivemem_traverse`: Recursive graph traversal.
 7. `hivemem_quick_facts`: Context-aware facts about an entity.
@@ -576,7 +584,7 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 
 **Write (13):**
 
-16. `hivemem_add_cell`: Store with L0-L3; optional `dedupe_threshold` runs an embedding-based dedupe gate in one call.
+16. `hivemem_add_cell`: Store a cell with content, summary, key points, and insight; optional `dedupe_threshold` runs an embedding-based dedupe gate in one call.
 17. `hivemem_add_tunnel`: Link two cells together.
 18. `hivemem_kg_add`: Fact triple; optional `on_conflict` (`insert`|`return`|`reject`) gates against active conflicts.
 19. `hivemem_kg_invalidate`: Soft-delete/expire a fact.
@@ -607,16 +615,18 @@ The `hivemem_search` tool combines 5 signals with configurable weights:
 | Importance | 0.15 | User/agent assigned 1-5 scale |
 | Popularity | 0.15 | Access frequency (materialized view) |
 
+`hivemem_search` defaults to `summary`, `tags`, `importance`, and `created_at` plus required identity fields (`id`, `realm`, `signal`, `topic`). `hivemem_get_cell` defaults to `summary`, `key_points`, `insight`, `tags`, `importance`, `source`, and `created_at` plus the same required identity fields. Pass `include` to request a specific subset of optional fields, including `content`.
+
 ### Progressive Summarization
 
-Every cell supports 4 layers of progressive summarization:
+Every cell supports four progressive fields:
 
-| Layer | Field | Purpose |
-|---|---|---|
-| L0 | `content` | Full verbatim text |
-| L1 | `summary` | One-sentence summary for scanning |
-| L2 | `key_points` | 3-5 core takeaways |
-| L3 | `insight` | Personal conclusion / implication |
+| Field | Purpose |
+|---|---|
+| `content` | Full verbatim text |
+| `summary` | One-sentence summary for scanning |
+| `key_points` | 3-5 core takeaways |
+| `insight` | Personal conclusion / implication |
 
 Plus `actionability` (actionable / reference / someday / archive) and `importance` (1-5).
 

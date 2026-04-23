@@ -2075,7 +2075,7 @@ Import: `import ScanPanel from '../components/ScanPanel.vue'`.
 
 ```bash
 git add knowledge-ui/src/components/ScanPanel.vue knowledge-ui/src/pages/HomeRoute.vue
-git commit -m "feat(ui): scan panel with L1/L2/L3, tunnels (jumpable), facts, reader CTA"
+git commit -m "feat(ui): scan panel with summary, key points, insight, tunnels (jumpable), facts, reader CTA"
 ```
 
 ---

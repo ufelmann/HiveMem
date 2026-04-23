@@ -219,9 +219,9 @@ const cells: Cell[] = [
     topic: 'Vector Search',
     title: 'pgvector: vector similarity in Postgres',
     content:
-      'pgvector adds a `vector` column type and index methods **IVFFlat** (inverted file with flat quantizer) and **HNSW** (hierarchical navigable small world) for approximate nearest neighbor.\n\nDistance operators: `<->` L2, `<#>` negative inner product, `<=>` cosine.',
+      'pgvector adds a `vector` column type and index methods **IVFFlat** (inverted file with flat quantizer) and **HNSW** (hierarchical navigable small world) for approximate nearest neighbor.\n\nDistance operators: `<->` Euclidean distance, `<#>` negative inner product, `<=>` cosine.',
     summary:
-      'Postgres extension for ANN search; IVFFlat and HNSW indexes; L2, inner-product, cosine operators.',
+      'Postgres extension for ANN search; IVFFlat and HNSW indexes; Euclidean, inner-product, and cosine operators.',
     key_points: [
       'HNSW build is memory-hungry but queries faster than IVFFlat',
       'Default 2000-dim upper limit per column',
@@ -575,9 +575,9 @@ const cells: Cell[] = [
     topic: 'Similarity',
     title: 'Cosine similarity',
     content:
-      '`cos(a,b) = a·b / (‖a‖·‖b‖)`. Angle-based — magnitude-invariant — which matters when vector norms drift with document length or training dynamics.\n\nFor L2-normalized vectors, cosine similarity and inner product are equivalent (up to sign), and Euclidean distance and cosine are monotonically related — so many engines normalize once at ingest.',
+      '`cos(a,b) = a·b / (‖a‖·‖b‖)`. Angle-based — magnitude-invariant — which matters when vector norms drift with document length or training dynamics.\n\nFor unit-normalized vectors, cosine similarity and inner product are equivalent (up to sign), and Euclidean distance and cosine are monotonically related — so many engines normalize once at ingest.',
     summary:
-      'Magnitude-invariant similarity. Equivalent to inner product after L2-normalization.',
+      'Magnitude-invariant similarity. Equivalent to inner product after unit normalization.',
     key_points: [
       'Range [−1, 1]; often [0, 1] for non-negative embeddings',
       'Normalize → cheaper inner-product in index',

@@ -14,7 +14,7 @@ This skill ensures that the agent has a complete understanding of the user's cur
 
 ## Workflow
 
-1.  **Initial Wakeup:** Always call `hivemem_wake_up` first to load L0 (Identity) and L1 (Critical) context.
+1.  **Initial Wakeup:** Always call `hivemem_wake_up` first to load identity and critical context.
 2.  **Analyze Intent:** Identify the user's current project or problem area.
 3.  **Search Relevance:** Call `hivemem_search` with the session topic to retrieve relevant historical cells.
 4.  **Traverse Context:** If the topic is an entity, call `hivemem_traverse` and `hivemem_quick_facts` to see current relationships and valid-from dates.

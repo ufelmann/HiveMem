@@ -15,7 +15,7 @@ A 2D sphere-canvas frontend for HiveMem. Replaces Obsidian (notes) and Paperless
 
 The user opens the app and sees **Realm-Halos with Cell-Points** inside each halo — all clusters visible at once, coloured by realm. Spheres have sizes proportional to a user-selectable knowledge metric, connected by edges whose thickness reflects tunnel count. Mouse-wheel zooms smoothly; a click triggers a cinematic snap-focus animation into the chosen sphere. The hierarchy (Realm → Signal → Topic → Cell) is traversed by repeated click+snap; empty levels (single-child Signals/Topics) are transparently skipped.
 
-Clicking a leaf Cell opens a right-side **Scan panel** with L1 Summary, L2 Key Points, L3 Insight, tunnels and attachments. Double-click switches into **Reader mode**: a fullscreen overlay with a wide serif reading column, tabs for Markdown (rendered via markdown-it) and each attachment (PDF via pdf.js, .eml via postal-mime). Editing is out of scope (comes in SP4).
+Clicking a leaf Cell opens a right-side **Scan panel** with summary, key points, insight, tunnels and attachments. Double-click switches into **Reader mode**: a fullscreen overlay with a wide serif reading column, tabs for Markdown (rendered via markdown-it) and each attachment (PDF via pdf.js, .eml via postal-mime). Editing is out of scope (comes in SP4).
 
 The app shell is a 56px left icon-rail + the full-bleed canvas. Icons open slide-out panels (search, realms tree, reading list, cinema route, stats, history). `Cmd/Ctrl+K` opens a fuzzy-search palette anywhere.
 
@@ -60,7 +60,7 @@ HiveMem Java-Server (existing, unchanged for SP1 v1)
 - **Pinia** — reactive state (5 modules)
 - **PixiJS 8 + pixi-filters** — 2D canvas rendering, GPU-accelerated
 - **d3-force** — initial layout of realm positions
-- **markdown-it + KaTeX** — L0 rendering
+- **markdown-it + KaTeX** — content rendering
 - **pdf.js** (dynamic import) — PDF attachments
 - **postal-mime** — .eml parsing
 - **@vueuse/core** — keybindings, debouncing, window-size
@@ -70,7 +70,7 @@ HiveMem Java-Server (existing, unchanged for SP1 v1)
 
 - **`auth`** — token, role, login dialog. `login(token)` calls `hivemem_wake_up`, persists role to localStorage.
 - **`canvas`** — realms + cells + tunnels as graph data. `loadTopLevel()`, `loadRealm(id)`. Aggregate metrics (cell count per realm, tunnel density) computed once and cached.
-- **`cell`** — focused cell with L0-L3, facts, incoming + outgoing tunnels. Lazy-loaded via `hivemem_get_cell`. LRU-evicted at 50 entries.
+- **`cell`** — focused cell with content, summary, key_points, insight, facts, incoming + outgoing tunnels. Lazy-loaded via `hivemem_get_cell`. LRU-evicted at 50 entries.
 - **`reader`** — reader-mode state: active tab, PDF page/zoom, edit mode (SP4-reserved).
 - **`ui`** — panel visibility, search query, sphere-size metric, theme.
 
@@ -182,9 +182,9 @@ Panels slide out at 240-320 px; `Esc` closes; click outside closes; pin-icon kee
 
 Right slide-panel ~360 px wide, non-blocking. Sections:
 1. Title + realm/signal/topic chips + importance + timestamps
-2. L1 Summary
-3. L2 Key Points (bullet list)
-4. L3 Insight (quote-block style)
+2. Summary
+3. Key points (bullet list)
+4. Insight (quote-block style)
 5. Tunnels — grouped by relation, click jumps canvas focus
 6. Attachments — listed with type icon, click opens reader on that tab
 7. Facts — horizontal mini-timeline of `quick_facts` with `valid_from`/`valid_until` span
@@ -200,7 +200,7 @@ Fullscreen `<v-dialog fullscreen>`. Structure:
 
 Renderers:
 
-- **Markdown (L0)**: `markdown-it` + KaTeX + highlight.js; images/links allowed
+- **Markdown (content)**: `markdown-it` + KaTeX + highlight.js; images/links allowed
 - **PDF attachment**: `pdf.js` PDFViewer with scroll, zoom, text selection, search
 - **.eml attachment**: `postal-mime` parses → render headers, body (HTML or plain-text), quoted-replies collapsible, attachment list
 
@@ -235,7 +235,7 @@ The UI never assumes; it hides what the backend would deny anyway. Defense-in-de
 - Canvas sustains 60 fps with up to 500 visible nodes and 400 particles
 - Mock mode operates fully offline; all read tools return deterministic data with simulated latency
 - All four roles are correctly filtered in icon rail and panels
-- Scan mode shows L1 / L2 / L3 / tunnels / attachments correctly for any cell
+- Scan mode shows summary / key_points / insight / tunnels / attachments correctly for any cell
 - Reader mode successfully renders: Markdown (via markdown-it), a test PDF (via pdf.js), a test .eml file (via postal-mime)
 - Polling detects new cells and emits a toast with a reload link within 15 seconds of a change
 - `MockApiClient.subscribe()` emits test events every 15 / 30 seconds

@@ -14,6 +14,9 @@ import java.util.UUID;
 @Order(4)
 public class GetCellToolHandler implements ToolHandler {
 
+    private static final String[] INCLUDE_FIELDS =
+            CellFieldSelection.getCellIncludeFields().toArray(new String[0]);
+
     private final ReadToolService readToolService;
 
     public GetCellToolHandler(ReadToolService readToolService) {
@@ -27,13 +30,14 @@ public class GetCellToolHandler implements ToolHandler {
 
     @Override
     public String description() {
-        return "Single cell by UUID with all L0-L3 layers.";
+        return "Single cell by UUID with metadata by default; use include to request content or other optional fields.";
     }
 
     @Override
     public Map<String, Object> inputSchema() {
         return ToolInputSchema.object()
                 .requiredUuid("cell_id", "UUID of the cell to retrieve")
+                .optionalEnumStringList("include", "Optional fields to return. Defaults to summary, key_points, insight, tags, importance, source, actionability, status, created_at.", INCLUDE_FIELDS)
                 .build();
     }
 
@@ -48,6 +52,7 @@ public class GetCellToolHandler implements ToolHandler {
             throw new IllegalArgumentException("Missing cell_id");
         }
 
-        return readToolService.getCell(principal, UUID.fromString(cellId));
+        CellFieldSelection selection = CellFieldSelection.forGetCell(CellFieldSelection.parseInclude(arguments));
+        return readToolService.getCell(principal, UUID.fromString(cellId), selection);
     }
 }

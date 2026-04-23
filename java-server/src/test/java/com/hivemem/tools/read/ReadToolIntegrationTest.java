@@ -31,6 +31,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -247,14 +248,66 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_get_cell", Map.of("cell_id", "00000000-0000-0000-0000-000000000111"));
+        JsonNode content = callToolContent("hivemem_get_cell", Map.of(
+                "cell_id", "00000000-0000-0000-0000-000000000111",
+                "include", List.of("content", "tags", "key_points")
+        ));
         assertThat(content.path("id").asText()).isEqualTo("00000000-0000-0000-0000-000000000111");
-        assertThat(content.path("parent_id").isNull()).isTrue();
         assertThat(content.path("content").asText()).isEqualTo("The JVM migration plan");
         assertThat(content.path("tags").isArray()).isTrue();
         assertThat(content.path("tags")).isEmpty();
         assertThat(content.path("key_points").isArray()).isTrue();
         assertThat(content.path("key_points")).isEmpty();
+        assertThat(content.has("parent_id")).isFalse();
+        assertThat(content.has("created_by")).isFalse();
+    }
+
+    @Test
+    void getCellDefaultIncludesActionabilityAndStatus() throws Exception {
+        UUID cellId = UUID.fromString("00000000-0000-0000-0000-000000000112");
+        insertDrawer(
+                cellId,
+                null,
+                "Cell with workflow metadata",
+                "alpha", "facts", "jvm", "system",
+                3, "workflow cell", "reference",
+                "actionable", "pending", "writer",
+                OffsetDateTime.parse("2026-04-03T12:00:00Z"),
+                OffsetDateTime.parse("2026-04-03T12:00:00Z"),
+                null
+        );
+
+        JsonNode content = callToolContent("hivemem_get_cell", Map.of(
+                "cell_id", cellId.toString()
+        ));
+
+        assertThat(content.path("actionability").asText()).isEqualTo("actionable");
+        assertThat(content.path("status").asText()).isEqualTo("pending");
+        assertThat(content.has("parent_id")).isFalse();
+        assertThat(content.has("created_by")).isFalse();
+    }
+
+    @Test
+    void getCellReturnsParentIdAndCreatedByWhenRequested() throws Exception {
+        UUID cellId = UUID.fromString("00000000-0000-0000-0000-000000000113");
+        insertDrawer(
+                cellId,
+                null,
+                "Cell with attribution",
+                "alpha", "facts", "jvm", "system",
+                3, "attributed cell", "reference",
+                "archive", "committed", "writer",
+                OffsetDateTime.parse("2026-04-03T12:00:00Z"),
+                OffsetDateTime.parse("2026-04-03T12:00:00Z"),
+                null
+        );
+
+        JsonNode content = callToolContent("hivemem_get_cell", Map.of(
+                "cell_id", cellId.toString(),
+                "include", List.of("parent_id", "created_by")
+        ));
+
+        assertThat(content.path("parent_id").isNull()).isTrue();
         assertThat(content.path("created_by").asText()).isEqualTo("writer");
     }
 

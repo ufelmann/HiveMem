@@ -156,7 +156,7 @@ This is the most important design decision in the benchmark and it was almost mi
 
 | System | LLM curation happens … | Stored shape |
 |---|---|---|
-| **HiveMem (normal use)** | **Outside** the memory system, in the calling agent (Claude in the user's shell) | Already-curated L0 content + L1 summary + L2 key_points + L3 insight + optional `kg_add` fact triples + optional `add_tunnel` links |
+| **HiveMem (normal use)** | **Outside** the memory system, in the calling agent (Claude in the user's shell) | Already-curated content + summary + key_points + insight + optional `kg_add` fact triples + optional `add_tunnel` links |
 | Zep | **Inside** the library — `gpt-4o-mini-2024-07-18` builds a temporal knowledge graph from raw messages | Entities, temporal edges, invariants |
 | Mem0 | **Inside** — LLM extracts facts from raw messages | Facts + raw context |
 | MemGPT / Letta | **Inside** — LLM manages the memory hierarchy | Structured memory blocks |
@@ -166,7 +166,7 @@ All four use LLMs for ingestion. The only difference is which side of the librar
 ### Why a raw-dump adapter would be unfair to HiveMem
 
 A naive adapter that pipes LongMemEval turns straight into `hivemem_add_cell` would:
-- Store raw `"user: ...\nassistant: ..."` blobs as L0 `content`
+- Store raw `"user: ...\nassistant: ..."` blobs as `content`
 - Use the first 200 characters as a fake `summary`
 - Skip `key_points`, `insight`, `actionability` entirely
 - Skip fact extraction and tunnel creation
@@ -175,7 +175,7 @@ That is **not** how HiveMem is used in practice. It produces garbage embeddings 
 
 ### The adapter must include an LLM curation stage
 
-For a defensible benchmark, Task 4's adapter and Task 5's LLM client must cooperate: before each `hivemem_add_cell` call, a gpt-4o-mini curation pass reads the raw session and produces the L0-L3 layers plus an optional list of fact triples. This matches Zep's `gpt-4o-mini-2024-07-18` "graph construction" stage and keeps the benchmark honest.
+For a defensible benchmark, Task 4's adapter and Task 5's LLM client must cooperate: before each `hivemem_add_cell` call, a gpt-4o-mini curation pass reads the raw session and produces content, summary, key_points, insight, plus an optional list of fact triples. This matches Zep's `gpt-4o-mini-2024-07-18` "graph construction" stage and keeps the benchmark honest.
 
 Concretely, Task 5's `LlmClient` gets a second method alongside `generate_answer`:
 
@@ -204,8 +204,8 @@ Section 3.4's A/B adds a **third axis**: ingestion mode. Unlike my earlier stanc
 
 | Mode | Describes | Comparable to | Headline? |
 |---|---|---|---|
-| `raw` | Dump raw turns as L0, no L1-L3, no facts, no KG | **MemPalace raw** (96.6% R@5 claim), vanilla-ChromaDB baselines | Yes — reported as a separate headline |
-| `curated` (default) | gpt-4o-mini fills L0-L3 + extracts 0-3 facts per session | **Zep** (gpt-4o-mini graph construction), Mem0 (LLM extraction), MemMachine | Yes — primary headline |
+| `raw` | Dump raw turns as content, no summary/key_points/insight, no facts, no KG | **MemPalace raw** (96.6% R@5 claim), vanilla-ChromaDB baselines | Yes — reported as a separate headline |
+| `curated` (default) | gpt-4o-mini fills content, summary, key_points, insight + extracts 0-3 facts per session | **Zep** (gpt-4o-mini graph construction), Mem0 (LLM extraction), MemMachine | Yes — primary headline |
 | `curated+tunnels` | Above plus post-hoc `hivemem_add_tunnel` between semantically close cells | HiveMem-specific graph signal showcase | Optional, may overfit |
 
 **Always report both modes.** A big curated-over-raw delta means the LLM curation is doing real work; a small delta means either the dataset is too easy or your retrieval stack is already saturating the signal. Both findings are informative and neither is embarrassing. Just be explicit in the results JSON which mode produced which number.
@@ -505,7 +505,7 @@ hivemem:
 openai:
   api_key_env: "OPENAI_API_KEY"
   answer_model: "gpt-4o-mini"      # hypothesis generation
-  curation_model: "gpt-4o-mini"    # per-session L0-L3 curation + fact extraction
+  curation_model: "gpt-4o-mini"    # per-session content/summary/key_points/insight curation + fact extraction
 
 longmemeval:
   root: "data/longmemeval"         # path to cloned LongMemEval repo
@@ -895,7 +895,7 @@ def to_drawer_writes(case: Case, *, realm: str, signal: str = "conversations") -
 
 ### Task 5 — OpenAI client: curation + answer (TDD)
 
-Two responsibilities, one class: **curate a session into HiveMem-layered form** (L0-L3 + facts) during ingestion, and **generate a hypothesis** given context + question during querying. Judging stays delegated to the official `evaluate_qa.py` (Task 9).
+Two responsibilities, one class: **curate a session into HiveMem progressive fields plus facts** during ingestion, and **generate a hypothesis** given context + question during querying. Judging stays delegated to the official `evaluate_qa.py` (Task 9).
 
 Both use the same OpenAI client instance so we share one connection and one token cache.
 
@@ -991,9 +991,9 @@ Given one session of a user-assistant conversation, produce a structured
 JSON payload with four progressive layers plus an optional fact list.
 
 Return STRICT JSON with these keys:
-  "summary": 1-2 sentences capturing the session's content (L1)
-  "key_points": 2-5 short bullets highlighting specific facts (L2)
-  "insight": 1 sentence articulating what this session teaches (L3)
+  "summary": 1-2 sentences capturing the session's content
+  "key_points": 2-5 short bullets highlighting specific facts
+  "insight": 1 sentence articulating what this session teaches
   "actionability": one of "actionable", "reference", "someday", "archive"
   "facts": a list of {subject, predicate, object} triples. Extract at most 3.
            Only include facts that are unambiguously stated and likely to be
@@ -1072,7 +1072,7 @@ class LlmClient:
 
 ### Task 6 — Harness: per-case orchestration with curated ingestion (TDD)
 
-Composes loader + adapter + LLM curation + HiveMem writes + LLM answer. The `mode` parameter switches between `curated` (default, fair) and `raw` (baseline for ablation — dumps turns as L0 without any L1-L3 or facts).
+Composes loader + adapter + LLM curation + HiveMem writes + LLM answer. The `mode` parameter switches between `curated` (default, fair) and `raw` (baseline for ablation — dumps turns as content without any summary, key_points, insight, or facts).
 
 `HiveMemClient` also needs a `kg_add` method for Task 3 — add it now if missed earlier.
 
@@ -1183,7 +1183,7 @@ def run_case(
 
         if mode == "curated":
             curated = llm.curate_session(session_turns=turns, session_date=session_date)
-            drawer_content = w.content  # keep raw as L0; L1-L3 are the LLM's work
+            drawer_content = w.content  # keep raw as content; summary/key_points/insight are the LLM's work
             summary = curated.summary or w.summary
             key_points = curated.key_points or w.key_points
             insight = curated.insight or ""
@@ -1490,7 +1490,7 @@ Or (simpler) restart the HiveMem container with a fresh volume.
 
 ## 9. Budget and timing (realistic)
 
-Costs assume **`ingestion_mode: curated`** (default — gpt-4o-mini per session for L0-L3 + fact extraction) plus gpt-4o-mini for the answer hypothesis plus gpt-4o for the official judge.
+Costs assume **`ingestion_mode: curated`** (default — gpt-4o-mini per session for content/summary/key_points/insight + fact extraction) plus gpt-4o-mini for the answer hypothesis plus gpt-4o for the official judge.
 
 | Phase | Duration | Ingestion cost (gpt-4o-mini curation) | Answer+judge cost | Total LLM |
 |---|---|---|---|---|

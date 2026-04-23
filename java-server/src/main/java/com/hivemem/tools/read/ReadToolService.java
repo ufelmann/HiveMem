@@ -66,6 +66,7 @@ public class ReadToolService {
             String realm,
             String signal,
             String topic,
+            CellFieldSelection selection,
             double weightSemantic,
             double weightKeyword,
             double weightRecency,
@@ -73,7 +74,7 @@ public class ReadToolService {
             double weightPopularity
     ) {
         List<Float> queryVector = embeddingClient.encodeQuery(query);
-        List<CellSearchRepository.SearchCandidate> candidates = cellSearchRepository.searchCandidates(realm, signal, topic);
+        List<CellSearchRepository.SearchCandidate> candidates = cellSearchRepository.searchCandidates(realm, signal, topic, selection);
         long maxAccessCount = candidates.stream().mapToLong(CellSearchRepository.SearchCandidate::accessCount).max().orElse(0L);
         OffsetDateTime now = OffsetDateTime.now();
 
@@ -82,9 +83,10 @@ public class ReadToolService {
                         candidate,
                         query,
                         queryVector,
-                        candidate.embedding() == null ? embeddingClient.encodeDocument(candidate.content()) : candidate.embedding(),
+                        candidate.embedding() == null ? embeddingClient.encodeDocument(candidate.rankingContent()) : candidate.embedding(),
                         now,
                         maxAccessCount,
+                        selection,
                         weightSemantic,
                         weightKeyword,
                         weightRecency,
@@ -102,7 +104,11 @@ public class ReadToolService {
     }
 
     public Map<String, Object> getCell(AuthPrincipal principal, UUID cellId) {
-        Optional<Map<String, Object>> cell = cellReadRepository.findCell(cellId);
+        return getCell(principal, cellId, CellFieldSelection.forGetCell(null));
+    }
+
+    public Map<String, Object> getCell(AuthPrincipal principal, UUID cellId, CellFieldSelection selection) {
+        Optional<Map<String, Object>> cell = cellReadRepository.findCell(cellId, selection);
         cell.ifPresent(c -> adminToolService.logAccess(cellId, null, principal.name()));
         return cell.orElse(null);
     }
@@ -158,6 +164,7 @@ public class ReadToolService {
             List<Float> candidateVector,
             OffsetDateTime newest,
             long maxAccessCount,
+            CellFieldSelection selection,
             double weightSemantic,
             double weightKeyword,
             double weightRecency,
@@ -165,7 +172,7 @@ public class ReadToolService {
             double weightPopularity
     ) {
         double semantic = cosineSimilarity(queryVector, candidateVector);
-        double keyword = keywordScore(query, candidate.content(), candidate.summary(), candidate.tags());
+        double keyword = keywordScore(query, candidate.rankingContent(), candidate.rankingSummary(), candidate.rankingTags());
         double recency = recencyScore(candidate.createdAt(), newest);
         double importance = importanceScore(candidate.importance());
         double popularity = maxAccessCount <= 0L ? 0.0d : (double) candidate.accessCount() / (double) maxAccessCount;
@@ -175,17 +182,19 @@ public class ReadToolService {
                 + (importance * weightImportance)
                 + (popularity * weightPopularity);
 
-        Map<String, Object> row = new LinkedHashMap<>();
-        row.put("id", candidate.id().toString());
-        row.put("content", candidate.content());
-        row.put("summary", candidate.summary());
-        row.put("realm", candidate.realm());
-        row.put("signal", candidate.signal());
-        row.put("topic", candidate.topic());
-        row.put("tags", candidate.tags());
-        row.put("importance", candidate.importance());
-        row.put("created_at", candidate.createdAt() == null ? null : candidate.createdAt().toString());
-        row.put("valid_from", candidate.validFrom() == null ? null : candidate.validFrom().toString());
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("id", candidate.id().toString());
+        values.put("realm", candidate.realm());
+        values.put("signal", candidate.signal());
+        values.put("topic", candidate.topic());
+        values.put("content", candidate.content());
+        values.put("summary", candidate.summary());
+        values.put("tags", candidate.tags());
+        values.put("importance", candidate.importance());
+        values.put("created_at", candidate.createdAt() == null ? null : candidate.createdAt().toString());
+        values.put("valid_from", candidate.validFrom() == null ? null : candidate.validFrom().toString());
+        values.put("valid_until", candidate.validUntil() == null ? null : candidate.validUntil().toString());
+        Map<String, Object> row = new LinkedHashMap<>(selection.project(values));
         row.put("score_semantic", rounded(semantic));
         row.put("score_keyword", rounded(keyword));
         row.put("score_recency", rounded(recency));

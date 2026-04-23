@@ -20,11 +20,11 @@ This skill guides the agent in systematically persisting knowledge into the Hive
     - `Realm`: Top-level (e.g., `projects`, `private`).
     - `Signal`: Category (e.g., `software`, `finance`).
     - `Topic`: Specific topic (e.g., `hivemem-auth`).
-3.  **Store Cell:** Pass `dedupe_threshold` (e.g. `0.92`) to `hivemem_add_cell` so the server encodes once and refuses to insert if a near-duplicate exists. Fill all L0-L3 layers.
-    - L0: Content (Verbatim)
-    - L1: Summary
-    - L2: Key Points
-    - L3: Insight (The "Why")
+3.  **Store Cell:** Pass `dedupe_threshold` (e.g. `0.92`) to `hivemem_add_cell` so the server encodes once and refuses to insert if a near-duplicate exists. Fill all progressive fields.
+    - Content: Verbatim source material
+    - Summary: Short synopsis
+    - Key points: Main takeaways
+    - Insight: The "why"
 4.  **Extract KG Facts:** For every atomic fact (Subject-Predicate-Object), call `hivemem_kg_add`.
     - Use `on_conflict="return"` on `hivemem_kg_add` to detect contradicting active facts without inserting.
     - If conflict: Invalidate old fact with `hivemem_kg_invalidate` before adding new.

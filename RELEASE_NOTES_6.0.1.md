@@ -18,7 +18,7 @@ prevents the Flyway migration from failing on databases that carry pre-rename
     `hivemem_list_realms`, …). Tool count stays at 30.
 - **SP1 Knowledge-UI** — 2D PixiJS sphere canvas frontend (`knowledge-ui/`):
   - Vue 3 + Pinia + Vite + PixiJS; d3-force layout with Poisson-disk placement.
-  - Panels: realms, search, settings, scan (L1/L2/L3 + tunnels + facts), reader.
+  - Panels: realms, search, settings, scan (summary, key points, insight + tunnels + facts), reader.
   - Reader: markdown-it + KaTeX + highlight.js, PDF.js and `.eml` (postal-mime)
     tabs, fullscreen dialog.
   - Interactions: wheel zoom, drag pan, snap-focus tween, double-click opens
