@@ -253,8 +253,12 @@ function render() {
     const p = realmPos.get(r.name); if (!p) continue
     const sm = cellsByRealmSignal.get(r.name)
     // Use full signal set from realm metadata so positions exist even before the
-    // first cell of a signal arrives (stable layout as streams fill in).
-    const allSignals = (r.signals ?? []).map(s => s.name).sort((a, b) => a.localeCompare(b))
+    // first cell of a signal arrives (stable layout as streams fill in). Fall
+    // back to signals derived from loaded cells when metadata is flat.
+    const signalsFromMetadata = (r.signals ?? []).map(s => s.name)
+    const signalsFromCells = sm ? Array.from(sm.keys()) : []
+    const allSignals = Array.from(new Set([...signalsFromMetadata, ...signalsFromCells]))
+        .sort((a, b) => a.localeCompare(b))
     const ringR = allSignals.length > 1 ? Math.max(36, (realmSize.get(r.name) ?? 120) * 0.22) : 0
     allSignals.forEach((sigName, i) => {
       const angle = (i / allSignals.length) * Math.PI * 2 - Math.PI / 2
