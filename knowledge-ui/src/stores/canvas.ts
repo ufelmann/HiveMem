@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { useApi } from '../api/useApi'
 import type { Cell, Realm, Tunnel } from '../api/types'
 
+interface StreamResponse { cells: Cell[]; tunnels: Tunnel[]; done: boolean }
+
 export const useCanvasStore = defineStore('canvas', {
   state: () => ({
     realms: [] as Realm[],
@@ -23,13 +25,21 @@ export const useCanvasStore = defineStore('canvas', {
       this.cells = []
       this.tunnels = []
       this.loaded = true
-      this._streamAbort = true
-      this.streamActive = false
+      this._streamAbort = false
+      void this._longPoll()
     },
     async _longPoll() {
-      // Streaming endpoint is not implemented server-side; top-level load is static.
-      this._streamAbort = true
-      this.streamActive = false
+      this.streamActive = true
+      try {
+        const res = await fetch('/api/gui/stream', { credentials: 'same-origin' })
+        if (res.status === 401) { window.location.href = '/login'; return }
+        if (!res.ok) return
+        const resp = await res.json() as StreamResponse
+        if (resp.cells?.length) this.cells = [...this.cells, ...resp.cells]
+        if (resp.tunnels?.length) this.tunnels = [...this.tunnels, ...resp.tunnels]
+      } finally {
+        this.streamActive = false
+      }
     },
     stopStream() { this._streamAbort = true },
     setFocus(id: string | null) { this.focusedId = id },

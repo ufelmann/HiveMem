@@ -157,6 +157,10 @@ public class ReadToolService {
         return cellReadRepository.wakeUp();
     }
 
+    public Map<String, Object> streamSnapshot(int cellLimit, int tunnelLimit) {
+        return cellReadRepository.streamSnapshot(cellLimit, tunnelLimit);
+    }
+
     private static Map<String, Object> scoredResult(
             CellSearchRepository.SearchCandidate candidate,
             String query,
