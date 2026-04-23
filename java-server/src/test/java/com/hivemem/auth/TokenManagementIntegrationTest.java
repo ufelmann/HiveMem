@@ -250,7 +250,7 @@ class TokenManagementIntegrationTest {
     void readerSeesOnlyReadTools() {
         Set<String> readerTools = toolPermissionService.allowedTools(AuthRole.READER);
         assertThat(readerTools).contains("hivemem_search", "hivemem_wake_up",
-                "hivemem_list_realms", "hivemem_pending_approvals");
+                "hivemem_pending_approvals", "hivemem_list_agents");
         assertThat(readerTools).doesNotContain(
                 "hivemem_add_cell", "hivemem_kg_add",
                 "hivemem_approve_pending", "hivemem_health");
