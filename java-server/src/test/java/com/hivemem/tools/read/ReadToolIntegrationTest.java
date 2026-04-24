@@ -965,6 +965,27 @@ class ReadToolIntegrationTest {
     }
 
     @Test
+    void wakeUpReturnsArbitraryIdentityKeys() throws Exception {
+        insertIdentity("who-am-i", "Vu, Product Owner", 4,
+                OffsetDateTime.parse("2026-04-24T15:58:06Z"));
+        insertIdentity("current-focus", "MTV refactor, auth cleanup", 6,
+                OffsetDateTime.parse("2026-04-24T15:58:08Z"));
+        insertIdentity("my_custom_slot_42", "free-form content", 3,
+                OffsetDateTime.parse("2026-04-24T15:58:10Z"));
+
+        JsonNode wakeUp = callToolContent("wake_up", Map.of());
+
+        assertThat(wakeUp.path("who-am-i").path("content").asText())
+                .isEqualTo("Vu, Product Owner");
+        assertThat(wakeUp.path("who-am-i").path("token_count").asInt()).isEqualTo(4);
+        assertThat(wakeUp.path("current-focus").path("content").asText())
+                .isEqualTo("MTV refactor, auth cleanup");
+        assertThat(wakeUp.path("my_custom_slot_42").path("content").asText())
+                .isEqualTo("free-form content");
+        assertThat(wakeUp.path("l0_identity").isMissingNode()).isTrue();
+    }
+
+    @Test
     void readingListToolRejectsInvalidLimit() throws Exception {
         mockMvc.perform(post("/mcp")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
