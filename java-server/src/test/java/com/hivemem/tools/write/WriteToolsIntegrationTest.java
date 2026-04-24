@@ -1043,6 +1043,252 @@ class WriteToolsIntegrationTest {
                 .andExpect(jsonPath("$.error.message").value("Missing subject"));
     }
 
+    @Test
+    void writerCanReclassifyCellInPlace() throws Exception {
+        UUID cellId = UUID.fromString("00000000-0000-0000-0000-000000000800");
+        insertDrawer(cellId, null, "Reclass content", "old-realm", "facts", "old-topic", "system", 2,
+                "Summary", new String[]{"t"}, new String[]{"kp"}, "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-10T09:00:00Z"),
+                OffsetDateTime.parse("2026-04-10T09:00:00Z"),
+                null);
+
+        JsonNode content = callToolContent("writer-token", "hivemem_reclassify_cell", Map.of(
+                "cell_id", cellId.toString(),
+                "realm", "New Realm",
+                "topic", "New Topic",
+                "signal", "discoveries"
+        ));
+        assertThat(content.path("id").asText()).isEqualTo(cellId.toString());
+        assertThat(content.path("realm").asText()).isEqualTo("new-realm");
+        assertThat(content.path("topic").asText()).isEqualTo("new-topic");
+        assertThat(content.path("signal").asText()).isEqualTo("discoveries");
+
+        Record row = dslContext.fetchOne("""
+                SELECT realm, topic, signal, content, summary, valid_until, parent_id, status,
+                       (SELECT count(*) FROM cells) AS total
+                FROM cells
+                WHERE id = ?
+                """, cellId);
+        org.junit.jupiter.api.Assertions.assertEquals("new-realm", row.get("realm", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("new-topic", row.get("topic", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("discoveries", row.get("signal", String.class));
+        // content / summary untouched
+        org.junit.jupiter.api.Assertions.assertEquals("Reclass content", row.get("content", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals("Summary", row.get("summary", String.class));
+        // in-place: no new row, no valid_until, no parent
+        org.junit.jupiter.api.Assertions.assertNull(row.get("valid_until"));
+        org.junit.jupiter.api.Assertions.assertNull(row.get("parent_id"));
+        org.junit.jupiter.api.Assertions.assertEquals("committed", row.get("status", String.class));
+        org.junit.jupiter.api.Assertions.assertEquals(1L, row.get("total", Long.class));
+    }
+
+    @Test
+    void reclassifyCellPartialUpdateLeavesOtherFieldsUnchanged() throws Exception {
+        UUID cellId = UUID.fromString("00000000-0000-0000-0000-000000000801");
+        insertDrawer(cellId, null, "Partial", "orig-realm", "facts", "orig-topic", "system", 2,
+                "Summary", null, null, "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-10T10:00:00Z"),
+                OffsetDateTime.parse("2026-04-10T10:00:00Z"),
+                null);
+
+        JsonNode content = callToolContent("writer-token", "hivemem_reclassify_cell", Map.of(
+                "cell_id", cellId.toString(),
+                "realm", "moved-realm"
+        ));
+        assertThat(content.path("realm").asText()).isEqualTo("moved-realm");
+        assertThat(content.path("topic").asText()).isEqualTo("orig-topic");
+        assertThat(content.path("signal").asText()).isEqualTo("facts");
+    }
+
+    @Test
+    void reclassifyCellRejectsUnknownId() throws Exception {
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0","id":40,"method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_reclassify_cell",
+                                    "arguments":{
+                                      "cell_id":"00000000-0000-0000-0000-000000000899",
+                                      "realm":"x"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value(-32602))
+                .andExpect(jsonPath("$.error.message").value("cell not found"));
+    }
+
+    @Test
+    void reclassifyCellRejectsClosedVersion() throws Exception {
+        UUID cellId = UUID.fromString("00000000-0000-0000-0000-000000000802");
+        insertDrawer(cellId, null, "Closed", "r", "facts", "t", "system", 1,
+                "s", null, null, "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-10T11:00:00Z"),
+                OffsetDateTime.parse("2026-04-10T11:00:00Z"),
+                OffsetDateTime.parse("2026-04-10T12:00:00Z"));
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0","id":41,"method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_reclassify_cell",
+                                    "arguments":{
+                                      "cell_id":"00000000-0000-0000-0000-000000000802",
+                                      "realm":"x"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value(-32602))
+                .andExpect(jsonPath("$.error.message").value(
+                        "cell version is not current — target the live version"));
+    }
+
+    @Test
+    void reclassifyCellRejectsRejectedStatus() throws Exception {
+        UUID cellId = UUID.fromString("00000000-0000-0000-0000-000000000803");
+        insertDrawer(cellId, null, "Rejected", "r", "facts", "t", "system", 1,
+                "s", null, null, "rejected", "writer-1",
+                OffsetDateTime.parse("2026-04-10T13:00:00Z"),
+                OffsetDateTime.parse("2026-04-10T13:00:00Z"),
+                null);
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0","id":42,"method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_reclassify_cell",
+                                    "arguments":{
+                                      "cell_id":"00000000-0000-0000-0000-000000000803",
+                                      "realm":"x"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value(-32602))
+                .andExpect(jsonPath("$.error.message").value("cannot reclassify rejected cell"));
+    }
+
+    @Test
+    void reclassifyCellRequiresAtLeastOneClassificationField() throws Exception {
+        UUID cellId = UUID.fromString("00000000-0000-0000-0000-000000000804");
+        insertDrawer(cellId, null, "NoFields", "r", "facts", "t", "system", 1,
+                "s", null, null, "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-10T14:00:00Z"),
+                OffsetDateTime.parse("2026-04-10T14:00:00Z"),
+                null);
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0","id":43,"method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_reclassify_cell",
+                                    "arguments":{
+                                      "cell_id":"00000000-0000-0000-0000-000000000804"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value(-32602))
+                .andExpect(jsonPath("$.error.message").value(
+                        "at least one of realm/topic/signal required"));
+    }
+
+    @Test
+    void reclassifyCellRejectsInvalidSignal() throws Exception {
+        UUID cellId = UUID.fromString("00000000-0000-0000-0000-000000000805");
+        insertDrawer(cellId, null, "BadSig", "r", "facts", "t", "system", 1,
+                "s", null, null, "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-10T15:00:00Z"),
+                OffsetDateTime.parse("2026-04-10T15:00:00Z"),
+                null);
+
+        mockMvc.perform(post("/mcp")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "jsonrpc":"2.0","id":44,"method":"tools/call",
+                                  "params":{
+                                    "name":"hivemem_reclassify_cell",
+                                    "arguments":{
+                                      "cell_id":"00000000-0000-0000-0000-000000000805",
+                                      "signal":"nonsense"
+                                    }
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value(-32602))
+                .andExpect(jsonPath("$.error.message").value(
+                        "signal must be one of facts/events/discoveries/preferences/advice"));
+    }
+
+    @Test
+    void reclassifyCellPreservesEmbeddingTunnelsFactsReferences() throws Exception {
+        UUID cellId = UUID.fromString("00000000-0000-0000-0000-000000000810");
+        UUID otherCellId = UUID.fromString("00000000-0000-0000-0000-000000000811");
+        UUID factId = UUID.fromString("00000000-0000-0000-0000-000000000812");
+        UUID tunnelId = UUID.fromString("00000000-0000-0000-0000-000000000813");
+
+        insertDrawer(cellId, null, "Linked", "r", "facts", "t", "system", 1,
+                "s", null, null, "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-10T16:00:00Z"),
+                OffsetDateTime.parse("2026-04-10T16:00:00Z"),
+                null);
+        insertDrawer(otherCellId, null, "Target", "r", "facts", "t", "system", 1,
+                "s", null, null, "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-10T16:00:00Z"),
+                OffsetDateTime.parse("2026-04-10T16:00:00Z"),
+                null);
+        insertFact(factId, null, "subj", "pred", "obj", 1.0f, cellId, "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-10T16:00:00Z"),
+                OffsetDateTime.parse("2026-04-10T16:00:00Z"),
+                null);
+        insertTunnel(tunnelId, cellId, otherCellId, "related_to", "n", "committed", "writer-1",
+                OffsetDateTime.parse("2026-04-10T16:00:00Z"),
+                OffsetDateTime.parse("2026-04-10T16:00:00Z"),
+                null);
+
+        // capture embedding snapshot as text
+        String embeddingBefore = dslContext.fetchOne(
+                "SELECT embedding::text AS e FROM cells WHERE id = ?", cellId)
+                .get("e", String.class);
+
+        callToolContent("writer-token", "hivemem_reclassify_cell", Map.of(
+                "cell_id", cellId.toString(),
+                "realm", "new-r"
+        ));
+
+        String embeddingAfter = dslContext.fetchOne(
+                "SELECT embedding::text AS e FROM cells WHERE id = ?", cellId)
+                .get("e", String.class);
+        org.junit.jupiter.api.Assertions.assertEquals(embeddingBefore, embeddingAfter);
+
+        org.junit.jupiter.api.Assertions.assertEquals(cellId,
+                dslContext.fetchOne("SELECT source_id FROM facts WHERE id = ?", factId)
+                        .get("source_id", UUID.class));
+        org.junit.jupiter.api.Assertions.assertEquals(cellId,
+                dslContext.fetchOne("SELECT from_cell FROM tunnels WHERE id = ?", tunnelId)
+                        .get("from_cell", UUID.class));
+    }
+
     private void insertFact(
             UUID id,
             UUID parentId,

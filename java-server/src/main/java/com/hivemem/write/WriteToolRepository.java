@@ -353,6 +353,55 @@ public class WriteToolRepository {
         });
     }
 
+    public Map<String, Object> reclassifyCell(
+            UUID cellId,
+            String realm,
+            String topic,
+            String signal
+    ) {
+        return dslContext.transactionResult(configuration -> {
+            DSLContext tx = DSL.using(configuration);
+            Record existing = tx.fetchOne("""
+                    SELECT valid_until, status
+                    FROM cells
+                    WHERE id = ?
+                    FOR UPDATE
+                    """, cellId);
+            if (existing == null) {
+                throw new IllegalArgumentException("cell not found");
+            }
+            OffsetDateTime validUntil = existing.get("valid_until", OffsetDateTime.class);
+            if (validUntil != null) {
+                throw new IllegalArgumentException(
+                        "cell version is not current — target the live version");
+            }
+            String currentStatus = existing.get("status", String.class);
+            if ("rejected".equals(currentStatus)) {
+                throw new IllegalArgumentException("cannot reclassify rejected cell");
+            }
+
+            Record updated = tx.fetchOne("""
+                    UPDATE cells
+                    SET realm  = COALESCE(?, realm),
+                        topic  = COALESCE(?, topic),
+                        signal = COALESCE(?, signal)
+                    WHERE id = ?
+                      AND valid_until IS NULL
+                      AND status IN ('committed', 'pending')
+                    RETURNING id, realm, topic, signal
+                    """, realm, topic, signal, cellId);
+            if (updated == null) {
+                throw new IllegalArgumentException("cell not found, closed, or rejected");
+            }
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("id", uuidValue(updated, "id"));
+            result.put("realm", updated.get("realm", String.class));
+            result.put("topic", updated.get("topic", String.class));
+            result.put("signal", updated.get("signal", String.class));
+            return result;
+        });
+    }
+
     public List<Map<String, Object>> checkDuplicateCell(String vectorLiteral, double threshold) {
         List<Map<String, Object>> results = new ArrayList<>();
         for (Record row : dslContext.fetch(

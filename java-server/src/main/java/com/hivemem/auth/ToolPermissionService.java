@@ -47,6 +47,7 @@ public class ToolPermissionService {
             "hivemem_link_reference",
             "hivemem_remove_tunnel",
             "hivemem_revise_cell",
+            "hivemem_reclassify_cell",
             "hivemem_revise_fact",
             "hivemem_register_agent",
             "hivemem_diary_write",
