@@ -179,10 +179,15 @@ class ReadToolIntegrationTest {
         assertThat(results.get(0).path("score_total").isNumber()).isTrue();
         assertThat(results.get(0).path("score_semantic").isNumber()).isTrue();
         assertThat(results.get(0).path("score_keyword").isNumber()).isTrue();
-        assertThat(results).hasSize(2);
+        // plainto_tsquery uses AND semantics: only the cell containing both
+        // "semantic" and "oracle" matches. The "keyword oracle" cell lacks
+        // "semantic" and has no embedding, so the SQL hard filter excludes it.
+        assertThat(results).hasSize(1);
 
+        // Query "oracle" matches both cells; weighting favours importance, so
+        // the importance=1 cell ranks above the importance=5 cell.
         JsonNode weightedResults = callToolContent("hivemem_search", Map.of(
-                "query", "semantic oracle",
+                "query", "oracle",
                 "limit", 10,
                 "weight_semantic", 0.05,
                 "weight_keyword", 0.05,
@@ -190,6 +195,7 @@ class ReadToolIntegrationTest {
                 "weight_importance", 0.75,
                 "weight_popularity", 0.1
         ));
+        assertThat(weightedResults).hasSize(2);
         assertThat(weightedResults.get(0).path("id").asText()).isEqualTo("00000000-0000-0000-0000-000000000501");
     }
 
