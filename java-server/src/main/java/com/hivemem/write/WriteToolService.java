@@ -149,6 +149,44 @@ public class WriteToolService {
         return writeToolRepository.reviseCell(oldId, newContent, newSummary, embedding, principal.name(), status);
     }
 
+    public Map<String, Object> reclassifyCell(
+            AuthPrincipal principal,
+            UUID cellId,
+            String realm,
+            String topic,
+            String signal
+    ) {
+        if (realm == null && topic == null && signal == null) {
+            throw new IllegalArgumentException("at least one of realm/topic/signal required");
+        }
+        if (signal != null
+                && !signal.equals(SIGNAL_FACTS)
+                && !signal.equals(SIGNAL_EVENTS)
+                && !signal.equals(SIGNAL_DISCOVERIES)
+                && !signal.equals(SIGNAL_PREFERENCES)
+                && !signal.equals(SIGNAL_ADVICE)) {
+            throw new IllegalArgumentException(
+                    "signal must be one of facts/events/discoveries/preferences/advice");
+        }
+        String normalizedRealm = realm == null ? null : normalizeClassification(realm, "realm");
+        String normalizedTopic = topic == null ? null : normalizeClassification(topic, "topic");
+        return writeToolRepository.reclassifyCell(cellId, normalizedRealm, normalizedTopic, signal);
+    }
+
+    private static String normalizeClassification(String value, String field) {
+        String normalized = value.strip().toLowerCase().replace(' ', '-');
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException(field + " cannot be empty");
+        }
+        return normalized;
+    }
+
+    private static final String SIGNAL_FACTS = "facts";
+    private static final String SIGNAL_EVENTS = "events";
+    private static final String SIGNAL_DISCOVERIES = "discoveries";
+    private static final String SIGNAL_PREFERENCES = "preferences";
+    private static final String SIGNAL_ADVICE = "advice";
+
     public Map<String, Object> updateIdentity(String key, String content) {
         int tokenCount = content.length() / 4;
         writeToolRepository.upsertIdentity(key, content, tokenCount);
