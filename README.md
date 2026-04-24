@@ -265,62 +265,92 @@ Add this to your **user-level** CLAUDE.md (`~/.claude/CLAUDE.md`) so it applies 
 ```markdown
 ## HiveMem — Persistent Knowledge
 
-You have access to HiveMem via MCP. It is your long-term memory. Use it.
+You have a HiveMem MCP server available as your long-term memory. Use it
+aggressively.
 
-### Session start
-- Call `hivemem_wake_up` before your first response. No exceptions.
-- If the user asks about past work, decisions, or people: `hivemem_search` first, never guess.
+### Availability check
+
+HiveMem tools are named `mcp__hivemem__hivemem_*`. If those tools are not
+listed in the current session, skip this section entirely — do not mention
+HiveMem, do not apologize for its absence.
+
+### Session start (HARD RULE)
+
+Call `hivemem_wake_up` BEFORE your first response, BEFORE any other tool call,
+BEFORE reading any file. No exceptions beyond the availability check above.
 
 ### During conversation — search proactively
 
-Wake_up is a snapshot, not a subscription. As the conversation evolves, the relevant memory changes. Search actively when you see these signals:
+Wake_up is a snapshot, not a subscription. Search actively on these signals:
 
-- **Named reference.** When the user mentions a named project, person, decision, tool, or system that wasn't in wake_up context → call `hivemem_search` BEFORE answering. Even if you think you remember: verify.
-- **Temporal reference.** Phrases like "last week", "a while back", "we decided earlier", "remember when" → call `hivemem_search` (optionally with time filter), or `hivemem_time_machine` for point-in-time queries.
-- **Uncertainty.** If you are about to say "I'm not sure", "I don't recall exactly", or hedge with vague language → search FIRST. If the search returns nothing, then hedge.
-- **Topic drift.** When the conversation shifts to a new topic area not covered in wake_up → quick `hivemem_search` on the new topic keywords before engaging deeply.
-- **Entity-specific.** When the user asks about a specific entity (person, project, technology) → `hivemem_quick_facts` for fast entity lookup, `hivemem_search_kg` for relationship queries.
+- **Named reference.** User mentions a named project, person, decision, tool,
+  or system not in wake_up → `hivemem_search` BEFORE answering. Even if you
+  think you remember.
+- **Temporal reference.** "last week", "a while back", "we decided earlier",
+  "remember when" → `hivemem_search` with keywords, or `hivemem_time_machine`
+  for point-in-time queries.
+- **Uncertainty.** About to say "I'm not sure" or hedge? Search FIRST. Only
+  hedge if the search returns nothing.
+- **Topic drift.** Conversation shifts to a new area not in wake_up → quick
+  `hivemem_search` before engaging.
+- **Entity-specific.** User asks about a specific entity → `hivemem_quick_facts`
+  for facts, `hivemem_search_kg` for relationships.
 
-**Anti-patterns (do NOT do this):**
-- Answering from wake_up context when the topic wasn't in wake_up
-- Hedging instead of searching ("I think we discussed..." without verifying)
-- Batching searches for the end of the conversation
-- Assuming the user will prompt you to search — they won't
+**Anti-patterns — do NOT:**
+- Hedge instead of searching ("I think we discussed...")
+- Answer from wake_up when the topic wasn't in wake_up
+- Batch searches for session end
+- Wait for the user to prompt you
 
-**Rule of thumb.** One `hivemem_search` call is cheap (~100ms, no cost). Answering wrong or vague because you didn't search is expensive (user frustration, broken trust in memory system).
-
-**Examples — good proactive search:**
-- User: "What did we decide about the embedding model?" → call `hivemem_search("embedding model decision")` BEFORE answering, then cite the decision with its date.
-- User: "Remember that patch last week?" → call `hivemem_search("patch")` with a recent-date filter, or `hivemem_time_machine` for a point-in-time view.
-- User: "How does the auth flow work again?" → call `hivemem_quick_facts("auth")` first to pull structured facts, then `hivemem_search` for the design cell.
+One `hivemem_search` is cheap. Answering wrong is expensive.
 
 ### During work
-- After completing a significant action (bug fix, feature, design decision, deployment, investigation):
-  archive it immediately. Do not batch, do not wait for session end.
-- Archiving means: `add_cell` with `dedupe_threshold` (one embedding call handles the dedupe gate) → extract facts (`kg_add` with `on_conflict=return` to catch contradictions) → link related cells (`search` → `add_tunnel` for top 2-3 matches).
-- When facts change: `kg_invalidate` the old fact first, then `kg_add` the new one.
+
+After any significant action (bug fix, feature, design decision, deployment,
+investigation), archive immediately — do not batch, do not wait.
+
+Archiving:
+1. `hivemem_add_cell` with `dedupe_threshold: 0.92`
+2. `hivemem_kg_add` for each fact with `on_conflict=return` and `valid_from` set
+3. `hivemem_search` for related cells, then `hivemem_add_tunnel` for the top
+   2-3 matches
+
+When a fact changes: `hivemem_kg_invalidate` the old one FIRST, then
+`hivemem_kg_add` the new one.
 
 ### Session end
-- Before the session ends, archive anything significant that hasn't been stored yet.
-- When the user says "archive", "save", or "persist": archive the full session.
+
+Archive anything significant not yet stored. When the user says "archive",
+"save", or "persist": archive the full session.
 
 ### Classification
-- Use existing realms and signals. Call `list_realms` before inventing new ones (pass the `realm` param to get signals within a specific realm).
-- Realm = major life area, Signal = broad category, Topic = specific topic.
-- One cell per topic. Fill all four progressive fields: content, summary, key_points, insight.
-- Every fact needs `valid_from`. Knowledge without timestamps is useless.
+
+Realm = life/work area. Signal = nature of knowledge. Topic = specific subject.
+
+Call `hivemem_list` before inventing new realms — it navigates the
+Realm→Signal→Topic→Cell hierarchy (omit all params for realms, add `realm` for
+signals, add `realm`+`signal` for topics).
+
+**Signals:** `facts` | `events` | `discoveries` | `preferences` | `advice`
+
+Fill `content`, `summary`, `key_points`, and `insight` (when there is a
+non-obvious takeaway). Every fact needs `valid_from`.
 
 ### What to archive
-- Decisions and their rationale (the "why", not just the "what")
+- Decisions + the "why" (not just the "what")
 - Discoveries, surprises, lessons learned
-- Infrastructure changes, deployment details
-- Bug root causes and fixes
-- New patterns, conventions, or processes established
+- Infrastructure / deployment changes
+- Bug root causes + fixes
+- New patterns, conventions, processes
 
 ### What NOT to archive
-- Routine code changes that are obvious from git history
+- Routine code changes obvious from git history
 - Temporary debugging steps
-- Information already in the project's CLAUDE.md or README
+- Information already in project CLAUDE.md or README
+
+### Precedence
+
+Project-local CLAUDE.md overrides these rules if it says otherwise.
 ```
 
 **Why user-level?** Project-level CLAUDE.md files describe the *project*. HiveMem is *your* memory across all projects. A user-level CLAUDE.md ensures every agent, in every repo, knows to persist knowledge — even in repos that have never heard of HiveMem.
@@ -568,7 +598,7 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 2. `hivemem_search`: Semantic similarity + keyword search; returns metadata by default and supports `include` for optional fields.
 3. `hivemem_search_kg`: Knowledge graph triple lookup.
 4. `hivemem_get_cell`: Read a single knowledge item (logs access automatically); supports `include` for optional fields including content.
-5. `hivemem_list_realms`: Realms with counts; signals of one realm when `realm` is provided.
+5. `hivemem_list`: Navigate the Realm→Signal→Topic→Cell hierarchy (omit all params for realms; add `realm` for signals; add `realm`+`signal` for topics; add `realm`+`signal`+`topic` for cells).
 6. `hivemem_traverse`: Recursive graph traversal.
 7. `hivemem_quick_facts`: Context-aware facts about an entity.
 8. `hivemem_time_machine`: Historical knowledge retrieval.
