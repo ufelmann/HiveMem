@@ -23,7 +23,7 @@ public class ReadingListToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_reading_list";
+        return "reading_list";
     }
 
     @Override

@@ -20,23 +20,23 @@ export class MockApiClient implements ApiClient {
   constructor(config: MockConfig = {}) {
     this.config = { latencyMs: [50, 200], eventInterval: 15000, ...config }
     this.handlers = {
-      hivemem_status: () => this.status(),
-      hivemem_wake_up: () => this.wakeUp(),
+      status: () => this.status(),
+      wake_up: () => this.wakeUp(),
       hivemem_list_realms: (args: { realm?: string }) => this.listRealms(args),
-      hivemem_search: (args: { query?: string; limit?: number }) => this.search(args),
-      hivemem_get_cell: (args: { cell_id: string }) => this.getCell(args),
-      hivemem_quick_facts: (args: { subject: string }) => this.quickFacts(args),
-      hivemem_traverse: (args: { cell_id: string; depth?: number }) => this.traverse(args),
+      search: (args: { query?: string; limit?: number }) => this.search(args),
+      get_cell: (args: { cell_id: string }) => this.getCell(args),
+      quick_facts: (args: { subject: string }) => this.quickFacts(args),
+      traverse: (args: { cell_id: string; depth?: number }) => this.traverse(args),
       hivemem_list_tunnels: () => mockPalace.tunnels,
       hivemem_stream_next: (args: { since?: string; timeout_ms?: number }) => this.streamNext(args),
-      hivemem_reading_list: () => mockPalace.references ?? [],
-      hivemem_pending_approvals: () => [],
-      hivemem_list_agents: () => [],
-      hivemem_diary_read: () => [],
-      hivemem_get_blueprint: () => null,
-      hivemem_time_machine: () => mockPalace.facts,
-      hivemem_search_kg: () => mockPalace.facts,
-      hivemem_history: () => [],
+      reading_list: () => mockPalace.references ?? [],
+      pending_approvals: () => [],
+      list_agents: () => [],
+      diary_read: () => [],
+      get_blueprint: () => null,
+      time_machine: () => mockPalace.facts,
+      search_kg: () => mockPalace.facts,
+      history: () => [],
     }
   }
 

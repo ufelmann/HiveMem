@@ -28,7 +28,7 @@ public class ReclassifyCellToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_reclassify_cell";
+        return "reclassify_cell";
     }
 
     @Override

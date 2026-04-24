@@ -18,7 +18,7 @@ public class PendingApprovalsToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_pending_approvals";
+        return "pending_approvals";
     }
 
     @Override

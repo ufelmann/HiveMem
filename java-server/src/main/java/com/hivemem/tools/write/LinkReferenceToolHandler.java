@@ -24,7 +24,7 @@ public class LinkReferenceToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_link_reference";
+        return "link_reference";
     }
 
     @Override

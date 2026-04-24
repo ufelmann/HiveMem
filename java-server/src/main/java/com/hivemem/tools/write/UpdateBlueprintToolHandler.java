@@ -25,7 +25,7 @@ public class UpdateBlueprintToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_update_blueprint";
+        return "update_blueprint";
     }
 
     @Override

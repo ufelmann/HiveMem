@@ -26,8 +26,8 @@ flag, and the remaining UI rename stragglers landed since 6.0.1.
 
 ### Breaking Changes from 6.0.x
 
-Clients that called `hivemem_update_blueprint` with the old argument names or
-consumed `hivemem_get_blueprint` output fields must switch to the new names:
+Clients that called `update_blueprint` with the old argument names or
+consumed `get_blueprint` output fields must switch to the new names:
 
 | Old | New |
 |---|---|
@@ -42,8 +42,8 @@ No other MCP tool signatures changed.
 2. `docker pull ghcr.io/ufelmann/hivemem:6.1.0`
 3. Restart with the new image — Flyway runs `V0011` automatically. The
    migration is idempotent and safe to re-run.
-4. Update any client code that calls `hivemem_update_blueprint` or reads
-   `hivemem_get_blueprint` output to use `signal_order` / `key_cells`.
+4. Update any client code that calls `update_blueprint` or reads
+   `get_blueprint` output to use `signal_order` / `key_cells`.
 
 ### Docker
 

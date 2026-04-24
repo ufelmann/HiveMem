@@ -276,7 +276,7 @@ import type { StatusSummary, Cell } from '../../src/api/types'
 describe('MockApiClient', () => {
   it('returns deterministic status', async () => {
     const c = new MockApiClient()
-    const s = await c.call<StatusSummary>('hivemem_status')
+    const s = await c.call<StatusSummary>('status')
     expect(s.drawer_count).toBeGreaterThan(0)
     expect(s.wing_count).toBeGreaterThan(0)
     expect(typeof s.last_activity).toBe('string')
@@ -284,15 +284,15 @@ describe('MockApiClient', () => {
 
   it('search returns cells array', async () => {
     const c = new MockApiClient()
-    const res = await c.call<Cell[]>('hivemem_search', { query: '' })
+    const res = await c.call<Cell[]>('search', { query: '' })
     expect(Array.isArray(res)).toBe(true)
     expect(res.length).toBeGreaterThan(0)
   })
 
   it('get_cell returns cell with matching id', async () => {
     const c = new MockApiClient()
-    const all = await c.call<Cell[]>('hivemem_search', { query: '' })
-    const d = await c.call<Cell>('hivemem_get_cell', { id: all[0].id })
+    const all = await c.call<Cell[]>('search', { query: '' })
+    const d = await c.call<Cell>('get_cell', { id: all[0].id })
     expect(d.id).toBe(all[0].id)
   })
 
@@ -471,12 +471,12 @@ describe('HttpApiClient', () => {
       expect(headers['Authorization']).toBe('Bearer test-token')
       const body = JSON.parse(init.body as string)
       expect(body.method).toBe('tools/call')
-      expect(body.params.name).toBe('hivemem_status')
+      expect(body.params.name).toBe('status')
       return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { drawer_count: 42 } }))
     })
     vi.stubGlobal('fetch', fetchMock)
     const c = new HttpApiClient({ endpoint: '/mcp', token: 'test-token' })
-    const r = await c.call<{ drawer_count: number }>('hivemem_status')
+    const r = await c.call<{ drawer_count: number }>('status')
     expect(r.drawer_count).toBe(42)
   })
 
@@ -563,7 +563,7 @@ export class HttpApiClient implements ApiClient {
     const interval = this.config.pollMs ?? 10_000
     this.timer = setInterval(async () => {
       try {
-        const s = await this.call<StatusSummary>('hivemem_status')
+        const s = await this.call<StatusSummary>('status')
         if (this.lastActivity && s.last_activity !== this.lastActivity) {
           this.subscribers.forEach(sub => sub({ type: 'status', last_activity: s.last_activity }))
         }
@@ -710,7 +710,7 @@ export const useAuthStore = defineStore('auth', {
       this.token = token
       resetApi()
       const api = useApi()
-      const w = await api.call<{ role: Role; identity: string }>('hivemem_wake_up')
+      const w = await api.call<{ role: Role; identity: string }>('wake_up')
       this.role = w.role; this.identity = w.identity
     },
     logout() {
@@ -774,7 +774,7 @@ export const useCanvasStore = defineStore('canvas', {
       const api = useApi()
       const [realms, cells] = await Promise.all([
         api.call<Realm[]>('hivemem_list_realms'),
-        api.call<Cell[]>('hivemem_search', { query: '', limit: 500 })
+        api.call<Cell[]>('search', { query: '', limit: 500 })
       ])
       this.realms = realms; this.cells = cells; this.loaded = true
       try { this.tunnels = await api.call<Tunnel[]>('hivemem_list_tunnels') }
@@ -811,10 +811,10 @@ export const useCellStore = defineStore('cell', {
         if (!this.cache.has(id)) {
           const api = useApi()
           const [cell, tunnels] = await Promise.all([
-            api.call<Cell>('hivemem_get_cell', { id }),
-            api.call<Tunnel[]>('hivemem_traverse', { cell_id: id, depth: 1 }).catch(() => [])
+            api.call<Cell>('get_cell', { id }),
+            api.call<Tunnel[]>('traverse', { cell_id: id, depth: 1 }).catch(() => [])
           ])
-          const facts = await api.call<Fact[]>('hivemem_quick_facts', { subject: cell.title }).catch(() => [])
+          const facts = await api.call<Fact[]>('quick_facts', { subject: cell.title }).catch(() => [])
           this.cache.set(id, { cell, facts, tunnels })
           if (this.cache.size > 50) {
             const first = this.cache.keys().next().value
@@ -1274,7 +1274,7 @@ watch(q, v => {
   if (timer) clearTimeout(timer)
   timer = setTimeout(async () => {
     loading.value = true
-    try { results.value = await useApi().call<Cell[]>('hivemem_search', { query: v, limit: 50 }) }
+    try { results.value = await useApi().call<Cell[]>('search', { query: v, limit: 50 }) }
     finally { loading.value = false }
   }, 180) as unknown as number
 })

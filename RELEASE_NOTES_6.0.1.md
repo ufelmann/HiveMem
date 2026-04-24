@@ -14,7 +14,7 @@ prevents the Flyway migration from failing on databases that carry pre-rename
     transactional migration with preflight guard and row-count check.
   - Unchanged: `tunnel`, `blueprint`, `reference`, `fact`, `agent`, `agent_diary`,
     `identity`, `api_token`, `access_log`, embedding, auth role names.
-  - MCP tool surface renamed to match (`hivemem_add_cell`, `hivemem_get_cell`,
+  - MCP tool surface renamed to match (`add_cell`, `get_cell`,
     `hivemem_list_realms`, …). Tool count stays at 30.
 - **SP1 Knowledge-UI** — 2D PixiJS sphere canvas frontend (`knowledge-ui/`):
   - Vue 3 + Pinia + Vite + PixiJS; d3-force layout with Poisson-disk placement.

@@ -24,7 +24,7 @@ public class TraverseToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_traverse";
+        return "traverse";
     }
 
     @Override

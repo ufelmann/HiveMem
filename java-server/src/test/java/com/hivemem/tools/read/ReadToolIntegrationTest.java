@@ -104,28 +104,28 @@ class ReadToolIntegrationTest {
                                 {"jsonrpc":"2.0","id":1,"method":"tools/list"}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.tools[0].name").value("hivemem_status"))
-                .andExpect(jsonPath("$.result.tools[1].name").value("hivemem_search"))
-                .andExpect(jsonPath("$.result.tools[2].name").value("hivemem_search_kg"))
-                .andExpect(jsonPath("$.result.tools[3].name").value("hivemem_get_cell"))
-                .andExpect(jsonPath("$.result.tools[4].name").value("hivemem_list"))
-                .andExpect(jsonPath("$.result.tools[5].name").value("hivemem_traverse"))
-                .andExpect(jsonPath("$.result.tools[6].name").value("hivemem_quick_facts"))
-                .andExpect(jsonPath("$.result.tools[7].name").value("hivemem_time_machine"))
-                .andExpect(jsonPath("$.result.tools[8].name").value("hivemem_history"))
-                .andExpect(jsonPath("$.result.tools[9].name").value("hivemem_pending_approvals"))
-                .andExpect(jsonPath("$.result.tools[10].name").value("hivemem_reading_list"))
-                .andExpect(jsonPath("$.result.tools[11].name").value("hivemem_list_agents"))
-                .andExpect(jsonPath("$.result.tools[12].name").value("hivemem_diary_read"))
-                .andExpect(jsonPath("$.result.tools[13].name").value("hivemem_get_blueprint"))
-                .andExpect(jsonPath("$.result.tools[14].name").value("hivemem_wake_up"));
+                .andExpect(jsonPath("$.result.tools[0].name").value("status"))
+                .andExpect(jsonPath("$.result.tools[1].name").value("search"))
+                .andExpect(jsonPath("$.result.tools[2].name").value("search_kg"))
+                .andExpect(jsonPath("$.result.tools[3].name").value("get_cell"))
+                .andExpect(jsonPath("$.result.tools[4].name").value("list"))
+                .andExpect(jsonPath("$.result.tools[5].name").value("traverse"))
+                .andExpect(jsonPath("$.result.tools[6].name").value("quick_facts"))
+                .andExpect(jsonPath("$.result.tools[7].name").value("time_machine"))
+                .andExpect(jsonPath("$.result.tools[8].name").value("history"))
+                .andExpect(jsonPath("$.result.tools[9].name").value("pending_approvals"))
+                .andExpect(jsonPath("$.result.tools[10].name").value("reading_list"))
+                .andExpect(jsonPath("$.result.tools[11].name").value("list_agents"))
+                .andExpect(jsonPath("$.result.tools[12].name").value("diary_read"))
+                .andExpect(jsonPath("$.result.tools[13].name").value("get_blueprint"))
+                .andExpect(jsonPath("$.result.tools[14].name").value("wake_up"));
     }
 
     @Test
     void statusToolReturnsCountsAndWingsFromSql() throws Exception {
         seedStatusRows();
 
-        JsonNode content = callToolContent("hivemem_status", Map.of());
+        JsonNode content = callToolContent("status", Map.of());
         assertThat(content.path("cells").asInt()).isEqualTo(2);
         assertThat(content.path("facts").asInt()).isEqualTo(2);
         assertThat(content.path("tunnels").asInt()).isEqualTo(1);
@@ -174,14 +174,14 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode results = callToolContent("hivemem_search", Map.of("query", "semantic oracle", "limit", 10));
+        JsonNode results = callToolContent("search", Map.of("query", "semantic oracle", "limit", 10));
         assertThat(results.get(0).path("id").asText()).isEqualTo("00000000-0000-0000-0000-000000000501");
         assertThat(results.get(0).path("score_total").isNumber()).isTrue();
         assertThat(results.get(0).path("score_semantic").isNumber()).isTrue();
         assertThat(results.get(0).path("score_keyword").isNumber()).isTrue();
         assertThat(results).hasSize(2);
 
-        JsonNode weightedResults = callToolContent("hivemem_search", Map.of(
+        JsonNode weightedResults = callToolContent("search", Map.of(
                 "query", "semantic oracle",
                 "limit", 10,
                 "weight_semantic", 0.05,
@@ -197,7 +197,7 @@ class ReadToolIntegrationTest {
     void searchKgToolReturnsCommittedFactsOnly() throws Exception {
         seedStatusRows();
 
-        JsonNode content = callToolContent("hivemem_search_kg", Map.of("subject", "HiveMem", "limit", 10));
+        JsonNode content = callToolContent("search_kg", Map.of("subject", "HiveMem", "limit", 10));
         assertThat(content.get(0).path("subject").asText()).isEqualTo("HiveMem");
         assertThat(content.get(0).path("predicate").asText()).isEqualTo("runs on");
         assertThat(content.get(0).path("object").asText()).isEqualTo("PostgreSQL");
@@ -216,7 +216,7 @@ class ReadToolIntegrationTest {
                                   "id":31,
                                   "method":"tools/call",
                                   "params":{
-                                    "name":"hivemem_search_kg",
+                                    "name":"search_kg",
                                     "arguments":{"subject":"HiveMem","limit":1000}
                                   }
                                 }
@@ -248,7 +248,7 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_get_cell", Map.of(
+        JsonNode content = callToolContent("get_cell", Map.of(
                 "cell_id", "00000000-0000-0000-0000-000000000111",
                 "include", List.of("content", "tags", "key_points")
         ));
@@ -277,7 +277,7 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_get_cell", Map.of(
+        JsonNode content = callToolContent("get_cell", Map.of(
                 "cell_id", cellId.toString()
         ));
 
@@ -302,7 +302,7 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_get_cell", Map.of(
+        JsonNode content = callToolContent("get_cell", Map.of(
                 "cell_id", cellId.toString(),
                 "include", List.of("parent_id", "created_by")
         ));
@@ -313,7 +313,7 @@ class ReadToolIntegrationTest {
 
     @Test
     void getDrawerToolReturnsNullWhenDrawerDoesNotExist() throws Exception {
-        JsonNode content = callToolContent("hivemem_get_cell", Map.of("cell_id", "00000000-0000-0000-0000-000000000999"));
+        JsonNode content = callToolContent("get_cell", Map.of("cell_id", "00000000-0000-0000-0000-000000000999"));
         assertThat(content.isNull()).isTrue();
     }
 
@@ -357,7 +357,7 @@ class ReadToolIntegrationTest {
     void listToolNoParamsReturnsRealmsWithCellCount() throws Exception {
         seedStatusRows();
 
-        JsonNode content = callToolContent("hivemem_list", Map.of());
+        JsonNode content = callToolContent("list", Map.of());
         assertThat(content.get(0).path("value").asText()).isEqualTo("alpha");
         assertThat(content.get(0).path("label").asText()).isEqualTo("alpha");
         assertThat(content.get(0).path("cell_count").asInt()).isEqualTo(1);
@@ -388,7 +388,7 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_list", Map.of("realm", "alpha"));
+        JsonNode content = callToolContent("list", Map.of("realm", "alpha"));
         assertThat(content.get(0).path("value").asText()).isEqualTo("events");
         assertThat(content.get(0).path("label").asText()).isEqualTo("events");
         assertThat(content.get(0).path("cell_count").asInt()).isEqualTo(1);
@@ -419,7 +419,7 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_list", Map.of("realm", "alpha", "signal", "facts"));
+        JsonNode content = callToolContent("list", Map.of("realm", "alpha", "signal", "facts"));
         assertThat(content.get(0).path("value").asText()).isEqualTo("archive");
         assertThat(content.get(0).path("label").asText()).isEqualTo("archive");
         assertThat(content.get(0).path("cell_count").asInt()).isEqualTo(1);
@@ -432,7 +432,7 @@ class ReadToolIntegrationTest {
     void listToolWithRealmSignalTopicReturnsCellMetadata() throws Exception {
         seedStatusRows();
 
-        JsonNode content = callToolContent("hivemem_list", Map.of("realm", "alpha", "signal", "facts", "topic", "milestones"));
+        JsonNode content = callToolContent("list", Map.of("realm", "alpha", "signal", "facts", "topic", "milestones"));
         assertThat(content).hasSize(1);
         assertThat(content.get(0).path("id").asText()).isEqualTo("00000000-0000-0000-0000-000000000001");
         assertThat(content.get(0).path("summary").asText()).isEqualTo("Alpha summary");
@@ -450,7 +450,7 @@ class ReadToolIntegrationTest {
                                   "jsonrpc":"2.0",
                                   "id":60,
                                   "method":"tools/call",
-                                  "params":{"name":"hivemem_list","arguments":{"signal":"facts"}}
+                                  "params":{"name":"list","arguments":{"signal":"facts"}}
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
@@ -468,7 +468,7 @@ class ReadToolIntegrationTest {
                                   "jsonrpc":"2.0",
                                   "id":61,
                                   "method":"tools/call",
-                                  "params":{"name":"hivemem_list","arguments":{"realm":"alpha","topic":"milestones"}}
+                                  "params":{"name":"list","arguments":{"realm":"alpha","topic":"milestones"}}
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
@@ -511,7 +511,7 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_traverse", Map.of("cell_id", "00000000-0000-0000-0000-000000000002", "max_depth", 1));
+        JsonNode content = callToolContent("traverse", Map.of("cell_id", "00000000-0000-0000-0000-000000000002", "max_depth", 1));
         assertThat(content.get(0).path("from_cell").asText()).isEqualTo("00000000-0000-0000-0000-000000000001");
         assertThat(content.get(0).path("to_cell").asText()).isEqualTo("00000000-0000-0000-0000-000000000002");
         assertThat(content.get(0).path("relation").asText()).isEqualTo("related_to");
@@ -539,7 +539,7 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_quick_facts", Map.of("entity", "HiveMem"));
+        JsonNode content = callToolContent("quick_facts", Map.of("entity", "HiveMem"));
         assertThat(content).hasSize(3);
         assertThat(content.get(0).path("subject").asText()).isEqualTo("Viktor");
         assertThat(content.get(0).path("object").asText()).isEqualTo("HiveMem");
@@ -551,12 +551,12 @@ class ReadToolIntegrationTest {
     void timeMachineToolReturnsCurrentAndHistoricalSnapshots() throws Exception {
         seedAliceHistoryRows();
 
-        JsonNode current = callToolContent("hivemem_time_machine", Map.of("subject", "Alice", "limit", 10));
+        JsonNode current = callToolContent("time_machine", Map.of("subject", "Alice", "limit", 10));
         assertThat(current).hasSize(2);
         assertThat(current.get(0).path("object").asText()).isEqualTo("New City");
         assertThat(current.get(1).path("object").asText()).isEqualTo("Acme");
 
-        JsonNode historical = callToolContent("hivemem_time_machine", Map.of(
+        JsonNode historical = callToolContent("time_machine", Map.of(
                 "subject", "Alice",
                 "as_of", "2025-09-01T00:00:00Z",
                 "limit", 10
@@ -608,7 +608,7 @@ class ReadToolIntegrationTest {
         );
 
         // Knowledge cutoff BETWEEN the two ingestion times: only original is visible.
-        JsonNode midKnowledge = callToolContent("hivemem_time_machine", Map.of(
+        JsonNode midKnowledge = callToolContent("time_machine", Map.of(
                 "subject", "Bob",
                 "as_of", "2025-06-01T00:00:00Z",
                 "as_of_ingestion", "2025-08-01T00:00:00Z",
@@ -619,7 +619,7 @@ class ReadToolIntegrationTest {
         assertThat(midKnowledge.get(0).path("ingested_at").asText()).isNotBlank();
 
         // Knowledge cutoff AFTER the revision: both visible for the same effective time.
-        JsonNode lateKnowledge = callToolContent("hivemem_time_machine", Map.of(
+        JsonNode lateKnowledge = callToolContent("time_machine", Map.of(
                 "subject", "Bob",
                 "as_of", "2025-06-01T00:00:00Z",
                 "as_of_ingestion", "2026-03-01T00:00:00Z",
@@ -647,7 +647,7 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_history", Map.of(
+        JsonNode content = callToolContent("history", Map.of(
                 "type", "cell",
                 "id", "00000000-0000-0000-0000-000000000802"
         ));
@@ -697,7 +697,7 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_history", Map.of("type", "cell", "id", "00000000-0000-0000-0000-000000000302"));
+        JsonNode content = callToolContent("history", Map.of("type", "cell", "id", "00000000-0000-0000-0000-000000000302"));
         assertThat(content).hasSize(2);
         assertThat(content.get(0).path("summary").asText()).isEqualTo("Drawer V1");
         assertThat(content.get(1).path("summary").asText()).isEqualTo("Drawer V2");
@@ -738,7 +738,7 @@ class ReadToolIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("hivemem_history", Map.of("type", "fact", "id", "00000000-0000-0000-0000-000000000402"));
+        JsonNode content = callToolContent("history", Map.of("type", "fact", "id", "00000000-0000-0000-0000-000000000402"));
         assertThat(content).hasSize(2);
         assertThat(content.get(0).path("object").asText()).isEqualTo("Camunda7");
         assertThat(content.get(1).path("object").asText()).isEqualTo("Temporal");
@@ -757,7 +757,7 @@ class ReadToolIntegrationTest {
                                   "id":50,
                                   "method":"tools/call",
                                   "params":{
-                                    "name":"hivemem_history",
+                                    "name":"history",
                                     "arguments":{"type":"bogus","id":"00000000-0000-0000-0000-000000000001"}
                                   }
                                 }
@@ -772,7 +772,7 @@ class ReadToolIntegrationTest {
     void pendingApprovalsToolReturnsPendingRowsFromView() throws Exception {
         seedStatusRows();
 
-        JsonNode content = callToolContent("hivemem_pending_approvals", Map.of());
+        JsonNode content = callToolContent("pending_approvals", Map.of());
         assertThat(content).hasSize(3);
         assertThat(content.get(0).path("type").asText()).isEqualTo("cell");
         assertThat(content.get(0).path("description").asText()).isEqualTo("Pending summary");
@@ -846,7 +846,7 @@ class ReadToolIntegrationTest {
                 OffsetDateTime.parse("2026-04-06T13:40:00Z")
         );
 
-        JsonNode content = callToolContent("hivemem_reading_list", Map.of());
+        JsonNode content = callToolContent("reading_list", Map.of());
         assertThat(content).hasSize(2);
         assertThat(content.get(0).path("title").asText()).isEqualTo("PostgreSQL guide");
         assertThat(content.get(0).path("linked_cells").asInt()).isEqualTo(1);
@@ -855,7 +855,7 @@ class ReadToolIntegrationTest {
         assertThat(content.get(1).path("linked_cells").asInt()).isEqualTo(2);
         assertThat(content.get(1).path("status").asText()).isEqualTo("reading");
 
-        JsonNode filtered = callToolContent("hivemem_reading_list", Map.of("ref_type", "article"));
+        JsonNode filtered = callToolContent("reading_list", Map.of("ref_type", "article"));
         assertThat(filtered).hasSize(1);
         assertThat(filtered.get(0).path("title").asText()).isEqualTo("Java migration notes");
         assertThat(filtered.get(0).path("ref_type").asText()).isEqualTo("article");
@@ -929,35 +929,35 @@ class ReadToolIntegrationTest {
         insertIdentity("l0_identity", "You are Alice.", 3, OffsetDateTime.parse("2026-04-07T14:00:00Z"));
         insertIdentity("l1_critical", "Remember the migration plan.", 4, OffsetDateTime.parse("2026-04-07T14:05:00Z"));
 
-        JsonNode agents = callToolContent("hivemem_list_agents", Map.of());
+        JsonNode agents = callToolContent("list_agents", Map.of());
         assertThat(agents).hasSize(2);
         assertThat(agents.get(0).path("name").asText()).isEqualTo("alpha-agent");
         assertThat(agents.get(1).path("name").asText()).isEqualTo("beta-agent");
 
-        JsonNode diary = callToolContent("hivemem_diary_read", Map.of("agent", "alpha-agent"));
+        JsonNode diary = callToolContent("diary_read", Map.of("agent", "alpha-agent"));
         assertThat(diary).hasSize(2);
         assertThat(diary.get(0).path("entry").asText()).isEqualTo("Second diary entry");
         assertThat(diary.get(1).path("entry").asText()).isEqualTo("First diary entry");
 
-        JsonNode diaryLimited = callToolContent("hivemem_diary_read", Map.of("agent", "alpha-agent", "last_n", 1));
+        JsonNode diaryLimited = callToolContent("diary_read", Map.of("agent", "alpha-agent", "last_n", 1));
         assertThat(diaryLimited).hasSize(1);
         assertThat(diaryLimited.get(0).path("entry").asText()).isEqualTo("Second diary entry");
 
-        JsonNode blueprint = callToolContent("hivemem_get_blueprint", Map.of("realm", "alpha"));
+        JsonNode blueprint = callToolContent("get_blueprint", Map.of("realm", "alpha"));
         assertThat(blueprint).hasSize(2);
         assertThat(blueprint.get(0).path("id").asText()).isEqualTo(blueprintTwo.toString());
         assertThat(blueprint.get(0).path("signal_order").get(2).asText()).isEqualTo("archive");
         assertThat(blueprint.get(1).path("id").asText()).isEqualTo(blueprintOne.toString());
         assertThat(blueprint.get(1).path("key_cells").get(0).asText()).isEqualTo("00000000-0000-0000-0000-000000000001");
 
-        JsonNode allBlueprints = callToolContent("hivemem_get_blueprint", Map.of());
+        JsonNode allBlueprints = callToolContent("get_blueprint", Map.of());
         assertThat(allBlueprints).hasSize(3);
         assertThat(allBlueprints.get(0).path("id").asText()).isEqualTo(blueprintTwo.toString());
         assertThat(allBlueprints.get(1).path("id").asText()).isEqualTo(blueprintOne.toString());
         assertThat(allBlueprints.get(2).path("id").asText()).isEqualTo(blueprintThree.toString());
         assertThat(allBlueprints.get(2).path("realm").asText()).isEqualTo("beta");
 
-        JsonNode wakeUp = callToolContent("hivemem_wake_up", Map.of());
+        JsonNode wakeUp = callToolContent("wake_up", Map.of());
         assertThat(wakeUp.path("l0_identity").path("content").asText()).isEqualTo("You are Alice.");
         assertThat(wakeUp.path("l0_identity").path("token_count").asInt()).isEqualTo(3);
         assertThat(wakeUp.path("l1_critical").path("content").asText()).isEqualTo("Remember the migration plan.");
@@ -974,7 +974,7 @@ class ReadToolIntegrationTest {
                                   "jsonrpc":"2.0",
                                   "id":20,
                                   "method":"tools/call",
-                                  "params":{"name":"hivemem_reading_list","arguments":{"limit":0}}
+                                  "params":{"name":"reading_list","arguments":{"limit":0}}
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
@@ -989,7 +989,7 @@ class ReadToolIntegrationTest {
                                   "jsonrpc":"2.0",
                                   "id":201,
                                   "method":"tools/call",
-                                  "params":{"name":"hivemem_reading_list","arguments":{"limit":101}}
+                                  "params":{"name":"reading_list","arguments":{"limit":101}}
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
@@ -1004,7 +1004,7 @@ class ReadToolIntegrationTest {
                                   "jsonrpc":"2.0",
                                   "id":202,
                                   "method":"tools/call",
-                                  "params":{"name":"hivemem_reading_list","arguments":{"limit":1.9}}
+                                  "params":{"name":"reading_list","arguments":{"limit":1.9}}
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
@@ -1022,7 +1022,7 @@ class ReadToolIntegrationTest {
                                   "jsonrpc":"2.0",
                                   "id":21,
                                   "method":"tools/call",
-                                  "params":{"name":"hivemem_diary_read","arguments":{"agent":"alpha-agent","last_n":101}}
+                                  "params":{"name":"diary_read","arguments":{"agent":"alpha-agent","last_n":101}}
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
@@ -1037,7 +1037,7 @@ class ReadToolIntegrationTest {
                                   "jsonrpc":"2.0",
                                   "id":211,
                                   "method":"tools/call",
-                                  "params":{"name":"hivemem_diary_read","arguments":{"agent":"alpha-agent","last_n":1.5}}
+                                  "params":{"name":"diary_read","arguments":{"agent":"alpha-agent","last_n":1.5}}
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
@@ -1055,7 +1055,7 @@ class ReadToolIntegrationTest {
                                   "jsonrpc":"2.0",
                                   "id":22,
                                   "method":"tools/call",
-                                  "params":{"name":"hivemem_diary_read","arguments":{}}
+                                  "params":{"name":"diary_read","arguments":{}}
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
@@ -1070,7 +1070,7 @@ class ReadToolIntegrationTest {
                                   "jsonrpc":"2.0",
                                   "id":221,
                                   "method":"tools/call",
-                                  "params":{"name":"hivemem_diary_read","arguments":{"agent":123}}
+                                  "params":{"name":"diary_read","arguments":{"agent":123}}
                                 }
                                 """))
                 .andExpect(status().isBadRequest())

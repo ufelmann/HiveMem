@@ -270,13 +270,14 @@ aggressively.
 
 ### Availability check
 
-HiveMem tools are named `mcp__hivemem__hivemem_*`. If those tools are not
+HiveMem tools are exposed under the `mcp__hivemem__*` namespace (e.g.
+`mcp__hivemem__wake_up`, `mcp__hivemem__search`). If those tools are not
 listed in the current session, skip this section entirely — do not mention
 HiveMem, do not apologize for its absence.
 
 ### Session start (HARD RULE)
 
-Call `hivemem_wake_up` BEFORE your first response, BEFORE any other tool call,
+Call `wake_up` BEFORE your first response, BEFORE any other tool call,
 BEFORE reading any file. No exceptions beyond the availability check above.
 
 ### During conversation — search proactively
@@ -284,17 +285,17 @@ BEFORE reading any file. No exceptions beyond the availability check above.
 Wake_up is a snapshot, not a subscription. Search actively on these signals:
 
 - **Named reference.** User mentions a named project, person, decision, tool,
-  or system not in wake_up → `hivemem_search` BEFORE answering. Even if you
+  or system not in wake_up → `search` BEFORE answering. Even if you
   think you remember.
 - **Temporal reference.** "last week", "a while back", "we decided earlier",
-  "remember when" → `hivemem_search` with keywords, or `hivemem_time_machine`
+  "remember when" → `search` with keywords, or `time_machine`
   for point-in-time queries.
 - **Uncertainty.** About to say "I'm not sure" or hedge? Search FIRST. Only
   hedge if the search returns nothing.
 - **Topic drift.** Conversation shifts to a new area not in wake_up → quick
-  `hivemem_search` before engaging.
-- **Entity-specific.** User asks about a specific entity → `hivemem_quick_facts`
-  for facts, `hivemem_search_kg` for relationships.
+  `search` before engaging.
+- **Entity-specific.** User asks about a specific entity → `quick_facts`
+  for facts, `search_kg` for relationships.
 
 **Anti-patterns — do NOT:**
 - Hedge instead of searching ("I think we discussed...")
@@ -302,7 +303,7 @@ Wake_up is a snapshot, not a subscription. Search actively on these signals:
 - Batch searches for session end
 - Wait for the user to prompt you
 
-One `hivemem_search` is cheap. Answering wrong is expensive.
+One `search` is cheap. Answering wrong is expensive.
 
 ### During work
 
@@ -310,13 +311,13 @@ After any significant action (bug fix, feature, design decision, deployment,
 investigation), archive immediately — do not batch, do not wait.
 
 Archiving:
-1. `hivemem_add_cell` with `dedupe_threshold: 0.92`
-2. `hivemem_kg_add` for each fact with `on_conflict=return` and `valid_from` set
-3. `hivemem_search` for related cells, then `hivemem_add_tunnel` for the top
+1. `add_cell` with `dedupe_threshold: 0.92`
+2. `kg_add` for each fact with `on_conflict=return` and `valid_from` set
+3. `search` for related cells, then `add_tunnel` for the top
    2-3 matches
 
-When a fact changes: `hivemem_kg_invalidate` the old one FIRST, then
-`hivemem_kg_add` the new one.
+When a fact changes: `kg_invalidate` the old one FIRST, then
+`kg_add` the new one.
 
 ### Session end
 
@@ -327,7 +328,7 @@ Archive anything significant not yet stored. When the user says "archive",
 
 Realm = life/work area. Signal = nature of knowledge. Topic = specific subject.
 
-Call `hivemem_list` before inventing new realms — it navigates the
+Call `list` before inventing new realms — it navigates the
 Realm→Signal→Topic→Cell hierarchy (omit all params for realms, add `realm` for
 signals, add `realm`+`signal` for topics).
 
@@ -588,52 +589,52 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 - **SafeSkill Score:** **100/100 (Verified Safe)**. See [SafeSkill Report](https://safeskill.dev/scan/ufelmann-hivemem).
 - **Transparency:** 7/7 points. See [SAFE.md](SAFE.md) for the security manifest.
 - **Audit Logging:** Every tool call is logged in JSON to `/data/audit.log`.
-- **Human-in-the-Loop:** All agent writes require manual approval via `hivemem_approve_pending`.
+- **Human-in-the-Loop:** All agent writes require manual approval via `approve_pending`.
 
 ### Tool List (Full)
 
 **Read (15):**
 
-1. `hivemem_status`: System overview and counts.
-2. `hivemem_search`: Semantic similarity + keyword search; returns metadata by default and supports `include` for optional fields.
-3. `hivemem_search_kg`: Knowledge graph triple lookup.
-4. `hivemem_get_cell`: Read a single knowledge item (logs access automatically); supports `include` for optional fields including content.
-5. `hivemem_list`: Navigate the Realm→Signal→Topic→Cell hierarchy (omit all params for realms; add `realm` for signals; add `realm`+`signal` for topics; add `realm`+`signal`+`topic` for cells).
-6. `hivemem_traverse`: Recursive graph traversal.
-7. `hivemem_quick_facts`: Context-aware facts about an entity.
-8. `hivemem_time_machine`: Historical knowledge retrieval.
-9. `hivemem_wake_up`: Initial session context.
-10. `hivemem_history`: Trace revisions of a cell or fact (type-dispatched, recursive CTE depth cap 100).
-11. `hivemem_pending_approvals`: List work awaiting review.
-12. `hivemem_get_blueprint`: Narrative realm overviews.
-13. `hivemem_reading_list`: Manage unread/in-progress sources.
-14. `hivemem_list_agents`: View active agent fleet.
-15. `hivemem_diary_read`: Read agent diary entries.
+1. `status`: System overview and counts.
+2. `search`: Semantic similarity + keyword search; returns metadata by default and supports `include` for optional fields.
+3. `search_kg`: Knowledge graph triple lookup.
+4. `get_cell`: Read a single knowledge item (logs access automatically); supports `include` for optional fields including content.
+5. `list`: Navigate the Realm→Signal→Topic→Cell hierarchy (omit all params for realms; add `realm` for signals; add `realm`+`signal` for topics; add `realm`+`signal`+`topic` for cells).
+6. `traverse`: Recursive graph traversal.
+7. `quick_facts`: Context-aware facts about an entity.
+8. `time_machine`: Historical knowledge retrieval.
+9. `wake_up`: Initial session context.
+10. `history`: Trace revisions of a cell or fact (type-dispatched, recursive CTE depth cap 100).
+11. `pending_approvals`: List work awaiting review.
+12. `get_blueprint`: Narrative realm overviews.
+13. `reading_list`: Manage unread/in-progress sources.
+14. `list_agents`: View active agent fleet.
+15. `diary_read`: Read agent diary entries.
 
 **Write (13):**
 
-16. `hivemem_add_cell`: Store a cell with content, summary, key points, and insight; optional `dedupe_threshold` runs an embedding-based dedupe gate in one call.
-17. `hivemem_add_tunnel`: Link two cells together.
-18. `hivemem_kg_add`: Fact triple; optional `on_conflict` (`insert`|`return`|`reject`) gates against active conflicts.
-19. `hivemem_kg_invalidate`: Soft-delete/expire a fact.
-20. `hivemem_update_identity`: Update session context facts.
-21. `hivemem_add_reference`: Store source documents/URLs.
-22. `hivemem_link_reference`: Cite source for a cell.
-23. `hivemem_remove_tunnel`: Expire a cell link.
-24. `hivemem_revise_cell`: Create a new version of a cell.
-25. `hivemem_revise_fact`: Create a new version of a fact.
-26. `hivemem_register_agent`: Add an agent to the fleet.
-27. `hivemem_diary_write`: Agent-private reflection tool.
-28. `hivemem_update_blueprint`: Update realm narrative.
+16. `add_cell`: Store a cell with content, summary, key points, and insight; optional `dedupe_threshold` runs an embedding-based dedupe gate in one call.
+17. `add_tunnel`: Link two cells together.
+18. `kg_add`: Fact triple; optional `on_conflict` (`insert`|`return`|`reject`) gates against active conflicts.
+19. `kg_invalidate`: Soft-delete/expire a fact.
+20. `update_identity`: Update session context facts.
+21. `add_reference`: Store source documents/URLs.
+22. `link_reference`: Cite source for a cell.
+23. `remove_tunnel`: Expire a cell link.
+24. `revise_cell`: Create a new version of a cell.
+25. `revise_fact`: Create a new version of a fact.
+26. `register_agent`: Add an agent to the fleet.
+27. `diary_write`: Agent-private reflection tool.
+28. `update_blueprint`: Update realm narrative.
 
 **Admin (2):**
 
-29. `hivemem_approve_pending`: Admin tool to batch approve or reject agent writes.
-30. `hivemem_health`: Monitor DB and service state.
+29. `approve_pending`: Admin tool to batch approve or reject agent writes.
+30. `health`: Monitor DB and service state.
 
 ### Search Signals
 
-The `hivemem_search` tool combines 5 signals with configurable weights:
+The `search` tool combines 5 signals with configurable weights:
 
 | Signal | Default Weight | Description |
 |---|---|---|
@@ -643,7 +644,7 @@ The `hivemem_search` tool combines 5 signals with configurable weights:
 | Importance | 0.15 | User/agent assigned 1-5 scale |
 | Popularity | 0.15 | Access frequency (materialized view) |
 
-`hivemem_search` defaults to `summary`, `tags`, `importance`, and `created_at` plus required identity fields (`id`, `realm`, `signal`, `topic`). `hivemem_get_cell` defaults to `summary`, `key_points`, `insight`, `tags`, `importance`, `source`, and `created_at` plus the same required identity fields. Pass `include` to request a specific subset of optional fields, including `content`.
+`search` defaults to `summary`, `tags`, `importance`, and `created_at` plus required identity fields (`id`, `realm`, `signal`, `topic`). `get_cell` defaults to `summary`, `key_points`, `insight`, `tags`, `importance`, `source`, and `created_at` plus the same required identity fields. Pass `include` to request a specific subset of optional fields, including `content`.
 
 ### Progressive Summarization
 

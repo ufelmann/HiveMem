@@ -105,7 +105,7 @@ class SearchParityIntegrationTest {
                 OffsetDateTime.parse("2026-04-03T10:00:00Z")
         );
 
-        JsonNode results = callTool("writer-token", "hivemem_search", Map.of(
+        JsonNode results = callTool("writer-token", "search", Map.of(
                 "query", "vector search",
                 "limit", 10
         ));
@@ -145,7 +145,7 @@ class SearchParityIntegrationTest {
                 OffsetDateTime.parse("2026-04-03T11:00:00Z")
         );
 
-        JsonNode results = callTool("writer-token", "hivemem_search", Map.of(
+        JsonNode results = callTool("writer-token", "search", Map.of(
                 "query", "topic",
                 "realm", "eng"
         ));
@@ -179,7 +179,7 @@ class SearchParityIntegrationTest {
                 OffsetDateTime.parse("2026-04-03T12:00:00Z")
         );
 
-        JsonNode results = callTool("writer-token", "hivemem_search", Map.of(
+        JsonNode results = callTool("writer-token", "search", Map.of(
                 "query", "search",
                 "signal", "discoveries"
         ));
@@ -221,7 +221,7 @@ class SearchParityIntegrationTest {
         }
         adminToolService.refreshPopularity();
 
-        JsonNode results = callTool("writer-token", "hivemem_search", Map.of(
+        JsonNode results = callTool("writer-token", "search", Map.of(
                 "query", "docker knowledge",
                 "weight_semantic", 0.0d,
                 "weight_keyword", 0.0d,
@@ -266,7 +266,7 @@ class SearchParityIntegrationTest {
                 OffsetDateTime.parse("2026-04-03T14:00:00Z")
         );
 
-        JsonNode results = callTool("writer-token", "hivemem_search", Map.of(
+        JsonNode results = callTool("writer-token", "search", Map.of(
                 "query", "topic drawer"
         ));
 

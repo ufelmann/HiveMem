@@ -23,7 +23,7 @@ public class RegisterAgentToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_register_agent";
+        return "register_agent";
     }
 
     @Override

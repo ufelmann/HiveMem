@@ -2,18 +2,18 @@
 
 This release introduces include-based field selection for cell retrieval and
 fully parametrizes the embedding service through environment variables. The
-MCP surface keeps its 30 tools; only the field shape of `hivemem_get_cell` and
-`hivemem_search` responses changed (additive, opt-in).
+MCP surface keeps its 30 tools; only the field shape of `get_cell` and
+`search` responses changed (additive, opt-in).
 
 ### Highlights
 
-- **Include-based field selection for `hivemem_get_cell` and `hivemem_search`.**
+- **Include-based field selection for `get_cell` and `search`.**
   - Both tools accept an optional `include` array listing which non-required
     fields to return. Required fields (`id`, `realm`, `signal`, `topic`) are
     always included; everything else is opt-in.
-  - `hivemem_search` defaults to `summary`, `tags`, `importance`, `created_at` —
+  - `search` defaults to `summary`, `tags`, `importance`, `created_at` —
     noticeably cheaper per response than returning full `content` for every hit.
-  - `hivemem_get_cell` defaults keep the pre-6.3 workflow-critical fields
+  - `get_cell` defaults keep the pre-6.3 workflow-critical fields
     (`summary`, `key_points`, `insight`, `tags`, `importance`, `source`,
     `actionability`, `status`, `created_at`). `content`, `valid_from`,
     `valid_until`, `parent_id`, and `created_by` are available via `include`
@@ -40,7 +40,7 @@ MCP surface keeps its 30 tools; only the field shape of `hivemem_get_cell` and
 ### Breaking Changes from 6.2.x
 
 None. Callers that did not pass `include` see the same field set
-`hivemem_get_cell` returned in 6.2, and `hivemem_search` continues to return
+`get_cell` returned in 6.2, and `search` continues to return
 the same required metadata plus the default optional set. The four fields
 (`parent_id`, `actionability`, `status`, `created_by`) that an interim
 development version temporarily dropped are fully available again.

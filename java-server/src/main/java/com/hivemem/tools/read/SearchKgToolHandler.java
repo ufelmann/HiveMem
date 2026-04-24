@@ -23,7 +23,7 @@ public class SearchKgToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_search_kg";
+        return "search_kg";
     }
 
     @Override

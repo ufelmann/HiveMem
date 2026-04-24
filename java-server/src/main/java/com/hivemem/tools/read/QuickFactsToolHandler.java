@@ -21,7 +21,7 @@ public class QuickFactsToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_quick_facts";
+        return "quick_facts";
     }
 
     @Override

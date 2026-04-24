@@ -240,27 +240,27 @@ class TokenManagementIntegrationTest {
         Set<String> adminTools = toolPermissionService.allowedTools(AuthRole.ADMIN);
         // Admin must include every read, write, and admin tool
         assertThat(adminTools).contains(
-                "hivemem_search", "hivemem_wake_up",
-                "hivemem_add_cell", "hivemem_kg_add",
-                "hivemem_approve_pending", "hivemem_health"
+                "search", "wake_up",
+                "add_cell", "kg_add",
+                "approve_pending", "health"
         );
     }
 
     @Test
     void readerSeesOnlyReadTools() {
         Set<String> readerTools = toolPermissionService.allowedTools(AuthRole.READER);
-        assertThat(readerTools).contains("hivemem_search", "hivemem_wake_up",
-                "hivemem_pending_approvals", "hivemem_list_agents");
+        assertThat(readerTools).contains("search", "wake_up",
+                "pending_approvals", "list_agents");
         assertThat(readerTools).doesNotContain(
-                "hivemem_add_cell", "hivemem_kg_add",
-                "hivemem_approve_pending", "hivemem_health");
+                "add_cell", "kg_add",
+                "approve_pending", "health");
     }
 
     @Test
     void writerCannotApprove() {
         Set<String> writerTools = toolPermissionService.allowedTools(AuthRole.WRITER);
-        assertThat(writerTools).contains("hivemem_add_cell", "hivemem_kg_add");
-        assertThat(writerTools).doesNotContain("hivemem_approve_pending", "hivemem_health");
+        assertThat(writerTools).contains("add_cell", "kg_add");
+        assertThat(writerTools).doesNotContain("approve_pending", "health");
     }
 
     @Test
@@ -297,11 +297,11 @@ class TokenManagementIntegrationTest {
                                 {"jsonrpc":"2.0","id":1,"method":"tools/list"}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.tools[*].name", hasItem("hivemem_search")))
-                .andExpect(jsonPath("$.result.tools[*].name", hasItem("hivemem_wake_up")))
-                .andExpect(jsonPath("$.result.tools[*].name", not(hasItem("hivemem_add_cell"))))
-                .andExpect(jsonPath("$.result.tools[*].name", not(hasItem("hivemem_approve_pending"))))
-                .andExpect(jsonPath("$.result.tools[*].name", not(hasItem("hivemem_health"))));
+                .andExpect(jsonPath("$.result.tools[*].name", hasItem("search")))
+                .andExpect(jsonPath("$.result.tools[*].name", hasItem("wake_up")))
+                .andExpect(jsonPath("$.result.tools[*].name", not(hasItem("add_cell"))))
+                .andExpect(jsonPath("$.result.tools[*].name", not(hasItem("approve_pending"))))
+                .andExpect(jsonPath("$.result.tools[*].name", not(hasItem("health"))));
     }
 
     @Test
@@ -316,10 +316,10 @@ class TokenManagementIntegrationTest {
                                 {"jsonrpc":"2.0","id":1,"method":"tools/list"}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.tools[*].name", hasItem("hivemem_search")))
-                .andExpect(jsonPath("$.result.tools[*].name", hasItem("hivemem_add_cell")))
-                .andExpect(jsonPath("$.result.tools[*].name", not(hasItem("hivemem_approve_pending"))))
-                .andExpect(jsonPath("$.result.tools[*].name", not(hasItem("hivemem_health"))));
+                .andExpect(jsonPath("$.result.tools[*].name", hasItem("search")))
+                .andExpect(jsonPath("$.result.tools[*].name", hasItem("add_cell")))
+                .andExpect(jsonPath("$.result.tools[*].name", not(hasItem("approve_pending"))))
+                .andExpect(jsonPath("$.result.tools[*].name", not(hasItem("health"))));
     }
 
     // ── Rate limiting over HTTP ─────────────────────────────────────────
@@ -381,7 +381,7 @@ class TokenManagementIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"jsonrpc":"2.0","id":1,"method":"tools/call",
-                                 "params":{"name":"hivemem_add_cell","arguments":{}}}
+                                 "params":{"name":"add_cell","arguments":{}}}
                                 """))
                 .andExpect(status().isForbidden());
     }
