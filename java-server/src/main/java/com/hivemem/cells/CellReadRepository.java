@@ -460,7 +460,6 @@ public class CellReadRepository {
         for (Record row : dslContext.fetch("""
                 SELECT key, content, token_count
                 FROM identity
-                WHERE key IN ('l0_identity', 'l1_critical')
                 ORDER BY key
                 """)) {
             Map<String, Object> entry = new LinkedHashMap<>();
