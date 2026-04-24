@@ -28,6 +28,10 @@ public class WakeUpToolHandler implements ToolHandler {
 
     @Override
     public Object call(AuthPrincipal principal, JsonNode arguments) {
-        return readToolService.wakeUp();
+        java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("identity", principal.name());
+        result.put("role", principal.role().name().toLowerCase(java.util.Locale.ROOT));
+        result.put("context", readToolService.wakeUp());
+        return result;
     }
 }

@@ -125,14 +125,16 @@ services:
     restart: unless-stopped
 
   hivemem-embeddings:
-    image: ghcr.io/ufelmann/hivemem-embeddings:6.2.0
+    image: ghcr.io/ufelmann/hivemem-embeddings:6.3.0
     container_name: hivemem-embeddings
+    volumes:
+      - hivemem-embeddings-models:/app/models
     networks:
       - hivemem-net
     restart: unless-stopped
 
   hivemem:
-    image: ghcr.io/ufelmann/hivemem:6.2.0
+    image: ghcr.io/ufelmann/hivemem:6.3.0
     container_name: hivemem
     ports:
       - "8421:8421"
@@ -153,6 +155,7 @@ networks:
 
 volumes:
   hivemem-pgdata:
+  hivemem-embeddings-models:
 ```
 
 ```bash
@@ -172,7 +175,7 @@ docker exec hivemem hivemem-token create my-admin --role admin
 
 That's it. Three containers, all images from GHCR, no build needed.
 
-For a pinned production rollout, use the current release tags such as `:6.2.0`. Use `:main` only if you explicitly want the rolling branch build.
+For a pinned production rollout, use the current release tags such as `:6.3.0`. Use `:main` only if you explicitly want the rolling branch build.
 
 ### Build from source (optional)
 

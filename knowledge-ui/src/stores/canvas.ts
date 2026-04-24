@@ -20,7 +20,8 @@ export const useCanvasStore = defineStore('canvas', {
   actions: {
     async loadTopLevel() {
       const api = useApi()
-      this.realms = await api.call<Realm[]>('list')
+      const rows = await api.call<Array<{ value: string; label?: string; cell_count: number }>>('list')
+      this.realms = rows.map(r => ({ name: r.value, cell_count: r.cell_count, signals: [] }))
       this.cells = []
       this.tunnels = []
       this.loaded = true
@@ -28,22 +29,14 @@ export const useCanvasStore = defineStore('canvas', {
       void this._longPoll()
     },
     async _longPoll() {
-      const api = useApi()
       this.streamActive = true
       try {
-        while (!this._streamAbort) {
-          let resp: StreamResponse
-          try {
-            resp = await api.call<StreamResponse>('hivemem_stream_next', { timeout_ms: 25000 })
-          } catch {
-            // Transient error — back off briefly and retry (long-poll recovery).
-            await new Promise(r => setTimeout(r, 2000))
-            continue
-          }
-          if (resp.cells?.length) this.cells = [...this.cells, ...resp.cells]
-          if (resp.tunnels?.length) this.tunnels = [...this.tunnels, ...resp.tunnels]
-          if (resp.done) break
-        }
+        const res = await fetch('/api/gui/stream', { credentials: 'same-origin' })
+        if (res.status === 401) { window.location.href = '/login'; return }
+        if (!res.ok) return
+        const resp = await res.json() as StreamResponse
+        if (resp.cells?.length) this.cells = [...this.cells, ...resp.cells]
+        if (resp.tunnels?.length) this.tunnels = [...this.tunnels, ...resp.tunnels]
       } finally {
         this.streamActive = false
       }

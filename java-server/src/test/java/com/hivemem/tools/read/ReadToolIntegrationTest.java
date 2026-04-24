@@ -179,10 +179,15 @@ class ReadToolIntegrationTest {
         assertThat(results.get(0).path("score_total").isNumber()).isTrue();
         assertThat(results.get(0).path("score_semantic").isNumber()).isTrue();
         assertThat(results.get(0).path("score_keyword").isNumber()).isTrue();
-        assertThat(results).hasSize(2);
+        // plainto_tsquery uses AND semantics: only the cell containing both
+        // "semantic" and "oracle" matches. The "keyword oracle" cell lacks
+        // "semantic" and has no embedding, so the SQL hard filter excludes it.
+        assertThat(results).hasSize(1);
 
+        // Query "oracle" matches both cells; weighting favours importance, so
+        // the importance=1 cell ranks above the importance=5 cell.
         JsonNode weightedResults = callToolContent("search", Map.of(
-                "query", "semantic oracle",
+                "query", "oracle",
                 "limit", 10,
                 "weight_semantic", 0.05,
                 "weight_keyword", 0.05,
@@ -190,6 +195,7 @@ class ReadToolIntegrationTest {
                 "weight_importance", 0.75,
                 "weight_popularity", 0.1
         ));
+        assertThat(weightedResults).hasSize(2);
         assertThat(weightedResults.get(0).path("id").asText()).isEqualTo("00000000-0000-0000-0000-000000000501");
     }
 
@@ -958,10 +964,13 @@ class ReadToolIntegrationTest {
         assertThat(allBlueprints.get(2).path("realm").asText()).isEqualTo("beta");
 
         JsonNode wakeUp = callToolContent("wake_up", Map.of());
-        assertThat(wakeUp.path("l0_identity").path("content").asText()).isEqualTo("You are Alice.");
-        assertThat(wakeUp.path("l0_identity").path("token_count").asInt()).isEqualTo(3);
-        assertThat(wakeUp.path("l1_critical").path("content").asText()).isEqualTo("Remember the migration plan.");
-        assertThat(wakeUp.path("l1_critical").path("token_count").asInt()).isEqualTo(4);
+        assertThat(wakeUp.path("identity").asText()).isNotEmpty();
+        assertThat(wakeUp.path("role").asText()).isNotEmpty();
+        JsonNode context = wakeUp.path("context");
+        assertThat(context.path("l0_identity").path("content").asText()).isEqualTo("You are Alice.");
+        assertThat(context.path("l0_identity").path("token_count").asInt()).isEqualTo(3);
+        assertThat(context.path("l1_critical").path("content").asText()).isEqualTo("Remember the migration plan.");
+        assertThat(context.path("l1_critical").path("token_count").asInt()).isEqualTo(4);
     }
 
     @Test
@@ -974,15 +983,16 @@ class ReadToolIntegrationTest {
                 OffsetDateTime.parse("2026-04-24T15:58:10Z"));
 
         JsonNode wakeUp = callToolContent("wake_up", Map.of());
+        JsonNode context = wakeUp.path("context");
 
-        assertThat(wakeUp.path("who-am-i").path("content").asText())
+        assertThat(context.path("who-am-i").path("content").asText())
                 .isEqualTo("Vu, Product Owner");
-        assertThat(wakeUp.path("who-am-i").path("token_count").asInt()).isEqualTo(4);
-        assertThat(wakeUp.path("current-focus").path("content").asText())
+        assertThat(context.path("who-am-i").path("token_count").asInt()).isEqualTo(4);
+        assertThat(context.path("current-focus").path("content").asText())
                 .isEqualTo("MTV refactor, auth cleanup");
-        assertThat(wakeUp.path("my_custom_slot_42").path("content").asText())
+        assertThat(context.path("my_custom_slot_42").path("content").asText())
                 .isEqualTo("free-form content");
-        assertThat(wakeUp.path("l0_identity").isMissingNode()).isTrue();
+        assertThat(context.path("l0_identity").isMissingNode()).isTrue();
     }
 
     @Test

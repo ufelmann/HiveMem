@@ -17,6 +17,8 @@ services:
   hivemem-embeddings:
     image: ghcr.io/ufelmann/hivemem-embeddings:main
     container_name: hivemem-embeddings
+    volumes:
+      - hivemem-embeddings-models:/app/models
     networks:
       - hivemem-net
     restart: unless-stopped
@@ -47,3 +49,4 @@ networks:
 
 volumes:
   hivemem-pgdata:
+  hivemem-embeddings-models:
