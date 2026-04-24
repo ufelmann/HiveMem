@@ -20,7 +20,7 @@ export const useCanvasStore = defineStore('canvas', {
   actions: {
     async loadTopLevel() {
       const api = useApi()
-      this.realms = await api.call<Realm[]>('hivemem_list_realms')
+      this.realms = await api.call<Realm[]>('list')
       this.cells = []
       this.tunnels = []
       this.loaded = true

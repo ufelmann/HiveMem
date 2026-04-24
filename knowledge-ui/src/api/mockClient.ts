@@ -22,7 +22,7 @@ export class MockApiClient implements ApiClient {
     this.handlers = {
       status: () => this.status(),
       wake_up: () => this.wakeUp(),
-      hivemem_list_realms: (args: { realm?: string }) => this.listRealms(args),
+      list: (args: { realm?: string }) => this.listRealms(args),
       search: (args: { query?: string; limit?: number }) => this.search(args),
       get_cell: (args: { cell_id: string }) => this.getCell(args),
       quick_facts: (args: { subject: string }) => this.quickFacts(args),
