@@ -102,7 +102,7 @@ class WriteToolsIntegrationTest {
 
     @Test
     void writerCanAddCommittedFactAndSeeItInActiveFacts() throws Exception {
-        JsonNode content = callToolContent("writer-token", "hivemem_kg_add", Map.of(
+        JsonNode content = callToolContent("writer-token", "kg_add", Map.of(
                 "subject", "HiveMem",
                 "predicate", "runs on",
                 "object_", "Java",
@@ -127,7 +127,7 @@ class WriteToolsIntegrationTest {
 
     @Test
     void writerCanAddDrawerWithEmbeddingAndProgressiveLayers() throws Exception {
-        JsonNode content = callToolContent("writer-token", "hivemem_add_cell", Map.ofEntries(
+        JsonNode content = callToolContent("writer-token", "add_cell", Map.ofEntries(
                 Map.entry("content", "Semantic oracle drawer"),
                 Map.entry("realm", "alpha"),
                 Map.entry("signal", "facts"),
@@ -165,7 +165,7 @@ class WriteToolsIntegrationTest {
 
     @Test
     void addDrawerWithoutDedupeThresholdAlwaysInserts() throws Exception {
-        JsonNode content = callToolContent("writer-token", "hivemem_add_cell", Map.of(
+        JsonNode content = callToolContent("writer-token", "add_cell", Map.of(
                 "content", "Unique drawer content without dedupe",
                 "realm", "alpha",
                 "signal", "facts",
@@ -177,7 +177,7 @@ class WriteToolsIntegrationTest {
 
     @Test
     void addDrawerWithDedupeThresholdInsertsWhenNoMatch() throws Exception {
-        JsonNode content = callToolContent("writer-token", "hivemem_add_cell", Map.of(
+        JsonNode content = callToolContent("writer-token", "add_cell", Map.of(
                 "content", "Unique content with no near duplicates xyz987",
                 "realm", "alpha",
                 "signal", "facts",
@@ -191,7 +191,7 @@ class WriteToolsIntegrationTest {
     @Test
     void addDrawerWithDedupeThresholdSkipsInsertWhenDuplicateExists() throws Exception {
         // First insert
-        callToolContent("writer-token", "hivemem_add_cell", Map.of(
+        callToolContent("writer-token", "add_cell", Map.of(
                 "content", "Duplicate oracle alpha",
                 "realm", "alpha",
                 "signal", "facts",
@@ -200,7 +200,7 @@ class WriteToolsIntegrationTest {
         ));
 
         // Second attempt with dedupe_threshold should detect duplicate and skip
-        JsonNode content = callToolContent("writer-token", "hivemem_add_cell", Map.of(
+        JsonNode content = callToolContent("writer-token", "add_cell", Map.of(
                 "content", "Duplicate oracle beta",
                 "realm", "alpha",
                 "signal", "facts",
@@ -220,7 +220,7 @@ class WriteToolsIntegrationTest {
         FixedEmbeddingClient fixedClient = (FixedEmbeddingClient) embeddingClient;
         int countBefore = fixedClient.getEncodeDocumentCallCount();
 
-        callToolContent("writer-token", "hivemem_add_cell", Map.of(
+        callToolContent("writer-token", "add_cell", Map.of(
                 "content", "Duplicate oracle alpha",
                 "realm", "alpha",
                 "signal", "facts",
@@ -235,7 +235,7 @@ class WriteToolsIntegrationTest {
 
     @Test
     void agentKgAddForcesPendingAndShowsInPendingApprovals() throws Exception {
-        JsonNode factContent = callToolContent("agent-token", "hivemem_kg_add", Map.of(
+        JsonNode factContent = callToolContent("agent-token", "kg_add", Map.of(
                 "subject", "Agentic fact",
                 "predicate", "needs review",
                 "object_", "yes",
@@ -243,7 +243,7 @@ class WriteToolsIntegrationTest {
         ));
         assertThat(factContent.path("status").asText()).isEqualTo("pending");
 
-        JsonNode pending = callToolContent("writer-token", "hivemem_pending_approvals", Map.of());
+        JsonNode pending = callToolContent("writer-token", "pending_approvals", Map.of());
         assertThat(pending.get(0).path("type").asText()).isEqualTo("fact");
         assertThat(pending.get(0).path("description").asText()).isEqualTo("Agentic fact -> needs review -> yes");
 
@@ -260,13 +260,13 @@ class WriteToolsIntegrationTest {
     @Test
     void kgAddDefaultInsertsEvenWithConflict() throws Exception {
         // Insert first fact
-        callToolContent("writer-token", "hivemem_kg_add", Map.of(
+        callToolContent("writer-token", "kg_add", Map.of(
                 "subject", "X",
                 "predicate", "status",
                 "object_", "active"
         ));
         // Insert second fact with same subject+predicate but different object — no on_conflict arg
-        JsonNode content = callToolContent("writer-token", "hivemem_kg_add", Map.of(
+        JsonNode content = callToolContent("writer-token", "kg_add", Map.of(
                 "subject", "X",
                 "predicate", "status",
                 "object_", "retired"
@@ -278,13 +278,13 @@ class WriteToolsIntegrationTest {
     @Test
     void kgAddOnConflictReturnSkipsInsertAndReportsConflicts() throws Exception {
         // Insert first fact
-        callToolContent("writer-token", "hivemem_kg_add", Map.of(
+        callToolContent("writer-token", "kg_add", Map.of(
                 "subject", "Y",
                 "predicate", "status",
                 "object_", "active"
         ));
         // Attempt second with on_conflict=return
-        JsonNode content = callToolContent("writer-token", "hivemem_kg_add", Map.of(
+        JsonNode content = callToolContent("writer-token", "kg_add", Map.of(
                 "subject", "Y",
                 "predicate", "status",
                 "object_", "retired",
@@ -299,7 +299,7 @@ class WriteToolsIntegrationTest {
     @Test
     void kgAddOnConflictRejectThrows() throws Exception {
         // Insert first fact
-        callToolContent("writer-token", "hivemem_kg_add", Map.of(
+        callToolContent("writer-token", "kg_add", Map.of(
                 "subject", "Z",
                 "predicate", "status",
                 "object_", "active"
@@ -314,7 +314,7 @@ class WriteToolsIntegrationTest {
                                   "id":99,
                                   "method":"tools/call",
                                   "params":{
-                                    "name":"hivemem_kg_add",
+                                    "name":"kg_add",
                                     "arguments":{
                                       "subject":"Z",
                                       "predicate":"status",
@@ -331,7 +331,7 @@ class WriteToolsIntegrationTest {
     @Test
     void kgAddOnConflictReturnNoConflictInserts() throws Exception {
         // No prior fact for W — on_conflict=return should just insert
-        JsonNode content = callToolContent("writer-token", "hivemem_kg_add", Map.of(
+        JsonNode content = callToolContent("writer-token", "kg_add", Map.of(
                 "subject", "W",
                 "predicate", "status",
                 "object_", "active",
@@ -352,7 +352,7 @@ class WriteToolsIntegrationTest {
                                   "id":100,
                                   "method":"tools/call",
                                   "params":{
-                                    "name":"hivemem_kg_add",
+                                    "name":"kg_add",
                                     "arguments":{
                                       "subject":"V",
                                       "predicate":"status",
@@ -410,7 +410,7 @@ class WriteToolsIntegrationTest {
                 null
         );
 
-        JsonNode content = callToolContent("writer-token", "hivemem_kg_add", Map.of(
+        JsonNode content = callToolContent("writer-token", "kg_add", Map.of(
                 "subject", "HiveMem",
                 "predicate", "runs on",
                 "object_", "Spring Boot",
@@ -447,12 +447,12 @@ class WriteToolsIntegrationTest {
                 null
         );
 
-        JsonNode invalidateContent = callToolContent("writer-token", "hivemem_kg_invalidate", Map.of(
+        JsonNode invalidateContent = callToolContent("writer-token", "kg_invalidate", Map.of(
                 "fact_id", "00000000-0000-0000-0000-000000000201"
         ));
         assertThat(invalidateContent.path("invalidated").asBoolean()).isTrue();
 
-        JsonNode searchContent = callToolContent("writer-token", "hivemem_search_kg", Map.of(
+        JsonNode searchContent = callToolContent("writer-token", "search_kg", Map.of(
                 "subject", "Transient fact"
         ));
         assertThat(searchContent).isEmpty();
@@ -488,7 +488,7 @@ class WriteToolsIntegrationTest {
                 null
         );
 
-        JsonNode reviseContent = callToolContent("writer-token", "hivemem_revise_fact", Map.of(
+        JsonNode reviseContent = callToolContent("writer-token", "revise_fact", Map.of(
                 "old_id", "00000000-0000-0000-0000-000000000401",
                 "new_object", "Spring Boot"
         ));
@@ -520,7 +520,7 @@ class WriteToolsIntegrationTest {
         org.junit.jupiter.api.Assertions.assertEquals("writer-1", newRow.get("created_by", String.class));
 
         UUID newId = newRow.get("id", UUID.class);
-        JsonNode history = callToolContent("writer-token", "hivemem_history", Map.of(
+        JsonNode history = callToolContent("writer-token", "history", Map.of(
                 "type", "fact", "id", newId.toString()
         ));
         assertThat(history).hasSize(2);
@@ -546,7 +546,7 @@ class WriteToolsIntegrationTest {
                 null
         );
 
-        JsonNode reviseContent = callToolContent("agent-token", "hivemem_revise_fact", Map.of(
+        JsonNode reviseContent = callToolContent("agent-token", "revise_fact", Map.of(
                 "old_id", "00000000-0000-0000-0000-000000000403",
                 "new_object", "closed"
         ));
@@ -581,13 +581,13 @@ class WriteToolsIntegrationTest {
                 null
         );
 
-        callToolContent("writer-token", "hivemem_revise_fact", Map.of(
+        callToolContent("writer-token", "revise_fact", Map.of(
                 "old_id", "00000000-0000-0000-0000-000000000404",
                 "new_object", "Spring Boot"
         ));
 
         // After revising the old fact, on_conflict=return should find no conflicts
-        JsonNode content = callToolContent("writer-token", "hivemem_kg_add", Map.of(
+        JsonNode content = callToolContent("writer-token", "kg_add", Map.of(
                 "subject", "HiveMem",
                 "predicate", "runs on",
                 "object_", "Spring Boot",
@@ -600,7 +600,7 @@ class WriteToolsIntegrationTest {
 
     @Test
     void writerCanUpsertIdentityAndPersistTokenCount() throws Exception {
-        JsonNode content = callToolContent("writer-token", "hivemem_update_identity", Map.of(
+        JsonNode content = callToolContent("writer-token", "update_identity", Map.of(
                 "key", "l0_identity",
                 "content", "I am HiveMem."
         ));
@@ -626,7 +626,7 @@ class WriteToolsIntegrationTest {
                 OffsetDateTime.parse("2026-04-05T13:00:00Z"),
                 null);
 
-        JsonNode refContent = callToolContent("writer-token", "hivemem_add_reference", Map.of(
+        JsonNode refContent = callToolContent("writer-token", "add_reference", Map.of(
                 "title", "GraphRAG Survey 2024",
                 "url", "https://example.com/graphrag",
                 "author", "Zhang et al.",
@@ -649,7 +649,7 @@ class WriteToolsIntegrationTest {
         org.junit.jupiter.api.Assertions.assertEquals("GraphRAG Survey 2024", referenceRow.get("title", String.class));
         org.junit.jupiter.api.Assertions.assertEquals("unread", referenceRow.get("status", String.class));
 
-        JsonNode linkContent = callToolContent("writer-token", "hivemem_link_reference", Map.of(
+        JsonNode linkContent = callToolContent("writer-token", "link_reference", Map.of(
                 "cell_id", "00000000-0000-0000-0000-000000000501",
                 "reference_id", refId,
                 "relation", "source"
@@ -669,7 +669,7 @@ class WriteToolsIntegrationTest {
 
     @Test
     void writerCanRegisterAgentAndWriteDiaryEntries() throws Exception {
-        JsonNode agentContent = callToolContent("writer-token", "hivemem_register_agent", Map.of(
+        JsonNode agentContent = callToolContent("writer-token", "register_agent", Map.of(
                 "name", "classifier",
                 "focus", "Classify incoming drawers",
                 "schedule", "nightly"
@@ -686,7 +686,7 @@ class WriteToolsIntegrationTest {
         org.junit.jupiter.api.Assertions.assertEquals("Classify incoming drawers", agentRow.get("focus", String.class));
         org.junit.jupiter.api.Assertions.assertEquals("nightly", agentRow.get("schedule", String.class));
 
-        JsonNode diaryContent = callToolContent("writer-token", "hivemem_diary_write", Map.of(
+        JsonNode diaryContent = callToolContent("writer-token", "diary_write", Map.of(
                 "agent", "classifier",
                 "entry", "Merged duplicates, kept most recent"
         ));
@@ -706,7 +706,7 @@ class WriteToolsIntegrationTest {
 
     @Test
     void writerCanAppendBlueprintsAndClosePreviousVersion() throws Exception {
-        JsonNode v1 = callToolContent("writer-token", "hivemem_update_blueprint", Map.of(
+        JsonNode v1 = callToolContent("writer-token", "update_blueprint", Map.of(
                 "realm", "eng",
                 "title", "V1",
                 "narrative", "First version",
@@ -715,7 +715,7 @@ class WriteToolsIntegrationTest {
         assertThat(v1.path("realm").asText()).isEqualTo("eng");
         assertThat(v1.path("title").asText()).isEqualTo("V1");
 
-        JsonNode v2 = callToolContent("writer-token", "hivemem_update_blueprint", Map.of(
+        JsonNode v2 = callToolContent("writer-token", "update_blueprint", Map.of(
                 "realm", "eng",
                 "title", "V2",
                 "narrative", "Updated version",
@@ -748,7 +748,7 @@ class WriteToolsIntegrationTest {
                 OffsetDateTime.parse("2026-04-05T13:30:00Z"),
                 null);
 
-        JsonNode reviseContent = callToolContent("writer-token", "hivemem_revise_cell", Map.of(
+        JsonNode reviseContent = callToolContent("writer-token", "revise_cell", Map.of(
                 "old_id", "00000000-0000-0000-0000-000000000550",
                 "new_content", "Drawer V2",
                 "new_summary", "Summary V2"
@@ -793,7 +793,7 @@ class WriteToolsIntegrationTest {
                 OffsetDateTime.parse("2026-04-05T14:00:00Z"),
                 null);
 
-        JsonNode tunnelContent = callToolContent("agent-token", "hivemem_add_tunnel", Map.of(
+        JsonNode tunnelContent = callToolContent("agent-token", "add_tunnel", Map.of(
                 "from_cell", "00000000-0000-0000-0000-000000000601",
                 "to_cell", "00000000-0000-0000-0000-000000000602",
                 "relation", "related_to",
@@ -812,7 +812,7 @@ class WriteToolsIntegrationTest {
         org.junit.jupiter.api.Assertions.assertEquals("pending", tunnelRow.get("status", String.class));
         org.junit.jupiter.api.Assertions.assertEquals("agent-1", tunnelRow.get("created_by", String.class));
 
-        JsonNode removeContent = callToolContent("writer-token", "hivemem_remove_tunnel", Map.of(
+        JsonNode removeContent = callToolContent("writer-token", "remove_tunnel", Map.of(
                 "tunnel_id", tunnelId
         ));
         assertThat(removeContent.path("removed").asBoolean()).isTrue();
@@ -843,7 +843,7 @@ class WriteToolsIntegrationTest {
         assertThat((Boolean) refreshResult.get("refreshed")).isTrue();
         assertThat(refreshResult.get("cell_count")).isInstanceOf(Number.class);
 
-        JsonNode healthContent = callToolContent("admin-token", "hivemem_health", Map.of());
+        JsonNode healthContent = callToolContent("admin-token", "health", Map.of());
         assertThat(healthContent.path("db_connected").asBoolean()).isTrue();
         assertThat(healthContent.path("cells").asInt()).isEqualTo(1);
         assertThat(healthContent.path("facts").asInt()).isEqualTo(0);
@@ -871,7 +871,7 @@ class WriteToolsIntegrationTest {
                                   "id":17,
                                   "method":"tools/call",
                                   "params":{
-                                    "name":"hivemem_revise_fact",
+                                    "name":"revise_fact",
                                     "arguments":{"new_object":"Spring Boot"}
                                   }
                                 }
@@ -889,7 +889,7 @@ class WriteToolsIntegrationTest {
                                   "id":18,
                                   "method":"tools/call",
                                   "params":{
-                                    "name":"hivemem_revise_fact",
+                                    "name":"revise_fact",
                                     "arguments":{
                                       "old_id":"00000000-0000-0000-0000-000000000499",
                                       "new_object":"Spring Boot"
@@ -934,7 +934,7 @@ class WriteToolsIntegrationTest {
                 OffsetDateTime.parse("2026-04-01T09:00:00Z"),
                 null);
 
-        JsonNode approveContent = callToolContent("admin-token", "hivemem_approve_pending", Map.of(
+        JsonNode approveContent = callToolContent("admin-token", "approve_pending", Map.of(
                 "ids", List.of(
                         "00000000-0000-0000-0000-000000000301",
                         "00000000-0000-0000-0000-000000000302",
@@ -965,14 +965,14 @@ class WriteToolsIntegrationTest {
                                 {
                                   "jsonrpc":"2.0","id":8,"method":"tools/call",
                                   "params":{
-                                    "name":"hivemem_approve_pending",
+                                    "name":"approve_pending",
                                     "arguments":{"ids":[],"decision":"committed"}
                                   }
                                 }
                                 """))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value(-32003))
-                .andExpect(jsonPath("$.error.message").value("Tool not permitted: hivemem_approve_pending"));
+                .andExpect(jsonPath("$.error.message").value("Tool not permitted: approve_pending"));
     }
 
     @Test
@@ -986,7 +986,7 @@ class WriteToolsIntegrationTest {
                                   "id":9,
                                   "method":"tools/call",
                                   "params":{
-                                    "name":"hivemem_approve_pending",
+                                    "name":"approve_pending",
                                     "arguments":{"ids":[],"decision":"maybe"}
                                   }
                                 }
@@ -1007,7 +1007,7 @@ class WriteToolsIntegrationTest {
                                   "id":10,
                                   "method":"tools/call",
                                   "params":{
-                                    "name":"hivemem_kg_add",
+                                    "name":"kg_add",
                                     "arguments":{
                                       "predicate":"runs on",
                                       "object_":"Java"
@@ -1028,7 +1028,7 @@ class WriteToolsIntegrationTest {
                                   "id":11,
                                   "method":"tools/call",
                                   "params":{
-                                    "name":"hivemem_kg_add",
+                                    "name":"kg_add",
                                     "arguments":{
                                       "subject":"   ",
                                       "predicate":"runs on",
@@ -1052,7 +1052,7 @@ class WriteToolsIntegrationTest {
                 OffsetDateTime.parse("2026-04-10T09:00:00Z"),
                 null);
 
-        JsonNode content = callToolContent("writer-token", "hivemem_reclassify_cell", Map.of(
+        JsonNode content = callToolContent("writer-token", "reclassify_cell", Map.of(
                 "cell_id", cellId.toString(),
                 "realm", "New Realm",
                 "topic", "New Topic",
@@ -1091,7 +1091,7 @@ class WriteToolsIntegrationTest {
                 OffsetDateTime.parse("2026-04-10T10:00:00Z"),
                 null);
 
-        JsonNode content = callToolContent("writer-token", "hivemem_reclassify_cell", Map.of(
+        JsonNode content = callToolContent("writer-token", "reclassify_cell", Map.of(
                 "cell_id", cellId.toString(),
                 "realm", "moved-realm"
         ));
@@ -1109,7 +1109,7 @@ class WriteToolsIntegrationTest {
                                 {
                                   "jsonrpc":"2.0","id":40,"method":"tools/call",
                                   "params":{
-                                    "name":"hivemem_reclassify_cell",
+                                    "name":"reclassify_cell",
                                     "arguments":{
                                       "cell_id":"00000000-0000-0000-0000-000000000899",
                                       "realm":"x"
@@ -1138,7 +1138,7 @@ class WriteToolsIntegrationTest {
                                 {
                                   "jsonrpc":"2.0","id":41,"method":"tools/call",
                                   "params":{
-                                    "name":"hivemem_reclassify_cell",
+                                    "name":"reclassify_cell",
                                     "arguments":{
                                       "cell_id":"00000000-0000-0000-0000-000000000802",
                                       "realm":"x"
@@ -1168,7 +1168,7 @@ class WriteToolsIntegrationTest {
                                 {
                                   "jsonrpc":"2.0","id":42,"method":"tools/call",
                                   "params":{
-                                    "name":"hivemem_reclassify_cell",
+                                    "name":"reclassify_cell",
                                     "arguments":{
                                       "cell_id":"00000000-0000-0000-0000-000000000803",
                                       "realm":"x"
@@ -1197,7 +1197,7 @@ class WriteToolsIntegrationTest {
                                 {
                                   "jsonrpc":"2.0","id":43,"method":"tools/call",
                                   "params":{
-                                    "name":"hivemem_reclassify_cell",
+                                    "name":"reclassify_cell",
                                     "arguments":{
                                       "cell_id":"00000000-0000-0000-0000-000000000804"
                                     }
@@ -1226,7 +1226,7 @@ class WriteToolsIntegrationTest {
                                 {
                                   "jsonrpc":"2.0","id":44,"method":"tools/call",
                                   "params":{
-                                    "name":"hivemem_reclassify_cell",
+                                    "name":"reclassify_cell",
                                     "arguments":{
                                       "cell_id":"00000000-0000-0000-0000-000000000805",
                                       "signal":"nonsense"
@@ -1271,7 +1271,7 @@ class WriteToolsIntegrationTest {
                 "SELECT embedding::text AS e FROM cells WHERE id = ?", cellId)
                 .get("e", String.class);
 
-        callToolContent("writer-token", "hivemem_reclassify_cell", Map.of(
+        callToolContent("writer-token", "reclassify_cell", Map.of(
                 "cell_id", cellId.toString(),
                 "realm", "new-r"
         ));

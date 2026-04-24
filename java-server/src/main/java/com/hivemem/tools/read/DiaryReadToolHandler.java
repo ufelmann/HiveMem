@@ -23,7 +23,7 @@ public class DiaryReadToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_diary_read";
+        return "diary_read";
     }
 
     @Override

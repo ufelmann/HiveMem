@@ -24,7 +24,7 @@ public class ReviseCellToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_revise_cell";
+        return "revise_cell";
     }
 
     @Override

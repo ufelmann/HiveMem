@@ -18,7 +18,7 @@ public class ListAgentsToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_list_agents";
+        return "list_agents";
     }
 
     @Override

@@ -23,7 +23,7 @@ public class AddReferenceToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_add_reference";
+        return "add_reference";
     }
 
     @Override

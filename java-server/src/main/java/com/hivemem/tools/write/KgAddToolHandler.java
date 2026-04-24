@@ -25,7 +25,7 @@ public class KgAddToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_kg_add";
+        return "kg_add";
     }
 
     @Override

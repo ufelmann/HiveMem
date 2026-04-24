@@ -143,8 +143,8 @@ class HttpTokenLifecycleIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(TOOLS_LIST_REQUEST))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.tools[*].name", hasItem("hivemem_health")))
-                .andExpect(jsonPath("$.result.tools[*].name", hasItem("hivemem_add_cell")));
+                .andExpect(jsonPath("$.result.tools[*].name", hasItem("health")))
+                .andExpect(jsonPath("$.result.tools[*].name", hasItem("add_cell")));
     }
 
     private void insertToken(

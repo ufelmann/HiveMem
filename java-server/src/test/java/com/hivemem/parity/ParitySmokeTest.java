@@ -19,8 +19,8 @@ class ParitySmokeTest {
     void adminPermissionSetContainsFullExpectedToolCount() {
         assertThat(toolPermissionService.allowedTools(AuthRole.ADMIN))
                 .hasSize(30)
-                .contains("hivemem_search", "hivemem_add_cell", "hivemem_approve_pending",
-                        "hivemem_health")
+                .contains("search", "add_cell", "approve_pending",
+                        "health")
                 .doesNotContain("hivemem_check_duplicate", "hivemem_check_contradiction");
     }
 
@@ -28,8 +28,8 @@ class ParitySmokeTest {
     void writerPermissionSetContainsReadAndWriteToolsButNoAdminTools() {
         assertThat(toolPermissionService.allowedTools(AuthRole.WRITER))
                 .hasSize(28)
-                .contains("hivemem_search", "hivemem_add_cell", "hivemem_revise_cell")
-                .doesNotContain("hivemem_health", "hivemem_approve_pending", "hivemem_check_duplicate",
+                .contains("search", "add_cell", "revise_cell")
+                .doesNotContain("health", "approve_pending", "hivemem_check_duplicate",
                         "hivemem_check_contradiction");
     }
 }

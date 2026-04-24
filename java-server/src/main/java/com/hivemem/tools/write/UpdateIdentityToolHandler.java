@@ -23,7 +23,7 @@ public class UpdateIdentityToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_update_identity";
+        return "update_identity";
     }
 
     @Override

@@ -20,10 +20,10 @@ export const useCellStore = defineStore('cell', {
         if (!this.cache.has(id)) {
           const api = useApi()
           const [cell, tunnels] = await Promise.all([
-            api.call<Cell>('hivemem_get_cell', { cell_id: id }),
-            api.call<Tunnel[]>('hivemem_traverse', { cell_id: id, depth: 1 }).catch(() => [])
+            api.call<Cell>('get_cell', { cell_id: id }),
+            api.call<Tunnel[]>('traverse', { cell_id: id, depth: 1 }).catch(() => [])
           ])
-          const facts = await api.call<Fact[]>('hivemem_quick_facts', { subject: cell.title }).catch(() => [])
+          const facts = await api.call<Fact[]>('quick_facts', { subject: cell.title }).catch(() => [])
           this.cache.set(id, { cell, facts, tunnels })
           if (this.cache.size > 50) {
             const first = this.cache.keys().next().value

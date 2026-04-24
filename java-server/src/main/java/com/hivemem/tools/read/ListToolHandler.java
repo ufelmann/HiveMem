@@ -21,7 +21,7 @@ public class ListToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_list";
+        return "list";
     }
 
     @Override

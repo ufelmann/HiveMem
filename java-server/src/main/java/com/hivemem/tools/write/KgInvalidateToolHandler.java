@@ -24,7 +24,7 @@ public class KgInvalidateToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_kg_invalidate";
+        return "kg_invalidate";
     }
 
     @Override

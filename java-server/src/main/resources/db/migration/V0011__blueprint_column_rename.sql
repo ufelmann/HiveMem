@@ -6,8 +6,8 @@
 --   blueprints.hall_order  → signal_order
 --   blueprints.key_drawers → key_cells
 --
--- These surface through the MCP API (`hivemem_update_blueprint` args,
--- `hivemem_get_blueprint` output) and were documented with the new names
+-- These surface through the MCP API (`update_blueprint` args,
+-- `get_blueprint` output) and were documented with the new names
 -- in README.md already.
 --
 -- This migration is idempotent: column renames are guarded by existence
