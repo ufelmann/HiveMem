@@ -58,12 +58,18 @@ public class EmbeddingMigrationService implements ApplicationRunner {
             log.info("First run — saving embedding model info: model={}, dimension={}",
                     currentInfo.model(), currentInfo.dimension());
             stateRepository.saveInfo(currentInfo);
+            stateRepository.createEmbeddingIndex(currentInfo.dimension());
+            log.info("Created HNSW index for dimension {}", currentInfo.dimension());
             return;
         }
 
         EmbeddingInfo stored = storedInfo.get();
         if (stored.model().equals(currentInfo.model()) && stored.dimension() == currentInfo.dimension()) {
             log.info("Embedding model matches stored state. No reencoding needed.");
+            // Safety net: an operator who dropped the index manually or a pre-V0012
+            // deployment won't have one yet. CREATE INDEX IF NOT EXISTS is a no-op
+            // when the index already exists.
+            stateRepository.createEmbeddingIndex(currentInfo.dimension());
             return;
         }
 
