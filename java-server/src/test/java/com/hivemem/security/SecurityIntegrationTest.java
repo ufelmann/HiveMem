@@ -165,7 +165,7 @@ class SecurityIntegrationTest {
         }
 
         @Test
-        void writerSees28Tools() throws Exception {
+        void writerSees29Tools() throws Exception {
             insertToken("writer-user", "writer-token", "writer");
 
             mockMvc.perform(post("/mcp")
@@ -173,11 +173,11 @@ class SecurityIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(TOOLS_LIST_REQUEST))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.tools", hasSize(28)));
+                    .andExpect(jsonPath("$.result.tools", hasSize(29)));
         }
 
         @Test
-        void agentSees28Tools() throws Exception {
+        void agentSees29Tools() throws Exception {
             insertToken("agent-user", "agent-token", "agent");
 
             mockMvc.perform(post("/mcp")
@@ -185,11 +185,11 @@ class SecurityIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(TOOLS_LIST_REQUEST))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.tools", hasSize(28)));
+                    .andExpect(jsonPath("$.result.tools", hasSize(29)));
         }
 
         @Test
-        void adminSees30Tools() throws Exception {
+        void adminSees31Tools() throws Exception {
             insertToken("admin-user", "admin-token", "admin");
 
             mockMvc.perform(post("/mcp")
@@ -197,7 +197,7 @@ class SecurityIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(TOOLS_LIST_REQUEST))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.tools", hasSize(30)));
+                    .andExpect(jsonPath("$.result.tools", hasSize(31)));
         }
     }
 
@@ -215,10 +215,10 @@ class SecurityIntegrationTest {
             mockMvc.perform(post("/mcp")
                             .header(HttpHeaders.AUTHORIZATION, "Bearer reader-token")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(toolsCallRequest("hivemem_add_cell", "{}")))
+                            .content(toolsCallRequest("add_cell", "{}")))
                     .andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.error.code").value(-32003))
-                    .andExpect(jsonPath("$.error.message").value("Tool not permitted: hivemem_add_cell"));
+                    .andExpect(jsonPath("$.error.message").value("Tool not permitted: add_cell"));
         }
 
         @Test
@@ -228,7 +228,7 @@ class SecurityIntegrationTest {
             mockMvc.perform(post("/mcp")
                             .header(HttpHeaders.AUTHORIZATION, "Bearer reader-token")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(toolsCallRequest("hivemem_approve_pending", "{}")))
+                            .content(toolsCallRequest("approve_pending", "{}")))
                     .andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.error.code").value(-32003));
         }
@@ -240,7 +240,7 @@ class SecurityIntegrationTest {
             mockMvc.perform(post("/mcp")
                             .header(HttpHeaders.AUTHORIZATION, "Bearer writer-token")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(toolsCallRequest("hivemem_approve_pending", "{}")))
+                            .content(toolsCallRequest("approve_pending", "{}")))
                     .andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.error.code").value(-32003));
         }
@@ -252,7 +252,7 @@ class SecurityIntegrationTest {
             mockMvc.perform(post("/mcp")
                             .header(HttpHeaders.AUTHORIZATION, "Bearer agent-token")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(toolsCallRequest("hivemem_approve_pending", "{}")))
+                            .content(toolsCallRequest("approve_pending", "{}")))
                     .andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.error.code").value(-32003));
         }
@@ -270,7 +270,7 @@ class SecurityIntegrationTest {
         void rejectsInvalidDecision(String invalidDecision) throws Exception {
             insertToken("admin-user", "admin-token", "admin");
 
-            String body = toolsCallRequest("hivemem_approve_pending",
+            String body = toolsCallRequest("approve_pending",
                     """
                     {"ids":[],"decision":"%s"}
                     """.formatted(invalidDecision));
@@ -291,7 +291,7 @@ class SecurityIntegrationTest {
             insertToken("admin-user", "admin-token", "admin");
 
             // Call with empty ids list -- should succeed without error (no-op)
-            String body = toolsCallRequest("hivemem_approve_pending",
+            String body = toolsCallRequest("approve_pending",
                     """
                     {"ids":[],"decision":"%s"}
                     """.formatted(validDecision));
@@ -406,7 +406,7 @@ class SecurityIntegrationTest {
             // If this returned 200, it would mean the request bypassed auth
             mockMvc.perform(post("/mcp")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(toolsCallRequest("hivemem_health", "{}")))
+                            .content(toolsCallRequest("health", "{}")))
                     .andExpect(status().isUnauthorized());
         }
     }
@@ -464,27 +464,27 @@ class SecurityIntegrationTest {
 
         @Test
         void readerCannotAccessWriteTools() {
-            assertThat(service.isAllowed(AuthRole.READER, "hivemem_add_cell")).isFalse();
-            assertThat(service.isAllowed(AuthRole.READER, "hivemem_kg_add")).isFalse();
-            assertThat(service.isAllowed(AuthRole.READER, "hivemem_add_tunnel")).isFalse();
+            assertThat(service.isAllowed(AuthRole.READER, "add_cell")).isFalse();
+            assertThat(service.isAllowed(AuthRole.READER, "kg_add")).isFalse();
+            assertThat(service.isAllowed(AuthRole.READER, "add_tunnel")).isFalse();
         }
 
         @Test
         void readerCannotAccessAdminTools() {
-            assertThat(service.isAllowed(AuthRole.READER, "hivemem_approve_pending")).isFalse();
-            assertThat(service.isAllowed(AuthRole.READER, "hivemem_health")).isFalse();
+            assertThat(service.isAllowed(AuthRole.READER, "approve_pending")).isFalse();
+            assertThat(service.isAllowed(AuthRole.READER, "health")).isFalse();
         }
 
         @Test
         void writerCannotAccessAdminTools() {
-            assertThat(service.isAllowed(AuthRole.WRITER, "hivemem_approve_pending")).isFalse();
-            assertThat(service.isAllowed(AuthRole.WRITER, "hivemem_health")).isFalse();
+            assertThat(service.isAllowed(AuthRole.WRITER, "approve_pending")).isFalse();
+            assertThat(service.isAllowed(AuthRole.WRITER, "health")).isFalse();
         }
 
         @Test
         void agentCannotApproveOwnSuggestions() {
-            assertThat(service.isAllowed(AuthRole.AGENT, "hivemem_approve_pending")).isFalse();
-            assertThat(service.isAllowed(AuthRole.AGENT, "hivemem_health")).isFalse();
+            assertThat(service.isAllowed(AuthRole.AGENT, "approve_pending")).isFalse();
+            assertThat(service.isAllowed(AuthRole.AGENT, "health")).isFalse();
         }
 
         @Test
@@ -497,8 +497,8 @@ class SecurityIntegrationTest {
             }
             // Spot-check that admin set includes admin-only tools
             assertThat(adminTools).contains(
-                    "hivemem_approve_pending",
-                    "hivemem_health"
+                    "approve_pending",
+                    "health"
             );
         }
 
@@ -508,7 +508,7 @@ class SecurityIntegrationTest {
             Set<String> agentTools = service.allowedTools(AuthRole.AGENT);
 
             for (String adminTool : Set.of(
-                    "hivemem_approve_pending", "hivemem_health")) {
+                    "approve_pending", "health")) {
                 assertThat(writerTools)
                         .as("Admin tool %s must not appear in writer role", adminTool)
                         .doesNotContain(adminTool);
@@ -521,7 +521,7 @@ class SecurityIntegrationTest {
         @Test
         void nullRoleReturnsEmptyToolSet() {
             assertThat(service.allowedTools(null)).isEmpty();
-            assertThat(service.isAllowed(null, "hivemem_status")).isFalse();
+            assertThat(service.isAllowed(null, "status")).isFalse();
         }
     }
 }

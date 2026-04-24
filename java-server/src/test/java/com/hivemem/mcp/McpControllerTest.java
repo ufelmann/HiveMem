@@ -83,7 +83,7 @@ class McpControllerTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.tools").isArray())
-                .andExpect(jsonPath("$.result.tools[0].name").value("hivemem_status"));
+                .andExpect(jsonPath("$.result.tools[0].name").value("status"));
     }
 
     @Test
@@ -108,7 +108,7 @@ class McpControllerTest {
                                   "jsonrpc":"2.0",
                                   "id":3,
                                   "method":"tools/call",
-                                  "params":{"name":"hivemem_status","arguments":{}}
+                                  "params":{"name":"status","arguments":{}}
                                 }
                                 """))
                 .andExpect(status().isOk())
@@ -126,7 +126,7 @@ class McpControllerTest {
                                   "jsonrpc":"2.0",
                                   "id":4,
                                   "method":"tools/call",
-                                  "params":{"name":"hivemem_search","arguments":{}}
+                                  "params":{"name":"search","arguments":{}}
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
@@ -144,12 +144,12 @@ class McpControllerTest {
                                   "jsonrpc":"2.0",
                                   "id":5,
                                   "method":"tools/call",
-                                  "params":{"name":"hivemem_add_cell","arguments":{}}
+                                  "params":{"name":"add_cell","arguments":{}}
                                 }
                                 """))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error.code").value(-32003))
-                .andExpect(jsonPath("$.error.message").value("Tool not permitted: hivemem_add_cell"));
+                .andExpect(jsonPath("$.error.message").value("Tool not permitted: add_cell"));
     }
 
     @Test
@@ -265,7 +265,7 @@ class McpControllerTest {
                                 {"jsonrpc":"2.0","id":20,"method":"tools/list"}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.tools[1].name").value("hivemem_search"))
+                .andExpect(jsonPath("$.result.tools[1].name").value("search"))
                 .andExpect(jsonPath("$.result.tools[1].inputSchema.properties.query").exists())
                 .andExpect(jsonPath("$.result.tools[1].inputSchema.properties.limit").exists())
                 .andExpect(jsonPath("$.result.tools[1].inputSchema.required").isArray());
@@ -315,7 +315,7 @@ class McpControllerTest {
             return new ToolHandler() {
                 @Override
                 public String name() {
-                    return "hivemem_status";
+                    return "status";
                 }
 
                 @Override
@@ -340,7 +340,7 @@ class McpControllerTest {
             return new ToolHandler() {
                 @Override
                 public String name() {
-                    return "hivemem_search";
+                    return "search";
                 }
 
                 @Override

@@ -66,7 +66,7 @@ export class HttpApiClient implements ApiClient {
     const interval = this.config.pollMs ?? 10_000
     this.timer = setInterval(async () => {
       try {
-        const s = await this.call<StatusSummary>('hivemem_status')
+        const s = await this.call<StatusSummary>('status')
         if (this.lastActivity && s.last_activity !== this.lastActivity) {
           this.subscribers.forEach(sub => sub({ type: 'status', last_activity: s.last_activity }))
         }

@@ -68,9 +68,9 @@ HiveMem Java-Server (existing, unchanged for SP1 v1)
 
 ## 5. Pinia store modules
 
-- **`auth`** — token, role, login dialog. `login(token)` calls `hivemem_wake_up`, persists role to localStorage.
+- **`auth`** — token, role, login dialog. `login(token)` calls `wake_up`, persists role to localStorage.
 - **`canvas`** — realms + cells + tunnels as graph data. `loadTopLevel()`, `loadRealm(id)`. Aggregate metrics (cell count per realm, tunnel density) computed once and cached.
-- **`cell`** — focused cell with content, summary, key_points, insight, facts, incoming + outgoing tunnels. Lazy-loaded via `hivemem_get_cell`. LRU-evicted at 50 entries.
+- **`cell`** — focused cell with content, summary, key_points, insight, facts, incoming + outgoing tunnels. Lazy-loaded via `get_cell`. LRU-evicted at 50 entries.
 - **`reader`** — reader-mode state: active tab, PDF page/zoom, edit mode (SP4-reserved).
 - **`ui`** — panel visibility, search query, sphere-size metric, theme.
 
@@ -93,7 +93,7 @@ type HiveEvent =
 
 Two implementations:
 
-- **`HttpApiClient`** — real HiveMem JSON-RPC over `POST /mcp` with `Authorization: Bearer <token>`. `subscribe()` polls `hivemem_status` every 10s, diffs `last_activity`, emits `status` event when it changes; SP1 v1 strategy.
+- **`HttpApiClient`** — real HiveMem JSON-RPC over `POST /mcp` with `Authorization: Bearer <token>`. `subscribe()` polls `status` every 10s, diffs `last_activity`, emits `status` event when it changes; SP1 v1 strategy.
 - **`MockApiClient`** — loads `mock.ts` (47 cells + 46 facts snapshot). Implements all 15 read tools deterministically with 50-200ms random latency. `subscribe()` emits a fake `cell_added` every 15s and `tunnel_added` every 30s to exercise live-update UI.
 
 Toggle: `VITE_USE_MOCK=true` at build time, or `localStorage.setItem('hivemem_mock', 'true')` at runtime. DevTools convenience: `window.__useMock(bool)`.
@@ -208,7 +208,7 @@ In SP1 v1, the edit button is disabled with a tooltip pointing to SP4.
 
 ## 10. Role-based visibility
 
-Visibility is derived from the role returned by `hivemem_wake_up`:
+Visibility is derived from the role returned by `wake_up`:
 
 | Role | Icon rail | Panels | Actions |
 |---|---|---|---|

@@ -91,7 +91,7 @@ class CrossFeatureParityIntegrationTest {
 
     @Test
     void reviseDrawerPreservesProgressiveLayers() throws Exception {
-        JsonNode drawer = callTool("writer-token", "hivemem_add_cell", Map.of(
+        JsonNode drawer = callTool("writer-token", "add_cell", Map.of(
                 "content", "Original content about auth migration",
                 "realm", "eng",
                 "signal", "facts",
@@ -104,11 +104,11 @@ class CrossFeatureParityIntegrationTest {
         ));
         String drawerId = drawer.path("id").asText();
 
-        JsonNode revision = callTool("writer-token", "hivemem_revise_cell", Map.of(
+        JsonNode revision = callTool("writer-token", "revise_cell", Map.of(
                 "old_id", drawerId,
                 "new_content", "Updated content about auth migration complete"
         ));
-        JsonNode revisedDrawer = callTool("writer-token", "hivemem_get_cell", Map.of(
+        JsonNode revisedDrawer = callTool("writer-token", "get_cell", Map.of(
                 "cell_id", revision.path("new_id").asText()
         ));
 
@@ -122,21 +122,21 @@ class CrossFeatureParityIntegrationTest {
 
     @Test
     void reviseFactPreservesSourceId() throws Exception {
-        JsonNode drawer = callTool("writer-token", "hivemem_add_cell", Map.of(
+        JsonNode drawer = callTool("writer-token", "add_cell", Map.of(
                 "content", "Source drawer for fact",
                 "realm", "eng",
                 "signal", "facts",
                 "topic", "test"
         ));
 
-        JsonNode fact = callTool("writer-token", "hivemem_kg_add", Map.of(
+        JsonNode fact = callTool("writer-token", "kg_add", Map.of(
                 "subject", "HiveMem",
                 "predicate", "uses",
                 "object_", "PostgreSQL",
                 "source_id", drawer.path("id").asText()
         ));
 
-        JsonNode revision = callTool("writer-token", "hivemem_revise_fact", Map.of(
+        JsonNode revision = callTool("writer-token", "revise_fact", Map.of(
                 "old_id", fact.path("id").asText(),
                 "new_object", "PostgreSQL 17"
         ));
@@ -149,7 +149,7 @@ class CrossFeatureParityIntegrationTest {
 
     @Test
     void popularityStaysZeroBeforeRefresh() throws Exception {
-        JsonNode drawer = callTool("writer-token", "hivemem_add_cell", Map.of(
+        JsonNode drawer = callTool("writer-token", "add_cell", Map.of(
                 "content", "Content about Docker container orchestration",
                 "realm", "eng",
                 "signal", "facts",
@@ -162,7 +162,7 @@ class CrossFeatureParityIntegrationTest {
             adminToolService.logAccess(drawerUuid, null, "admin");
         }
 
-        JsonNode results = callTool("writer-token", "hivemem_search", Map.of(
+        JsonNode results = callTool("writer-token", "search", Map.of(
                 "query", "Docker container orchestration",
                 "weight_semantic", 0.0d,
                 "weight_keyword", 0.0d,
@@ -178,7 +178,7 @@ class CrossFeatureParityIntegrationTest {
 
     @Test
     void blueprintKeyDrawersRemainResolvableAfterDrawerRevision() throws Exception {
-        JsonNode drawer = callTool("writer-token", "hivemem_add_cell", Map.of(
+        JsonNode drawer = callTool("writer-token", "add_cell", Map.of(
                 "content", "Important drawer",
                 "realm", "eng",
                 "signal", "facts",
@@ -187,26 +187,26 @@ class CrossFeatureParityIntegrationTest {
         ));
         String originalDrawerId = drawer.path("id").asText();
 
-        callTool("writer-token", "hivemem_update_blueprint", Map.of(
+        callTool("writer-token", "update_blueprint", Map.of(
                 "realm", "eng",
                 "title", "Engineering Overview",
                 "narrative", "Architecture decisions",
                 "key_cells", List.of(originalDrawerId)
         ));
 
-        JsonNode revision = callTool("writer-token", "hivemem_revise_cell", Map.of(
+        JsonNode revision = callTool("writer-token", "revise_cell", Map.of(
                 "old_id", originalDrawerId,
                 "new_content", "Updated important drawer"
         ));
         String revisedDrawerId = revision.path("new_id").asText();
 
-        JsonNode blueprints = callTool("writer-token", "hivemem_get_blueprint", Map.of(
+        JsonNode blueprints = callTool("writer-token", "get_blueprint", Map.of(
                 "realm", "eng"
         ));
         assertThat(textValues(blueprints.get(0).path("key_cells"))).contains(originalDrawerId);
         assertThat(textValues(blueprints.get(0).path("key_cells"))).doesNotContain(revisedDrawerId);
 
-        JsonNode originalDrawer = callTool("writer-token", "hivemem_get_cell", Map.of(
+        JsonNode originalDrawer = callTool("writer-token", "get_cell", Map.of(
                 "cell_id", originalDrawerId
         ));
         assertThat(originalDrawer.path("id").asText()).isEqualTo(originalDrawerId);
@@ -215,22 +215,22 @@ class CrossFeatureParityIntegrationTest {
 
     @Test
     void fullAgentPipelineWorksEndToEnd() throws Exception {
-        callTool("writer-token", "hivemem_register_agent", Map.of(
+        callTool("writer-token", "register_agent", Map.of(
                 "name", "agent-1",
                 "focus", "Curate and organize knowledge"
         ));
-        callTool("writer-token", "hivemem_diary_write", Map.of(
+        callTool("writer-token", "diary_write", Map.of(
                 "agent", "agent-1",
                 "entry", "Found duplicate content in engineering wing"
         ));
 
-        JsonNode diary = callTool("writer-token", "hivemem_diary_read", Map.of(
+        JsonNode diary = callTool("writer-token", "diary_read", Map.of(
                 "agent", "agent-1"
         ));
         assertThat(diary).hasSize(1);
         assertThat(diary.get(0).path("entry").asText()).isEqualTo("Found duplicate content in engineering wing");
 
-        JsonNode drawer = callTool("agent-token", "hivemem_add_cell", Map.of(
+        JsonNode drawer = callTool("agent-token", "add_cell", Map.of(
                 "content", "Curated summary of authentication patterns",
                 "realm", "eng",
                 "signal", "facts",
@@ -241,17 +241,17 @@ class CrossFeatureParityIntegrationTest {
         String drawerId = drawer.path("id").asText();
         assertThat(drawer.path("status").asText()).isEqualTo("pending");
 
-        JsonNode pending = callTool("writer-token", "hivemem_pending_approvals", Map.of());
+        JsonNode pending = callTool("writer-token", "pending_approvals", Map.of());
         JsonNode pendingDrawer = findById(pending, drawerId);
         assertThat(pendingDrawer).isNotNull();
         assertThat(pendingDrawer.path("created_by").asText()).isEqualTo("agent-1");
 
-        callTool("admin-token", "hivemem_approve_pending", Map.of(
+        callTool("admin-token", "approve_pending", Map.of(
                 "ids", List.of(drawerId),
                 "decision", "committed"
         ));
 
-        JsonNode results = callTool("writer-token", "hivemem_search", Map.of(
+        JsonNode results = callTool("writer-token", "search", Map.of(
                 "query", "authentication patterns"
         ));
         assertThat(textValues(results, "id")).contains(drawerId);

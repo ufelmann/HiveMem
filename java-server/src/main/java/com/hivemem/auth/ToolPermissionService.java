@@ -20,42 +20,43 @@ public class ToolPermissionService {
     }
 
     private static final Set<String> READ_TOOLS = tools(
-            "hivemem_status",
-            "hivemem_search",
-            "hivemem_search_kg",
-            "hivemem_get_cell",
-            "hivemem_list",
-            "hivemem_traverse",
-            "hivemem_quick_facts",
-            "hivemem_time_machine",
-            "hivemem_wake_up",
-            "hivemem_history",
-            "hivemem_pending_approvals",
-            "hivemem_get_blueprint",
-            "hivemem_reading_list",
-            "hivemem_list_agents",
-            "hivemem_diary_read"
+            "status",
+            "search",
+            "search_kg",
+            "get_cell",
+            "list",
+            "traverse",
+            "quick_facts",
+            "time_machine",
+            "wake_up",
+            "history",
+            "pending_approvals",
+            "get_blueprint",
+            "reading_list",
+            "list_agents",
+            "diary_read"
     );
 
     private static final Set<String> WRITE_TOOLS = tools(
-            "hivemem_add_cell",
-            "hivemem_add_tunnel",
-            "hivemem_kg_add",
-            "hivemem_kg_invalidate",
-            "hivemem_update_identity",
-            "hivemem_add_reference",
-            "hivemem_link_reference",
-            "hivemem_remove_tunnel",
-            "hivemem_revise_cell",
-            "hivemem_revise_fact",
-            "hivemem_register_agent",
-            "hivemem_diary_write",
-            "hivemem_update_blueprint"
+            "add_cell",
+            "add_tunnel",
+            "kg_add",
+            "kg_invalidate",
+            "update_identity",
+            "add_reference",
+            "link_reference",
+            "remove_tunnel",
+            "revise_cell",
+            "reclassify_cell",
+            "revise_fact",
+            "register_agent",
+            "diary_write",
+            "update_blueprint"
     );
 
     private static final Set<String> ADMIN_TOOLS = tools(
-            "hivemem_approve_pending",
-            "hivemem_health"
+            "approve_pending",
+            "health"
     );
 
     private static final Set<String> WRITER_TOOLS = union(READ_TOOLS, WRITE_TOOLS);

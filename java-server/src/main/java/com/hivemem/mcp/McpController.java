@@ -31,7 +31,7 @@ public class McpController {
 
     private static final String SESSION_HEADER = "Mcp-Session-Id";
 
-    private static final Set<String> SEARCH_TOOLS = Set.of("hivemem_search");
+    private static final Set<String> SEARCH_TOOLS = Set.of("search");
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 

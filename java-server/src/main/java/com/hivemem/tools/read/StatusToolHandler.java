@@ -20,7 +20,7 @@ public class StatusToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_status";
+        return "status";
     }
 
     @Override

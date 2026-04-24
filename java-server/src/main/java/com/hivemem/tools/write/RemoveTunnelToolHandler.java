@@ -24,7 +24,7 @@ public class RemoveTunnelToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_remove_tunnel";
+        return "remove_tunnel";
     }
 
     @Override

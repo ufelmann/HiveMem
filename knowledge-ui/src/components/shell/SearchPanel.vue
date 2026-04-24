@@ -14,7 +14,7 @@ watch(q, v => {
   if (timer) clearTimeout(timer)
   timer = setTimeout(async () => {
     loading.value = true
-    try { results.value = await useApi().call<Cell[]>('hivemem_search', { query: v, limit: 50 }) }
+    try { results.value = await useApi().call<Cell[]>('search', { query: v, limit: 50 }) }
     finally { loading.value = false }
   }, 180) as unknown as number
 })

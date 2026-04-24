@@ -25,7 +25,7 @@ public class AddCellToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_add_cell";
+        return "add_cell";
     }
 
     @Override

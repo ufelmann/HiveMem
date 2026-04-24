@@ -5,7 +5,7 @@ import type { StatusSummary, Cell } from '../../src/api/types'
 describe('MockApiClient', () => {
   it('returns deterministic status', async () => {
     const c = new MockApiClient()
-    const s = await c.call<StatusSummary>('hivemem_status')
+    const s = await c.call<StatusSummary>('status')
     expect(s.cell_count).toBeGreaterThan(0)
     expect(s.realm_count).toBeGreaterThan(0)
     expect(typeof s.last_activity).toBe('string')
@@ -13,15 +13,15 @@ describe('MockApiClient', () => {
 
   it('search returns cells array', async () => {
     const c = new MockApiClient()
-    const res = await c.call<Cell[]>('hivemem_search', { query: '' })
+    const res = await c.call<Cell[]>('search', { query: '' })
     expect(Array.isArray(res)).toBe(true)
     expect(res.length).toBeGreaterThan(0)
   })
 
   it('get_cell returns cell with matching id', async () => {
     const c = new MockApiClient()
-    const all = await c.call<Cell[]>('hivemem_search', { query: '' })
-    const cell = await c.call<Cell>('hivemem_get_cell', { cell_id: all[0].id })
+    const all = await c.call<Cell[]>('search', { query: '' })
+    const cell = await c.call<Cell>('get_cell', { cell_id: all[0].id })
     expect(cell.id).toBe(all[0].id)
   })
 

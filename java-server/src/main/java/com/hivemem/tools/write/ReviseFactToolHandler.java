@@ -24,7 +24,7 @@ public class ReviseFactToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_revise_fact";
+        return "revise_fact";
     }
 
     @Override
