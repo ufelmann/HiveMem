@@ -348,6 +348,29 @@ class SearchParityIntegrationTest {
     }
 
     @Test
+    void germanContentIsMatchableAfterDictionarySwitch() throws Exception {
+        // V0013 switched the tsv dictionary from 'english' to 'simple' so German
+        // and English content tokenize equally (no English stemming/stopwords).
+        // The German word "Schlüsseldienst" (locksmith) would not have indexed
+        // sensibly under 'english'; under 'simple' it lowercases and matches.
+        insertDrawer(
+                UUID.fromString("00000000-0000-0000-0000-000000000cc1"),
+                "Notiz: Schlüsseldienst gerufen wegen ausgesperrter Mitarbeiterin",
+                "personal", "events", "haushalt", 3,
+                "Schlüsseldienst Einsatz", "committed",
+                OffsetDateTime.parse("2026-04-03T10:00:00Z")
+        );
+
+        JsonNode results = callTool("writer-token", "hivemem_search", Map.of(
+                "query", "Schlüsseldienst",
+                "limit", 10
+        ));
+
+        assertThat(textValues(results, "id"))
+                .contains("00000000-0000-0000-0000-000000000cc1");
+    }
+
+    @Test
     void validUntilIsExposedWhenIncluded() throws Exception {
         insertDrawer(
                 UUID.fromString("00000000-0000-0000-0000-000000000bb1"),
