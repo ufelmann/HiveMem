@@ -302,6 +302,93 @@ class SearchParityIntegrationTest {
         return values;
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Tests added with V0012: SQL ranked_search now drives ReadToolService.search.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    void hardFilterExcludesCellsWithNoSemanticOrKeywordMatch() throws Exception {
+        // Cell with no embedding and content that does not match the query at all.
+        // Old in-memory ranking always returned every candidate; the SQL function
+        // applies a hard filter (sem > 0.3 OR kw > 0), so this row must be absent.
+        insertDrawer(
+                UUID.fromString("00000000-0000-0000-0000-000000000901"),
+                "completely unrelated banana split",
+                "eng", "facts", "misc", 3, "unrelated", "committed",
+                OffsetDateTime.parse("2026-04-03T10:00:00Z")
+        );
+
+        JsonNode results = callTool("writer-token", "search", Map.of(
+                "query", "kubernetes ingress",
+                "limit", 10
+        ));
+
+        assertThat(textValues(results, "id"))
+                .doesNotContain("00000000-0000-0000-0000-000000000901");
+    }
+
+    @Test
+    void deterministicTiebreakOrdersEqualScoresByIdAsc() throws Exception {
+        // Two cells with identical content, importance, and timestamps will produce
+        // identical scores. V0012 added an ORDER BY id ASC tiebreak so the order is
+        // stable across runs.
+        UUID lower = UUID.fromString("00000000-0000-0000-0000-000000000aa1");
+        UUID higher = UUID.fromString("00000000-0000-0000-0000-000000000aa2");
+        OffsetDateTime ts = OffsetDateTime.parse("2026-04-03T10:00:00Z");
+        insertDrawer(higher, "tiebreak probe text", "eng", "facts", "ord", 3, "probe", "committed", ts);
+        insertDrawer(lower, "tiebreak probe text", "eng", "facts", "ord", 3, "probe", "committed", ts);
+
+        JsonNode results = callTool("writer-token", "search", Map.of(
+                "query", "tiebreak probe",
+                "limit", 10
+        ));
+
+        List<String> ids = textValues(results, "id");
+        assertThat(ids).startsWith(lower.toString(), higher.toString());
+    }
+
+    @Test
+    void germanContentIsMatchableAfterDictionarySwitch() throws Exception {
+        // V0013 switched the tsv dictionary from 'english' to 'simple' so German
+        // and English content tokenize equally (no English stemming/stopwords).
+        // The German word "Schlüsseldienst" (locksmith) would not have indexed
+        // sensibly under 'english'; under 'simple' it lowercases and matches.
+        insertDrawer(
+                UUID.fromString("00000000-0000-0000-0000-000000000cc1"),
+                "Notiz: Schlüsseldienst gerufen wegen ausgesperrter Mitarbeiterin",
+                "personal", "events", "haushalt", 3,
+                "Schlüsseldienst Einsatz", "committed",
+                OffsetDateTime.parse("2026-04-03T10:00:00Z")
+        );
+
+        JsonNode results = callTool("writer-token", "search", Map.of(
+                "query", "Schlüsseldienst",
+                "limit", 10
+        ));
+
+        assertThat(textValues(results, "id"))
+                .contains("00000000-0000-0000-0000-000000000cc1");
+    }
+
+    @Test
+    void validUntilIsExposedWhenIncluded() throws Exception {
+        insertDrawer(
+                UUID.fromString("00000000-0000-0000-0000-000000000bb1"),
+                "valid until probe content", "eng", "facts", "tmp", 3,
+                "valid until probe", "committed",
+                OffsetDateTime.parse("2026-04-03T10:00:00Z")
+        );
+
+        JsonNode results = callTool("writer-token", "search", Map.of(
+                "query", "valid until probe",
+                "include", List.of("summary", "valid_from", "valid_until")
+        ));
+
+        assertThat(results).isNotEmpty();
+        assertThat(results.get(0).has("valid_until")).isTrue();
+        assertThat(results.get(0).path("valid_until").isNull()).isTrue();
+    }
+
     private void insertDrawer(
             UUID id,
             String content,

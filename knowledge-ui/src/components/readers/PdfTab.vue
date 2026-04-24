@@ -8,7 +8,7 @@ let viewer: any = null
 watchEffect(async () => {
   if (!props.url || !container.value) return
   const pdfjs = await import('pdfjs-dist')
-  const viewerMod = await import('pdfjs-dist/web/pdf_viewer')
+  const viewerMod: any = await import('pdfjs-dist/web/pdf_viewer.mjs')
   ;(pdfjs as any).GlobalWorkerOptions.workerSrc =
     new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString()
   const pdf = await pdfjs.getDocument(props.url).promise

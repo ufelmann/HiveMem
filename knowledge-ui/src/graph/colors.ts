@@ -12,7 +12,8 @@ export function colorForRelation(relation: string) {
   return relationColors[relation as Relation] ?? '#7f8aa3'
 }
 
-export function colorForRealm(name: string): string {
+export function colorForRealm(name: string | null | undefined): string {
+  if (!name) return '#7f8aa3'
   let h = 0
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360
   return `hsl(${h}, 70%, 55%)`
