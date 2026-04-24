@@ -348,6 +348,89 @@ class SearchParityIntegrationTest {
     }
 
     @Test
+    void rankedSearchIsInlinedByPlanner() {
+        // V0014 rewrote ranked_search as LANGUAGE SQL so the outer planner can
+        // inline the body instead of treating it as an opaque function call.
+        // Inlining shows up as a real plan for the inner SELECT (Seq/Index Scan
+        // on cells, a Sort, etc.) rather than a "Function Scan on ranked_search".
+        // Without inlining, a cross-boundary HNSW/ANN optimization is impossible.
+        FixedEmbeddingClient client = new FixedEmbeddingClient();
+        List<Float> queryVec = client.encodeQuery("probe");
+        String explainPlan = String.join("\n",
+                dslContext.fetch(
+                        """
+                        EXPLAIN (FORMAT TEXT)
+                        SELECT id FROM ranked_search(?::vector, ?, NULL, NULL, NULL, 10,
+                                                     0.35::real, 0.15::real, 0.20::real,
+                                                     0.15::real, 0.15::real)
+                        """,
+                        queryVec.toArray(Float[]::new),
+                        "probe"
+                ).stream().map(r -> r.get(0, String.class)).toList());
+
+        assertThat(explainPlan)
+                .as("Plan was:\n%s", explainPlan)
+                .doesNotContain("Function Scan on ranked_search");
+    }
+
+    @Test
+    void rankedSearchUsesHnswIndexWhenSelectingCandidates() {
+        // Seed enough cells (and disable seqscan below) so the planner will
+        // prefer the HNSW expression index for the ANN prefilter.
+        FixedEmbeddingClient client = new FixedEmbeddingClient();
+        for (int i = 0; i < 500; i++) {
+            UUID id = UUID.fromString(String.format("00000000-0000-0000-0000-%012d", 700000 + i));
+            String content = "Sample cell content number " + i;
+            List<Float> embedding = client.encodeDocument(content);
+            dslContext.execute(
+                    """
+                    INSERT INTO cells (
+                        id, content, embedding, realm, signal, topic, importance,
+                        summary, status, created_by, created_at, valid_from
+                    ) VALUES (?, ?, ?::vector, 'eng', 'facts', 'perf', 3, ?, 'committed', 'writer-1',
+                             '2026-04-03T10:00:00Z'::timestamptz, '2026-04-03T10:00:00Z'::timestamptz)
+                    """,
+                    id, content, embedding.toArray(Float[]::new), "summary " + i);
+        }
+
+        // Rebuild the HNSW expression index on the current dim. Production does
+        // this via EmbeddingMigrationService on startup; here we do it directly
+        // because the test container starts with an empty table.
+        dslContext.execute("DROP INDEX IF EXISTS idx_cells_embedding");
+        dslContext.execute(
+                "CREATE INDEX idx_cells_embedding ON cells USING hnsw ((embedding::vector(1024)) vector_cosine_ops)");
+        dslContext.execute("ANALYZE cells");
+        // Force the planner to consider the HNSW index for the EXPLAIN below.
+        // SET LOCAL would not persist across jOOQ execute calls; session SET
+        // is fine because @BeforeEach truncates state for the next test.
+        dslContext.execute("SET enable_seqscan = off");
+        dslContext.execute("SET enable_bitmapscan = off");
+        dslContext.execute("SET enable_sort = off");
+        // Let HNSW return enough candidates for our LIMIT 200 prefilter.
+        dslContext.execute("SET hnsw.ef_search = 200");
+
+        List<Float> queryVec = client.encodeQuery("Sample cell content number 42");
+        String explainPlan = String.join("\n",
+                dslContext.fetch(
+                        """
+                        EXPLAIN (FORMAT TEXT)
+                        SELECT id, score_total FROM ranked_search(?::vector, ?, NULL, NULL, NULL, 10,
+                                                                   0.35::real, 0.15::real, 0.20::real,
+                                                                   0.15::real, 0.15::real)
+                        """,
+                        queryVec.toArray(Float[]::new),
+                        "Sample content"
+                ).stream().map(r -> r.get(0, String.class)).toList());
+
+        // The plan should reference the HNSW expression index. Seq scan on cells
+        // means the cast in the function does not match the index expression,
+        // which defeats the whole point of having it.
+        assertThat(explainPlan)
+                .as("ranked_search must use idx_cells_embedding. Plan was:\n%s", explainPlan)
+                .contains("idx_cells_embedding");
+    }
+
+    @Test
     void germanContentIsMatchableAfterDictionarySwitch() throws Exception {
         // V0013 switched the tsv dictionary from 'english' to 'simple' so German
         // and English content tokenize equally (no English stemming/stopwords).
