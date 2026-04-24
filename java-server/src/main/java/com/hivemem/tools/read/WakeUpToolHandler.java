@@ -18,7 +18,7 @@ public class WakeUpToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_wake_up";
+        return "wake_up";
     }
 
     @Override

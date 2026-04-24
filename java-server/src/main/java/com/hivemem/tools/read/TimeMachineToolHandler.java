@@ -24,7 +24,7 @@ public class TimeMachineToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_time_machine";
+        return "time_machine";
     }
 
     @Override

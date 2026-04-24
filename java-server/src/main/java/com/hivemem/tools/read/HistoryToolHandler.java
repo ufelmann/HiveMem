@@ -22,7 +22,7 @@ public class HistoryToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_history";
+        return "history";
     }
 
     @Override

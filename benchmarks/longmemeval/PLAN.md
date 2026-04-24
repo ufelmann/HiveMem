@@ -165,7 +165,7 @@ All four use LLMs for ingestion. The only difference is which side of the librar
 
 ### Why a raw-dump adapter would be unfair to HiveMem
 
-A naive adapter that pipes LongMemEval turns straight into `hivemem_add_cell` would:
+A naive adapter that pipes LongMemEval turns straight into `add_cell` would:
 - Store raw `"user: ...\nassistant: ..."` blobs as `content`
 - Use the first 200 characters as a fake `summary`
 - Skip `key_points`, `insight`, `actionability` entirely
@@ -175,7 +175,7 @@ That is **not** how HiveMem is used in practice. It produces garbage embeddings 
 
 ### The adapter must include an LLM curation stage
 
-For a defensible benchmark, Task 4's adapter and Task 5's LLM client must cooperate: before each `hivemem_add_cell` call, a gpt-4o-mini curation pass reads the raw session and produces content, summary, key_points, insight, plus an optional list of fact triples. This matches Zep's `gpt-4o-mini-2024-07-18` "graph construction" stage and keeps the benchmark honest.
+For a defensible benchmark, Task 4's adapter and Task 5's LLM client must cooperate: before each `add_cell` call, a gpt-4o-mini curation pass reads the raw session and produces content, summary, key_points, insight, plus an optional list of fact triples. This matches Zep's `gpt-4o-mini-2024-07-18` "graph construction" stage and keeps the benchmark honest.
 
 Concretely, Task 5's `LlmClient` gets a second method alongside `generate_answer`:
 
@@ -185,7 +185,7 @@ def curate_session(self, *, session_turns, session_date) -> CuratedSession:
        as HiveMem would expect the user-agent to fill in."""
 ```
 
-Task 6's harness calls `curate_session` per session, then feeds the curated payload into `hivemem_add_cell` and `hivemem_kg_add`.
+Task 6's harness calls `curate_session` per session, then feeds the curated payload into `add_cell` and `kg_add`.
 
 ### Budget impact of curated ingestion
 
@@ -206,7 +206,7 @@ Section 3.4's A/B adds a **third axis**: ingestion mode. Unlike my earlier stanc
 |---|---|---|---|
 | `raw` | Dump raw turns as content, no summary/key_points/insight, no facts, no KG | **MemPalace raw** (96.6% R@5 claim), vanilla-ChromaDB baselines | Yes — reported as a separate headline |
 | `curated` (default) | gpt-4o-mini fills content, summary, key_points, insight + extracts 0-3 facts per session | **Zep** (gpt-4o-mini graph construction), Mem0 (LLM extraction), MemMachine | Yes — primary headline |
-| `curated+tunnels` | Above plus post-hoc `hivemem_add_tunnel` between semantically close cells | HiveMem-specific graph signal showcase | Optional, may overfit |
+| `curated+tunnels` | Above plus post-hoc `add_tunnel` between semantically close cells | HiveMem-specific graph signal showcase | Optional, may overfit |
 
 **Always report both modes.** A big curated-over-raw delta means the LLM curation is doing real work; a small delta means either the dataset is too easy or your retrieval stack is already saturating the signal. Both findings are informative and neither is embarrassing. Just be explicit in the results JSON which mode produced which number.
 
@@ -709,7 +709,7 @@ def test_add_drawer_sends_jsonrpc_envelope(httpx_mock, client):
     assert request.headers["authorization"] == "Bearer t0ken"
     body = request.json()
     assert body["method"] == "tools/call"
-    assert body["params"]["name"] == "hivemem_add_cell"
+    assert body["params"]["name"] == "add_cell"
 
 
 def test_search_parses_text_payload(httpx_mock, client):
@@ -775,15 +775,15 @@ class HiveMemClient:
         if key_points is not None: args["key_points"] = key_points
         if tags is not None: args["tags"] = tags
         if dedupe_threshold is not None: args["dedupe_threshold"] = dedupe_threshold
-        return self._call("hivemem_add_cell", args)
+        return self._call("add_cell", args)
 
     def search(self, *, query, limit=10, realm=None):
         args: Dict[str, Any] = {"query": query, "limit": limit}
         if realm is not None: args["realm"] = realm
-        return self._call("hivemem_search", args) or []
+        return self._call("search", args) or []
 
     def wake_up(self):
-        return self._call("hivemem_wake_up", {}) or {}
+        return self._call("wake_up", {}) or {}
 ```
 
 **Commit:** `feat(benchmarks): hivemem MCP http client (#23)`
@@ -1242,7 +1242,7 @@ def kg_add(self, *, subject, predicate, object, valid_from, confidence=None, on_
             "valid_from": valid_from, "on_conflict": on_conflict}
     if confidence is not None:
         args["confidence"] = confidence
-    return self._call("hivemem_kg_add", args)
+    return self._call("kg_add", args)
 ```
 
 Note HiveMem expects `object_` (trailing underscore) in the argument name because `object` is a reserved word in the Java server's parameter handling. Test the argument name by running the Hive-Mem integration once with a trace. The Python dict `{"object": ...}` would silently be dropped. (This is a bite-sized gotcha — document it in your Task 3 test once discovered.)

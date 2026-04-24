@@ -10,7 +10,7 @@ HiveMem provides 38 MCP tools for personal knowledge management. Each tool has a
 Activation is always explicit via MCP tool calls; there are no background autonomous actions without a direct prompt.
 
 ## 2. Visible Planning
-HiveMem supports a structured `agent` role. Agents assigned to this role are instructed to propose changes via the `pending` status. No modifications to the primary knowledge base occur without an explicit review of the planned changes by an `admin` user via `hivemem_approve_pending`.
+HiveMem supports a structured `agent` role. Agents assigned to this role are instructed to propose changes via the `pending` status. No modifications to the primary knowledge base occur without an explicit review of the planned changes by an `admin` user via `approve_pending`.
 
 ## 3. Bounded Scope
 - **File System:** Restricted to `/data/imports` and `/tmp` for mining tools. No access to sensitive system directories.
@@ -24,7 +24,7 @@ Every tool execution, authentication attempt, and data modification is logged in
 HiveMem includes 250 automated tests (unit, integration, and E2E) using Testcontainers. All changes must pass CI (GitHub Actions) before release. The `status` and `health` tools provide real-time verification of the system's integrity.
 
 ## 6. Human-in-the-Loop (HITL)
-Critical operations, specifically the promotion of knowledge from "pending" to "committed", require manual approval via the `hivemem_approve_pending` tool. Deletion or invalidation of facts is restricted to `admin` and `writer` roles.
+Critical operations, specifically the promotion of knowledge from "pending" to "committed", require manual approval via the `approve_pending` tool. Deletion or invalidation of facts is restricted to `admin` and `writer` roles.
 
 ## 7. Cryptographic Integrity
 The integrity of the core logic in the `java-server/src/main/java/` directory is verified by the following SHA256 hash (v4.0.0):

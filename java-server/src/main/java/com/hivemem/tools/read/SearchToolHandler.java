@@ -27,7 +27,7 @@ public class SearchToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_search";
+        return "search";
     }
 
     @Override

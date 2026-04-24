@@ -11,7 +11,7 @@ export const useAuthStore = defineStore('auth', {
   actions: {
     async init() {
       const api = useApi()
-      const w = await api.call<{ role: Role; identity: string }>('hivemem_wake_up')
+      const w = await api.call<{ role: Role; identity: string }>('wake_up')
       this.role = w.role
       this.identity = w.identity
     },

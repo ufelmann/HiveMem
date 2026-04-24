@@ -20,7 +20,7 @@ export const useCanvasStore = defineStore('canvas', {
   actions: {
     async loadTopLevel() {
       const api = useApi()
-      const rows = await api.call<Array<{ value: string; label?: string; cell_count: number }>>('hivemem_list')
+      const rows = await api.call<Array<{ value: string; label?: string; cell_count: number }>>('list')
       this.realms = rows.map(r => ({ name: r.value, cell_count: r.cell_count, signals: [] }))
       this.cells = []
       this.tunnels = []

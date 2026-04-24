@@ -19,7 +19,7 @@ public class HealthToolHandler implements ToolHandler {
 
     @Override
     public String name() {
-        return "hivemem_health";
+        return "health";
     }
 
     @Override

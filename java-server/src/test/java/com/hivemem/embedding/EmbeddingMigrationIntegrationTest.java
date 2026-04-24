@@ -109,7 +109,7 @@ class EmbeddingMigrationIntegrationTest {
     void searchWorksWhenNoReencodingActive() throws Exception {
         insertDrawer("test content for search", "eng", "facts", "infra");
 
-        JsonNode result = callTool("writer-token", "hivemem_search", Map.of(
+        JsonNode result = callTool("writer-token", "search", Map.of(
                 "query", "test content",
                 "limit", 10
         ));

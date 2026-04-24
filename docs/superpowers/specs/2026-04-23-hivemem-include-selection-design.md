@@ -1,8 +1,8 @@
-# HiveMem API Refactor Design: `hivemem_search` + `hivemem_get_cell` Field Selection
+# HiveMem API Refactor Design: `search` + `get_cell` Field Selection
 
 ## Goal
 
-Refactor `hivemem_search` and `hivemem_get_cell` so callers can explicitly select returned fields via an `include` parameter. The change reduces unnecessary LLM context usage, especially by preventing `hivemem_search` from returning raw `content` unless explicitly requested.
+Refactor `search` and `get_cell` so callers can explicitly select returned fields via an `include` parameter. The change reduces unnecessary LLM context usage, especially by preventing `search` from returning raw `content` unless explicitly requested.
 
 This refactor is a hard cut:
 
@@ -73,7 +73,7 @@ Field presence semantics:
 - selected fields are included even when the DB value is `null`
 - this makes missing mean "not selected" and `null` mean "selected but empty"
 
-### `hivemem_search`
+### `search`
 
 New parameter:
 
@@ -98,7 +98,7 @@ Example:
 }
 ```
 
-### `hivemem_get_cell`
+### `get_cell`
 
 New parameter:
 
@@ -158,7 +158,7 @@ The shared field-selection layer maps API names to SQL columns:
 - `valid_from -> valid_from`
 - `valid_until -> valid_until`
 
-## `hivemem_search`
+## `search`
 
 The repository must build a projected `SELECT` list from:
 
@@ -173,7 +173,7 @@ Rules:
 - internal ranking columns such as embeddings or popularity counters may still be selected when needed for scoring
 - ranking logic must not depend on whether a response field is included
 
-## `hivemem_get_cell`
+## `get_cell`
 
 The repository must build a projected `SELECT` list from:
 
@@ -215,12 +215,12 @@ The implementation should keep error text deterministic enough for integration t
 
 Add or update tests to cover:
 
-- `hivemem_search` without `include` returns required metadata plus search defaults
-- `hivemem_search` with `include: []` returns only required metadata
-- `hivemem_search` returns `content` only when explicitly included
-- `hivemem_get_cell` without `include` returns required metadata plus get-cell defaults without `content`
-- `hivemem_get_cell` with `include: []` returns only required metadata
-- `hivemem_get_cell` returns `content` only when explicitly included
+- `search` without `include` returns required metadata plus search defaults
+- `search` with `include: []` returns only required metadata
+- `search` returns `content` only when explicitly included
+- `get_cell` without `include` returns required metadata plus get-cell defaults without `content`
+- `get_cell` with `include: []` returns only required metadata
+- `get_cell` returns `content` only when explicitly included
 - unknown include values fail clearly
 - wrong include types fail clearly
 - unselected fields are omitted
