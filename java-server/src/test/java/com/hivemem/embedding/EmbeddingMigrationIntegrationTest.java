@@ -100,6 +100,34 @@ class EmbeddingMigrationIntegrationTest {
     }
 
     @Test
+    void firstRunCreatesHnswIndexForActiveDimension() {
+        dslContext.execute("DROP INDEX IF EXISTS idx_cells_embedding");
+
+        embeddingMigrationService.run(null);
+
+        Integer count = dslContext.fetchOne(
+                "SELECT COUNT(*) FROM pg_indexes WHERE tablename = 'cells' AND indexname = 'idx_cells_embedding'")
+                .get(0, Integer.class);
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void matchingModelStillEnsuresHnswIndexExists() {
+        // Simulate an older deployment where info is stored but the index was
+        // never created (first-run path predates this behavior, or an operator
+        // dropped it).
+        stateRepository.saveInfo(new EmbeddingInfo("test-model", 1024));
+        dslContext.execute("DROP INDEX IF EXISTS idx_cells_embedding");
+
+        embeddingMigrationService.run(null);
+
+        Integer count = dslContext.fetchOne(
+                "SELECT COUNT(*) FROM pg_indexes WHERE tablename = 'cells' AND indexname = 'idx_cells_embedding'")
+                .get(0, Integer.class);
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
     void statusShowsNoReencodingWhenModelMatches() {
         assertThat(embeddingMigrationService.isReencodingActive()).isFalse();
         assertThat(embeddingMigrationService.getProgress()).isEmpty();
