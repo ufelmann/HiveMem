@@ -251,9 +251,16 @@ public class WriteToolService {
     private static final String SIGNAL_PREFERENCES = "preferences";
     private static final String SIGNAL_ADVICE = "advice";
 
+    @Transactional
     public Map<String, Object> updateIdentity(String key, String content) {
         int tokenCount = content.length() / 4;
         writeToolRepository.upsertIdentity(key, content, tokenCount);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("key", key);
+        opPayload.put("content", content);
+        opPayload.put("token_count", tokenCount);
+        opLogWriter.append("update_identity", opPayload);
         return Map.of("key", key, "token_count", tokenCount);
     }
 

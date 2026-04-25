@@ -220,4 +220,14 @@ class WriteHandlerOpLogIntegrationTest {
         String payload = latestPayload("register_agent");
         assertThat(payload).contains("\"agent-x\"").contains("\"focus\"");
     }
+
+    @Test
+    void updateIdentityEmitsOp() {
+        long before = opCount("update_identity");
+        service.updateIdentity("role", "I am a tester");
+
+        assertThat(opCount("update_identity")).isEqualTo(before + 1);
+        String payload = latestPayload("update_identity");
+        assertThat(payload).contains("\"role\"").contains("\"I am a tester\"");
+    }
 }
