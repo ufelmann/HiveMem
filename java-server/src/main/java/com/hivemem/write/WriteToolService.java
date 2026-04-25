@@ -279,6 +279,7 @@ public class WriteToolService {
         return writeToolRepository.updateBlueprint(principal.name(), realm, title, narrative, signalOrder, keyCells);
     }
 
+    @Transactional
     public Map<String, Object> addTunnel(
             AuthPrincipal principal,
             UUID fromCell,
@@ -288,7 +289,18 @@ public class WriteToolService {
             String requestedStatus
     ) {
         String status = principal.role() == AuthRole.AGENT ? STATUS_PENDING : effectiveStatus(principal.role(), requestedStatus);
-        return writeToolRepository.addTunnel(fromCell, toCell, relation, note, status, principal.name());
+        Map<String, Object> result = writeToolRepository.addTunnel(fromCell, toCell, relation, note, status, principal.name());
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("tunnel_id", result.get("id"));
+        opPayload.put("from_cell_id", fromCell.toString());
+        opPayload.put("to_cell_id", toCell.toString());
+        opPayload.put("relation", relation);
+        opPayload.put("note", note);
+        opPayload.put("status", status);
+        opPayload.put("agent_id", principal.name());
+        opLogWriter.append("add_tunnel", opPayload);
+        return result;
     }
 
     public Map<String, Object> removeTunnel(UUID tunnelId) {
