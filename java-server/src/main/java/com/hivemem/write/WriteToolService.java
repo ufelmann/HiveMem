@@ -257,6 +257,7 @@ public class WriteToolService {
         return Map.of("key", key, "token_count", tokenCount);
     }
 
+    @Transactional
     public Map<String, Object> addReference(
             String title,
             String url,
@@ -268,7 +269,21 @@ public class WriteToolService {
             Integer importance
     ) {
         String effectiveStatus = status == null ? "read" : status;
-        return writeToolRepository.addReference(title, url, author, refType, effectiveStatus, notes, tags, importance);
+        Map<String, Object> result = writeToolRepository.addReference(
+                title, url, author, refType, effectiveStatus, notes, tags, importance);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("reference_id", result.get("id"));
+        opPayload.put("title", title);
+        opPayload.put("url", url);
+        opPayload.put("author", author);
+        opPayload.put("ref_type", refType);
+        opPayload.put("status", effectiveStatus);
+        opPayload.put("notes", notes);
+        opPayload.put("tags", tags);
+        opPayload.put("importance", importance);
+        opLogWriter.append("add_reference", opPayload);
+        return result;
     }
 
     public Map<String, Object> linkReference(UUID cellId, UUID referenceId, String relation) {
