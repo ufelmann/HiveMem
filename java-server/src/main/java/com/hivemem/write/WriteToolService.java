@@ -399,8 +399,15 @@ public class WriteToolService {
         return Map.of("id", tunnelId.toString(), "removed", true);
     }
 
+    @Transactional
     public Map<String, Object> approvePending(List<UUID> ids, String decision) {
         int count = writeToolRepository.approvePending(ids, decision);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("ids", ids.stream().map(UUID::toString).toList());
+        opPayload.put("decision", decision);
+        opPayload.put("count", count);
+        opLogWriter.append("approve_pending", opPayload);
         return Map.of("decision", decision, "count", count);
     }
 
