@@ -174,6 +174,7 @@ class RankedSearchGraphSignalTest {
             WriteToolService.class,
             WriteToolRepository.class,
             ReadToolService.class,
+            SearchWeightsProperties.class,
             CellReadRepository.class,
             CellSearchRepository.class,
             KgSearchRepository.class,
