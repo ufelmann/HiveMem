@@ -195,4 +195,19 @@ class WriteHandlerOpLogIntegrationTest {
         String payload = latestPayload("add_reference");
         assertThat(payload).contains("\"title\"").contains("\"https://example.com\"");
     }
+
+    @Test
+    void linkReferenceEmitsOp() {
+        UUID cellId = UUID.fromString((String) service.addCell(
+                admin(), "c", "engineering", "facts", "t", null, List.of(), 1, "s", List.of(), null, null, null, null, null).get("id"));
+        UUID refId = UUID.fromString((String) service.addReference(
+                "t", "https://x", null, null, null, null, List.of(), 1).get("id"));
+
+        long before = opCount("link_reference");
+        service.linkReference(cellId, refId, "source");
+
+        assertThat(opCount("link_reference")).isEqualTo(before + 1);
+        String payload = latestPayload("link_reference");
+        assertThat(payload).contains(cellId.toString()).contains(refId.toString()).contains("\"source\"");
+    }
 }

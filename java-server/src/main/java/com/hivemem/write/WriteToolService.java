@@ -286,8 +286,16 @@ public class WriteToolService {
         return result;
     }
 
+    @Transactional
     public Map<String, Object> linkReference(UUID cellId, UUID referenceId, String relation) {
-        return writeToolRepository.linkReference(cellId, referenceId, relation);
+        Map<String, Object> result = writeToolRepository.linkReference(cellId, referenceId, relation);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("cell_id", cellId.toString());
+        opPayload.put("reference_id", referenceId.toString());
+        opPayload.put("relation", relation);
+        opLogWriter.append("link_reference", opPayload);
+        return result;
     }
 
     public Map<String, Object> registerAgent(
