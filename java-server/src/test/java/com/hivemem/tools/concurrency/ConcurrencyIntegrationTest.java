@@ -7,6 +7,8 @@ import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
 import com.hivemem.search.CellSearchRepository;
 import com.hivemem.write.WriteToolRepository;
+import com.hivemem.sync.InstanceConfig;
+import com.hivemem.sync.OpLogWriter;
 import com.hivemem.write.WriteToolService;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
@@ -498,6 +500,8 @@ class ConcurrencyIntegrationTest {
             WriteToolService.class,
             WriteToolRepository.class,
             CellSearchRepository.class,
+            OpLogWriter.class,
+            InstanceConfig.class,
             TestConfig.class
     })
     static class TestApplication {
