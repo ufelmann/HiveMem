@@ -137,6 +137,16 @@ class WriteHandlerOpLogIntegrationTest {
     }
 
     @Test
+    void kgAddEmitsKgAddOp() {
+        long before = opCount("kg_add");
+        service.kgAdd(admin(), "subject", "predicate", "object", 1.0, null, null, null, "insert");
+
+        assertThat(opCount("kg_add")).isEqualTo(before + 1);
+        String payload = latestPayload("kg_add");
+        assertThat(payload).contains("\"subject\"").contains("\"predicate\"").contains("\"object\"");
+    }
+
+    @Test
     void removeTunnelEmitsRemoveTunnelOp() {
         UUID a = UUID.fromString((String) service.addCell(
                 admin(), "a", "engineering", "facts", "t", null, List.of(), 1, "s", List.of(), null, null, null, null, null).get("id"));
