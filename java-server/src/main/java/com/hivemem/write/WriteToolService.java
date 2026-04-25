@@ -165,10 +165,20 @@ public class WriteToolService {
         );
     }
 
+    @Transactional
     public Map<String, Object> reviseCell(AuthPrincipal principal, UUID oldId, String newContent, String newSummary) {
         String status = principal.role() == AuthRole.AGENT ? STATUS_PENDING : STATUS_COMMITTED;
         List<Float> embedding = embeddingClient.encodeDocument(newContent);
-        return writeToolRepository.reviseCell(oldId, newContent, newSummary, embedding, principal.name(), status);
+        Map<String, Object> result = writeToolRepository.reviseCell(oldId, newContent, newSummary, embedding, principal.name(), status);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("cell_id", oldId.toString());
+        opPayload.put("new_content", newContent);
+        opPayload.put("new_summary", newSummary);
+        opPayload.put("agent_id", principal.name());
+        opPayload.put("status", status);
+        opLogWriter.append("revise_cell", opPayload);
+        return result;
     }
 
     public Map<String, Object> reclassifyCell(
