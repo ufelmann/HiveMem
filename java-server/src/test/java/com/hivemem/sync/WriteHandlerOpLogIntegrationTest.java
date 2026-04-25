@@ -103,4 +103,20 @@ class WriteHandlerOpLogIntegrationTest {
         assertThat(payload).contains("\"revised content\"");
         assertThat(payload).contains("\"revised summary\"");
     }
+
+    @Test
+    void reclassifyCellEmitsReclassifyOp() {
+        Map<String, Object> created = service.addCell(
+                admin(), "x", "engineering", "facts", "topic",
+                null, List.of(), 1, "s", List.of(), null, null, null, null, null);
+        UUID cellId = UUID.fromString((String) created.get("id"));
+
+        long before = opCount("reclassify_cell");
+        service.reclassifyCell(admin(), cellId, "personal", "newtopic", "events");
+
+        assertThat(opCount("reclassify_cell")).isEqualTo(before + 1);
+        String payload = latestPayload("reclassify_cell");
+        assertThat(payload).contains(cellId.toString());
+        assertThat(payload).contains("\"personal\"").contains("\"newtopic\"").contains("\"events\"");
+    }
 }

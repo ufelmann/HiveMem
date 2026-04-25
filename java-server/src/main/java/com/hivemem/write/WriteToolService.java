@@ -181,6 +181,7 @@ public class WriteToolService {
         return result;
     }
 
+    @Transactional
     public Map<String, Object> reclassifyCell(
             AuthPrincipal principal,
             UUID cellId,
@@ -202,7 +203,16 @@ public class WriteToolService {
         }
         String normalizedRealm = realm == null ? null : normalizeClassification(realm, "realm");
         String normalizedTopic = topic == null ? null : normalizeClassification(topic, "topic");
-        return writeToolRepository.reclassifyCell(cellId, normalizedRealm, normalizedTopic, signal);
+        Map<String, Object> result = writeToolRepository.reclassifyCell(cellId, normalizedRealm, normalizedTopic, signal);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("cell_id", cellId.toString());
+        opPayload.put("new_realm", normalizedRealm);
+        opPayload.put("new_topic", normalizedTopic);
+        opPayload.put("new_signal", signal);
+        opPayload.put("agent_id", principal.name());
+        opLogWriter.append("reclassify_cell", opPayload);
+        return result;
     }
 
     private static String normalizeClassification(String value, String field) {
