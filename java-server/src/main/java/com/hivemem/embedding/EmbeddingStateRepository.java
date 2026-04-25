@@ -85,6 +85,11 @@ public class EmbeddingStateRepository {
                 "ON cells USING hnsw ((embedding::vector(" + dimension + ")) vector_cosine_ops)");
     }
 
+    public void replaceRankedSearchFunction(int dimension) {
+        String sql = RankedSearchTemplate.render(dimension);
+        dslContext.execute(sql);
+    }
+
     public boolean tryAdvisoryLock(long lockId) {
         Record row = dslContext.fetchOne("SELECT pg_try_advisory_lock(?) AS acquired", lockId);
         return row != null && Boolean.TRUE.equals(row.get("acquired", Boolean.class));
