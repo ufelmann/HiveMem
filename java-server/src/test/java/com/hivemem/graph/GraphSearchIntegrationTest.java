@@ -11,6 +11,8 @@ import com.hivemem.tools.read.ReadToolService;
 import com.hivemem.write.WriteToolRepository;
 import com.hivemem.write.AdminToolRepository;
 import com.hivemem.write.AdminToolService;
+import com.hivemem.sync.InstanceConfig;
+import com.hivemem.sync.OpLogWriter;
 import com.hivemem.write.WriteToolService;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
@@ -332,6 +334,8 @@ class GraphSearchIntegrationTest {
             CellSearchRepository.class,
             KgSearchRepository.class,
             AdminToolRepository.class,
+            OpLogWriter.class,
+            InstanceConfig.class,
             TestConfig.class
     })
     static class TestApplication {
