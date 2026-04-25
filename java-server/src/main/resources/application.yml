@@ -28,6 +28,11 @@ hivemem:
       importance: 0.15
       popularity: 0.15
       graph-proximity: 0.10
+  hooks:
+    enabled: true
+    relevance-threshold: 0.65
+    max-cells: 3
+    dedup-window-turns: 5
 
 server:
   port: ${SERVER_PORT:8421}
