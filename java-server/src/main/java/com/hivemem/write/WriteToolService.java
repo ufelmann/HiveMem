@@ -105,6 +105,7 @@ public class WriteToolService {
         return result;
     }
 
+    @Transactional
     public Map<String, Object> kgAdd(
             AuthPrincipal principal,
             String subject,
@@ -143,6 +144,18 @@ public class WriteToolService {
         Map<String, Object> inserted = writeToolRepository.addFact(
                 subject, predicate, object, confidence,
                 sourceId, status, principal.name(), validFrom);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("fact_id", inserted.get("id"));
+        opPayload.put("subject", subject);
+        opPayload.put("predicate", predicate);
+        opPayload.put("object", object);
+        opPayload.put("confidence", confidence);
+        opPayload.put("source_id", sourceId == null ? null : sourceId.toString());
+        opPayload.put("status", status);
+        opPayload.put("agent_id", principal.name());
+        opPayload.put("valid_from", validFrom == null ? null : validFrom.toString());
+        opLogWriter.append("kg_add", opPayload);
 
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("inserted", true);
