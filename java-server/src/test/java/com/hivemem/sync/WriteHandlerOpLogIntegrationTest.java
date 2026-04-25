@@ -266,4 +266,21 @@ class WriteHandlerOpLogIntegrationTest {
         String payload = latestPayload("approve_pending");
         assertThat(payload).contains(pendingId.toString()).contains("\"committed\"");
     }
+
+    @Test
+    void cellInsertAndOpLogRollbackTogetherOnFailure() {
+        long opsBefore = dsl.fetchOne("SELECT count(*) AS c FROM ops_log").get("c", Long.class);
+        long cellsBefore = dsl.fetchOne("SELECT count(*) AS c FROM cells").get("c", Long.class);
+
+        // Trigger a constraint violation by passing an invalid signal value.
+        org.junit.jupiter.api.Assertions.assertThrows(Exception.class, () ->
+                service.addCell(admin(), "x", "engineering", "INVALID_SIGNAL", "t",
+                        null, java.util.List.of(), 1, "s", java.util.List.of(),
+                        null, null, null, null, null));
+
+        long opsAfter = dsl.fetchOne("SELECT count(*) AS c FROM ops_log").get("c", Long.class);
+        long cellsAfter = dsl.fetchOne("SELECT count(*) AS c FROM cells").get("c", Long.class);
+        assertThat(opsAfter).isEqualTo(opsBefore);
+        assertThat(cellsAfter).isEqualTo(cellsBefore);
+    }
 }
