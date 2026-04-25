@@ -328,8 +328,16 @@ public class WriteToolService {
         return result;
     }
 
+    @Transactional
     public Map<String, Object> diaryWrite(String agent, String entry) {
-        return writeToolRepository.diaryWrite(agent, entry);
+        Map<String, Object> result = writeToolRepository.diaryWrite(agent, entry);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("entry_id", result.get("id"));
+        opPayload.put("agent", agent);
+        opPayload.put("entry", entry);
+        opLogWriter.append("diary_write", opPayload);
+        return result;
     }
 
     @Transactional

@@ -240,4 +240,15 @@ class WriteHandlerOpLogIntegrationTest {
         String payload = latestPayload("update_blueprint");
         assertThat(payload).contains("\"engineering\"").contains("\"Title\"").contains("\"narrative\"");
     }
+
+    @Test
+    void diaryWriteEmitsOp() {
+        service.registerAgent("agent-x", "focus", "{}", null, "{}", List.of());
+        long before = opCount("diary_write");
+        service.diaryWrite("agent-x", "today I learned");
+
+        assertThat(opCount("diary_write")).isEqualTo(before + 1);
+        String payload = latestPayload("diary_write");
+        assertThat(payload).contains("\"agent-x\"").contains("\"today I learned\"");
+    }
 }
