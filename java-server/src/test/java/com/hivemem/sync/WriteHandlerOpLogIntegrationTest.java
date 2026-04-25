@@ -185,4 +185,14 @@ class WriteHandlerOpLogIntegrationTest {
         String payload = latestPayload("revise_fact");
         assertThat(payload).contains(oldId.toString()).contains("\"newObject\"");
     }
+
+    @Test
+    void addReferenceEmitsOp() {
+        long before = opCount("add_reference");
+        service.addReference("title", "https://example.com", "author", "article", null, "notes", List.of("tag"), 1);
+
+        assertThat(opCount("add_reference")).isEqualTo(before + 1);
+        String payload = latestPayload("add_reference");
+        assertThat(payload).contains("\"title\"").contains("\"https://example.com\"");
+    }
 }
