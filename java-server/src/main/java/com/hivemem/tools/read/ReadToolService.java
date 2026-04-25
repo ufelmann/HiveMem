@@ -5,7 +5,6 @@ import com.hivemem.cells.CellReadRepository;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.search.CellSearchRepository;
 import com.hivemem.search.KgSearchRepository;
-import com.hivemem.search.SearchWeights;
 import com.hivemem.search.SearchWeightsProperties;
 import com.hivemem.write.AdminToolService;
 import org.springframework.stereotype.Service;
@@ -74,14 +73,14 @@ public class ReadToolService {
             double weightKeyword,
             double weightRecency,
             double weightImportance,
-            double weightPopularity
+            double weightPopularity,
+            double weightGraphProximity
     ) {
         List<Float> queryVector = embeddingClient.encodeQuery(query);
-        SearchWeights weights = searchWeightsProperties.toSearchWeights();
         List<CellSearchRepository.RankedRow> rows = cellSearchRepository.rankedSearch(
                 queryVector, query, realm, signal, topic, limit,
                 weightSemantic, weightKeyword, weightRecency, weightImportance, weightPopularity,
-                weights.graphProximity()
+                weightGraphProximity
         );
         return rows.stream().map(row -> projectRow(row, selection)).toList();
     }
