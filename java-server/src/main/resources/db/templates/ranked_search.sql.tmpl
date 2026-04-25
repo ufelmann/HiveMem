@@ -8,18 +8,23 @@ CREATE OR REPLACE FUNCTION ranked_search(
     p_signal TEXT DEFAULT NULL,
     p_topic TEXT DEFAULT NULL,
     p_limit INTEGER DEFAULT 10,
-    p_weight_semantic REAL DEFAULT 0.35,
+    p_weight_semantic REAL DEFAULT 0.30,
     p_weight_keyword REAL DEFAULT 0.15,
-    p_weight_recency REAL DEFAULT 0.20,
+    p_weight_recency REAL DEFAULT 0.15,
     p_weight_importance REAL DEFAULT 0.15,
-    p_weight_popularity REAL DEFAULT 0.15
+    p_weight_popularity REAL DEFAULT 0.15,
+    p_weight_graph_proximity REAL DEFAULT 0.10,
+    p_relation_weights JSONB DEFAULT
+        '{"builds_on":1.0,"refines":0.8,"related_to":0.6,"contradicts":0.4}'::jsonb,
+    p_graph_max_depth INT DEFAULT 2
 )
 RETURNS TABLE (
     id UUID, content TEXT, summary TEXT, realm TEXT, signal TEXT, topic TEXT,
     tags TEXT[], importance SMALLINT, created_at TIMESTAMPTZ, valid_from TIMESTAMPTZ,
     valid_until TIMESTAMPTZ,
     score_semantic REAL, score_keyword REAL, score_recency REAL,
-    score_importance REAL, score_popularity REAL, score_total REAL
+    score_importance REAL, score_popularity REAL, score_graph_proximity REAL,
+    score_total REAL
 )
 LANGUAGE SQL STABLE AS $$
     WITH ann AS (
@@ -52,6 +57,22 @@ LANGUAGE SQL STABLE AS $$
         UNION
         SELECT id FROM kw
     ),
+    anchors AS (
+        SELECT c.id
+        FROM cells c
+        JOIN candidates ca ON ca.id = c.id
+        WHERE c.embedding IS NOT NULL AND query_embedding IS NOT NULL
+        ORDER BY (c.embedding::vector({{DIM}})) <=> query_embedding
+        LIMIT 25
+    ),
+    graph AS (
+        SELECT cell_id, score
+        FROM graph_proximity_scores(
+            (SELECT array_agg(id) FROM anchors),
+            p_relation_weights,
+            p_graph_max_depth
+        )
+    ),
     max_pop AS (
         SELECT GREATEST(MAX(recent_access_count), 1)::REAL AS val FROM cell_popularity
     ),
@@ -68,17 +89,20 @@ LANGUAGE SQL STABLE AS $$
             (CASE c.importance
                 WHEN 1 THEN 1.0 WHEN 2 THEN 0.8 WHEN 3 THEN 0.6
                 WHEN 4 THEN 0.4 WHEN 5 THEN 0.2 ELSE 0.6 END)::REAL AS imp,
-            COALESCE(cp.recent_access_count::REAL / (SELECT val FROM max_pop), 0)::REAL AS pop
+            COALESCE(cp.recent_access_count::REAL / (SELECT val FROM max_pop), 0)::REAL AS pop,
+            COALESCE(g.score, 0)::REAL AS gp
         FROM cells c
         JOIN candidates ca ON ca.id = c.id
         LEFT JOIN cell_popularity cp ON cp.cell_id = c.id
+        LEFT JOIN graph g ON g.cell_id = c.id
     )
     SELECT s.id, s.content, s.summary, s.realm, s.signal, s.topic,
            s.tags, s.importance, s.created_at, s.valid_from, s.valid_until,
-           s.sem, s.kw, s.rec, s.imp, s.pop,
+           s.sem, s.kw, s.rec, s.imp, s.pop, s.gp,
            (s.sem * p_weight_semantic + s.kw * p_weight_keyword +
             s.rec * p_weight_recency + s.imp * p_weight_importance +
-            s.pop * p_weight_popularity)::REAL AS score_total
+            s.pop * p_weight_popularity +
+            s.gp  * p_weight_graph_proximity)::REAL AS score_total
     FROM scored s WHERE s.sem > 0.3 OR s.kw > 0
     ORDER BY score_total DESC, s.id ASC LIMIT p_limit;
 $$;
