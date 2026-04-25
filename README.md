@@ -709,6 +709,81 @@ hivemem-token info <name>
 - **Path traversal protection** -- file import restricted to `/data/imports` and `/tmp`
 - **Tool call enforcement** -- `tools/call` checked against role permissions, not just `tools/list` filtering
 
+## Claude Code Hook Integration (Optional)
+
+HiveMem ships a `POST /hooks/context` endpoint that Claude Code can call on every `UserPromptSubmit` event. The hook performs a 6-signal ranked search against the user's prompt and injects up to 3 cell summaries into the conversation as `additionalContext`. The agent can then drill down on demand via `hivemem_get_cell` using the IDs in the injected block.
+
+The hook is an **enhancement, not a replacement** for explicit `hivemem_search` / `hivemem_get_cell` tool calls. CLAUDE.md guidance still applies; the hook just removes the burden of remembering to search.
+
+### Setup
+
+1. Create a dedicated reader-role token:
+
+   ```bash
+   docker exec hivemem hivemem-token create claude-code-hook --role reader
+   # Copy the printed token value once — it is not shown again.
+   ```
+
+2. Export it where Claude Code can read it:
+
+   ```bash
+   export HIVEMEM_HOOK_TOKEN=<token>
+   ```
+
+3. Merge `examples/claude-code-hook/settings.json` into your `~/.claude/settings.json` (or your project's `.claude/settings.json`):
+
+   ```json
+   {
+     "hooks": {
+       "UserPromptSubmit": [
+         {
+           "hooks": [
+             {
+               "type": "http",
+               "url": "http://localhost:8421/hooks/context",
+               "timeout": 5,
+               "headers": {
+                 "Authorization": "Bearer $HIVEMEM_HOOK_TOKEN"
+               },
+               "allowedEnvVars": ["HIVEMEM_HOOK_TOKEN"]
+             }
+           ]
+         }
+       ]
+     }
+   }
+   ```
+
+4. Restart Claude Code. The hook is now active.
+
+### Behaviour
+
+- Trivial prompts (less than 4 words, meta-phrases like `"ok"`/`"weiter"`/`"thanks"`, pure code blocks, prompts prefixed with `!nomem`) skip the search entirely. Use `!mem <prompt>` to force injection on a prompt that would otherwise be skipped.
+- Within a single Claude Code session, the same cell is suppressed for 5 turns after it was injected, to prevent context bloat.
+- Injected blocks contain only L1 summaries and cell IDs — never full content. The agent fetches details on demand.
+- Internal failures (DB down, search error) collapse to an empty `additionalContext`. The hook never blocks the user's message.
+
+### Configuration
+
+Tunable in `application.yml`:
+
+```yaml
+hivemem:
+  hooks:
+    enabled: true
+    relevance-threshold: 0.65
+    max-cells: 3
+    dedup-window-turns: 5
+```
+
+### Disabling
+
+Remove the hook block from your `~/.claude/settings.json`, or set `hivemem.hooks.enabled: false` on the server.
+
+### Trade-offs
+
+Each hook call adds ~50-200ms before the LLM call and ~50-200 tokens to the context window, in exchange for context continuity without explicit retrieval. If your workflow rarely benefits from prior knowledge, leave it off.
+
 ## Backups
 
 The `hivemem-backup` script is included in the Docker image. It is also called automatically before embedding reencoding.
