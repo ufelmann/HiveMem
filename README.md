@@ -61,7 +61,7 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 ## Features
 
 - **30 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
-- **5-signal ranked search** -- semantic similarity + keyword match + recency + importance + popularity
+- **6-signal ranked search** -- semantic similarity + keyword match + recency + importance + popularity + graph proximity
 - **Append-only versioning** -- never lose history, revise with parent_id chains, point-in-time queries
 - **Progressive summarization** -- content, summary, key_points, insight per cell
 - **Temporal knowledge graph** -- facts with valid_from/valid_until, contradiction detection, multi-hop traversal
@@ -447,7 +447,7 @@ graph TB
 
 1. **Store** -- Content is classified into realm/signal/topic and stored as a cell with progressive summarization (content, summary, key points, insight)
 2. **Connect** -- Tunnels link related cells across the structure; facts capture atomic relationships in the knowledge graph
-3. **Search** -- 5-signal ranked search finds cells by meaning, keywords, recency, importance, and popularity
+3. **Search** -- 6-signal ranked search finds cells by meaning, keywords, recency, importance, popularity, and graph proximity
 4. **Traverse** -- Follow tunnels to discover hidden connections; use time machine to see what was known at any point
 5. **Wake up** -- Each session starts with identity context and critical facts, like navigating back to your knowledge and remembering where everything is
 
@@ -567,7 +567,7 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 
 | Category | Tools | Access Role | Data Flow | HITL Required? | Description |
 |---|---|---|---|---|---|
-| **Search** | `search`, `search_kg`, `quick_facts`, `time_machine` | `reader` | Read Only | No | 5-signal semantic & keyword search. |
+| **Search** | `search`, `search_kg`, `quick_facts`, `time_machine` | `reader` | Read Only | No | 6-signal semantic & keyword search. |
 | **Read** | `status`, `get_cell`, `list_realms`, `traverse`, `wake_up`, `get_blueprint`, `history` | `reader` | Read Only | No | Navigation and context retrieval. |
 | **Write** | `add_cell`, `kg_add`, `kg_invalidate`, `revise_cell`, `revise_fact`, `update_identity`, `update_blueprint` | `agent` | Propose Change | Yes (for Agents) | Append-only knowledge capture. |
 | **Tunnels** | `add_tunnel`, `remove_tunnel` | `agent` | Link Discovery | Yes | Cell-to-cell semantic linking. |
@@ -637,15 +637,18 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 
 ### Search Signals
 
-The `search` tool combines 5 signals with configurable weights:
+The `search` tool combines 6 signals with configurable weights:
 
 | Signal | Default Weight | Description |
 |---|---|---|
-| Semantic | 0.35 | Vector cosine similarity |
+| Semantic | 0.30 | Vector cosine similarity |
 | Keyword | 0.15 | PostgreSQL full-text search (tsvector, BM25-like) |
-| Recency | 0.20 | Exponential decay, 90-day half-life |
+| Recency | 0.15 | Exponential decay, 90-day half-life |
 | Importance | 0.15 | User/agent assigned 1-5 scale |
 | Popularity | 0.15 | Access frequency (materialized view) |
+| Graph proximity | 0.10 | Boost for cells reachable from the top semantic candidates via tunnels (depth ≤ 2). Per-relation weights default to `builds_on=1.0`, `refines=0.8`, `related_to=0.6`, `contradicts=0.4`. |
+
+Weights are configurable via `hivemem.search.weights` in `application.yml` and per-call via the MCP `search` arguments (`weight_semantic`, `weight_keyword`, `weight_recency`, `weight_importance`, `weight_popularity`, `weight_graph_proximity`).
 
 `search` defaults to `summary`, `tags`, `importance`, and `created_at` plus required identity fields (`id`, `realm`, `signal`, `topic`). `get_cell` defaults to `summary`, `key_points`, `insight`, `tags`, `importance`, `source`, and `created_at` plus the same required identity fields. Pass `include` to request a specific subset of optional fields, including `content`.
 
