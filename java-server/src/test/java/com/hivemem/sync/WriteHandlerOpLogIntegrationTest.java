@@ -251,4 +251,19 @@ class WriteHandlerOpLogIntegrationTest {
         String payload = latestPayload("diary_write");
         assertThat(payload).contains("\"agent-x\"").contains("\"today I learned\"");
     }
+
+    @Test
+    void approvePendingEmitsOp() {
+        AuthPrincipal agent = new AuthPrincipal("agent-x", AuthRole.AGENT);
+        Map<String, Object> added = service.kgAdd(agent, "s3", "p3", "o3", 1.0, null, null, null, "insert");
+        UUID pendingId = UUID.fromString((String) added.get("id"));
+
+        long before = opCount("approve_pending");
+        // "approve" violates facts_status_check; use "committed" (the valid approval status)
+        service.approvePending(List.of(pendingId), "committed");
+
+        assertThat(opCount("approve_pending")).isEqualTo(before + 1);
+        String payload = latestPayload("approve_pending");
+        assertThat(payload).contains(pendingId.toString()).contains("\"committed\"");
+    }
 }
