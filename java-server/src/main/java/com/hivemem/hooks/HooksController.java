@@ -22,6 +22,10 @@ public class HooksController {
 
     @PostMapping("/context")
     public ResponseEntity<HookContextResponse> context(@RequestBody HookContextRequest req) {
+        log.info("HOOK_CALL session={} event={} promptLen={}",
+                req == null ? "?" : req.session_id(),
+                req == null ? "?" : req.hook_event_name(),
+                req == null || req.prompt() == null ? 0 : req.prompt().length());
         String additional;
         try {
             additional = service.contextFor(req);
