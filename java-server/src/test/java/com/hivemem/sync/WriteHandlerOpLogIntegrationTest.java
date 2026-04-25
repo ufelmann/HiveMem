@@ -230,4 +230,14 @@ class WriteHandlerOpLogIntegrationTest {
         String payload = latestPayload("update_identity");
         assertThat(payload).contains("\"role\"").contains("\"I am a tester\"");
     }
+
+    @Test
+    void updateBlueprintEmitsOp() {
+        long before = opCount("update_blueprint");
+        service.updateBlueprint(admin(), "engineering", "Title", "narrative", List.of("facts"), List.of());
+
+        assertThat(opCount("update_blueprint")).isEqualTo(before + 1);
+        String payload = latestPayload("update_blueprint");
+        assertThat(payload).contains("\"engineering\"").contains("\"Title\"").contains("\"narrative\"");
+    }
 }
