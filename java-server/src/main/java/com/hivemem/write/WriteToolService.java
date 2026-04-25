@@ -303,8 +303,13 @@ public class WriteToolService {
         return result;
     }
 
+    @Transactional
     public Map<String, Object> removeTunnel(UUID tunnelId) {
         writeToolRepository.removeTunnel(tunnelId);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("tunnel_id", tunnelId.toString());
+        opLogWriter.append("remove_tunnel", opPayload);
         return Map.of("id", tunnelId.toString(), "removed", true);
     }
 

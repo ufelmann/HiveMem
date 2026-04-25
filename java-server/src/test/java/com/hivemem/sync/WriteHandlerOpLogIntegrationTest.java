@@ -135,4 +135,19 @@ class WriteHandlerOpLogIntegrationTest {
         assertThat(payload).contains(a.toString()).contains(b.toString())
                 .contains("\"related_to\"").contains("\"note\"");
     }
+
+    @Test
+    void removeTunnelEmitsRemoveTunnelOp() {
+        UUID a = UUID.fromString((String) service.addCell(
+                admin(), "a", "engineering", "facts", "t", null, List.of(), 1, "s", List.of(), null, null, null, null, null).get("id"));
+        UUID b = UUID.fromString((String) service.addCell(
+                admin(), "b", "engineering", "facts", "t", null, List.of(), 1, "s", List.of(), null, null, null, null, null).get("id"));
+        UUID tunnelId = UUID.fromString((String) service.addTunnel(admin(), a, b, "related_to", null, null).get("id"));
+
+        long before = opCount("remove_tunnel");
+        service.removeTunnel(tunnelId);
+
+        assertThat(opCount("remove_tunnel")).isEqualTo(before + 1);
+        assertThat(latestPayload("remove_tunnel")).contains(tunnelId.toString());
+    }
 }
