@@ -261,6 +261,18 @@ class EmbeddingMigrationIntegrationTest {
         assertThat(result.get("cnt", Number.class).intValue()).isEqualTo(2);
     }
 
+    @Test
+    void rankedSearchFunctionExistsWithActiveDimension() {
+        int dim = embeddingMigrationService.getCurrentDimension();
+        Float[] zeros = new Float[dim];
+        java.util.Arrays.fill(zeros, 0.0f);
+
+        // Should not throw "expected N dimensions, not M".
+        dslContext.execute(
+                "SELECT * FROM ranked_search(?::vector, ?, NULL, NULL, NULL, 1, 0.35, 0.15, 0.20, 0.15, 0.15)",
+                zeros, "");
+    }
+
     private void insertDrawer(String content, String wing, String hall, String room) {
         FixedEmbeddingClient client = new FixedEmbeddingClient();
         var embedding = client.encodeDocument(content);

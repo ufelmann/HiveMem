@@ -40,6 +40,10 @@ public class EmbeddingMigrationService implements ApplicationRunner {
         return stateRepository.loadProgress();
     }
 
+    public int getCurrentDimension() {
+        return embeddingClient.getInfo().dimension();
+    }
+
     @Override
     public void run(ApplicationArguments args) {
         EmbeddingInfo currentInfo;
@@ -60,6 +64,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
             stateRepository.saveInfo(currentInfo);
             stateRepository.createEmbeddingIndex(currentInfo.dimension());
             log.info("Created HNSW index for dimension {}", currentInfo.dimension());
+            ensureRankedSearchFunction(currentInfo.dimension());
             return;
         }
 
@@ -70,6 +75,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
             // deployment won't have one yet. CREATE INDEX IF NOT EXISTS is a no-op
             // when the index already exists.
             stateRepository.createEmbeddingIndex(currentInfo.dimension());
+            ensureRankedSearchFunction(currentInfo.dimension());
             return;
         }
 
@@ -118,6 +124,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
 
             stateRepository.createEmbeddingIndex(to.dimension());
             log.info("Recreated HNSW index");
+            ensureRankedSearchFunction(to.dimension());
 
             stateRepository.saveInfo(to);
             stateRepository.clearProgress();
@@ -142,5 +149,10 @@ public class EmbeddingMigrationService implements ApplicationRunner {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Backup failed", e);
         }
+    }
+
+    private void ensureRankedSearchFunction(int dimension) {
+        stateRepository.replaceRankedSearchFunction(dimension);
+        log.info("Recreated ranked_search function for dimension {}", dimension);
     }
 }
