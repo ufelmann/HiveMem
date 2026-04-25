@@ -160,4 +160,16 @@ class WriteHandlerOpLogIntegrationTest {
         assertThat(opCount("remove_tunnel")).isEqualTo(before + 1);
         assertThat(latestPayload("remove_tunnel")).contains(tunnelId.toString());
     }
+
+    @Test
+    void kgInvalidateEmitsOp() {
+        Map<String, Object> added = service.kgAdd(admin(), "s", "p", "o", 1.0, null, null, null, "insert");
+        UUID factId = UUID.fromString((String) added.get("id"));
+
+        long before = opCount("kg_invalidate");
+        service.kgInvalidate(factId);
+
+        assertThat(opCount("kg_invalidate")).isEqualTo(before + 1);
+        assertThat(latestPayload("kg_invalidate")).contains(factId.toString());
+    }
 }
