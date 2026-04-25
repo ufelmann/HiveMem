@@ -5,6 +5,7 @@ import com.hivemem.cells.CellReadRepository;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.search.CellSearchRepository;
 import com.hivemem.search.KgSearchRepository;
+import com.hivemem.search.SearchWeightsProperties;
 import com.hivemem.write.AdminToolService;
 import org.springframework.stereotype.Service;
 
@@ -23,19 +24,22 @@ public class ReadToolService {
     private final CellSearchRepository cellSearchRepository;
     private final EmbeddingClient embeddingClient;
     private final AdminToolService adminToolService;
+    private final SearchWeightsProperties searchWeightsProperties;
 
     public ReadToolService(
             CellReadRepository cellReadRepository,
             KgSearchRepository kgSearchRepository,
             CellSearchRepository cellSearchRepository,
             EmbeddingClient embeddingClient,
-            AdminToolService adminToolService
+            AdminToolService adminToolService,
+            SearchWeightsProperties searchWeightsProperties
     ) {
         this.cellReadRepository = cellReadRepository;
         this.kgSearchRepository = kgSearchRepository;
         this.cellSearchRepository = cellSearchRepository;
         this.embeddingClient = embeddingClient;
         this.adminToolService = adminToolService;
+        this.searchWeightsProperties = searchWeightsProperties;
     }
 
     public Map<String, Object> status() {
@@ -69,12 +73,14 @@ public class ReadToolService {
             double weightKeyword,
             double weightRecency,
             double weightImportance,
-            double weightPopularity
+            double weightPopularity,
+            double weightGraphProximity
     ) {
         List<Float> queryVector = embeddingClient.encodeQuery(query);
         List<CellSearchRepository.RankedRow> rows = cellSearchRepository.rankedSearch(
                 queryVector, query, realm, signal, topic, limit,
-                weightSemantic, weightKeyword, weightRecency, weightImportance, weightPopularity
+                weightSemantic, weightKeyword, weightRecency, weightImportance, weightPopularity,
+                weightGraphProximity
         );
         return rows.stream().map(row -> projectRow(row, selection)).toList();
     }

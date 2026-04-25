@@ -7,6 +7,7 @@ import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
 import com.hivemem.search.CellSearchRepository;
 import com.hivemem.search.KgSearchRepository;
+import com.hivemem.search.SearchWeightsProperties;
 import com.hivemem.tools.read.ReadToolService;
 import com.hivemem.write.WriteToolRepository;
 import com.hivemem.write.AdminToolRepository;
@@ -232,6 +233,7 @@ class ReferencesIntegrationTest {
             WriteToolService.class,
             WriteToolRepository.class,
             ReadToolService.class,
+            SearchWeightsProperties.class,
             CellReadRepository.class,
             CellSearchRepository.class,
             KgSearchRepository.class,
