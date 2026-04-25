@@ -210,4 +210,14 @@ class WriteHandlerOpLogIntegrationTest {
         String payload = latestPayload("link_reference");
         assertThat(payload).contains(cellId.toString()).contains(refId.toString()).contains("\"source\"");
     }
+
+    @Test
+    void registerAgentEmitsOp() {
+        long before = opCount("register_agent");
+        service.registerAgent("agent-x", "focus", "{}", "schedule", "{}", List.of("tool1"));
+
+        assertThat(opCount("register_agent")).isEqualTo(before + 1);
+        String payload = latestPayload("register_agent");
+        assertThat(payload).contains("\"agent-x\"").contains("\"focus\"");
+    }
 }

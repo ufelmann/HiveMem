@@ -298,6 +298,7 @@ public class WriteToolService {
         return result;
     }
 
+    @Transactional
     public Map<String, Object> registerAgent(
             String name,
             String focus,
@@ -306,7 +307,18 @@ public class WriteToolService {
             String modelRoutingJson,
             List<String> tools
     ) {
-        return writeToolRepository.registerAgent(name, focus, autonomyJson, schedule, modelRoutingJson, tools);
+        Map<String, Object> result = writeToolRepository.registerAgent(name, focus, autonomyJson, schedule, modelRoutingJson, tools);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("agent_id", result.get("id"));
+        opPayload.put("name", name);
+        opPayload.put("focus", focus);
+        opPayload.put("autonomy", autonomyJson);
+        opPayload.put("schedule", schedule);
+        opPayload.put("model_routing", modelRoutingJson);
+        opPayload.put("tools", tools);
+        opLogWriter.append("register_agent", opPayload);
+        return result;
     }
 
     public Map<String, Object> diaryWrite(String agent, String entry) {
