@@ -1,7 +1,10 @@
 package com.hivemem.hooks;
 
+import org.springframework.stereotype.Component;
+
 import java.util.Set;
 
+@Component
 public class SkipHeuristics {
 
     public record SkipDecision(boolean skip, String reason) {
