@@ -172,4 +172,17 @@ class WriteHandlerOpLogIntegrationTest {
         assertThat(opCount("kg_invalidate")).isEqualTo(before + 1);
         assertThat(latestPayload("kg_invalidate")).contains(factId.toString());
     }
+
+    @Test
+    void reviseFactEmitsOp() {
+        Map<String, Object> added = service.kgAdd(admin(), "s2", "p2", "o2", 1.0, null, null, null, "insert");
+        UUID oldId = UUID.fromString((String) added.get("id"));
+
+        long before = opCount("revise_fact");
+        service.reviseFact(admin(), oldId, "newObject");
+
+        assertThat(opCount("revise_fact")).isEqualTo(before + 1);
+        String payload = latestPayload("revise_fact");
+        assertThat(payload).contains(oldId.toString()).contains("\"newObject\"");
+    }
 }

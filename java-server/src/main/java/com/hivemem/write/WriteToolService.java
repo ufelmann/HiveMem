@@ -173,14 +173,18 @@ public class WriteToolService {
         return Map.of("invalidated", true);
     }
 
+    @Transactional
     public Map<String, Object> reviseFact(AuthPrincipal principal, UUID oldId, String newObject) {
         String status = principal.role() == AuthRole.AGENT ? STATUS_PENDING : STATUS_COMMITTED;
-        return writeToolRepository.reviseFact(
-                oldId,
-                newObject,
-                principal.name(),
-                status
-        );
+        Map<String, Object> result = writeToolRepository.reviseFact(oldId, newObject, principal.name(), status);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("fact_id", oldId.toString());
+        opPayload.put("new_object", newObject);
+        opPayload.put("agent_id", principal.name());
+        opPayload.put("status", status);
+        opLogWriter.append("revise_fact", opPayload);
+        return result;
     }
 
     @Transactional
