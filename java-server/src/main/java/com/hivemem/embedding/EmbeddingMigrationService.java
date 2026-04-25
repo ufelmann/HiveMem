@@ -40,6 +40,10 @@ public class EmbeddingMigrationService implements ApplicationRunner {
         return stateRepository.loadProgress();
     }
 
+    public int getCurrentDimension() {
+        return embeddingClient.getInfo().dimension();
+    }
+
     @Override
     public void run(ApplicationArguments args) {
         EmbeddingInfo currentInfo;
