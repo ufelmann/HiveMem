@@ -74,7 +74,8 @@ public class ReadToolService {
         List<Float> queryVector = embeddingClient.encodeQuery(query);
         List<CellSearchRepository.RankedRow> rows = cellSearchRepository.rankedSearch(
                 queryVector, query, realm, signal, topic, limit,
-                weightSemantic, weightKeyword, weightRecency, weightImportance, weightPopularity
+                weightSemantic, weightKeyword, weightRecency, weightImportance, weightPopularity,
+                0.10
         );
         return rows.stream().map(row -> projectRow(row, selection)).toList();
     }
