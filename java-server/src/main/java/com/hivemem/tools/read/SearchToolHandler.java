@@ -44,11 +44,12 @@ public class SearchToolHandler implements ToolHandler {
                 .optionalString("signal", "Restrict search to this signal")
                 .optionalString("topic", "Restrict search to this topic")
                 .optionalEnumStringList("include", "Optional fields to return. Defaults to summary, tags, importance, created_at.", INCLUDE_FIELDS)
-                .optionalNumber("weight_semantic", "Semantic similarity weight (default 0.35)")
+                .optionalNumber("weight_semantic", "Semantic similarity weight (default 0.30)")
                 .optionalNumber("weight_keyword", "Keyword match weight (default 0.15)")
-                .optionalNumber("weight_recency", "Recency weight (default 0.20)")
+                .optionalNumber("weight_recency", "Recency weight (default 0.15)")
                 .optionalNumber("weight_importance", "Importance weight (default 0.15)")
                 .optionalNumber("weight_popularity", "Popularity weight (default 0.15)")
+                .optionalNumber("weight_graph_proximity", "Graph proximity weight (default 0.10)")
                 .build();
     }
 
@@ -60,11 +61,12 @@ public class SearchToolHandler implements ToolHandler {
         String signal = WriteArgumentParser.optionalText(arguments, "signal");
         String topic = WriteArgumentParser.optionalText(arguments, "topic");
         CellFieldSelection selection = CellFieldSelection.forSearch(CellFieldSelection.parseInclude(arguments));
-        double weightSemantic = optionalWeight(arguments, "weight_semantic", 0.35d);
+        double weightSemantic = optionalWeight(arguments, "weight_semantic", 0.30d);
         double weightKeyword = optionalWeight(arguments, "weight_keyword", 0.15d);
-        double weightRecency = optionalWeight(arguments, "weight_recency", 0.20d);
+        double weightRecency = optionalWeight(arguments, "weight_recency", 0.15d);
         double weightImportance = optionalWeight(arguments, "weight_importance", 0.15d);
         double weightPopularity = optionalWeight(arguments, "weight_popularity", 0.15d);
+        double weightGraphProximity = optionalWeight(arguments, "weight_graph_proximity", 0.10d);
         return readToolService.search(
                 query,
                 limit,
@@ -76,7 +78,8 @@ public class SearchToolHandler implements ToolHandler {
                 weightKeyword,
                 weightRecency,
                 weightImportance,
-                weightPopularity
+                weightPopularity,
+                weightGraphProximity
         );
     }
 
