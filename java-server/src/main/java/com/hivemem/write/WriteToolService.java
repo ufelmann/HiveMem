@@ -3,7 +3,9 @@ package com.hivemem.write;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
 import com.hivemem.embedding.EmbeddingClient;
+import com.hivemem.sync.OpLogWriter;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -19,15 +21,19 @@ public class WriteToolService {
 
     private final WriteToolRepository writeToolRepository;
     private final EmbeddingClient embeddingClient;
+    private final OpLogWriter opLogWriter;
 
     public WriteToolService(
             WriteToolRepository writeToolRepository,
-            EmbeddingClient embeddingClient
+            EmbeddingClient embeddingClient,
+            OpLogWriter opLogWriter
     ) {
         this.writeToolRepository = writeToolRepository;
         this.embeddingClient = embeddingClient;
+        this.opLogWriter = opLogWriter;
     }
 
+    @Transactional
     public Map<String, Object> addCell(
             AuthPrincipal principal,
             String content,
@@ -76,6 +82,22 @@ public class WriteToolService {
                 principal.name(),
                 validFrom
         );
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("cell_id", inserted.get("id"));
+        opPayload.put("realm", realm);
+        opPayload.put("signal", signal);
+        opPayload.put("topic", topic);
+        opPayload.put("content", content);
+        opPayload.put("summary", summary);
+        opPayload.put("key_points", keyPoints);
+        opPayload.put("insight", insight);
+        opPayload.put("importance", importance);
+        opPayload.put("actionability", actionability);
+        opPayload.put("status", status);
+        opPayload.put("agent_id", principal.name());
+        opPayload.put("valid_from", validFrom == null ? null : validFrom.toString());
+        opLogWriter.append("add_cell", opPayload);
 
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("inserted", true);
