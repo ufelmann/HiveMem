@@ -119,4 +119,20 @@ class WriteHandlerOpLogIntegrationTest {
         assertThat(payload).contains(cellId.toString());
         assertThat(payload).contains("\"personal\"").contains("\"newtopic\"").contains("\"events\"");
     }
+
+    @Test
+    void addTunnelEmitsAddTunnelOp() {
+        UUID a = UUID.fromString((String) service.addCell(
+                admin(), "a", "engineering", "facts", "t", null, List.of(), 1, "s", List.of(), null, null, null, null, null).get("id"));
+        UUID b = UUID.fromString((String) service.addCell(
+                admin(), "b", "engineering", "facts", "t", null, List.of(), 1, "s", List.of(), null, null, null, null, null).get("id"));
+
+        long before = opCount("add_tunnel");
+        service.addTunnel(admin(), a, b, "related_to", "note", null);
+
+        assertThat(opCount("add_tunnel")).isEqualTo(before + 1);
+        String payload = latestPayload("add_tunnel");
+        assertThat(payload).contains(a.toString()).contains(b.toString())
+                .contains("\"related_to\"").contains("\"note\"");
+    }
 }
