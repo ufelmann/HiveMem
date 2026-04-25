@@ -332,6 +332,7 @@ public class WriteToolService {
         return writeToolRepository.diaryWrite(agent, entry);
     }
 
+    @Transactional
     public Map<String, Object> updateBlueprint(
             AuthPrincipal principal,
             String realm,
@@ -340,7 +341,20 @@ public class WriteToolService {
             List<String> signalOrder,
             List<UUID> keyCells
     ) {
-        return writeToolRepository.updateBlueprint(principal.name(), realm, title, narrative, signalOrder, keyCells);
+        Map<String, Object> result = writeToolRepository.updateBlueprint(
+                principal.name(), realm, title, narrative, signalOrder, keyCells);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("blueprint_id", result.get("id"));
+        opPayload.put("realm", realm);
+        opPayload.put("title", title);
+        opPayload.put("narrative", narrative);
+        opPayload.put("signal_order", signalOrder);
+        opPayload.put("key_cells", keyCells == null ? null
+                : keyCells.stream().map(UUID::toString).toList());
+        opPayload.put("agent_id", principal.name());
+        opLogWriter.append("update_blueprint", opPayload);
+        return result;
     }
 
     @Transactional
