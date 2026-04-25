@@ -20,6 +20,14 @@ hivemem:
     timeout: ${HIVEMEM_EMBEDDING_TIMEOUT:PT5S}
   popularity:
     refresh-interval: ${HIVEMEM_POPULARITY_REFRESH_INTERVAL:PT1H}
+  search:
+    weights:
+      semantic: 0.30
+      keyword: 0.15
+      recency: 0.15
+      importance: 0.15
+      popularity: 0.15
+      graph-proximity: 0.10
 
 server:
   port: ${SERVER_PORT:8421}
