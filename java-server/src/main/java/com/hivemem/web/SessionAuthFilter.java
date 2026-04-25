@@ -40,6 +40,7 @@ public class SessionAuthFilter extends OncePerRequestFilter {
             FilterChain filterChain) throws ServletException, IOException {
         String path = request.getRequestURI().substring(request.getContextPath().length());
         boolean isMcp = path.startsWith("/mcp");
+        boolean isHooks = path.startsWith("/hooks");
         boolean isApi = path.startsWith("/api/");
 
         HttpSession session = request.getSession(false);
@@ -56,7 +57,7 @@ public class SessionAuthFilter extends OncePerRequestFilter {
             }
         }
 
-        if (isMcp) {
+        if (isMcp || isHooks) {
             filterChain.doFilter(request, response);
         } else if (isApi) {
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED);

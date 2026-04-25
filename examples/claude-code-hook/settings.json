@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://localhost:8421/hooks/context",
+            "timeout": 5,
+            "headers": {
+              "Authorization": "Bearer $HIVEMEM_HOOK_TOKEN"
+            },
+            "allowedEnvVars": ["HIVEMEM_HOOK_TOKEN"]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -38,31 +38,27 @@ public class CellSearchRepository {
             double weightKeyword,
             double weightRecency,
             double weightImportance,
-            double weightPopularity
+            double weightPopularity,
+            double weightGraphProximity
     ) {
         Float[] embeddingArray = queryEmbedding == null ? null : queryEmbedding.toArray(Float[]::new);
         String sql = """
                 SELECT id, content, summary, realm, signal, topic, tags, importance,
                        created_at, valid_from, valid_until,
                        score_semantic, score_keyword, score_recency,
-                       score_importance, score_popularity, score_total
-                FROM ranked_search(?::vector, ?, ?, ?, ?, ?, ?::real, ?::real, ?::real, ?::real, ?::real)
+                       score_importance, score_popularity, score_graph_proximity,
+                       score_total
+                FROM ranked_search(?::vector, ?, ?, ?, ?, ?,
+                                   ?::real, ?::real, ?::real, ?::real, ?::real, ?::real)
                 """;
 
         List<RankedRow> rows = new ArrayList<>();
         for (Record row : dslContext.fetch(
                 sql,
-                embeddingArray,
-                queryText,
-                realm,
-                signal,
-                topic,
-                limit,
-                (float) weightSemantic,
-                (float) weightKeyword,
-                (float) weightRecency,
-                (float) weightImportance,
-                (float) weightPopularity
+                embeddingArray, queryText, realm, signal, topic, limit,
+                (float) weightSemantic, (float) weightKeyword, (float) weightRecency,
+                (float) weightImportance, (float) weightPopularity,
+                (float) weightGraphProximity
         )) {
             rows.add(new RankedRow(
                     row.get("id", UUID.class),
@@ -81,6 +77,7 @@ public class CellSearchRepository {
                     doubleValue(row, "score_recency"),
                     doubleValue(row, "score_importance"),
                     doubleValue(row, "score_popularity"),
+                    doubleValue(row, "score_graph_proximity"),
                     doubleValue(row, "score_total")
             ));
         }
@@ -104,6 +101,7 @@ public class CellSearchRepository {
             double scoreRecency,
             double scoreImportance,
             double scorePopularity,
+            double scoreGraphProximity,
             double scoreTotal
     ) {
     }
