@@ -59,6 +59,8 @@ class SyncControllerPostTest {
     @BeforeEach
     void setUp() {
         Mockito.reset(opReplayer);
+        Mockito.when(opReplayer.replayAll(any(), any()))
+                .thenReturn(new OpReplayer.BatchResult(0, 0));
         mockMvc = MockMvcBuilders.webAppContextSetup(context).addFilters(authFilter).build();
     }
 
@@ -84,6 +86,17 @@ class SyncControllerPostTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.replayed").value(2))
                 .andExpect(jsonPath("$.skipped").value(1));
+    }
+
+    @Test
+    void postOpsWithMissingOpsFieldReturnsZeroCounts() throws Exception {
+        mockMvc.perform(post("/sync/ops")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer good-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sourcePeer\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.replayed").value(0))
+                .andExpect(jsonPath("$.skipped").value(0));
     }
 
     @Configuration(proxyBeanMethods = false)
