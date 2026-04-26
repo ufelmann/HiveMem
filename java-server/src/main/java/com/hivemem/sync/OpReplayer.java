@@ -48,6 +48,7 @@ public class OpReplayer {
     }
 
     public BatchResult replayAll(UUID sourcePeer, List<OpDto> ops) {
+        if (ops == null || sourcePeer == null) return new BatchResult(0, 0);
         int replayed = 0, skipped = 0;
         for (OpDto op : ops) {
             ReplayResult r = replay(sourcePeer, op);
