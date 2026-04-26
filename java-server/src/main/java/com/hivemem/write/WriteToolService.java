@@ -3,7 +3,9 @@ package com.hivemem.write;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
 import com.hivemem.embedding.EmbeddingClient;
+import com.hivemem.sync.OpLogWriter;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -19,15 +21,19 @@ public class WriteToolService {
 
     private final WriteToolRepository writeToolRepository;
     private final EmbeddingClient embeddingClient;
+    private final OpLogWriter opLogWriter;
 
     public WriteToolService(
             WriteToolRepository writeToolRepository,
-            EmbeddingClient embeddingClient
+            EmbeddingClient embeddingClient,
+            OpLogWriter opLogWriter
     ) {
         this.writeToolRepository = writeToolRepository;
         this.embeddingClient = embeddingClient;
+        this.opLogWriter = opLogWriter;
     }
 
+    @Transactional
     public Map<String, Object> addCell(
             AuthPrincipal principal,
             String content,
@@ -77,12 +83,32 @@ public class WriteToolService {
                 validFrom
         );
 
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("cell_id", inserted.get("id"));
+        opPayload.put("realm", realm);
+        opPayload.put("signal", signal);
+        opPayload.put("topic", topic);
+        opPayload.put("source", source);
+        opPayload.put("tags", tags);
+        opPayload.put("content", content);
+        opPayload.put("summary", summary);
+        opPayload.put("key_points", keyPoints);
+        opPayload.put("insight", insight);
+        opPayload.put("importance", importance);
+        opPayload.put("actionability", actionability);
+        opPayload.put("status", status);
+        opPayload.put("agent_id", principal.name());
+        opPayload.put("valid_from", validFrom == null ? null : validFrom.toString());
+        opPayload.put("dedupe_threshold", dedupeThreshold);
+        opLogWriter.append("add_cell", opPayload);
+
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("inserted", true);
         result.putAll(inserted);
         return result;
     }
 
+    @Transactional
     public Map<String, Object> kgAdd(
             AuthPrincipal principal,
             String subject,
@@ -122,33 +148,65 @@ public class WriteToolService {
                 subject, predicate, object, confidence,
                 sourceId, status, principal.name(), validFrom);
 
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("fact_id", inserted.get("id"));
+        opPayload.put("subject", subject);
+        opPayload.put("predicate", predicate);
+        opPayload.put("object", object);
+        opPayload.put("confidence", confidence);
+        opPayload.put("source_id", sourceId == null ? null : sourceId.toString());
+        opPayload.put("status", status);
+        opPayload.put("agent_id", principal.name());
+        opPayload.put("valid_from", validFrom == null ? null : validFrom.toString());
+        opLogWriter.append("kg_add", opPayload);
+
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("inserted", true);
         result.putAll(inserted);
         return result;
     }
 
+    @Transactional
     public Map<String, Object> kgInvalidate(UUID factId) {
         writeToolRepository.invalidateFact(factId);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("fact_id", factId.toString());
+        opLogWriter.append("kg_invalidate", opPayload);
         return Map.of("invalidated", true);
     }
 
+    @Transactional
     public Map<String, Object> reviseFact(AuthPrincipal principal, UUID oldId, String newObject) {
         String status = principal.role() == AuthRole.AGENT ? STATUS_PENDING : STATUS_COMMITTED;
-        return writeToolRepository.reviseFact(
-                oldId,
-                newObject,
-                principal.name(),
-                status
-        );
+        Map<String, Object> result = writeToolRepository.reviseFact(oldId, newObject, principal.name(), status);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("fact_id", oldId.toString());
+        opPayload.put("new_object", newObject);
+        opPayload.put("agent_id", principal.name());
+        opPayload.put("status", status);
+        opLogWriter.append("revise_fact", opPayload);
+        return result;
     }
 
+    @Transactional
     public Map<String, Object> reviseCell(AuthPrincipal principal, UUID oldId, String newContent, String newSummary) {
         String status = principal.role() == AuthRole.AGENT ? STATUS_PENDING : STATUS_COMMITTED;
         List<Float> embedding = embeddingClient.encodeDocument(newContent);
-        return writeToolRepository.reviseCell(oldId, newContent, newSummary, embedding, principal.name(), status);
+        Map<String, Object> result = writeToolRepository.reviseCell(oldId, newContent, newSummary, embedding, principal.name(), status);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("cell_id", oldId.toString());
+        opPayload.put("new_content", newContent);
+        opPayload.put("new_summary", newSummary);
+        opPayload.put("agent_id", principal.name());
+        opPayload.put("status", status);
+        opLogWriter.append("revise_cell", opPayload);
+        return result;
     }
 
+    @Transactional
     public Map<String, Object> reclassifyCell(
             AuthPrincipal principal,
             UUID cellId,
@@ -170,7 +228,16 @@ public class WriteToolService {
         }
         String normalizedRealm = realm == null ? null : normalizeClassification(realm, "realm");
         String normalizedTopic = topic == null ? null : normalizeClassification(topic, "topic");
-        return writeToolRepository.reclassifyCell(cellId, normalizedRealm, normalizedTopic, signal);
+        Map<String, Object> result = writeToolRepository.reclassifyCell(cellId, normalizedRealm, normalizedTopic, signal);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("cell_id", cellId.toString());
+        opPayload.put("new_realm", normalizedRealm);
+        opPayload.put("new_topic", normalizedTopic);
+        opPayload.put("new_signal", signal);
+        opPayload.put("agent_id", principal.name());
+        opLogWriter.append("reclassify_cell", opPayload);
+        return result;
     }
 
     private static String normalizeClassification(String value, String field) {
@@ -187,12 +254,20 @@ public class WriteToolService {
     private static final String SIGNAL_PREFERENCES = "preferences";
     private static final String SIGNAL_ADVICE = "advice";
 
+    @Transactional
     public Map<String, Object> updateIdentity(String key, String content) {
         int tokenCount = content.length() / 4;
         writeToolRepository.upsertIdentity(key, content, tokenCount);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("key", key);
+        opPayload.put("content", content);
+        opPayload.put("token_count", tokenCount);
+        opLogWriter.append("update_identity", opPayload);
         return Map.of("key", key, "token_count", tokenCount);
     }
 
+    @Transactional
     public Map<String, Object> addReference(
             String title,
             String url,
@@ -204,13 +279,36 @@ public class WriteToolService {
             Integer importance
     ) {
         String effectiveStatus = status == null ? "read" : status;
-        return writeToolRepository.addReference(title, url, author, refType, effectiveStatus, notes, tags, importance);
+        Map<String, Object> result = writeToolRepository.addReference(
+                title, url, author, refType, effectiveStatus, notes, tags, importance);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("reference_id", result.get("id"));
+        opPayload.put("title", title);
+        opPayload.put("url", url);
+        opPayload.put("author", author);
+        opPayload.put("ref_type", refType);
+        opPayload.put("status", effectiveStatus);
+        opPayload.put("notes", notes);
+        opPayload.put("tags", tags);
+        opPayload.put("importance", importance);
+        opLogWriter.append("add_reference", opPayload);
+        return result;
     }
 
+    @Transactional
     public Map<String, Object> linkReference(UUID cellId, UUID referenceId, String relation) {
-        return writeToolRepository.linkReference(cellId, referenceId, relation);
+        Map<String, Object> result = writeToolRepository.linkReference(cellId, referenceId, relation);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("cell_id", cellId.toString());
+        opPayload.put("reference_id", referenceId.toString());
+        opPayload.put("relation", relation);
+        opLogWriter.append("link_reference", opPayload);
+        return result;
     }
 
+    @Transactional
     public Map<String, Object> registerAgent(
             String name,
             String focus,
@@ -219,13 +317,33 @@ public class WriteToolService {
             String modelRoutingJson,
             List<String> tools
     ) {
-        return writeToolRepository.registerAgent(name, focus, autonomyJson, schedule, modelRoutingJson, tools);
+        Map<String, Object> result = writeToolRepository.registerAgent(name, focus, autonomyJson, schedule, modelRoutingJson, tools);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("agent_id", result.get("id"));
+        opPayload.put("name", name);
+        opPayload.put("focus", focus);
+        opPayload.put("autonomy", autonomyJson);
+        opPayload.put("schedule", schedule);
+        opPayload.put("model_routing", modelRoutingJson);
+        opPayload.put("tools", tools);
+        opLogWriter.append("register_agent", opPayload);
+        return result;
     }
 
+    @Transactional
     public Map<String, Object> diaryWrite(String agent, String entry) {
-        return writeToolRepository.diaryWrite(agent, entry);
+        Map<String, Object> result = writeToolRepository.diaryWrite(agent, entry);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("entry_id", result.get("id"));
+        opPayload.put("agent", agent);
+        opPayload.put("entry", entry);
+        opLogWriter.append("diary_write", opPayload);
+        return result;
     }
 
+    @Transactional
     public Map<String, Object> updateBlueprint(
             AuthPrincipal principal,
             String realm,
@@ -234,9 +352,23 @@ public class WriteToolService {
             List<String> signalOrder,
             List<UUID> keyCells
     ) {
-        return writeToolRepository.updateBlueprint(principal.name(), realm, title, narrative, signalOrder, keyCells);
+        Map<String, Object> result = writeToolRepository.updateBlueprint(
+                principal.name(), realm, title, narrative, signalOrder, keyCells);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("blueprint_id", result.get("id"));
+        opPayload.put("realm", realm);
+        opPayload.put("title", title);
+        opPayload.put("narrative", narrative);
+        opPayload.put("signal_order", signalOrder);
+        opPayload.put("key_cells", keyCells == null ? null
+                : keyCells.stream().map(UUID::toString).toList());
+        opPayload.put("agent_id", principal.name());
+        opLogWriter.append("update_blueprint", opPayload);
+        return result;
     }
 
+    @Transactional
     public Map<String, Object> addTunnel(
             AuthPrincipal principal,
             UUID fromCell,
@@ -246,16 +378,39 @@ public class WriteToolService {
             String requestedStatus
     ) {
         String status = principal.role() == AuthRole.AGENT ? STATUS_PENDING : effectiveStatus(principal.role(), requestedStatus);
-        return writeToolRepository.addTunnel(fromCell, toCell, relation, note, status, principal.name());
+        Map<String, Object> result = writeToolRepository.addTunnel(fromCell, toCell, relation, note, status, principal.name());
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("tunnel_id", result.get("id"));
+        opPayload.put("from_cell_id", fromCell.toString());
+        opPayload.put("to_cell_id", toCell.toString());
+        opPayload.put("relation", relation);
+        opPayload.put("note", note);
+        opPayload.put("status", status);
+        opPayload.put("agent_id", principal.name());
+        opLogWriter.append("add_tunnel", opPayload);
+        return result;
     }
 
+    @Transactional
     public Map<String, Object> removeTunnel(UUID tunnelId) {
         writeToolRepository.removeTunnel(tunnelId);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("tunnel_id", tunnelId.toString());
+        opLogWriter.append("remove_tunnel", opPayload);
         return Map.of("id", tunnelId.toString(), "removed", true);
     }
 
+    @Transactional
     public Map<String, Object> approvePending(List<UUID> ids, String decision) {
         int count = writeToolRepository.approvePending(ids, decision);
+
+        Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
+        opPayload.put("ids", ids.stream().map(UUID::toString).toList());
+        opPayload.put("decision", decision);
+        opPayload.put("count", count);
+        opLogWriter.append("approve_pending", opPayload);
         return Map.of("decision", decision, "count", count);
     }
 
