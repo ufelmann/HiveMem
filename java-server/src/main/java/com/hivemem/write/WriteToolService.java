@@ -4,6 +4,7 @@ import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.sync.OpLogWriter;
+import com.hivemem.sync.PushDispatcher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,15 +23,18 @@ public class WriteToolService {
     private final WriteToolRepository writeToolRepository;
     private final EmbeddingClient embeddingClient;
     private final OpLogWriter opLogWriter;
+    private final PushDispatcher pushDispatcher;
 
     public WriteToolService(
             WriteToolRepository writeToolRepository,
             EmbeddingClient embeddingClient,
-            OpLogWriter opLogWriter
+            OpLogWriter opLogWriter,
+            PushDispatcher pushDispatcher
     ) {
         this.writeToolRepository = writeToolRepository;
         this.embeddingClient = embeddingClient;
         this.opLogWriter = opLogWriter;
+        this.pushDispatcher = pushDispatcher;
     }
 
     @Transactional
@@ -100,7 +104,8 @@ public class WriteToolService {
         opPayload.put("agent_id", principal.name());
         opPayload.put("valid_from", validFrom == null ? null : validFrom.toString());
         opPayload.put("dedupe_threshold", dedupeThreshold);
-        opLogWriter.append("add_cell", opPayload);
+        UUID opId = opLogWriter.append("add_cell", opPayload);
+        pushDispatcher.dispatch(opId);
 
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("inserted", true);
@@ -158,7 +163,8 @@ public class WriteToolService {
         opPayload.put("status", status);
         opPayload.put("agent_id", principal.name());
         opPayload.put("valid_from", validFrom == null ? null : validFrom.toString());
-        opLogWriter.append("kg_add", opPayload);
+        UUID opId = opLogWriter.append("kg_add", opPayload);
+        pushDispatcher.dispatch(opId);
 
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("inserted", true);
@@ -172,7 +178,8 @@ public class WriteToolService {
 
         Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
         opPayload.put("fact_id", factId.toString());
-        opLogWriter.append("kg_invalidate", opPayload);
+        UUID opId = opLogWriter.append("kg_invalidate", opPayload);
+        pushDispatcher.dispatch(opId);
         return Map.of("invalidated", true);
     }
 
@@ -187,7 +194,8 @@ public class WriteToolService {
         opPayload.put("new_object", newObject);
         opPayload.put("agent_id", principal.name());
         opPayload.put("status", status);
-        opLogWriter.append("revise_fact", opPayload);
+        UUID opId = opLogWriter.append("revise_fact", opPayload);
+        pushDispatcher.dispatch(opId);
         return result;
     }
 
@@ -204,7 +212,8 @@ public class WriteToolService {
         opPayload.put("new_summary", newSummary);
         opPayload.put("agent_id", principal.name());
         opPayload.put("status", status);
-        opLogWriter.append("revise_cell", opPayload);
+        UUID opId = opLogWriter.append("revise_cell", opPayload);
+        pushDispatcher.dispatch(opId);
         return result;
     }
 
@@ -238,7 +247,8 @@ public class WriteToolService {
         opPayload.put("new_topic", normalizedTopic);
         opPayload.put("new_signal", signal);
         opPayload.put("agent_id", principal.name());
-        opLogWriter.append("reclassify_cell", opPayload);
+        UUID opId = opLogWriter.append("reclassify_cell", opPayload);
+        pushDispatcher.dispatch(opId);
         return result;
     }
 
@@ -265,7 +275,8 @@ public class WriteToolService {
         opPayload.put("key", key);
         opPayload.put("content", content);
         opPayload.put("token_count", tokenCount);
-        opLogWriter.append("update_identity", opPayload);
+        UUID opId = opLogWriter.append("update_identity", opPayload);
+        pushDispatcher.dispatch(opId);
         return Map.of("key", key, "token_count", tokenCount);
     }
 
@@ -294,7 +305,8 @@ public class WriteToolService {
         opPayload.put("notes", notes);
         opPayload.put("tags", tags);
         opPayload.put("importance", importance);
-        opLogWriter.append("add_reference", opPayload);
+        UUID opId = opLogWriter.append("add_reference", opPayload);
+        pushDispatcher.dispatch(opId);
         return result;
     }
 
@@ -306,7 +318,8 @@ public class WriteToolService {
         opPayload.put("cell_id", cellId.toString());
         opPayload.put("reference_id", referenceId.toString());
         opPayload.put("relation", relation);
-        opLogWriter.append("link_reference", opPayload);
+        UUID opId = opLogWriter.append("link_reference", opPayload);
+        pushDispatcher.dispatch(opId);
         return result;
     }
 
@@ -329,7 +342,8 @@ public class WriteToolService {
         opPayload.put("schedule", schedule);
         opPayload.put("model_routing", modelRoutingJson);
         opPayload.put("tools", tools);
-        opLogWriter.append("register_agent", opPayload);
+        UUID opId = opLogWriter.append("register_agent", opPayload);
+        pushDispatcher.dispatch(opId);
         return result;
     }
 
@@ -341,7 +355,8 @@ public class WriteToolService {
         opPayload.put("entry_id", result.get("id"));
         opPayload.put("agent", agent);
         opPayload.put("entry", entry);
-        opLogWriter.append("diary_write", opPayload);
+        UUID opId = opLogWriter.append("diary_write", opPayload);
+        pushDispatcher.dispatch(opId);
         return result;
     }
 
@@ -366,7 +381,8 @@ public class WriteToolService {
         opPayload.put("key_cells", keyCells == null ? null
                 : keyCells.stream().map(UUID::toString).toList());
         opPayload.put("agent_id", principal.name());
-        opLogWriter.append("update_blueprint", opPayload);
+        UUID opId = opLogWriter.append("update_blueprint", opPayload);
+        pushDispatcher.dispatch(opId);
         return result;
     }
 
@@ -390,7 +406,8 @@ public class WriteToolService {
         opPayload.put("note", note);
         opPayload.put("status", status);
         opPayload.put("agent_id", principal.name());
-        opLogWriter.append("add_tunnel", opPayload);
+        UUID opId = opLogWriter.append("add_tunnel", opPayload);
+        pushDispatcher.dispatch(opId);
         return result;
     }
 
@@ -400,7 +417,8 @@ public class WriteToolService {
 
         Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
         opPayload.put("tunnel_id", tunnelId.toString());
-        opLogWriter.append("remove_tunnel", opPayload);
+        UUID opId = opLogWriter.append("remove_tunnel", opPayload);
+        pushDispatcher.dispatch(opId);
         return Map.of("id", tunnelId.toString(), "removed", true);
     }
 
@@ -412,7 +430,8 @@ public class WriteToolService {
         opPayload.put("ids", ids.stream().map(UUID::toString).toList());
         opPayload.put("decision", decision);
         opPayload.put("count", count);
-        opLogWriter.append("approve_pending", opPayload);
+        UUID opId = opLogWriter.append("approve_pending", opPayload);
+        pushDispatcher.dispatch(opId);
         return Map.of("decision", decision, "count", count);
     }
 

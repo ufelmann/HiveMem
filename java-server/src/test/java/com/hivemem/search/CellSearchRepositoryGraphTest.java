@@ -13,6 +13,7 @@ import com.hivemem.write.WriteToolRepository;
 import com.hivemem.write.WriteToolService;
 import com.hivemem.sync.InstanceConfig;
 import com.hivemem.sync.OpLogWriter;
+import com.hivemem.sync.PushDispatcher;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -198,6 +199,11 @@ class CellSearchRepositoryGraphTest {
                 @Override
                 public void run(org.springframework.boot.ApplicationArguments args) {}
             });
+        }
+
+        @Bean
+        PushDispatcher pushDispatcher() {
+            return org.mockito.Mockito.mock(PushDispatcher.class);
         }
     }
 }

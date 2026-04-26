@@ -13,6 +13,7 @@ import com.hivemem.write.WriteToolRepository;
 import com.hivemem.write.WriteToolService;
 import com.hivemem.sync.InstanceConfig;
 import com.hivemem.sync.OpLogWriter;
+import com.hivemem.sync.PushDispatcher;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 import org.jooq.Result;
@@ -205,6 +206,11 @@ class RankedSearchGraphSignalTest {
                 @Override
                 public void run(org.springframework.boot.ApplicationArguments args) {}
             });
+        }
+
+        @Bean
+        PushDispatcher pushDispatcher() {
+            return org.mockito.Mockito.mock(PushDispatcher.class);
         }
     }
 }
