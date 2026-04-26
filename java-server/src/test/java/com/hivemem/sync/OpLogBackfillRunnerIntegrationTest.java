@@ -1,5 +1,6 @@
 package com.hivemem.sync;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
 import org.jooq.DSLContext;
@@ -31,6 +32,9 @@ class OpLogBackfillRunnerIntegrationTest {
     static class TestConfig {
         @Bean @Primary
         EmbeddingClient testEmbeddingClient() { return new FixedEmbeddingClient(); }
+
+        @Bean
+        ObjectMapper objectMapper() { return new ObjectMapper(); }
     }
 
     @Container
