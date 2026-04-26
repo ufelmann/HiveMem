@@ -86,9 +86,9 @@ class OpLogBackfillRunnerIntegrationTest {
         UUID cellId = UUID.randomUUID();
         dsl.execute(
                 "INSERT INTO cells (id, content, realm, signal, topic, tags, key_points, created_by, status) "
-                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                + "VALUES (?, ?, ?, ?, ?, ?::text[], ?::text[], ?, ?)",
                 cellId, "content", "engineering", "facts", "t",
-                new String[]{"tag1", "tag2"}, new String[]{"kp1"},
+                "{tag1,tag2}", "{kp1}",
                 "admin", "committed");
 
         runner.runBackfill();
@@ -101,6 +101,7 @@ class OpLogBackfillRunnerIntegrationTest {
         String payload = row.get("p", String.class);
         assertThat(payload).contains("[\"tag1\",\"tag2\"]");
         assertThat(payload).contains("[\"kp1\"]");
+        dsl.execute("DELETE FROM cells WHERE id = ?", cellId);
     }
 
     @Test
@@ -108,11 +109,12 @@ class OpLogBackfillRunnerIntegrationTest {
         dsl.execute("DELETE FROM ops_log");
         dsl.execute("""
                 INSERT INTO agents (name, focus, autonomy, tools)
-                VALUES (?, ?, ?::jsonb, ?)
-                ON CONFLICT (name) DO UPDATE SET focus = EXCLUDED.focus
+                VALUES (?, ?, ?::jsonb, ?::text[])
+                ON CONFLICT (name) DO UPDATE SET focus = EXCLUDED.focus,
+                    autonomy = EXCLUDED.autonomy, tools = EXCLUDED.tools
                 """,
                 "backfill-test-agent", "test-focus",
-                "{\"default\":\"suggest_only\"}", new String[]{"tool1", "tool2"});
+                "{\"default\":\"suggest_only\"}", "{tool1,tool2}");
 
         runner.runBackfill();
 
@@ -124,5 +126,6 @@ class OpLogBackfillRunnerIntegrationTest {
         String payload = row.get("p", String.class);
         assertThat(payload).contains("\"autonomy\":{\"default\":\"suggest_only\"}");
         assertThat(payload).contains("[\"tool1\",\"tool2\"]");
+        dsl.execute("DELETE FROM agents WHERE name = ?", "backfill-test-agent");
     }
 }
