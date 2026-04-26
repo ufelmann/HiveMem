@@ -10,6 +10,8 @@ import com.hivemem.write.AdminToolRepository;
 import com.hivemem.write.AdminToolService;
 import com.hivemem.write.WriteToolRepository;
 import com.hivemem.write.WriteToolService;
+import com.hivemem.sync.InstanceConfig;
+import com.hivemem.sync.OpLogWriter;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 import org.jooq.Result;
@@ -193,6 +195,8 @@ class GraphProximityFunctionTest {
             CellSearchRepository.class,
             KgSearchRepository.class,
             AdminToolRepository.class,
+            OpLogWriter.class,
+            InstanceConfig.class,
             TestConfig.class
     })
     static class TestApplication {
