@@ -1,6 +1,6 @@
 package com.hivemem.sync;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import org.jooq.DSLContext;
 import org.jooq.Field;
@@ -54,9 +54,9 @@ public class OpLogBackfillRunner {
         Result<Record> rows;
         try {
             rows = dsl.fetch("SELECT * FROM " + tableName);
-        } catch (RuntimeException e) {
+        } catch (Exception e) {
             log.error("Backfill failed for table '{}' (op_type='{}')", tableName, opType, e);
-            throw e;
+            throw (e instanceof RuntimeException re) ? re : new RuntimeException(e);
         }
         for (Record row : rows) {
             Map<String, Object> payload = new LinkedHashMap<>();

@@ -1,6 +1,6 @@
 package com.hivemem.sync;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 import org.junit.jupiter.api.Test;
