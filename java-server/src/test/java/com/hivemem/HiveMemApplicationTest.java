@@ -5,6 +5,11 @@ import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.EmbeddingMigrationService;
 import com.hivemem.embedding.FixedEmbeddingClient;
 import com.hivemem.popularity.PopularityRefreshScheduler;
+import com.hivemem.sync.InstanceConfig;
+import com.hivemem.sync.PullScheduler;
+import com.hivemem.sync.PushDispatcher;
+import com.hivemem.sync.SyncOpsRepository;
+import com.hivemem.sync.SyncPeerRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -40,6 +45,21 @@ class HiveMemApplicationTest {
 
     @MockitoBean
     private PopularityRefreshScheduler popularityRefreshScheduler;
+
+    @MockitoBean
+    private PullScheduler pullScheduler;
+
+    @MockitoBean
+    private PushDispatcher pushDispatcher;
+
+    @MockitoBean
+    private SyncPeerRepository syncPeerRepository;
+
+    @MockitoBean
+    private SyncOpsRepository syncOpsRepository;
+
+    @MockitoBean
+    private InstanceConfig instanceConfig;
 
     @Test
     void contextLoads() {

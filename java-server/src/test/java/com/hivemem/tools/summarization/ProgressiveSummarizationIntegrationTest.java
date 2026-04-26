@@ -15,6 +15,7 @@ import com.hivemem.write.AdminToolService;
 import com.hivemem.write.WriteToolRepository;
 import com.hivemem.sync.InstanceConfig;
 import com.hivemem.sync.OpLogWriter;
+import com.hivemem.sync.PushDispatcher;
 import com.hivemem.write.WriteToolService;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
@@ -616,6 +617,11 @@ class ProgressiveSummarizationIntegrationTest {
                     // no-op: skip migration in unit test context
                 }
             });
+        }
+
+        @Bean
+        PushDispatcher pushDispatcher() {
+            return org.mockito.Mockito.mock(PushDispatcher.class);
         }
     }
 }
