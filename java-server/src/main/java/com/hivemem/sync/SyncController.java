@@ -25,7 +25,7 @@ public class SyncController {
 
     @PostMapping("/ops")
     public Map<String, Object> receiveOps(@RequestBody SyncPushRequest request) {
-        // stub — implemented in Task 8
-        return Map.of("replayed", 0, "skipped", 0);
+        OpReplayer.BatchResult result = opReplayer.replayAll(request.sourcePeer(), request.ops());
+        return Map.of("replayed", result.replayed(), "skipped", result.skipped());
     }
 }
