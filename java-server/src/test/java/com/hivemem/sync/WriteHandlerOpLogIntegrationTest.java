@@ -88,6 +88,20 @@ class WriteHandlerOpLogIntegrationTest {
     }
 
     @Test
+    void addCellPayloadContainsSourceTagsAndDedupeThreshold() {
+        service.addCell(
+                admin(), "indexed content", "engineering", "facts", "testing",
+                "https://example.com/ref", List.of("tag-a", "tag-b"), 3,
+                null, null, null, null, null, null, 0.85);
+
+        String payload = latestPayload("add_cell");
+        assertThat(payload).contains("\"https://example.com/ref\"");
+        assertThat(payload).contains("\"tag-a\"");
+        assertThat(payload).contains("\"tag-b\"");
+        assertThat(payload).contains("0.85");
+    }
+
+    @Test
     void reviseCellEmitsReviseCellOp() {
         Map<String, Object> created = service.addCell(
                 admin(), "original", "engineering", "facts", "topic",
