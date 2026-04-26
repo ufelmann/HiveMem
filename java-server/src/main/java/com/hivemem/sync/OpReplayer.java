@@ -51,7 +51,7 @@ public class OpReplayer {
         int replayed = 0, skipped = 0;
         for (OpDto op : ops) {
             ReplayResult r = replay(sourcePeer, op);
-            if (r == ReplayResult.REPLAYED) replayed++;
+            if (r == ReplayResult.REPLAYED || r == ReplayResult.CONFLICT) replayed++;
             else skipped++;
         }
         return new BatchResult(replayed, skipped);
@@ -126,19 +126,22 @@ public class OpReplayer {
         Float[] embArr = embedding.toArray(Float[]::new);
         String status = textOrDefault(p, "status", "committed");
 
-        dsl.execute("UPDATE cells SET valid_until = now() WHERE id = ? AND valid_until IS NULL", oldId);
-        dsl.execute("""
-                INSERT INTO cells (id, parent_id, content, embedding, realm, signal, topic, source, tags,
-                                   importance, summary, key_points, insight, actionability, status, created_by, valid_from)
-                VALUES (?::uuid, ?::uuid, ?, ?::vector, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
-                """,
-                newId, oldId, newContent, embArr,
-                meta.get("realm", String.class), meta.get("signal", String.class),
-                meta.get("topic", String.class), meta.get("source", String.class),
-                meta.get("tags", String[].class), meta.get("importance", Integer.class),
-                text(p, "new_summary"), meta.get("key_points", String[].class),
-                meta.get("insight", String.class), meta.get("actionability", String.class),
-                status, text(p, "agent_id"));
+        dsl.transaction(ctx -> {
+            var tx = ctx.dsl();
+            tx.execute("UPDATE cells SET valid_until = now() WHERE id = ? AND valid_until IS NULL", oldId);
+            tx.execute("""
+                    INSERT INTO cells (id, parent_id, content, embedding, realm, signal, topic, source, tags,
+                                       importance, summary, key_points, insight, actionability, status, created_by, valid_from)
+                    VALUES (?::uuid, ?::uuid, ?, ?::vector, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+                    """,
+                    newId, oldId, newContent, embArr,
+                    meta.get("realm", String.class), meta.get("signal", String.class),
+                    meta.get("topic", String.class), meta.get("source", String.class),
+                    meta.get("tags", String[].class), meta.get("importance", Integer.class),
+                    text(p, "new_summary"), meta.get("key_points", String[].class),
+                    meta.get("insight", String.class), meta.get("actionability", String.class),
+                    status, text(p, "agent_id"));
+        });
         return ReplayResult.REPLAYED;
     }
 
@@ -175,14 +178,17 @@ public class OpReplayer {
                 oldId);
         if (old == null) return ReplayResult.SKIPPED;
         String status = textOrDefault(p, "status", "committed");
-        dsl.execute("UPDATE facts SET valid_until = now() WHERE id = ? AND valid_until IS NULL", oldId);
-        dsl.execute("""
-                INSERT INTO facts (id, subject, predicate, "object", confidence, source_id, status, created_by, valid_from)
-                VALUES (?::uuid, ?, ?, ?, ?, ?::uuid, ?, ?, now())
-                """,
-                newId, old.get("subject", String.class), old.get("predicate", String.class),
-                text(p, "new_object"), old.get("confidence", Double.class),
-                old.get("source_id", UUID.class), status, text(p, "agent_id"));
+        dsl.transaction(ctx -> {
+            var tx = ctx.dsl();
+            tx.execute("UPDATE facts SET valid_until = now() WHERE id = ? AND valid_until IS NULL", oldId);
+            tx.execute("""
+                    INSERT INTO facts (id, subject, predicate, "object", confidence, source_id, status, created_by, valid_from)
+                    VALUES (?::uuid, ?, ?, ?, ?, ?::uuid, ?, ?, now())
+                    """,
+                    newId, old.get("subject", String.class), old.get("predicate", String.class),
+                    text(p, "new_object"), old.get("confidence", Double.class),
+                    old.get("source_id", UUID.class), status, text(p, "agent_id"));
+        });
         return ReplayResult.REPLAYED;
     }
 
