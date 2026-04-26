@@ -183,6 +183,7 @@ public class WriteToolService {
 
         Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
         opPayload.put("fact_id", oldId.toString());
+        opPayload.put("new_fact_id", result.get("new_id").toString());
         opPayload.put("new_object", newObject);
         opPayload.put("agent_id", principal.name());
         opPayload.put("status", status);
@@ -198,6 +199,7 @@ public class WriteToolService {
 
         Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
         opPayload.put("cell_id", oldId.toString());
+        opPayload.put("new_cell_id", result.get("new_id").toString());
         opPayload.put("new_content", newContent);
         opPayload.put("new_summary", newSummary);
         opPayload.put("agent_id", principal.name());

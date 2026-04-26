@@ -267,6 +267,39 @@ class WriteHandlerOpLogIntegrationTest {
     }
 
     @Test
+    void reviseCellOpIncludesNewCellId() {
+        Map<String, Object> added = service.addCell(admin(), "original content",
+                "engineering", "facts", "test", null, List.of(), 1, "summary", List.of(), null, null, null, null, null);
+        UUID oldId = UUID.fromString(added.get("id").toString());
+
+        long seqBefore = dsl.fetchOne("SELECT max(seq) AS s FROM ops_log").get("s", Long.class);
+        service.reviseCell(admin(), oldId, "revised content", "revised summary");
+
+        var op = dsl.fetchOne(
+                "SELECT payload FROM ops_log WHERE seq > ? AND op_type = 'revise_cell' ORDER BY seq DESC LIMIT 1",
+                seqBefore);
+        assertThat(op).isNotNull();
+        String payload = op.get("payload", org.jooq.JSONB.class).data();
+        assertThat(payload).contains("new_cell_id");
+    }
+
+    @Test
+    void reviseFact_OpIncludesNewFactId() {
+        Map<String, Object> added = service.kgAdd(admin(), "S", "P", "O", 1.0, null, null, null, null);
+        UUID oldId = UUID.fromString(added.get("id").toString());
+
+        long seqBefore = dsl.fetchOne("SELECT max(seq) AS s FROM ops_log").get("s", Long.class);
+        service.reviseFact(admin(), oldId, "O2");
+
+        var op = dsl.fetchOne(
+                "SELECT payload FROM ops_log WHERE seq > ? AND op_type = 'revise_fact' ORDER BY seq DESC LIMIT 1",
+                seqBefore);
+        assertThat(op).isNotNull();
+        String payload = op.get("payload", org.jooq.JSONB.class).data();
+        assertThat(payload).contains("new_fact_id");
+    }
+
+    @Test
     void approvePendingEmitsOp() {
         AuthPrincipal agent = new AuthPrincipal("agent-x", AuthRole.AGENT);
         Map<String, Object> added = service.kgAdd(agent, "s3", "p3", "o3", 1.0, null, null, null, "insert");
