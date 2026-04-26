@@ -79,4 +79,50 @@ class OpLogBackfillRunnerIntegrationTest {
         long afterSecond = dsl.fetchOne("SELECT count(*) AS c FROM ops_log").get("c", Long.class);
         assertThat(afterSecond).isEqualTo(afterFirst);
     }
+
+    @Test
+    void backfillSerializesTextArraysAsJsonArrays() {
+        dsl.execute("DELETE FROM ops_log");
+        UUID cellId = UUID.randomUUID();
+        dsl.execute(
+                "INSERT INTO cells (id, content, realm, signal, topic, tags, key_points, created_by, status) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                cellId, "content", "engineering", "facts", "t",
+                new String[]{"tag1", "tag2"}, new String[]{"kp1"},
+                "admin", "committed");
+
+        runner.runBackfill();
+
+        var row = dsl.fetchOne(
+                "SELECT payload::text AS p FROM ops_log "
+                + "WHERE op_type = 'add_cell' AND payload->>'id' = ?",
+                cellId.toString());
+        assertThat(row).isNotNull();
+        String payload = row.get("p", String.class);
+        assertThat(payload).contains("[\"tag1\",\"tag2\"]");
+        assertThat(payload).contains("[\"kp1\"]");
+    }
+
+    @Test
+    void backfillSerializesJsonbAsEmbeddedJsonObject() {
+        dsl.execute("DELETE FROM ops_log");
+        dsl.execute("""
+                INSERT INTO agents (name, focus, autonomy, tools)
+                VALUES (?, ?, ?::jsonb, ?)
+                ON CONFLICT (name) DO UPDATE SET focus = EXCLUDED.focus
+                """,
+                "backfill-test-agent", "test-focus",
+                "{\"default\":\"suggest_only\"}", new String[]{"tool1", "tool2"});
+
+        runner.runBackfill();
+
+        var row = dsl.fetchOne(
+                "SELECT payload::text AS p FROM ops_log "
+                + "WHERE op_type = 'register_agent' AND payload->>'name' = ?",
+                "backfill-test-agent");
+        assertThat(row).isNotNull();
+        String payload = row.get("p", String.class);
+        assertThat(payload).contains("\"autonomy\":{\"default\":\"suggest_only\"}");
+        assertThat(payload).contains("[\"tool1\",\"tool2\"]");
+    }
 }
