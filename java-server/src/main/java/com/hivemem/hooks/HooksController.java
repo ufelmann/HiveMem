@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -21,14 +22,18 @@ public class HooksController {
     }
 
     @PostMapping("/context")
-    public ResponseEntity<HookContextResponse> context(@RequestBody HookContextRequest req) {
-        log.info("HOOK_CALL session={} event={} promptLen={}",
+    public ResponseEntity<HookContextResponse> context(
+            @RequestBody HookContextRequest req,
+            @RequestParam(name = "threshold", required = false) Double threshold,
+            @RequestParam(name = "maxCells", required = false) Integer maxCells) {
+        log.info("HOOK_CALL session={} event={} promptLen={} threshold={} maxCells={}",
                 req == null ? "?" : req.session_id(),
                 req == null ? "?" : req.hook_event_name(),
-                req == null || req.prompt() == null ? 0 : req.prompt().length());
+                req == null || req.prompt() == null ? 0 : req.prompt().length(),
+                threshold, maxCells);
         String additional;
         try {
-            additional = service.contextFor(req);
+            additional = service.contextFor(req, threshold, maxCells);
         } catch (RuntimeException e) {
             log.warn("Hook context failed; returning empty injection", e);
             additional = "";

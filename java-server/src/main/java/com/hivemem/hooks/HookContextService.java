@@ -48,6 +48,10 @@ public class HookContextService {
     }
 
     public String contextFor(HookContextRequest req) {
+        return contextFor(req, null, null);
+    }
+
+    public String contextFor(HookContextRequest req, Double thresholdOverride, Integer maxCellsOverride) {
         if (!props.isEnabled()) return "";
         if (req == null || req.prompt() == null) return "";
         if (skipHeuristics.evaluate(req.prompt()).skip()) return "";
@@ -70,10 +74,13 @@ public class HookContextService {
             return "";
         }
 
+        double threshold = thresholdOverride != null ? thresholdOverride : props.getRelevanceThreshold();
+        int maxCells = maxCellsOverride != null ? maxCellsOverride : props.getMaxCells();
+
         List<RankedRow> filtered = rows.stream()
-                .filter(r -> r.scoreTotal() >= props.getRelevanceThreshold())
+                .filter(r -> r.scoreTotal() >= threshold)
                 .filter(r -> !cache.recentlyInjected(sessionKey, r.id(), turn))
-                .limit(props.getMaxCells())
+                .limit(maxCells)
                 .toList();
 
         if (filtered.isEmpty()) return "";
