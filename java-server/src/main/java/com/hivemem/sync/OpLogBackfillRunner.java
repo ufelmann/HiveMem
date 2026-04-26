@@ -77,6 +77,13 @@ public class OpLogBackfillRunner {
             return Arrays.stream(arr).map(e -> e instanceof UUID u ? u.toString() : e).toList();
         }
         if (value instanceof UUID uuid) return uuid.toString();
+        if (value instanceof org.jooq.JSONB jsonb) {
+            try {
+                return objectMapper.readTree(jsonb.data());
+            } catch (Exception e) {
+                return jsonb.data();
+            }
+        }
         if (value instanceof String s && "jsonb".equalsIgnoreCase(field.getDataType().getCastTypeName())) {
             try {
                 return objectMapper.readTree(s);

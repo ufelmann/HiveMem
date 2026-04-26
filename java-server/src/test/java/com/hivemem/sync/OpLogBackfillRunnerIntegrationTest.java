@@ -103,9 +103,9 @@ class OpLogBackfillRunnerIntegrationTest {
                 + "WHERE op_type = 'add_cell' AND payload->>'id' = ?",
                 cellId.toString());
         assertThat(row).isNotNull();
-        String payload = row.get("p", String.class);
-        assertThat(payload).contains("\"tags\":[\"tag1\",\"tag2\"]");
-        assertThat(payload).contains("\"key_points\":[\"kp1\"]");
+        String compact = row.get("p", String.class).replaceAll("\\s+", "");
+        assertThat(compact).contains("\"tags\":[\"tag1\",\"tag2\"]");
+        assertThat(compact).contains("\"key_points\":[\"kp1\"]");
         dsl.execute("DELETE FROM cells WHERE id = ?", cellId);
     }
 
@@ -128,9 +128,9 @@ class OpLogBackfillRunnerIntegrationTest {
                 + "WHERE op_type = 'register_agent' AND payload->>'name' = ?",
                 "backfill-test-agent");
         assertThat(row).isNotNull();
-        String payload = row.get("p", String.class);
-        assertThat(payload).contains("\"autonomy\":{\"default\":\"suggest_only\"}");
-        assertThat(payload).contains("\"tools\":[\"tool1\",\"tool2\"]");
+        String compact = row.get("p", String.class).replaceAll("\\s+", "");
+        assertThat(compact).contains("\"autonomy\":{\"default\":\"suggest_only\"}");
+        assertThat(compact).contains("\"tools\":[\"tool1\",\"tool2\"]");
         dsl.execute("DELETE FROM agents WHERE name = ?", "backfill-test-agent");
     }
 }
