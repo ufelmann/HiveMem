@@ -57,6 +57,11 @@ class OpLogBackfillRunnerIntegrationTest {
     @Autowired DSLContext dsl;
     @Autowired OpLogBackfillRunner runner;
 
+    @org.junit.jupiter.api.AfterEach
+    void cleanupOpLog() {
+        dsl.execute("DELETE FROM ops_log");
+    }
+
     @Test
     void backfillEmitsOpsForExistingCellsAndIsIdempotent() {
         // Seed a cell directly via SQL (bypassing the service so no op-log entry yet).
@@ -99,8 +104,8 @@ class OpLogBackfillRunnerIntegrationTest {
                 cellId.toString());
         assertThat(row).isNotNull();
         String payload = row.get("p", String.class);
-        assertThat(payload).contains("[\"tag1\",\"tag2\"]");
-        assertThat(payload).contains("[\"kp1\"]");
+        assertThat(payload).contains("\"tags\":[\"tag1\",\"tag2\"]");
+        assertThat(payload).contains("\"key_points\":[\"kp1\"]");
         dsl.execute("DELETE FROM cells WHERE id = ?", cellId);
     }
 
@@ -125,7 +130,7 @@ class OpLogBackfillRunnerIntegrationTest {
         assertThat(row).isNotNull();
         String payload = row.get("p", String.class);
         assertThat(payload).contains("\"autonomy\":{\"default\":\"suggest_only\"}");
-        assertThat(payload).contains("[\"tool1\",\"tool2\"]");
+        assertThat(payload).contains("\"tools\":[\"tool1\",\"tool2\"]");
         dsl.execute("DELETE FROM agents WHERE name = ?", "backfill-test-agent");
     }
 }
