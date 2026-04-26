@@ -88,6 +88,8 @@ public class WriteToolService {
         opPayload.put("realm", realm);
         opPayload.put("signal", signal);
         opPayload.put("topic", topic);
+        opPayload.put("source", source);
+        opPayload.put("tags", tags);
         opPayload.put("content", content);
         opPayload.put("summary", summary);
         opPayload.put("key_points", keyPoints);
@@ -97,6 +99,7 @@ public class WriteToolService {
         opPayload.put("status", status);
         opPayload.put("agent_id", principal.name());
         opPayload.put("valid_from", validFrom == null ? null : validFrom.toString());
+        opPayload.put("dedupe_threshold", dedupeThreshold);
         opLogWriter.append("add_cell", opPayload);
 
         Map<String, Object> result = new java.util.LinkedHashMap<>();
