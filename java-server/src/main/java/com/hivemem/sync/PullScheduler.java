@@ -45,8 +45,8 @@ public class PullScheduler {
         for (OpDto op : ops) {
             OpReplayer.ReplayResult result = opReplayer.replay(peer.peerUuid(), op);
             if (result == OpReplayer.ReplayResult.UNKNOWN_OP) {
-                log.warn("Replay failed for op={} from peer={}, stopping batch", op.opId(), peer.peerUrl());
-                break;
+                log.warn("Skipping unknown op_type={} op={} from peer={}",
+                        op.opType(), op.opId(), peer.peerUrl());
             }
             maxReplayed = op.seq();
         }

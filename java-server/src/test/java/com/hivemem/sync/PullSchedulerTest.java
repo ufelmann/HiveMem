@@ -71,11 +71,11 @@ class PullSchedulerTest {
     }
 
     @Test
-    void pullAllStopsBatchOnFailedOp() {
+    void pullAllSkipsUnknownOpAndContinuesBatch() {
         UUID peerUuid = UUID.randomUUID();
         UUID opId1 = UUID.randomUUID();
         UUID opId2 = UUID.randomUUID();
-        var op1 = new OpDto(10L, opId1, "add_cell",
+        var op1 = new OpDto(10L, opId1, "unknown_type",
                 new ObjectMapper().createObjectNode(), OffsetDateTime.now());
         var op2 = new OpDto(11L, opId2, "add_cell",
                 new ObjectMapper().createObjectNode(), OffsetDateTime.now());
@@ -85,11 +85,14 @@ class PullSchedulerTest {
                 new SyncPeer(peerUuid, "http://peer:8421", 0L, "tok")));
         when(peerClient.fetchOps("http://peer:8421", 0L, "tok")).thenReturn(List.of(op1, op2));
         when(opReplayer.replay(eq(peerUuid), eq(op1))).thenReturn(OpReplayer.ReplayResult.UNKNOWN_OP);
+        when(opReplayer.replay(eq(peerUuid), eq(op2))).thenReturn(OpReplayer.ReplayResult.REPLAYED);
 
         scheduler.pullAll();
 
-        verify(opReplayer, never()).replay(eq(peerUuid), eq(op2));
-        verify(peerRepository, never()).updateLastSeenSeq(any(), anyLong());
+        // op2 still replayed despite op1 being UNKNOWN_OP
+        verify(opReplayer).replay(eq(peerUuid), eq(op2));
+        // maxReplayed advances to op2's seq
+        verify(peerRepository).updateLastSeenSeq(peerUuid, 11L);
     }
 
     @Test
