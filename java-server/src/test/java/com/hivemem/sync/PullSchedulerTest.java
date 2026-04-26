@@ -71,6 +71,28 @@ class PullSchedulerTest {
     }
 
     @Test
+    void pullAllStopsBatchOnFailedOp() {
+        UUID peerUuid = UUID.randomUUID();
+        UUID opId1 = UUID.randomUUID();
+        UUID opId2 = UUID.randomUUID();
+        var op1 = new OpDto(10L, opId1, "add_cell",
+                new ObjectMapper().createObjectNode(), OffsetDateTime.now());
+        var op2 = new OpDto(11L, opId2, "add_cell",
+                new ObjectMapper().createObjectNode(), OffsetDateTime.now());
+
+        when(instanceConfig.instanceId()).thenReturn(UUID.randomUUID());
+        when(peerRepository.findAllPeers()).thenReturn(List.of(
+                new SyncPeer(peerUuid, "http://peer:8421", 0L, "tok")));
+        when(peerClient.fetchOps("http://peer:8421", 0L, "tok")).thenReturn(List.of(op1, op2));
+        when(opReplayer.replay(eq(peerUuid), eq(op1))).thenReturn(OpReplayer.ReplayResult.UNKNOWN_OP);
+
+        scheduler.pullAll();
+
+        verify(opReplayer, never()).replay(eq(peerUuid), eq(op2));
+        verify(peerRepository, never()).updateLastSeenSeq(any(), anyLong());
+    }
+
+    @Test
     void pullAllSkipsSelfPeer() {
         UUID myId = UUID.randomUUID();
         when(instanceConfig.instanceId()).thenReturn(myId);

@@ -44,9 +44,11 @@ public class PullScheduler {
         long maxReplayed = peer.lastSeenSeq();
         for (OpDto op : ops) {
             OpReplayer.ReplayResult result = opReplayer.replay(peer.peerUuid(), op);
-            if (result == OpReplayer.ReplayResult.REPLAYED || result == OpReplayer.ReplayResult.SKIPPED) {
-                maxReplayed = op.seq();
+            if (result == OpReplayer.ReplayResult.UNKNOWN_OP) {
+                log.warn("Replay failed for op={} from peer={}, stopping batch", op.opId(), peer.peerUrl());
+                break;
             }
+            maxReplayed = op.seq();
         }
         if (maxReplayed > peer.lastSeenSeq()) {
             peerRepository.updateLastSeenSeq(peer.peerUuid(), maxReplayed);
