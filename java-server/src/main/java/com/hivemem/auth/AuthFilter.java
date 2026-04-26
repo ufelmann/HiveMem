@@ -30,7 +30,7 @@ public class AuthFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String requestPath = request.getRequestURI().substring(request.getContextPath().length());
-        return !requestPath.startsWith("/mcp") && !requestPath.startsWith("/hooks");
+        return !requestPath.startsWith("/mcp") && !requestPath.startsWith("/hooks") && !requestPath.startsWith("/sync");
     }
 
     @Override
