@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         "hivemem.hooks.relevance-threshold=0.42",
         "hivemem.hooks.max-cells=7",
         "hivemem.hooks.dedup-window-turns=11",
+        "hivemem.hooks.min-semantic-score=0.40",
 })
 class HookPropertiesTest {
 
@@ -32,6 +33,7 @@ class HookPropertiesTest {
         assertThat(props.getRelevanceThreshold()).isEqualTo(0.42);
         assertThat(props.getMaxCells()).isEqualTo(7);
         assertThat(props.getDedupWindowTurns()).isEqualTo(11);
+        assertThat(props.getMinSemanticScore()).isEqualTo(0.40);
     }
 
     @Test
@@ -52,6 +54,9 @@ class HookPropertiesTest {
         SearchWeights sw = w.toSearchWeights();
         assertThat(sw.semantic()).isEqualTo(0.70);
         assertThat(sw.keyword()).isEqualTo(0.10);
+        assertThat(sw.recency()).isEqualTo(0.05);
+        assertThat(sw.importance()).isEqualTo(0.05);
+        assertThat(sw.popularity()).isEqualTo(0.05);
         assertThat(sw.graphProximity()).isEqualTo(0.05);
     }
 }
