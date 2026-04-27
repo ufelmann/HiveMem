@@ -99,4 +99,49 @@ class SyncPeerRepositoryIntegrationTest {
                 .get("c", Long.class);
         assertThat(count).isEqualTo(1L);
     }
+
+    @Test
+    void addPeerInsertsRow() {
+        UUID peerUuid = UUID.randomUUID();
+        var result = repo.addPeer(peerUuid, "https://new-peer.example.com", "token-123");
+        assertThat(result).containsEntry("peer_uuid", peerUuid.toString());
+        assertThat(result).containsEntry("peer_url", "https://new-peer.example.com");
+
+        var peers = repo.findAllPeers();
+        assertThat(peers).anyMatch(p -> p.peerUuid().equals(peerUuid) && "token-123".equals(p.outboundToken()));
+    }
+
+    @Test
+    void addPeerUpsertUpdatesUrlAndToken() {
+        UUID peerUuid = UUID.randomUUID();
+        repo.addPeer(peerUuid, "https://old.example.com", "old-token");
+        repo.addPeer(peerUuid, "https://new.example.com", "new-token");
+
+        var peers = repo.findAllPeers();
+        assertThat(peers).anyMatch(p ->
+                p.peerUuid().equals(peerUuid)
+                && "https://new.example.com".equals(p.peerUrl())
+                && "new-token".equals(p.outboundToken()));
+    }
+
+    @Test
+    void removePeerDeletesRow() {
+        UUID peerUuid = UUID.randomUUID();
+        repo.addPeer(peerUuid, "https://to-remove.example.com", "tok");
+        assertThat(repo.removePeer(peerUuid)).isTrue();
+        assertThat(repo.removePeer(peerUuid)).isFalse();
+    }
+
+    @Test
+    void listPeersDoesNotExposeToken() {
+        UUID peerUuid = UUID.randomUUID();
+        repo.addPeer(peerUuid, "https://list-test.example.com", "secret-token");
+
+        var list = repo.listPeers();
+        var entry = list.stream().filter(m -> peerUuid.toString().equals(m.get("peer_uuid"))).findFirst();
+        assertThat(entry).isPresent();
+        assertThat(entry.get()).doesNotContainKey("outbound_token");
+        assertThat(entry.get()).containsKey("last_seen_seq");
+        assertThat(entry.get()).containsKey("last_synced_at");
+    }
 }
