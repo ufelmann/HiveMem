@@ -15,16 +15,20 @@ public class SessionInjectionCache {
     private final Cache<Key, Integer> cache;
     private final int dedupWindowTurns;
 
-    public SessionInjectionCache(Duration ttl, int dedupWindowTurns) {
+    public SessionInjectionCache(HookProperties props) {
+        this(Duration.ofHours(1), props.getDedupWindowTurns());
+    }
+
+    SessionInjectionCache() {
+        this(Duration.ofHours(1), 5);
+    }
+
+    SessionInjectionCache(Duration ttl, int dedupWindowTurns) {
         this.dedupWindowTurns = dedupWindowTurns;
         this.cache = Caffeine.newBuilder()
                 .expireAfterWrite(ttl)
                 .maximumSize(50_000)
                 .build();
-    }
-
-    public SessionInjectionCache() {
-        this(Duration.ofHours(1), 5);
     }
 
     public void recordInjection(String sessionId, UUID cellId, int turn) {
