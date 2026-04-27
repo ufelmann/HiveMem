@@ -3,7 +3,6 @@ package com.hivemem.hooks;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.search.CellSearchRepository;
 import com.hivemem.search.CellSearchRepository.RankedRow;
-import com.hivemem.search.SearchWeightsProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -17,6 +16,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 class HookContextServiceTest {
@@ -32,10 +32,8 @@ class HookContextServiceTest {
         embed = Mockito.mock(EmbeddingClient.class);
         when(embed.encodeQuery(anyString())).thenReturn(List.of(0f));
         props = new HookProperties();
-        SearchWeightsProperties weights = new SearchWeightsProperties();
         svc = new HookContextService(repo, embed, new SkipHeuristics(),
-                new SessionInjectionCache(), new ContextFormatter(),
-                props, weights);
+                new SessionInjectionCache(), new ContextFormatter(), props);
     }
 
     @Test
@@ -95,6 +93,56 @@ class HookContextServiceTest {
         String out = svc.contextFor(new HookContextRequest(
                 "UserPromptSubmit", "What was the plan for project X phase 3?", "s1", null));
         assertThat(out).isEmpty();
+    }
+
+    @Test
+    void semanticFloorFiltersKeywordOnlyMatch() {
+        // high total score but near-zero semantic → should be filtered by minSemanticScore
+        RankedRow keywordOnly = new RankedRow(UUID.randomUUID(), "x", "keyword match", "r", "s", "t",
+                List.of(), 3, OffsetDateTime.now(), null, null,
+                0.1, 0.9, 0.0, 0.0, 0.0, 0.0, 0.70);
+        when(repo.rankedSearch(any(), anyString(), any(), any(), any(), anyInt(),
+                anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .thenReturn(List.of(keywordOnly));
+        String out = svc.contextFor(new HookContextRequest(
+                "UserPromptSubmit", "What was the plan for project X phase 3?", "s1", null));
+        assertThat(out).isEmpty();
+    }
+
+    @Test
+    void usesHookPrecisionWeightsNotSearchWeights() {
+        when(repo.rankedSearch(any(), anyString(), any(), any(), any(), anyInt(),
+                eq(0.70), anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .thenReturn(List.of(strongRow()));
+
+        String out = svc.contextFor(new HookContextRequest(
+                "UserPromptSubmit", "What was the plan for project X phase 3?", "s1", null));
+
+        assertThat(out).contains("<hivemem_context");
+    }
+
+    @Test
+    void cwdProjectMatchingCellSortedFirst() {
+        UUID projectId = UUID.randomUUID();
+        UUID otherId = UUID.randomUUID();
+        RankedRow projectCell = new RankedRow(projectId, "x", "hivemem summary", "tech", "s", "hivemem",
+                List.of("hivemem"), 1, OffsetDateTime.now(), null, null,
+                0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.80);
+        RankedRow otherCell = new RankedRow(otherId, "x", "other summary", "tech", "s", "ansible",
+                List.of("ansible"), 1, OffsetDateTime.now(), null, null,
+                0.85, 0.0, 0.0, 0.0, 0.0, 0.0, 0.85);
+        when(repo.rankedSearch(any(), anyString(), any(), any(), any(), anyInt(),
+                anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .thenReturn(List.of(otherCell, projectCell));
+
+        String out = svc.contextFor(new HookContextRequest(
+                "UserPromptSubmit", "What was the plan for project X phase 3?", "s2", "/root/hivemem"),
+                0.5, 5);
+
+        assertThat(out).isNotEmpty();
+        int projectPos = out.indexOf("hivemem summary");
+        int otherPos = out.indexOf("other summary");
+        assertThat(projectPos).isLessThan(otherPos);
     }
 
     private RankedRow weakRow() {
