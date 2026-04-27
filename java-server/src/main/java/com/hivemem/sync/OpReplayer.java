@@ -69,6 +69,13 @@ public class OpReplayer {
             case "add_tunnel" -> replayAddTunnel(p);
             case "remove_tunnel" -> replayRemoveTunnel(p);
             case "register_agent" -> replayRegisterAgent(p);
+            case "reclassify_cell" -> replayReclassifyCell(p);
+            case "update_identity" -> replayUpdateIdentity(p);
+            case "add_reference" -> replayAddReference(p);
+            case "link_reference" -> replayLinkReference(p);
+            case "diary_write" -> replayDiaryWrite(p);
+            case "update_blueprint" -> replayUpdateBlueprint(p);
+            case "approve_pending" -> replayApprovePending(p);
             default -> {
                 log.debug("Unknown op_type='{}' — skipping", op.opType());
                 yield ReplayResult.UNKNOWN_OP;
@@ -227,6 +234,113 @@ public class OpReplayer {
                 text(p, "schedule"),
                 p.hasNonNull("model_routing") ? p.get("model_routing").toString() : null,
                 (Object) (p.hasNonNull("tools") ? arrayFromNode(p.get("tools")) : new String[0]));
+        return ReplayResult.REPLAYED;
+    }
+
+    private ReplayResult replayReclassifyCell(JsonNode p) {
+        UUID cellId = uuid(p, "cell_id");
+        String realm = text(p, "new_realm");
+        String topic = text(p, "new_topic");
+        String signal = text(p, "new_signal");
+        dsl.execute("""
+                UPDATE cells
+                SET realm  = COALESCE(?, realm),
+                    topic  = COALESCE(?, topic),
+                    signal = COALESCE(?, signal)
+                WHERE id = ?
+                  AND valid_until IS NULL
+                  AND status IN ('committed', 'pending')
+                """, realm, topic, signal, cellId);
+        return ReplayResult.REPLAYED;
+    }
+
+    private ReplayResult replayUpdateIdentity(JsonNode p) {
+        String key = text(p, "key");
+        String content = text(p, "content");
+        int tokenCount = p.hasNonNull("token_count") ? p.get("token_count").asInt() : content.length() / 4;
+        dsl.execute("""
+                INSERT INTO identity (key, content, token_count, updated_at)
+                VALUES (?, ?, ?, now())
+                ON CONFLICT (key) DO UPDATE
+                SET content = EXCLUDED.content,
+                    token_count = EXCLUDED.token_count,
+                    updated_at = now()
+                """, key, content, tokenCount);
+        return ReplayResult.REPLAYED;
+    }
+
+    private ReplayResult replayAddReference(JsonNode p) {
+        UUID refId = uuid(p, "reference_id");
+        if (dsl.fetchOne("SELECT 1 FROM references_ WHERE id = ?", refId) != null) return ReplayResult.SKIPPED;
+        String[] tags = arrayField(p, "tags");
+        Integer importance = p.hasNonNull("importance") ? p.get("importance").asInt() : null;
+        dsl.execute("""
+                INSERT INTO references_ (id, title, url, author, ref_type, status, notes, tags, importance)
+                VALUES (?::uuid, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                refId, text(p, "title"), text(p, "url"), text(p, "author"),
+                text(p, "ref_type"), textOrDefault(p, "status", "read"),
+                text(p, "notes"), tags, importance);
+        return ReplayResult.REPLAYED;
+    }
+
+    private ReplayResult replayLinkReference(JsonNode p) {
+        UUID cellId = uuid(p, "cell_id");
+        UUID refId = uuid(p, "reference_id");
+        String relation = textOrDefault(p, "relation", "source");
+        boolean exists = dsl.fetchOne("""
+                SELECT 1 FROM cell_references WHERE cell_id = ? AND reference_id = ? AND relation = ?
+                """, cellId, refId, relation) != null;
+        if (exists) return ReplayResult.SKIPPED;
+        dsl.execute("""
+                INSERT INTO cell_references (cell_id, reference_id, relation)
+                VALUES (?::uuid, ?::uuid, ?)
+                """, cellId, refId, relation);
+        return ReplayResult.REPLAYED;
+    }
+
+    private ReplayResult replayDiaryWrite(JsonNode p) {
+        UUID entryId = uuid(p, "entry_id");
+        if (dsl.fetchOne("SELECT 1 FROM agent_diary WHERE id = ?", entryId) != null) return ReplayResult.SKIPPED;
+        dsl.execute("""
+                INSERT INTO agent_diary (id, agent, entry)
+                VALUES (?::uuid, ?, ?)
+                """, entryId, text(p, "agent"), text(p, "entry"));
+        return ReplayResult.REPLAYED;
+    }
+
+    private ReplayResult replayUpdateBlueprint(JsonNode p) {
+        UUID blueprintId = uuid(p, "blueprint_id");
+        if (dsl.fetchOne("SELECT 1 FROM blueprints WHERE id = ?", blueprintId) != null) return ReplayResult.SKIPPED;
+        String realm = text(p, "realm");
+        String[] signalOrder = arrayField(p, "signal_order");
+        String[] keyCellStrings = arrayField(p, "key_cells");
+        UUID[] keyCells = new UUID[keyCellStrings.length];
+        for (int i = 0; i < keyCellStrings.length; i++) keyCells[i] = UUID.fromString(keyCellStrings[i]);
+        dsl.transaction(ctx -> {
+            var tx = ctx.dsl();
+            tx.execute("UPDATE blueprints SET valid_until = now() WHERE realm = ? AND valid_until IS NULL", realm);
+            tx.execute("""
+                    INSERT INTO blueprints (id, realm, title, narrative, signal_order, key_cells, created_by)
+                    VALUES (?::uuid, ?, ?, ?, ?, ?, ?)
+                    """,
+                    blueprintId, realm, text(p, "title"), text(p, "narrative"),
+                    signalOrder, keyCells, text(p, "agent_id"));
+        });
+        return ReplayResult.REPLAYED;
+    }
+
+    private ReplayResult replayApprovePending(JsonNode p) {
+        String decision = text(p, "decision");
+        String[] idStrings = arrayField(p, "ids");
+        UUID[] ids = new UUID[idStrings.length];
+        for (int i = 0; i < idStrings.length; i++) ids[i] = UUID.fromString(idStrings[i]);
+        dsl.transaction(ctx -> {
+            var tx = ctx.dsl();
+            tx.execute("UPDATE cells SET status = ? WHERE id = ANY(?::uuid[]) AND status = 'pending'", decision, ids);
+            tx.execute("UPDATE facts SET status = ? WHERE id = ANY(?::uuid[]) AND status = 'pending'", decision, ids);
+            tx.execute("UPDATE tunnels SET status = ? WHERE id = ANY(?::uuid[]) AND status = 'pending'", decision, ids);
+        });
         return ReplayResult.REPLAYED;
     }
 

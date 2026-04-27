@@ -21,7 +21,8 @@ class ParitySmokeTest {
                 .hasSize(31)
                 .contains("search", "add_cell", "approve_pending",
                         "health", "reclassify_cell")
-                .doesNotContain("hivemem_check_duplicate", "hivemem_check_contradiction");
+                .doesNotContain("hivemem_check_duplicate", "hivemem_check_contradiction",
+                        "add_peer", "remove_peer", "list_peers");
     }
 
     @Test
