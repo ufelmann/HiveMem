@@ -112,7 +112,7 @@ class HookContextServiceTest {
     @Test
     void usesHookPrecisionWeightsNotSearchWeights() {
         when(repo.rankedSearch(any(), anyString(), any(), any(), any(), anyInt(),
-                eq(0.70), anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                eq(0.70), eq(0.10), anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .thenReturn(List.of(strongRow()));
 
         String out = svc.contextFor(new HookContextRequest(
