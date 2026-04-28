@@ -13,6 +13,7 @@ graph TB
 
     EmbSvc["External Embeddings Service<br/><i>HTTP API</i>"]
     PG["External PostgreSQL<br/><i>pgvector, Flyway-managed schema</i>"]
+    SeaweedFS["External SeaweedFS<br/><i>S3-compatible object storage</i>"]
 
     Client -->|"MCP over HTTP"| Auth
     Auth --> ToolGate
@@ -20,6 +21,7 @@ graph TB
     Identity --> MCP
     MCP -->|"HTTP"| EmbSvc
     MCP -->|"JDBC"| PG
+    MCP -->|"S3 API"| SeaweedFS
 ```
 
 ## Data Model
@@ -97,6 +99,19 @@ erDiagram
         TEXT ref_type
         TEXT status
         SMALLINT importance
+    }
+    attachments {
+        UUID id PK
+        TEXT file_hash
+        TEXT mime_type
+        TEXT original_filename
+        BIGINT size_bytes
+        TEXT s3_key_original
+        TEXT s3_key_thumbnail
+        TEXT extracted_text
+        TEXT uploaded_by
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ deleted_at
     }
 
     cells ||--o{ facts : "source_id"
