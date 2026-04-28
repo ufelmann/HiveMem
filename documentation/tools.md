@@ -1,10 +1,10 @@
 # Tools
 
-HiveMem exposes **30 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin.
+HiveMem exposes **31 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin.
 
 ## Feature Overview
 
-- **30 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
+- **31 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
 - **6-signal ranked search** — semantic similarity + keyword match + recency + importance + popularity + graph proximity
 - **Append-only versioning** — never lose history, revise with parent_id chains, point-in-time queries
 - **Progressive summarization** — content, summary, key_points, insight per cell
@@ -37,7 +37,7 @@ HiveMem exposes **30 MCP tools** across search, knowledge graph, progressive sum
 14. `list_agents`: View active agent fleet.
 15. `diary_read`: Read agent diary entries.
 
-**Write (13):**
+**Write (14):**
 
 16. `add_cell`: Store a cell with content, summary, key points, and insight; optional `dedupe_threshold` runs an embedding-based dedupe gate in one call.
 17. `add_tunnel`: Link two cells together.
@@ -52,11 +52,12 @@ HiveMem exposes **30 MCP tools** across search, knowledge graph, progressive sum
 26. `register_agent`: Add an agent to the fleet.
 27. `diary_write`: Agent-private reflection tool.
 28. `update_blueprint`: Update realm narrative.
+29. `reclassify_cell`: Move a cell to a different realm/signal/topic in-place without creating a new revision. Leaves content, embeddings, tunnels, facts, and references untouched. Use for taxonomy migrations.
 
 **Admin (2):**
 
-29. `approve_pending`: Admin tool to batch approve or reject agent writes.
-30. `health`: Monitor DB and service state.
+30. `approve_pending`: Admin tool to batch approve or reject agent writes.
+31. `health`: Monitor DB and service state.
 
 ## Search Signals
 
