@@ -1,0 +1,14 @@
+{
+  "identities": [
+    {
+      "name": "hivemem",
+      "credentials": [
+        {
+          "accessKey": "hivemem",
+          "secretKey": "hivemem_secret"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write"]
+    }
+  ]
+}
