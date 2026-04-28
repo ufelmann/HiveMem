@@ -1,0 +1,118 @@
+package com.hivemem.attachment;
+
+import com.hivemem.auth.AuthFilter;
+import com.hivemem.auth.AuthPrincipal;
+import com.hivemem.auth.AuthRole;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.*;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.*;
+
+@RestController
+@RequestMapping("/api/attachments")
+public class AttachmentController {
+
+    private final AttachmentService service;
+    private final AttachmentRepository repo;
+    private final AttachmentProperties props;
+
+    public AttachmentController(AttachmentService service, AttachmentRepository repo,
+                                AttachmentProperties props) {
+        this.service = service;
+        this.repo = repo;
+        this.props = props;
+    }
+
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> upload(@RequestParam("file") MultipartFile file,
+                                    @RequestParam("cell_id") String cellId,
+                                    HttpServletRequest request) throws Exception {
+        AuthPrincipal principal = requireAuth(request, AuthRole.WRITER);
+        if (!props.isEnabled()) return ResponseEntity.status(503).body(Map.of("error", "Attachment storage not enabled"));
+        if (file.isEmpty()) return ResponseEntity.badRequest().body(Map.of("error", "File is empty"));
+
+        UUID cell = parseUuid(cellId, "cell_id");
+        String mimeType = Optional.ofNullable(file.getContentType()).orElse("application/octet-stream");
+
+        Map<String, Object> result = service.ingest(
+                file.getInputStream(), file.getOriginalFilename(),
+                mimeType, cell, principal.name());
+
+        boolean deduped = Boolean.TRUE.equals(result.get("deduplicated"));
+        return ResponseEntity.status(deduped ? 200 : 201).body(result);
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<?> metadata(@PathVariable UUID id, HttpServletRequest request) {
+        requireAuth(request, AuthRole.READER);
+        return repo.findById(id)
+                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/{id}/content")
+    public ResponseEntity<InputStreamResource> content(@PathVariable UUID id,
+                                                        HttpServletRequest request) {
+        requireAuth(request, AuthRole.READER);
+        Map<String, Object> meta = repo.findById(id).orElse(null);
+        if (meta == null) return ResponseEntity.notFound().build();
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType((String) meta.get("mime_type")));
+        headers.set(HttpHeaders.CONTENT_DISPOSITION,
+                "inline; filename=\"" + meta.get("original_filename") + "\"");
+        headers.set(HttpHeaders.ACCEPT_RANGES, "bytes");
+        return ResponseEntity.ok().headers(headers)
+                .body(new InputStreamResource(service.downloadOriginal(id)));
+    }
+
+    @GetMapping("/{id}/thumbnail")
+    public ResponseEntity<InputStreamResource> thumbnail(@PathVariable UUID id,
+                                                          HttpServletRequest request) {
+        requireAuth(request, AuthRole.READER);
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.IMAGE_JPEG);
+            return ResponseEntity.ok().headers(headers)
+                    .body(new InputStreamResource(service.downloadThumbnail(id)));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @GetMapping
+    public ResponseEntity<?> listForCell(@RequestParam("cell_id") String cellId,
+                                          HttpServletRequest request) {
+        requireAuth(request, AuthRole.READER);
+        UUID cell = parseUuid(cellId, "cell_id");
+        return ResponseEntity.ok(repo.findByCellId(cell));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> delete(@PathVariable UUID id, HttpServletRequest request) {
+        requireAuth(request, AuthRole.ADMIN);
+        boolean deleted = repo.softDelete(id);
+        return deleted ? ResponseEntity.ok(Map.of("deleted", id.toString()))
+                       : ResponseEntity.notFound().build();
+    }
+
+    private AuthPrincipal requireAuth(HttpServletRequest request, AuthRole minRole) {
+        AuthPrincipal principal = (AuthPrincipal) request.getAttribute(AuthFilter.PRINCIPAL_ATTRIBUTE);
+        if (principal == null) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        if (minRole == AuthRole.ADMIN && principal.role() != AuthRole.ADMIN)
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        if (minRole == AuthRole.WRITER && principal.role() == AuthRole.READER)
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        return principal;
+    }
+
+    private UUID parseUuid(String value, String field) {
+        try { return UUID.fromString(value); }
+        catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid UUID for " + field);
+        }
+    }
+}
