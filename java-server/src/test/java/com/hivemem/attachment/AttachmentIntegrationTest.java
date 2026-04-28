@@ -104,14 +104,23 @@ class AttachmentIntegrationTest {
     void uploadPdfAndDownloadRoundtrip() throws Exception {
         byte[] pdf = buildPdf("Integration test PDF content");
 
-        mockMvc.perform(multipart("/api/attachments")
+        String body = mockMvc.perform(multipart("/api/attachments")
                         .file(new MockMultipartFile("file", "test.pdf", "application/pdf", pdf))
                         .param("cell_id", testCellId.toString())
                         .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, WRITER))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.mime_type").value("application/pdf"))
                 .andExpect(jsonPath("$.original_filename").value("test.pdf"))
-                .andExpect(jsonPath("$.s3_key_thumbnail").isNotEmpty());
+                .andExpect(jsonPath("$.s3_key_thumbnail").isNotEmpty())
+                .andReturn().getResponse().getContentAsString();
+
+        String id = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(body).get("id").asText();
+
+        mockMvc.perform(get("/api/attachments/" + id + "/content")
+                        .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, READER))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", org.hamcrest.Matchers.containsString("application/pdf")));
     }
 
     @Test
