@@ -51,6 +51,12 @@ public class AttachmentRepository {
     }
 
     public void linkToCell(UUID attachmentId, UUID cellId) {
+        // Idempotent: skip if already linked
+        Integer existing = dsl.fetchOne(
+                "SELECT COUNT(*) FROM cell_references cr JOIN references_ r ON cr.reference_id = r.id WHERE cr.cell_id = ? AND r.url = ?",
+                cellId, "attachment:" + attachmentId).get(0, Integer.class);
+        if (existing > 0) return;
+
         Record refRow = dsl.fetchOne("""
                 INSERT INTO references_ (title, url, ref_type, status)
                 VALUES (?, ?, 'attachment', 'read')

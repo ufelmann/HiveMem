@@ -51,7 +51,7 @@ services:
     # security_opt: [apparmor=unconfined]
 
   seaweedfs:
-    image: chrislusf/seaweedfs:latest
+    image: chrislusf/seaweedfs:3.68
     command: >
       server
       -s3

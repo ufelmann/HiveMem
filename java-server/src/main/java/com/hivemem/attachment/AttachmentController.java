@@ -62,8 +62,10 @@ public class AttachmentController {
         if (meta == null) return ResponseEntity.notFound().build();
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.parseMediaType((String) meta.get("mime_type")));
-        headers.set(HttpHeaders.CONTENT_DISPOSITION,
-                "inline; filename=\"" + meta.get("original_filename") + "\"");
+        headers.setContentDisposition(
+                org.springframework.http.ContentDisposition.inline()
+                        .filename((String) meta.get("original_filename"), java.nio.charset.StandardCharsets.UTF_8)
+                        .build());
         headers.set(HttpHeaders.ACCEPT_RANGES, "bytes");
         return ResponseEntity.ok().headers(headers)
                 .body(new InputStreamResource(service.downloadOriginal(id)));
