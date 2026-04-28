@@ -15,7 +15,7 @@ Personal knowledge system with semantic search, temporal knowledge graph, and pr
 [![License: Sustainable Use](https://img.shields.io/badge/license-Sustainable%20Use-blue)](https://github.com/visterion/HiveMem/blob/main/LICENSE)
 [![SafeSkill](https://safeskill.dev/api/badge/visterion-hivemem)](https://safeskill.dev/scan/visterion-hivemem)
 
-**Docker images:** [`ghcr.io/visterion/hivemem:main`](https://github.com/visterion/HiveMem/pkgs/container/hivemem) for the rolling `main` branch, plus semver tags such as `ghcr.io/visterion/hivemem:6.2.0` for cut releases.
+**Docker images:** [`ghcr.io/visterion/hivemem:main`](https://github.com/visterion/HiveMem/pkgs/container/hivemem) for the rolling `main` branch, plus semver tags such as `ghcr.io/visterion/hivemem:8.1.0` for cut releases.
 
 ## Highlights
 
@@ -46,7 +46,7 @@ services:
     restart: unless-stopped
 
   hivemem-embeddings:
-    image: ghcr.io/visterion/hivemem-embeddings:6.3.0
+    image: ghcr.io/visterion/hivemem-embeddings:latest
     container_name: hivemem-embeddings
     volumes:
       - hivemem-embeddings-models:/app/models
@@ -55,7 +55,7 @@ services:
     restart: unless-stopped
 
   hivemem:
-    image: ghcr.io/visterion/hivemem:6.3.0
+    image: ghcr.io/visterion/hivemem:latest
     container_name: hivemem
     ports:
       - "8421:8421"
