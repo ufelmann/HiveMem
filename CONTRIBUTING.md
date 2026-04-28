@@ -17,7 +17,18 @@ Thank you for your interest in contributing to HiveMem! This guide will help you
 3. Write clean, documented code.
 4. Add tests for any new functionality.
 5. Ensure all tests pass (`cd java-server && mvn test`).
-6. Submit a Pull Request with a clear description of your changes.
+6. Update `documentation/` for any user-facing change (see checklist below).
+7. Submit a Pull Request with a clear description of your changes.
+
+**Documentation checklist** — tick what applies before submitting:
+
+- [ ] New or removed MCP tool → updated `documentation/tools.md` and tool count badge in `README.md`
+- [ ] New or changed config property → updated `documentation/hook/configuration.md` or `documentation/architecture.md`
+- [ ] Hook pipeline behaviour changed → updated `documentation/hook/pipeline.md`
+- [ ] Auth or role behaviour changed → updated `documentation/auth.md`
+- [ ] Architecture or data model changed → updated `documentation/architecture.md`
+- [ ] New deployment or ops step → updated `documentation/operations.md`
+- [ ] No documentation impact (pure refactor / test / internal change)
 
 ## Development Setup
 
