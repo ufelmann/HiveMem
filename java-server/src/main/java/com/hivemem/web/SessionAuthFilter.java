@@ -38,6 +38,12 @@ public class SessionAuthFilter extends OncePerRequestFilter {
             HttpServletRequest request,
             HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
+        // If a principal was already injected (e.g. by a test harness), pass through immediately.
+        if (request.getAttribute(AuthFilter.PRINCIPAL_ATTRIBUTE) != null) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         String path = request.getRequestURI().substring(request.getContextPath().length());
         boolean isMcp = path.startsWith("/mcp");
         boolean isHooks = path.startsWith("/hooks");
