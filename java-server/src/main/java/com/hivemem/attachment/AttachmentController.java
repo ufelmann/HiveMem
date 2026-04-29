@@ -44,9 +44,14 @@ public class AttachmentController {
 
         String mimeType = Optional.ofNullable(file.getContentType()).orElse("application/octet-stream");
 
-        Map<String, Object> result = service.ingest(
-                file.getInputStream(), file.getOriginalFilename(),
-                mimeType, realm, signal, topic, linkCellId, principal.name());
+        Map<String, Object> result;
+        try {
+            result = service.ingest(
+                    file.getInputStream(), file.getOriginalFilename(),
+                    mimeType, realm, signal, topic, linkCellId, principal.name());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
 
         return ResponseEntity.status(201).body(result);
     }

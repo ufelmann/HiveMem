@@ -133,7 +133,7 @@ erDiagram
 
 ### Attachment ingestion
 
-Each file upload (via `upload_attachment` or `POST /api/attachments`) automatically creates a new `pending` Cell. The cell content is set to the text extracted from the file; if no text could be extracted, the original filename is used as a fallback. The Classifier agent picks up `pending` cells asynchronously and enriches them with summary, key points, insight, and tags. The link between the attachment and its extraction cell is recorded in `cell_attachments` with `extraction_source = true`. If the caller also supplies an existing `cell_id`, a second `cell_attachments` row (or a `related_to` tunnel) is created to express that relationship.
+Each file upload (via `upload_attachment` or `POST /api/attachments`) automatically creates a new `pending` Cell. The cell content is set to the text extracted from the file; if no text could be extracted, the original filename is used as a fallback. The Classifier agent picks up `pending` cells asynchronously and enriches them with summary, key points, insight, and tags. The link between the attachment and its extraction cell is recorded in `cell_attachments` with `extraction_source = true`. If the caller also supplies an existing `cell_id`, a `related_to` tunnel is created between the new extraction Cell and the supplied cell.
 
 ## Security & Capability Matrix
 
