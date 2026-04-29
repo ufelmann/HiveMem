@@ -5,6 +5,11 @@ import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,16 +31,12 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.PDPageContentStream;
-import org.apache.pdfbox.pdmodel.font.PDType1Font;
-import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 
 import java.io.ByteArrayOutputStream;
 import java.time.Duration;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -85,64 +86,116 @@ class AttachmentIntegrationTest {
     }
 
     @Autowired MockMvc mockMvc;
+    @Autowired org.jooq.DSLContext dsl;
 
     private static final AuthPrincipal WRITER = new AuthPrincipal("test-writer", AuthRole.WRITER);
     private static final AuthPrincipal READER = new AuthPrincipal("test-reader", AuthRole.READER);
     private static final AuthPrincipal ADMIN  = new AuthPrincipal("test-admin",  AuthRole.ADMIN);
 
-    private UUID testCellId;
+    private UUID existingCellId;
 
     @BeforeEach
-    void setUp(@Autowired org.jooq.DSLContext dsl) {
-        testCellId = (UUID) dsl.fetchOne("""
+    void setUp() {
+        existingCellId = (UUID) dsl.fetchOne("""
                 INSERT INTO cells (content, embedding, realm, signal, topic, status, created_by, valid_from)
-                VALUES ('test', array_fill(0::real, ARRAY[1024])::vector, 'test', 'facts', 'test', 'committed', 'test', now())
+                VALUES ('existing cell', array_fill(0::real, ARRAY[1024])::vector,
+                        'TestRealm', 'facts', 'TestTopic', 'committed', 'test', now())
                 RETURNING id""").get("id");
     }
 
     @Test
-    void uploadPdfAndDownloadRoundtrip() throws Exception {
+    void uploadPdfCreatesExtractionCellAndDownloadWorks() throws Exception {
         byte[] pdf = buildPdf("Integration test PDF content");
 
         String body = mockMvc.perform(multipart("/api/attachments")
                         .file(new MockMultipartFile("file", "test.pdf", "application/pdf", pdf))
-                        .param("cell_id", testCellId.toString())
+                        .param("realm",  "TestRealm")
+                        .param("signal", "facts")
+                        .param("topic",  "TestTopic")
                         .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, WRITER))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.mime_type").value("application/pdf"))
-                .andExpect(jsonPath("$.original_filename").value("test.pdf"))
-                .andExpect(jsonPath("$.s3_key_thumbnail").isNotEmpty())
+                .andExpect(jsonPath("$.cell_id").isNotEmpty())
+                .andExpect(jsonPath("$.has_thumbnail").value(true))
                 .andReturn().getResponse().getContentAsString();
 
-        String id = new com.fasterxml.jackson.databind.ObjectMapper()
-                .readTree(body).get("id").asText();
+        com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+        String attachmentId = om.readTree(body).get("id").asText();
+        String cellId       = om.readTree(body).get("cell_id").asText();
 
-        mockMvc.perform(get("/api/attachments/" + id + "/content")
+        // Verify extraction Cell exists and is pending
+        String cellStatus = (String) dsl.fetchOne(
+                "SELECT status FROM cells WHERE id = ?::uuid", cellId).get("status");
+        org.junit.jupiter.api.Assertions.assertEquals("pending", cellStatus);
+
+        // Verify cell_attachments link
+        int linkCount = (int) dsl.fetchOne(
+                "SELECT COUNT(*) FROM cell_attachments WHERE attachment_id = ?::uuid AND cell_id = ?::uuid AND extraction_source = true",
+                attachmentId, cellId).get(0, Long.class).longValue();
+        org.junit.jupiter.api.Assertions.assertEquals(1, linkCount);
+
+        // Verify download works
+        mockMvc.perform(get("/api/attachments/" + attachmentId + "/content")
                         .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, READER))
                 .andExpect(status().isOk())
-                .andExpect(header().string("Content-Type", org.hamcrest.Matchers.containsString("application/pdf")));
+                .andExpect(header().string("Content-Type", containsString("application/pdf")));
     }
 
     @Test
-    void deduplicatesOnReupload() throws Exception {
+    void deduplicatesAttachmentButCreatesNewCell() throws Exception {
         byte[] pdf = buildPdf("Dedup test");
 
-        mockMvc.perform(multipart("/api/attachments")
+        String body1 = mockMvc.perform(multipart("/api/attachments")
                         .file(new MockMultipartFile("file", "dedup.pdf", "application/pdf", pdf))
-                        .param("cell_id", testCellId.toString())
+                        .param("realm", "TestRealm")
                         .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, WRITER))
-                .andExpect(status().isCreated());
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
 
-        mockMvc.perform(multipart("/api/attachments")
+        String body2 = mockMvc.perform(multipart("/api/attachments")
                         .file(new MockMultipartFile("file", "dedup.pdf", "application/pdf", pdf))
-                        .param("cell_id", testCellId.toString())
+                        .param("realm", "TestRealm")
                         .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, WRITER))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.deduplicated").value(true));
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+        String attachmentId1 = om.readTree(body1).get("id").asText();
+        String attachmentId2 = om.readTree(body2).get("id").asText();
+        String cellId1       = om.readTree(body1).get("cell_id").asText();
+        String cellId2       = om.readTree(body2).get("cell_id").asText();
+
+        // Same attachment row
+        org.junit.jupiter.api.Assertions.assertEquals(attachmentId1, attachmentId2);
+        // Different extraction cells
+        org.junit.jupiter.api.Assertions.assertNotEquals(cellId1, cellId2);
     }
 
     @Test
-    void uploadWithoutCellIdReturns400() throws Exception {
+    void uploadWithCellIdCreatesTunnel() throws Exception {
+        byte[] pdf = buildPdf("Tunnel test");
+
+        String body = mockMvc.perform(multipart("/api/attachments")
+                        .file(new MockMultipartFile("file", "tunnel.pdf", "application/pdf", pdf))
+                        .param("realm",   "TestRealm")
+                        .param("cell_id", existingCellId.toString())
+                        .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, WRITER))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        String newCellId = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(body).get("cell_id").asText();
+
+        int tunnelCount = (int) dsl.fetchOne("""
+                SELECT COUNT(*) FROM tunnels
+                WHERE from_cell = ?::uuid AND to_cell = ?::uuid AND relation = 'related_to'
+                  AND valid_until IS NULL
+                """, newCellId, existingCellId.toString()).get(0, Long.class).longValue();
+        org.junit.jupiter.api.Assertions.assertEquals(1, tunnelCount);
+    }
+
+    @Test
+    void uploadWithoutRealmReturns400() throws Exception {
         mockMvc.perform(multipart("/api/attachments")
                         .file(new MockMultipartFile("file", "x.pdf", "application/pdf", new byte[]{1}))
                         .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, WRITER))
@@ -153,26 +206,8 @@ class AttachmentIntegrationTest {
     void readerCannotUpload() throws Exception {
         mockMvc.perform(multipart("/api/attachments")
                         .file(new MockMultipartFile("file", "x.pdf", "application/pdf", new byte[]{1}))
-                        .param("cell_id", testCellId.toString())
+                        .param("realm", "TestRealm")
                         .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, READER))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
-    void nonAdminCannotDelete() throws Exception {
-        byte[] pdf = buildPdf("To be deleted");
-        String body = mockMvc.perform(multipart("/api/attachments")
-                        .file(new MockMultipartFile("file", "del.pdf", "application/pdf", pdf))
-                        .param("cell_id", testCellId.toString())
-                        .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, WRITER))
-                .andExpect(status().isCreated())
-                .andReturn().getResponse().getContentAsString();
-
-        String id = new com.fasterxml.jackson.databind.ObjectMapper()
-                .readTree(body).get("id").asText();
-
-        mockMvc.perform(delete("/api/attachments/" + id)
-                        .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, WRITER))
                 .andExpect(status().isForbidden());
     }
 
@@ -181,7 +216,7 @@ class AttachmentIntegrationTest {
         byte[] pdf = buildPdf("To be soft deleted");
         String body = mockMvc.perform(multipart("/api/attachments")
                         .file(new MockMultipartFile("file", "soft.pdf", "application/pdf", pdf))
-                        .param("cell_id", testCellId.toString())
+                        .param("realm", "TestRealm")
                         .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, ADMIN))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
@@ -196,6 +231,24 @@ class AttachmentIntegrationTest {
         mockMvc.perform(get("/api/attachments/" + id)
                         .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, READER))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void nonAdminCannotDelete() throws Exception {
+        byte[] pdf = buildPdf("Protected");
+        String body = mockMvc.perform(multipart("/api/attachments")
+                        .file(new MockMultipartFile("file", "del.pdf", "application/pdf", pdf))
+                        .param("realm", "TestRealm")
+                        .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, WRITER))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+
+        String id = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(body).get("id").asText();
+
+        mockMvc.perform(delete("/api/attachments/" + id)
+                        .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, WRITER))
+                .andExpect(status().isForbidden());
     }
 
     private byte[] buildPdf(String text) throws Exception {
