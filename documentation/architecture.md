@@ -8,7 +8,7 @@ graph TB
         Auth["AuthFilter<br/><i>Token auth + role check + rate limit</i>"]
         ToolGate["ToolPermissionService<br/><i>Filter tools/list by role</i>"]
         Identity["Identity Injection<br/><i>created_by from token</i>"]
-        MCP["McpController<br/>:8421<br/><i>30 tools, Streamable HTTP</i>"]
+        MCP["McpController<br/>:8421<br/><i>34 tools, Streamable HTTP</i>"]
     end
 
     EmbSvc["External Embeddings Service<br/><i>HTTP API</i>"]
