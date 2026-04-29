@@ -29,21 +29,26 @@ public class AttachmentController {
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> upload(@RequestParam("file") MultipartFile file,
-                                    @RequestParam("cell_id") String cellId,
+                                    @RequestParam("realm") String realm,
+                                    @RequestParam(value = "signal",  required = false) String signal,
+                                    @RequestParam(value = "topic",   required = false) String topic,
+                                    @RequestParam(value = "cell_id", required = false) String cellIdParam,
                                     HttpServletRequest request) throws Exception {
         AuthPrincipal principal = requireAuth(request, AuthRole.WRITER);
         if (!props.isEnabled()) return ResponseEntity.status(503).body(Map.of("error", "Attachment storage not enabled"));
         if (file.isEmpty()) return ResponseEntity.badRequest().body(Map.of("error", "File is empty"));
+        if (realm == null || realm.isBlank()) return ResponseEntity.badRequest().body(Map.of("error", "realm is required"));
 
-        UUID cell = parseUuid(cellId, "cell_id");
+        UUID linkCellId = null;
+        if (cellIdParam != null) linkCellId = parseUuid(cellIdParam, "cell_id");
+
         String mimeType = Optional.ofNullable(file.getContentType()).orElse("application/octet-stream");
 
         Map<String, Object> result = service.ingest(
                 file.getInputStream(), file.getOriginalFilename(),
-                mimeType, cell, principal.name());
+                mimeType, realm, signal, topic, linkCellId, principal.name());
 
-        boolean deduped = Boolean.TRUE.equals(result.get("deduplicated"));
-        return ResponseEntity.status(deduped ? 200 : 201).body(result);
+        return ResponseEntity.status(201).body(result);
     }
 
     @GetMapping("/{id}")
