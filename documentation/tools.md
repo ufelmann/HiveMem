@@ -56,9 +56,9 @@ HiveMem exposes **34 MCP tools** across search, knowledge graph, progressive sum
 
 **Attachments (3):**
 
-30. `upload_attachment`: Upload a file attachment (Base64-encoded) and link it to a cell. Stores original in SeaweedFS, extracts text, generates JPEG thumbnail at ingest. Returns metadata + `extracted_text`. For large files, prefer `POST /api/attachments` (multipart).
+30. `upload_attachment`: Upload a file attachment (Base64-encoded). Required params: `realm` (target realm), `data` (Base64 payload), `filename`. Optional: `signal`, `topic`, `cell_id` (existing cell — creates a `related_to` tunnel). Always creates a new `pending` Cell whose content is the extracted text (or the filename if no text could be extracted); the Classifier agent enriches the cell asynchronously. Stores original in SeaweedFS, generates JPEG thumbnail at ingest. Returns `{ attachment_id, cell_id, mime_type, size_bytes, has_thumbnail }`. For large files, prefer `POST /api/attachments` (multipart).
 31. `list_attachments`: List all file attachments linked to a cell (metadata only, no file content).
-32. `get_attachment_info`: Get metadata for a single attachment by ID, including `s3_key_thumbnail`. Download via `GET /api/attachments/{id}/content`.
+32. `get_attachment_info`: Get metadata for a single attachment by ID. Return fields include `cell_id` (UUID of the extraction cell), `content_uri` (`hivemem://attachments/{id}/content`), and `thumbnail_uri` (`hivemem://attachments/{id}/thumbnail` or null). Download via `GET /api/attachments/{id}/content`.
 
 **Admin (2):**
 

@@ -108,10 +108,16 @@ erDiagram
         BIGINT size_bytes
         TEXT s3_key_original
         TEXT s3_key_thumbnail
-        TEXT extracted_text
         TEXT uploaded_by
         TIMESTAMPTZ created_at
         TIMESTAMPTZ deleted_at
+    }
+    cell_attachments {
+        UUID id PK
+        UUID cell_id FK
+        UUID attachment_id FK
+        BOOL extraction_source
+        TIMESTAMPTZ created_at
     }
 
     cells ||--o{ facts : "source_id"
@@ -121,7 +127,13 @@ erDiagram
     references_ ||--o{ cell_references : "links"
     agents ||--o{ agent_diary : "writes"
     cells ||--o{ access_log : "tracked"
+    cells ||--o{ cell_attachments : "linked"
+    attachments ||--o{ cell_attachments : "linked"
 ```
+
+### Attachment ingestion
+
+Each file upload (via `upload_attachment` or `POST /api/attachments`) automatically creates a new `pending` Cell. The cell content is set to the text extracted from the file; if no text could be extracted, the original filename is used as a fallback. The Classifier agent picks up `pending` cells asynchronously and enriches them with summary, key points, insight, and tags. The link between the attachment and its extraction cell is recorded in `cell_attachments` with `extraction_source = true`. If the caller also supplies an existing `cell_id`, a second `cell_attachments` row (or a `related_to` tunnel) is created to express that relationship.
 
 ## Security & Capability Matrix
 
