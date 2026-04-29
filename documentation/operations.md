@@ -58,6 +58,28 @@ EOF
 
 Deploy the application — Flyway applies pending migrations on startup.
 
+## Attachment Storage (SeaweedFS)
+
+Attachment storage is optional. Set `HIVEMEM_ATTACHMENT_ENABLED=true` to enable.
+
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `HIVEMEM_ATTACHMENT_ENABLED` | `false` | Enable attachment storage |
+| `SEAWEEDFS_S3_ENDPOINT` | `http://localhost:8333` | SeaweedFS S3 API endpoint |
+| `SEAWEEDFS_S3_BUCKET` | `hivemem-attachments` | S3 bucket name |
+| `SEAWEEDFS_S3_ACCESS_KEY` | `hivemem` | S3 access key |
+| `SEAWEEDFS_S3_SECRET_KEY` | `hivemem_secret` | S3 secret key |
+
+### Backup
+
+The `seaweedfs_data` Docker volume must be backed up together with the PostgreSQL dump. The `attachments` table references objects by their S3 keys — a DB backup without the volume (or vice versa) results in broken references.
+
+### Deployment
+
+SeaweedFS is included in `docker-compose.yml` as a sidecar service. No additional configuration needed for the default setup.
+
 ## Debugging
 
 ```bash
