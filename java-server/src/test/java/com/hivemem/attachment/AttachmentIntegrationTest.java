@@ -37,6 +37,7 @@ import java.time.Duration;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -88,6 +89,8 @@ class AttachmentIntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired org.jooq.DSLContext dsl;
 
+    private static final com.fasterxml.jackson.databind.ObjectMapper OM = new com.fasterxml.jackson.databind.ObjectMapper();
+
     private static final AuthPrincipal WRITER = new AuthPrincipal("test-writer", AuthRole.WRITER);
     private static final AuthPrincipal READER = new AuthPrincipal("test-reader", AuthRole.READER);
     private static final AuthPrincipal ADMIN  = new AuthPrincipal("test-admin",  AuthRole.ADMIN);
@@ -96,6 +99,7 @@ class AttachmentIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        dsl.execute("TRUNCATE TABLE cell_attachments, attachments, tunnels, cells CASCADE");
         existingCellId = (UUID) dsl.fetchOne("""
                 INSERT INTO cells (content, embedding, realm, signal, topic, status, created_by, valid_from)
                 VALUES ('existing cell', array_fill(0::real, ARRAY[1024])::vector,
@@ -119,20 +123,19 @@ class AttachmentIntegrationTest {
                 .andExpect(jsonPath("$.has_thumbnail").value(true))
                 .andReturn().getResponse().getContentAsString();
 
-        com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
-        String attachmentId = om.readTree(body).get("id").asText();
-        String cellId       = om.readTree(body).get("cell_id").asText();
+        String attachmentId = OM.readTree(body).get("id").asText();
+        String cellId       = OM.readTree(body).get("cell_id").asText();
 
         // Verify extraction Cell exists and is pending
         String cellStatus = (String) dsl.fetchOne(
                 "SELECT status FROM cells WHERE id = ?::uuid", cellId).get("status");
-        org.junit.jupiter.api.Assertions.assertEquals("pending", cellStatus);
+        assertEquals("pending", cellStatus);
 
         // Verify cell_attachments link
-        int linkCount = (int) dsl.fetchOne(
+        long linkCount = dsl.fetchOne(
                 "SELECT COUNT(*) FROM cell_attachments WHERE attachment_id = ?::uuid AND cell_id = ?::uuid AND extraction_source = true",
-                attachmentId, cellId).get(0, Long.class).longValue();
-        org.junit.jupiter.api.Assertions.assertEquals(1, linkCount);
+                attachmentId, cellId).get(0, Long.class);
+        assertEquals(1L, linkCount);
 
         // Verify download works
         mockMvc.perform(get("/api/attachments/" + attachmentId + "/content")
@@ -159,16 +162,15 @@ class AttachmentIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
 
-        com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
-        String attachmentId1 = om.readTree(body1).get("id").asText();
-        String attachmentId2 = om.readTree(body2).get("id").asText();
-        String cellId1       = om.readTree(body1).get("cell_id").asText();
-        String cellId2       = om.readTree(body2).get("cell_id").asText();
+        String attachmentId1 = OM.readTree(body1).get("id").asText();
+        String attachmentId2 = OM.readTree(body2).get("id").asText();
+        String cellId1       = OM.readTree(body1).get("cell_id").asText();
+        String cellId2       = OM.readTree(body2).get("cell_id").asText();
 
         // Same attachment row
-        org.junit.jupiter.api.Assertions.assertEquals(attachmentId1, attachmentId2);
+        assertEquals(attachmentId1, attachmentId2);
         // Different extraction cells
-        org.junit.jupiter.api.Assertions.assertNotEquals(cellId1, cellId2);
+        assertNotEquals(cellId1, cellId2);
     }
 
     @Test
@@ -183,15 +185,14 @@ class AttachmentIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
 
-        String newCellId = new com.fasterxml.jackson.databind.ObjectMapper()
-                .readTree(body).get("cell_id").asText();
+        String newCellId = OM.readTree(body).get("cell_id").asText();
 
-        int tunnelCount = (int) dsl.fetchOne("""
+        long tunnelCount = dsl.fetchOne("""
                 SELECT COUNT(*) FROM tunnels
                 WHERE from_cell = ?::uuid AND to_cell = ?::uuid AND relation = 'related_to'
                   AND valid_until IS NULL
-                """, newCellId, existingCellId.toString()).get(0, Long.class).longValue();
-        org.junit.jupiter.api.Assertions.assertEquals(1, tunnelCount);
+                """, newCellId, existingCellId.toString()).get(0, Long.class);
+        assertEquals(1L, tunnelCount);
     }
 
     @Test
@@ -221,8 +222,7 @@ class AttachmentIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
 
-        String id = new com.fasterxml.jackson.databind.ObjectMapper()
-                .readTree(body).get("id").asText();
+        String id = OM.readTree(body).get("id").asText();
 
         mockMvc.perform(delete("/api/attachments/" + id)
                         .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, ADMIN))
@@ -243,8 +243,7 @@ class AttachmentIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
 
-        String id = new com.fasterxml.jackson.databind.ObjectMapper()
-                .readTree(body).get("id").asText();
+        String id = OM.readTree(body).get("id").asText();
 
         mockMvc.perform(delete("/api/attachments/" + id)
                         .requestAttr(AuthFilter.PRINCIPAL_ATTRIBUTE, WRITER))
