@@ -47,7 +47,9 @@ public class AttachmentRepository {
                 """,
                 fileHash, mimeType, originalFilename, sizeBytes,
                 s3KeyOriginal, s3KeyThumbnail, uploadedBy);
-        return toMap(row);
+        return Optional.ofNullable(row)
+                .map(this::toMap)
+                .orElseThrow(() -> new NoSuchElementException("Attachment insert returned no row for hash: " + fileHash));
     }
 
     /** Idempotent: clears deleted_at if soft-deleted, updates thumbnail key if currently null. */
@@ -60,7 +62,9 @@ public class AttachmentRepository {
                 RETURNING id, file_hash, mime_type, original_filename, size_bytes,
                           s3_key_original, s3_key_thumbnail, uploaded_by, created_at
                 """, s3KeyThumbnail, id);
-        return toMap(row);
+        return Optional.ofNullable(row)
+                .map(this::toMap)
+                .orElseThrow(() -> new NoSuchElementException("Attachment not found for reactivation: " + id));
     }
 
     public void linkExtractionCell(UUID attachmentId, UUID cellId) {
