@@ -1,10 +1,10 @@
 # Tools
 
-HiveMem exposes **31 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin.
+HiveMem exposes **34 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, attachments, and admin.
 
 ## Feature Overview
 
-- **31 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, and admin
+- **34 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, attachments, and admin
 - **6-signal ranked search** — semantic similarity + keyword match + recency + importance + popularity + graph proximity
 - **Append-only versioning** — never lose history, revise with parent_id chains, point-in-time queries
 - **Progressive summarization** — content, summary, key_points, insight per cell
@@ -37,7 +37,7 @@ HiveMem exposes **31 MCP tools** across search, knowledge graph, progressive sum
 14. `list_agents`: View active agent fleet.
 15. `diary_read`: Read agent diary entries.
 
-**Write (14):**
+**Write (17):**
 
 16. `add_cell`: Store a cell with content, summary, key points, and insight; optional `dedupe_threshold` runs an embedding-based dedupe gate in one call.
 17. `add_tunnel`: Link two cells together.
@@ -54,10 +54,16 @@ HiveMem exposes **31 MCP tools** across search, knowledge graph, progressive sum
 28. `update_blueprint`: Update realm narrative.
 29. `reclassify_cell`: Move a cell to a different realm/signal/topic in-place without creating a new revision. Leaves content, embeddings, tunnels, facts, and references untouched. Use for taxonomy migrations.
 
+**Attachments (3):**
+
+30. `upload_attachment`: Upload a file attachment (Base64-encoded) and link it to a cell. Stores original in SeaweedFS, extracts text, generates JPEG thumbnail at ingest. Returns metadata + `extracted_text`. For large files, prefer `POST /api/attachments` (multipart).
+31. `list_attachments`: List all file attachments linked to a cell (metadata only, no file content).
+32. `get_attachment_info`: Get metadata for a single attachment by ID, including `s3_key_thumbnail`. Download via `GET /api/attachments/{id}/content`.
+
 **Admin (2):**
 
-30. `approve_pending`: Admin tool to batch approve or reject agent writes.
-31. `health`: Monitor DB and service state.
+33. `approve_pending`: Admin tool to batch approve or reject agent writes.
+34. `health`: Monitor DB and service state.
 
 ## Search Signals
 
