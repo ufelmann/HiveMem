@@ -2,6 +2,7 @@ package com.hivemem.attachment;
 
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.write.WriteToolRepository;
+import org.jooq.DSLContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,16 +24,19 @@ public class AttachmentService {
     private final AttachmentRepository repo;
     private final WriteToolRepository writeRepo;
     private final EmbeddingClient embeddingClient;
+    private final DSLContext dsl;
 
     public AttachmentService(AttachmentProperties props, SeaweedFsClient seaweedFs,
                              ParserRegistry parsers, AttachmentRepository repo,
-                             WriteToolRepository writeRepo, EmbeddingClient embeddingClient) {
+                             WriteToolRepository writeRepo, EmbeddingClient embeddingClient,
+                             DSLContext dsl) {
         this.props = props;
         this.seaweedFs = seaweedFs;
         this.parsers = parsers;
         this.repo = repo;
         this.writeRepo = writeRepo;
         this.embeddingClient = embeddingClient;
+        this.dsl = dsl;
     }
 
     @Transactional
@@ -120,6 +124,12 @@ public class AttachmentService {
 
             // 8. Tunnel to existing cell if provided
             if (optionalLinkCellId != null) {
+                boolean cellExists = dsl.fetchOne(
+                        "SELECT 1 FROM cells WHERE id = ? AND valid_until IS NULL",
+                        optionalLinkCellId) != null;
+                if (!cellExists) {
+                    throw new IllegalArgumentException("Cell not found: " + optionalLinkCellId);
+                }
                 writeRepo.addTunnel(cellId, optionalLinkCellId, "related_to", null, "committed", uploadedBy);
             }
 

@@ -1,20 +1,22 @@
 package com.hivemem.attachment;
 
-public record ParseResult(String extractedText, byte[] thumbnail, String thumbnailMimeType) {
+public record ParseResult(String extractedText, boolean textTruncated, byte[] thumbnail, String thumbnailMimeType) {
 
     static final int MAX_TEXT_CHARS = 10_000;
     private static final String TRUNCATION_SUFFIX = "… [truncated]";
 
     public static ParseResult textOnly(String text) {
-        return new ParseResult(truncate(text), null, null);
+        String t = truncateIfNeeded(text);
+        return new ParseResult(t, t != null && t != text, null, null);
     }
 
     public static ParseResult withThumbnail(String text, byte[] thumbnail) {
-        return new ParseResult(truncate(text), thumbnail, "image/jpeg");
+        String t = truncateIfNeeded(text);
+        return new ParseResult(t, t != null && t != text, thumbnail, "image/jpeg");
     }
 
     public static ParseResult empty() {
-        return new ParseResult(null, null, null);
+        return new ParseResult(null, false, null, null);
     }
 
     public boolean hasThumbnail() {
@@ -22,10 +24,10 @@ public record ParseResult(String extractedText, byte[] thumbnail, String thumbna
     }
 
     public boolean wasTextTruncated() {
-        return extractedText != null && extractedText.endsWith(TRUNCATION_SUFFIX);
+        return textTruncated;
     }
 
-    private static String truncate(String text) {
+    private static String truncateIfNeeded(String text) {
         if (text == null || text.length() <= MAX_TEXT_CHARS) return text;
         int cutAt = MAX_TEXT_CHARS;
         if (Character.isLowSurrogate(text.charAt(cutAt)) && cutAt > 0) cutAt--;
