@@ -17,8 +17,9 @@ class SkipHeuristicsTest {
     }
 
     @Test
-    void wordCountBelowFourIsSkipped() {
+    void wordCountBelowFiveIsSkipped() {
         assertThat(h.evaluate("do that thing").skip()).isTrue();
+        assertThat(h.evaluate("make it work please").skip()).isTrue();
     }
 
     @Test
@@ -34,6 +35,23 @@ class SkipHeuristicsTest {
     @Test
     void normalQuestionIsNotSkipped() {
         assertThat(h.evaluate("What was the plan for project X phase 3?").skip()).isFalse();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "wie geht es dir heute",
+            "wie läuft es so",
+            "wie war dein tag",
+            "hallo wie geht es dir heute",
+            "guten morgen wie läuft es"
+    })
+    void socialStarterPhrasesAreSkipped(String prompt) {
+        assertThat(h.evaluate(prompt).skip()).isTrue();
+    }
+
+    @Test
+    void technicalQuestionWithFiveWordsIsNotSkipped() {
+        assertThat(h.evaluate("erkläre den auth flow bitte").skip()).isFalse();
     }
 
     @Test
