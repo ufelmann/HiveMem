@@ -12,8 +12,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PdfAttachmentParserTest {
 
@@ -44,13 +42,16 @@ class PdfAttachmentParserTest {
 
         ParseResult result;
         try (InputStream in = new ByteArrayInputStream(pdf)) {
-            result = new PdfAttachmentParser().parse(in);
+            result = parser.parse(in);
         }
 
-        assertNotNull(result.extractedText());
-        assertTrue(result.extractedText().length() <= 10_100,
-                "Text must be capped near 10 000 chars, was: " + result.extractedText().length());
-        assertTrue(result.wasTextTruncated(), "wasTextTruncated() must be true");
+        assertThat(result.extractedText()).isNotNull();
+        assertThat(result.wasTextTruncated()).isTrue();
+        // Exact length: MAX_TEXT_CHARS chars + "… [truncated]" suffix (the suffix is 15 chars: 1 for … + 14 for " [truncated]")
+        // Just verify it's well within bounds and truncation happened
+        assertThat(result.extractedText().length())
+            .as("Text must be capped at 10 000 chars plus truncation suffix")
+            .isLessThanOrEqualTo(ParseResult.MAX_TEXT_CHARS + 20);
     }
 
     private byte[] buildSinglePagePdf(String text) throws Exception {

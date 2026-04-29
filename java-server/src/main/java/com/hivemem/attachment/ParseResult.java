@@ -2,7 +2,8 @@ package com.hivemem.attachment;
 
 public record ParseResult(String extractedText, byte[] thumbnail, String thumbnailMimeType) {
 
-    private static final int MAX_TEXT_CHARS = 10_000;
+    static final int MAX_TEXT_CHARS = 10_000;
+    private static final String TRUNCATION_SUFFIX = "… [truncated]";
 
     public static ParseResult textOnly(String text) {
         return new ParseResult(truncate(text), null, null);
@@ -21,11 +22,13 @@ public record ParseResult(String extractedText, byte[] thumbnail, String thumbna
     }
 
     public boolean wasTextTruncated() {
-        return extractedText != null && extractedText.endsWith("… [truncated]");
+        return extractedText != null && extractedText.endsWith(TRUNCATION_SUFFIX);
     }
 
     private static String truncate(String text) {
         if (text == null || text.length() <= MAX_TEXT_CHARS) return text;
-        return text.substring(0, MAX_TEXT_CHARS) + "… [truncated]";
+        int cutAt = MAX_TEXT_CHARS;
+        if (Character.isLowSurrogate(text.charAt(cutAt)) && cutAt > 0) cutAt--;
+        return text.substring(0, cutAt) + TRUNCATION_SUFFIX;
     }
 }
