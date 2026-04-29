@@ -9,8 +9,11 @@ import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PdfAttachmentParserTest {
 
@@ -30,6 +33,24 @@ class PdfAttachmentParserTest {
         assertThat(result.extractedText()).contains("Hello from HiveMem");
         assertThat(result.hasThumbnail()).isTrue();
         assertThat(result.thumbnailMimeType()).isEqualTo("image/jpeg");
+    }
+
+    @Test
+    void extractedTextIsCappedAt10000Chars() throws Exception {
+        // Build a PDF with > 10 000 chars of text
+        StringBuilder sb = new StringBuilder();
+        while (sb.length() < 11_000) sb.append("Lorem ipsum dolor sit amet. ");
+        byte[] pdf = buildSinglePagePdf(sb.toString());
+
+        ParseResult result;
+        try (InputStream in = new ByteArrayInputStream(pdf)) {
+            result = new PdfAttachmentParser().parse(in);
+        }
+
+        assertNotNull(result.extractedText());
+        assertTrue(result.extractedText().length() <= 10_100,
+                "Text must be capped near 10 000 chars, was: " + result.extractedText().length());
+        assertTrue(result.wasTextTruncated(), "wasTextTruncated() must be true");
     }
 
     private byte[] buildSinglePagePdf(String text) throws Exception {
