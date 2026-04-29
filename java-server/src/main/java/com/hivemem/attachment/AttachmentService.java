@@ -101,7 +101,7 @@ public class AttachmentService {
             // 6. Create extraction Cell
             String cellContent = (parsed.extractedText() != null && !parsed.extractedText().isBlank())
                     ? parsed.extractedText()
-                    : originalFilename;
+                    : (originalFilename != null ? originalFilename : "unknown file");
             List<String> tags = parsed.wasTextTruncated()
                     ? List.of("chunked_pending")
                     : List.of();
@@ -127,6 +127,7 @@ public class AttachmentService {
             Map<String, Object> result = new LinkedHashMap<>(attachmentRow);
             result.put("cell_id", cellId.toString());
             result.put("has_thumbnail", attachmentRow.get("s3_key_thumbnail") != null);
+            result.put("deduplicated", existing.isPresent());
             return result;
 
         } finally {
