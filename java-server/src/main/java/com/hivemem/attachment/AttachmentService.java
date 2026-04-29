@@ -44,7 +44,7 @@ public class AttachmentService {
             Optional<Map<String, Object>> existing = repo.findByHash(hash);
             if (existing.isPresent()) {
                 UUID existingId = UUID.fromString((String) existing.get().get("id"));
-                repo.linkToCell(existingId, cellId);
+                repo.linkExtractionCell(existingId, cellId);
                 Map<String, Object> result = new LinkedHashMap<>(existing.get());
                 result.put("deduplicated", true);
                 return result;
@@ -71,11 +71,11 @@ public class AttachmentService {
             // 6. Persist metadata
             Map<String, Object> row = repo.insert(
                     hash, mimeType, originalFilename, sizeBytes,
-                    s3KeyOriginal, s3KeyThumbnail, parsed.extractedText(), uploadedBy);
+                    s3KeyOriginal, s3KeyThumbnail, uploadedBy);
 
             // 7. Link to cell
             UUID newId = UUID.fromString((String) row.get("id"));
-            repo.linkToCell(newId, cellId);
+            repo.linkExtractionCell(newId, cellId);
 
             row.put("deduplicated", false);
             return row;
