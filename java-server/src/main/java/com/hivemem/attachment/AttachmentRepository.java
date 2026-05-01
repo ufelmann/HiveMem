@@ -94,6 +94,66 @@ public class AttachmentRepository {
         return updated > 0;
     }
 
+    public record DiagramRow(UUID attachmentId, UUID cellId, String fileHash, String mimeType, String diagramSource) {}
+
+    public record AttachmentInfo(UUID attachmentId, String mimeType, String s3KeyOriginal) {}
+
+    /** Diagrams whose attachment row has no thumbnail yet. */
+    public List<DiagramRow> findDiagramsWithoutThumbnail(Set<String> mimeTypes, int limit) {
+        if (mimeTypes == null || mimeTypes.isEmpty()) return List.of();
+        var rows = dsl.fetch(
+                "SELECT a.id AS attachment_id, ca.cell_id AS cell_id, a.file_hash, a.mime_type, c.content AS source "
+                + "FROM attachments a "
+                + "JOIN cell_attachments ca ON ca.attachment_id = a.id AND ca.extraction_source = true "
+                + "JOIN cells c ON c.id = ca.cell_id AND c.valid_until IS NULL "
+                + "WHERE a.s3_key_thumbnail IS NULL "
+                + "  AND a.deleted_at IS NULL "
+                + "  AND a.mime_type = ANY(?) "
+                + "  AND a.created_at > now() - interval '7 days' "
+                + "ORDER BY a.created_at DESC LIMIT ?",
+                mimeTypes.toArray(new String[0]), limit);
+        List<DiagramRow> out = new ArrayList<>();
+        for (var r : rows) {
+            out.add(new DiagramRow(
+                    r.get("attachment_id", UUID.class),
+                    r.get("cell_id", UUID.class),
+                    r.get("file_hash", String.class),
+                    r.get("mime_type", String.class),
+                    r.get("source", String.class)));
+        }
+        return out;
+    }
+
+    /** Cells tagged vision_pending whose source-attachment is still around. */
+    public List<UUID> findCellsWithVisionPending(int limit) {
+        var rows = dsl.fetch(
+                "SELECT id FROM cells "
+                + "WHERE 'vision_pending' = ANY(tags) "
+                + "  AND status = 'committed' AND valid_until IS NULL "
+                + "ORDER BY created_at LIMIT ?", limit);
+        List<UUID> out = new ArrayList<>();
+        for (var r : rows) out.add(r.get(0, UUID.class));
+        return out;
+    }
+
+    public void updateThumbnailKey(UUID attachmentId, String s3KeyThumbnail) {
+        dsl.execute("UPDATE attachments SET s3_key_thumbnail = ? WHERE id = ?",
+                s3KeyThumbnail, attachmentId);
+    }
+
+    public Optional<AttachmentInfo> findAttachmentForCell(UUID cellId) {
+        var rec = dsl.fetchOptional(
+                "SELECT a.id, a.mime_type, a.s3_key_original "
+                + "FROM cell_attachments ca "
+                + "JOIN attachments a ON a.id = ca.attachment_id "
+                + "WHERE ca.cell_id = ? AND ca.extraction_source = true AND a.deleted_at IS NULL "
+                + "LIMIT 1", cellId);
+        return rec.map(r -> new AttachmentInfo(
+                r.get("id", UUID.class),
+                r.get("mime_type", String.class),
+                r.get("s3_key_original", String.class)));
+    }
+
     private Map<String, Object> toMap(Record row) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", row.get("id", UUID.class).toString());
