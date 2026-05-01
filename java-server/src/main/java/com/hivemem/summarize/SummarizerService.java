@@ -147,7 +147,7 @@ public class SummarizerService {
                         f.object(),
                         f.confidence(),
                         cellId,
-                        "active",
+                        "committed",
                         OffsetDateTime.now(),
                         "insert");
             } catch (Exception e) {
