@@ -153,11 +153,10 @@ class OcrServiceIT {
         PeerClient peerClient = mock(PeerClient.class);
         PushDispatcher pushDispatcher = new PushDispatcher(peerRepo, opsRepo, peerClient, instanceConfig);
 
-        NeedsSummaryDecider decider = new NeedsSummaryDecider(500);
         ApplicationEventPublisher noopPublisher = e -> {};
 
         WriteToolService writeService = new WriteToolService(
-                writeRepo, embedding, opLogWriter, pushDispatcher, decider, noopPublisher);
+                writeRepo, embedding, opLogWriter, pushDispatcher, noopPublisher);
 
         OcrService service = new OcrService(ocrProps, ocrRepo, seaweed, writeService);
 
