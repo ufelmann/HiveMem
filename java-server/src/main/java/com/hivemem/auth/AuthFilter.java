@@ -30,6 +30,10 @@ public class AuthFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String requestPath = request.getRequestURI().substring(request.getContextPath().length());
+        // OAuth discovery + registration must be reachable without a token —
+        // they are how MCP clients (Claude.ai, ChatGPT) bootstrap the auth flow.
+        if (requestPath.startsWith("/.well-known/oauth-")) return true;
+        if (requestPath.startsWith("/oauth/")) return true;
         return !requestPath.startsWith("/mcp") && !requestPath.startsWith("/hooks")
                 && !requestPath.startsWith("/sync") && !requestPath.startsWith("/admin")
                 && !requestPath.startsWith("/api/attachments");
