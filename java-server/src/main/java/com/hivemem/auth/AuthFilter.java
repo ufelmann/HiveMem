@@ -4,7 +4,9 @@ import com.hivemem.oauth.OAuthRepository;
 import com.hivemem.oauth.TokenHasher;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -58,7 +60,10 @@ public class AuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        String clientIp = request.getRemoteAddr();
+        // Use the actual TCP peer address for rate-limit bucketing, NOT the X-Forwarded-For
+        // address Spring's ForwardedHeaderFilter would have substituted via getRemoteAddr().
+        // Otherwise an attacker can spoof XFF to evade per-IP rate limits.
+        String clientIp = tcpPeerAddress(request);
 
         long retryAfter = rateLimiter.checkRateLimit(clientIp);
         if (retryAfter > 0) {
@@ -107,6 +112,21 @@ public class AuthFilter extends OncePerRequestFilter {
         rateLimiter.clearFailures(clientIp);
         request.setAttribute(PRINCIPAL_ATTRIBUTE, principal.get());
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * Returns the actual TCP peer remote address by unwrapping any servlet request
+     * wrappers (e.g. Spring's {@code ForwardedHeaderFilter} wrapper that rewrites
+     * {@code getRemoteAddr()} to the X-Forwarded-For value). The unwrapped underlying
+     * request returns the real socket peer IP, which we use for rate-limit bucketing
+     * so that attackers cannot evade per-IP limits by rotating XFF headers.
+     */
+    private static String tcpPeerAddress(HttpServletRequest request) {
+        ServletRequest underlying = request;
+        while (underlying instanceof HttpServletRequestWrapper w) {
+            underlying = w.getRequest();
+        }
+        return underlying.getRemoteAddr();
     }
 
     /**
