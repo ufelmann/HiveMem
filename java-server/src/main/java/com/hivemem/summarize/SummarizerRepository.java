@@ -85,6 +85,28 @@ public class SummarizerRepository {
         return List.of();
     }
 
+    public void setDocumentType(UUID id, String documentType) {
+        dsl.execute("UPDATE cells SET document_type = ? WHERE id = ?", documentType, id);
+    }
+
+    /**
+     * Look up the source-attachment's MIME type and filename for a cell, joining via
+     * cell_attachments.extraction_source=true. Returns empty if cell has no source attachment.
+     */
+    public Optional<AttachmentMeta> findCellAttachmentMeta(UUID cellId) {
+        var rec = dsl.fetchOptional(
+                "SELECT a.mime_type, a.original_filename "
+                + "FROM cell_attachments ca "
+                + "JOIN attachments a ON a.id = ca.attachment_id "
+                + "WHERE ca.cell_id = ? AND ca.extraction_source = true "
+                + "LIMIT 1", cellId);
+        return rec.map(r -> new AttachmentMeta(
+                r.get("mime_type", String.class),
+                r.get("original_filename", String.class)));
+    }
+
+    public record AttachmentMeta(String mimeType, String filename) {}
+
     public record CellSnapshot(
             UUID id,
             String content,
