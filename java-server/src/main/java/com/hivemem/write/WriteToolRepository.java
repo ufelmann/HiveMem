@@ -100,6 +100,20 @@ public class WriteToolRepository {
                 + "WHERE id = ?", id);
     }
 
+    public void tagVisionPending(UUID id) {
+        dslContext.execute(
+                "UPDATE cells SET tags = "
+                + "  CASE WHEN 'vision_pending' = ANY(tags) THEN tags ELSE array_append(tags, 'vision_pending') END "
+                + "WHERE id = ?", id);
+    }
+
+    public void tagKrokiPending(UUID id) {
+        dslContext.execute(
+                "UPDATE cells SET tags = "
+                + "  CASE WHEN 'kroki_pending' = ANY(tags) THEN tags ELSE array_append(tags, 'kroki_pending') END "
+                + "WHERE id = ?", id);
+    }
+
     public int upsertIdentity(String key, String content, int tokenCount) {
         return dslContext.execute("""
                 INSERT INTO identity (key, content, token_count, updated_at)
