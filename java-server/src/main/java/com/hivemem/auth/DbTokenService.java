@@ -16,6 +16,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class DbTokenService implements TokenService {
@@ -33,7 +34,7 @@ public class DbTokenService implements TokenService {
     public Optional<AuthPrincipal> validateToken(String token) {
         String tokenHash = sha256(token);
         Record row = dslContext.fetchOne("""
-                SELECT name, role
+                SELECT id, name, role
                 FROM api_tokens
                 WHERE token_hash = ?
                   AND revoked_at IS NULL
@@ -44,7 +45,27 @@ public class DbTokenService implements TokenService {
         }
         return Optional.of(new AuthPrincipal(
                 row.get("name", String.class),
-                AuthRole.valueOf(row.get("role", String.class).toUpperCase(Locale.ROOT))
+                AuthRole.valueOf(row.get("role", String.class).toUpperCase(Locale.ROOT)),
+                row.get("id", UUID.class)
+        ));
+    }
+
+    @Override
+    public Optional<AuthPrincipal> findById(UUID tokenId) {
+        Record row = dslContext.fetchOne("""
+                SELECT id, name, role
+                FROM api_tokens
+                WHERE id = ?
+                  AND revoked_at IS NULL
+                  AND (expires_at IS NULL OR expires_at > now())
+                """, tokenId);
+        if (row == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new AuthPrincipal(
+                row.get("name", String.class),
+                AuthRole.valueOf(row.get("role", String.class).toUpperCase(Locale.ROOT)),
+                row.get("id", UUID.class)
         ));
     }
 
