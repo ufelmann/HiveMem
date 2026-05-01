@@ -1,0 +1,8 @@
+spring:
+  main:
+    web-application-type: none
+hivemem:
+  hooks:
+    enabled: false
+  popularity:
+    refresh-interval: PT100Y
