@@ -30,7 +30,12 @@ public class SessionAuthFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI().substring(request.getContextPath().length());
-        return path.startsWith("/login");
+        if (path.startsWith("/login")) return true;
+        // OAuth discovery + registration + token are public; the /oauth/authorize
+        // endpoint handles its own login redirect when the user is unauthenticated.
+        if (path.startsWith("/.well-known/oauth-")) return true;
+        if (path.startsWith("/oauth/")) return true;
+        return false;
     }
 
     @Override

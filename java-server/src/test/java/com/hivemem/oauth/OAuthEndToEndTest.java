@@ -1,0 +1,306 @@
+package com.hivemem.oauth;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hivemem.embedding.EmbeddingClient;
+import com.hivemem.embedding.FixedEmbeddingClient;
+import org.jooq.DSLContext;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.net.URI;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+/**
+ * End-to-end OAuth flow:
+ * <ol>
+ *   <li>Discovery (.well-known)</li>
+ *   <li>Dynamic Client Registration (POST /oauth/register)</li>
+ *   <li>Authorization (GET /oauth/authorize) — using a test-injected user_token_id
+ *       to bypass the interactive login flow</li>
+ *   <li>Token exchange (POST /oauth/token, grant_type=authorization_code, with PKCE)</li>
+ *   <li>Refresh (POST /oauth/token, grant_type=refresh_token)</li>
+ *   <li>Replay-detection — re-using the rotated refresh token revokes the chain</li>
+ *   <li>Reuse-of-rotated — even the new (post-replay) refresh is invalidated</li>
+ * </ol>
+ */
+@Testcontainers
+@ActiveProfiles("test")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
+@AutoConfigureMockMvc
+@Import(OAuthEndToEndTest.TestConfig.class)
+@TestPropertySource(properties = {
+        "hivemem.oauth.enabled=true",
+        "hivemem.oauth.issuer=https://hivemem.example.com"
+})
+class OAuthEndToEndTest {
+
+    // RFC 7636 Appendix B PKCE test vector
+    private static final String VERIFIER  = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+    private static final String CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+
+    private static final String REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback";
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class TestConfig {
+        @Bean @Primary
+        EmbeddingClient testEmbeddingClient() { return new FixedEmbeddingClient(); }
+    }
+
+    @Container
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("pgvector/pgvector:pg17")
+            .withDatabaseName("hivemem").withUsername("hivemem").withPassword("hivemem")
+            .withCreateContainerCmdModifier(cmd -> cmd.withHostConfig(
+                    (cmd.getHostConfig() == null
+                            ? new com.github.dockerjava.api.model.HostConfig()
+                            : cmd.getHostConfig())
+                            .withSecurityOpts(java.util.List.of("apparmor=unconfined"))));
+
+    @DynamicPropertySource
+    static void registerProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", POSTGRES::getUsername);
+        registry.add("spring.datasource.password", POSTGRES::getPassword);
+        registry.add("spring.datasource.driver-class-name", POSTGRES::getDriverClassName);
+    }
+
+    @Autowired MockMvc mvc;
+    @Autowired DSLContext dsl;
+    private static final ObjectMapper json = new ObjectMapper();
+
+    private UUID userTokenId;
+
+    @BeforeEach
+    void seed() {
+        dsl.execute("TRUNCATE TABLE oauth_tokens, oauth_authorization_codes, oauth_clients CASCADE");
+        dsl.execute("DELETE FROM api_tokens WHERE name LIKE 'oauth-e2e-%'");
+        userTokenId = dsl.fetchOne("""
+                INSERT INTO api_tokens (token_hash, name, role)
+                VALUES (?, ?, 'admin')
+                RETURNING id
+                """, "test-hash-" + UUID.randomUUID(), "oauth-e2e-" + UUID.randomUUID())
+                .get("id", UUID.class);
+    }
+
+    @Test
+    void discoveryReturnsAuthorizationServerMetadata() throws Exception {
+        mvc.perform(get("/.well-known/oauth-authorization-server"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.issuer").value("https://hivemem.example.com"))
+                .andExpect(jsonPath("$.authorization_endpoint").value("https://hivemem.example.com/oauth/authorize"))
+                .andExpect(jsonPath("$.token_endpoint").value("https://hivemem.example.com/oauth/token"))
+                .andExpect(jsonPath("$.registration_endpoint").value("https://hivemem.example.com/oauth/register"))
+                .andExpect(jsonPath("$.code_challenge_methods_supported[0]").value("S256"))
+                .andExpect(jsonPath("$.token_endpoint_auth_methods_supported[0]").value("none"));
+    }
+
+    @Test
+    void fullFlow_register_authorize_exchange_refresh_replayDetect() throws Exception {
+        // 1. Register a client (DCR)
+        Map<String, Object> regBody = Map.of(
+                "client_name", "E2E Test Connector",
+                "redirect_uris", List.of(REDIRECT_URI),
+                "token_endpoint_auth_method", "none"
+        );
+        MvcResult regResult = mvc.perform(post("/oauth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(regBody)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.client_id").isNotEmpty())
+                .andReturn();
+        String clientId = json.readTree(regResult.getResponse().getContentAsString())
+                .get("client_id").asText();
+
+        // 2. Authorize — inject user_token_id directly to bypass session login
+        MvcResult authResult = mvc.perform(get("/oauth/authorize")
+                        .param("response_type", "code")
+                        .param("client_id", clientId)
+                        .param("redirect_uri", REDIRECT_URI)
+                        .param("scope", "read write")
+                        .param("state", "e2e-state")
+                        .param("code_challenge", CHALLENGE)
+                        .param("code_challenge_method", "S256")
+                        .requestAttr(AuthorizationController.TEST_USER_TOKEN_ATTR, userTokenId))
+                .andExpect(status().is3xxRedirection())
+                .andReturn();
+        URI redirect = URI.create(authResult.getResponse().getHeader("Location"));
+        assertEquals("claude.ai", redirect.getHost());
+        String code  = extractParam(redirect.getQuery(), "code");
+        String state = extractParam(redirect.getQuery(), "state");
+        assertEquals("e2e-state", state);
+        assertNotNull(code, "authorization code must be present in redirect");
+
+        // 3. Token exchange
+        MvcResult tokenResult = mvc.perform(post("/oauth/token").contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("grant_type", "authorization_code")
+                        .param("code", code)
+                        .param("client_id", clientId)
+                        .param("redirect_uri", REDIRECT_URI)
+                        .param("code_verifier", VERIFIER))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.access_token").isNotEmpty())
+                .andExpect(jsonPath("$.refresh_token").isNotEmpty())
+                .andExpect(jsonPath("$.token_type").value("Bearer"))
+                .andReturn();
+        JsonNode tokens = json.readTree(tokenResult.getResponse().getContentAsString());
+        String accessToken1  = tokens.get("access_token").asText();
+        String refreshToken1 = tokens.get("refresh_token").asText();
+        assertNotEquals(accessToken1, refreshToken1, "access and refresh must differ");
+
+        // 4. Replay code — must fail (atomic consume)
+        mvc.perform(post("/oauth/token").contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("grant_type", "authorization_code")
+                        .param("code", code)
+                        .param("client_id", clientId)
+                        .param("redirect_uri", REDIRECT_URI)
+                        .param("code_verifier", VERIFIER))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_grant"));
+
+        // 5. Refresh once — succeeds, issues new pair
+        MvcResult refreshResult = mvc.perform(post("/oauth/token").contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("grant_type", "refresh_token")
+                        .param("refresh_token", refreshToken1)
+                        .param("client_id", clientId))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode refreshed = json.readTree(refreshResult.getResponse().getContentAsString());
+        String refreshToken2 = refreshed.get("refresh_token").asText();
+        assertNotEquals(refreshToken1, refreshToken2, "refresh rotation must produce a fresh token");
+
+        // 6. Reuse OLD refresh — must fail and revoke entire chain
+        mvc.perform(post("/oauth/token").contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("grant_type", "refresh_token")
+                        .param("refresh_token", refreshToken1)
+                        .param("client_id", clientId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_grant"));
+
+        // 7. The previously-valid second refresh must now ALSO be revoked (chain compromise)
+        mvc.perform(post("/oauth/token").contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("grant_type", "refresh_token")
+                        .param("refresh_token", refreshToken2)
+                        .param("client_id", clientId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_grant"));
+    }
+
+    @Test
+    void unauthenticatedUserRedirectsToLogin() throws Exception {
+        Map<String, Object> regBody = Map.of(
+                "client_name", "Login Redirect Test",
+                "redirect_uris", List.of(REDIRECT_URI),
+                "token_endpoint_auth_method", "none"
+        );
+        MvcResult regResult = mvc.perform(post("/oauth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(regBody)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String clientId = json.readTree(regResult.getResponse().getContentAsString())
+                .get("client_id").asText();
+
+        // No requestAttr → unauthenticated → must redirect to /login
+        mvc.perform(get("/oauth/authorize")
+                        .param("response_type", "code")
+                        .param("client_id", clientId)
+                        .param("redirect_uri", REDIRECT_URI)
+                        .param("code_challenge", CHALLENGE)
+                        .param("code_challenge_method", "S256"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", org.hamcrest.Matchers.containsString("/login")));
+    }
+
+    @Test
+    void registerRejectsHttpNonLoopbackRedirect() throws Exception {
+        Map<String, Object> body = Map.of(
+                "client_name", "Bad Client",
+                "redirect_uris", List.of("http://evil.example.com/cb"),
+                "token_endpoint_auth_method", "none"
+        );
+        mvc.perform(post("/oauth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(body)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_redirect_uri"));
+    }
+
+    @Test
+    void registerRejectsConfidentialClient() throws Exception {
+        Map<String, Object> body = Map.of(
+                "client_name", "Confidential Client",
+                "redirect_uris", List.of(REDIRECT_URI),
+                "token_endpoint_auth_method", "client_secret_basic"
+        );
+        mvc.perform(post("/oauth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(body)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_client_metadata"));
+    }
+
+    @Test
+    void wrongPkceVerifierRejectsExchange() throws Exception {
+        Map<String, Object> regBody = Map.of(
+                "client_name", "PKCE Test",
+                "redirect_uris", List.of(REDIRECT_URI),
+                "token_endpoint_auth_method", "none"
+        );
+        String clientId = json.readTree(mvc.perform(post("/oauth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(regBody)))
+                .andReturn().getResponse().getContentAsString())
+                .get("client_id").asText();
+
+        URI redirect = URI.create(mvc.perform(get("/oauth/authorize")
+                        .param("response_type", "code")
+                        .param("client_id", clientId)
+                        .param("redirect_uri", REDIRECT_URI)
+                        .param("code_challenge", CHALLENGE)
+                        .param("code_challenge_method", "S256")
+                        .requestAttr(AuthorizationController.TEST_USER_TOKEN_ATTR, userTokenId))
+                .andReturn().getResponse().getHeader("Location"));
+        String code = extractParam(redirect.getQuery(), "code");
+
+        mvc.perform(post("/oauth/token").contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .param("grant_type", "authorization_code")
+                        .param("code", code)
+                        .param("client_id", clientId)
+                        .param("redirect_uri", REDIRECT_URI)
+                        .param("code_verifier", "wrong-verifier"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_grant"));
+    }
+
+    private static String extractParam(String query, String name) {
+        if (query == null) return null;
+        for (String pair : query.split("&")) {
+            String[] kv = pair.split("=", 2);
+            if (kv.length == 2 && kv[0].equals(name)) return kv[1];
+        }
+        return null;
+    }
+}

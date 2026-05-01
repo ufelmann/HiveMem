@@ -104,7 +104,7 @@ public class OAuthRepository {
                 INSERT INTO oauth_authorization_codes
                     (code_hash, client_id, redirect_uri, scope, code_challenge,
                      code_challenge_method, user_token_id, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?::timestamptz)
                 """,
                 codeHash, clientId, redirectUri, scope,
                 codeChallenge, codeChallengeMethod, userTokenId, expiresAt);
@@ -150,7 +150,7 @@ public class OAuthRepository {
         Record row = dsl.fetchOne("""
                 INSERT INTO oauth_tokens (kind, token_hash, client_id, user_token_id,
                                           scope, parent_id, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?::timestamptz)
                 RETURNING id
                 """, kind, tokenHash, clientId, userTokenId, scope, parentId, expiresAt);
         return row.get("id", UUID.class);
