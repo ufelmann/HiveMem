@@ -86,11 +86,14 @@ public class BackupRestoreService {
         }
 
         // Stream entries: postgres.sql.gz → psql restore; attachments/* → S3 putObject.
+        // IMPORTANT: e.stream() IS the TarArchiveInputStream; do not close it between entries.
+        // Read compressed bytes first to avoid closing the tar stream via GZIPInputStream.close().
         try (var br = new ArchiveReader(new ByteArrayInputStream(all))) {
             ArchiveReader.Entry e;
             while ((e = br.nextEntry()) != null) {
                 if (e.name().equals("postgres.sql.gz")) {
-                    try (GZIPInputStream gz = new GZIPInputStream(e.stream())) {
+                    byte[] gzBytes = e.read();
+                    try (GZIPInputStream gz = new GZIPInputStream(new ByteArrayInputStream(gzBytes))) {
                         new PostgresRestorer(props.getPsqlPath())
                                 .restore(dbJdbcUrl, dbUser, dbPassword, gz);
                     }

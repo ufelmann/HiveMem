@@ -17,9 +17,10 @@ public class PostgresDumper {
         ProcessBuilder pb = new ProcessBuilder(
                 pgDumpPath,
                 "--format=plain",
-                "--no-owner",
-                "--no-privileges",
+                "--data-only",
                 "--serializable-deferrable",
+                "--exclude-table=flyway_schema_history",
+                "--exclude-table=migration_baseline",
                 "-h", j.host(), "-p", String.valueOf(j.port()),
                 "-U", user, "-d", j.database()
         );
