@@ -1,5 +1,6 @@
 package com.hivemem.attachment;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -34,6 +35,7 @@ public class VisionClient {
     private final AttachmentProperties props;
     private final RestClient client;
 
+    @Autowired
     public VisionClient(AttachmentProperties props, RestClient.Builder builder) {
         this(props, builder, true);
     }

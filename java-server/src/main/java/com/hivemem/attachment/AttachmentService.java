@@ -29,12 +29,14 @@ public class AttachmentService {
     private final EmbeddingClient embeddingClient;
     private final DSLContext dsl;
     private final ApplicationEventPublisher eventPublisher;
+    private final KrokiClient krokiClient;
 
     public AttachmentService(AttachmentProperties props, SeaweedFsClient seaweedFs,
                              ParserRegistry parsers, AttachmentRepository repo,
                              WriteToolRepository writeRepo, EmbeddingClient embeddingClient,
                              DSLContext dsl,
-                             ApplicationEventPublisher eventPublisher) {
+                             ApplicationEventPublisher eventPublisher,
+                             KrokiClient krokiClient) {
         this.props = props;
         this.seaweedFs = seaweedFs;
         this.parsers = parsers;
@@ -43,6 +45,7 @@ public class AttachmentService {
         this.embeddingClient = embeddingClient;
         this.dsl = dsl;
         this.eventPublisher = eventPublisher;
+        this.krokiClient = krokiClient;
     }
 
     @Transactional
@@ -50,6 +53,8 @@ public class AttachmentService {
                                       String mimeType, String realm, String signal, String topic,
                                       UUID optionalLinkCellId, String uploadedBy) throws Exception {
         if (!props.isEnabled()) throw new IllegalStateException("Attachment storage is not enabled");
+
+        mimeType = MimeTypeResolver.resolve(mimeType, originalFilename);
 
         Path tempFile = Files.createTempFile("hivemem-upload-", null);
         try {
@@ -129,6 +134,16 @@ public class AttachmentService {
                 writeRepo.tagOcrPending(cellId);
                 eventPublisher.publishEvent(
                         new com.hivemem.ocr.OcrRequestedEvent(cellId, attachmentId, key));
+            } else if (mimeType != null && mimeType.startsWith("image/")) {
+                String key = (String) attachmentRow.get("s3_key_original");
+                writeRepo.tagVisionPending(cellId);
+                eventPublisher.publishEvent(
+                        new VisionDescriptionRequestedEvent(attachmentId, cellId, key, mimeType));
+            } else if (krokiClient.supports(mimeType)) {
+                String fileHash = (String) attachmentRow.get("file_hash");
+                writeRepo.tagKrokiPending(cellId);
+                eventPublisher.publishEvent(
+                        new ThumbnailRequestedEvent(attachmentId, cellId, fileHash, mimeType, cellContent));
             } else if (NeedsSummaryDecider.needsSummary(cellContent, null)) {
                 writeRepo.tagNeedsSummary(cellId);
                 eventPublisher.publishEvent(new CellNeedsSummaryEvent(cellId));
