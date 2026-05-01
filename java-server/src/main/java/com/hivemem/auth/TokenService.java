@@ -2,6 +2,7 @@ package com.hivemem.auth;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public interface TokenService {
 
@@ -10,6 +11,13 @@ public interface TokenService {
      * token exists, is not revoked, and has not expired. Returns empty otherwise.
      */
     Optional<AuthPrincipal> validateToken(String token);
+
+    /**
+     * Look up a principal by the {@code api_tokens.id} (used by OAuth flows that
+     * carry the token id in their persisted state). Returns empty if the token is
+     * unknown, revoked, or expired.
+     */
+    Optional<AuthPrincipal> findById(UUID tokenId);
 
     /**
      * Create a new API token. Returns the plaintext value, which is shown to the

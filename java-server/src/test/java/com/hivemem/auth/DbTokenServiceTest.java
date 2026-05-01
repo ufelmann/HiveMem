@@ -76,7 +76,7 @@ class DbTokenServiceTest {
 
     @BeforeEach
     void resetDatabase() {
-        dslContext.execute("TRUNCATE TABLE api_tokens");
+        dslContext.execute("TRUNCATE TABLE api_tokens CASCADE");
         when(embeddingClient.getInfo()).thenReturn(new EmbeddingInfo("test-model", 1024));
     }
 

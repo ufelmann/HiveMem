@@ -6,6 +6,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public class CachedTokenService implements TokenService {
 
@@ -26,6 +27,12 @@ public class CachedTokenService implements TokenService {
     @Override
     public Optional<AuthPrincipal> validateToken(String token) {
         return cache.get(token, delegate::validateToken);
+    }
+
+    @Override
+    public Optional<AuthPrincipal> findById(UUID tokenId) {
+        // Not cached — id-based lookup is rarer (OAuth-only path) and the cache is keyed by plaintext.
+        return delegate.findById(tokenId);
     }
 
     @Override

@@ -7,6 +7,7 @@ import com.hivemem.auth.TokenSummary;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Function;
 
 /**
@@ -25,6 +26,11 @@ public class FixedTokenService implements TokenService {
     @Override
     public Optional<AuthPrincipal> validateToken(String token) {
         return validator.apply(token);
+    }
+
+    @Override
+    public Optional<AuthPrincipal> findById(UUID tokenId) {
+        throw new UnsupportedOperationException("FixedTokenService is validate-only");
     }
 
     @Override

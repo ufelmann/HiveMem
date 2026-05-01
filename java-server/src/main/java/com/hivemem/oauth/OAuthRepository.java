@@ -180,6 +180,37 @@ public class OAuthRepository {
         dsl.execute("UPDATE oauth_tokens SET revoked_at = now() WHERE id = ? AND revoked_at IS NULL", id);
     }
 
+    /** Lookup a token regardless of revoked/expired state — needed for refresh-reuse detection. */
+    public Optional<TokenLookup> lookupAnyToken(String tokenHash) {
+        Record row = dsl.fetchOne("""
+                SELECT id, kind, client_id, user_token_id, scope, parent_id, expires_at
+                  FROM oauth_tokens
+                 WHERE token_hash = ?
+                """, tokenHash);
+        if (row == null) return Optional.empty();
+        return Optional.of(new TokenLookup(
+                row.get("id", UUID.class),
+                row.get("kind", String.class),
+                row.get("client_id", String.class),
+                row.get("user_token_id", UUID.class),
+                row.get("scope", String.class),
+                row.get("parent_id", UUID.class),
+                row.get("expires_at", OffsetDateTime.class)
+        ));
+    }
+
+    /** Walk parent_id chain back to its root. Used for compromise-detection chain revoke. */
+    public UUID findChainRoot(UUID tokenId) {
+        UUID current = tokenId;
+        while (true) {
+            Record row = dsl.fetchOne("SELECT parent_id FROM oauth_tokens WHERE id = ?", current);
+            if (row == null) return current;
+            UUID parent = row.get("parent_id", UUID.class);
+            if (parent == null) return current;
+            current = parent;
+        }
+    }
+
     /**
      * Detect refresh-token reuse: if a token with the given parent has already issued
      * a child, treat the chain as compromised and revoke everything downstream from
