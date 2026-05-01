@@ -25,6 +25,10 @@ class BackupTestRestorer {
     }
 
     void restore(byte[] archive, RestoreMode mode) throws Exception {
+        restore(archive, mode, false);
+    }
+
+    void restore(byte[] archive, RestoreMode mode, boolean force) throws Exception {
         DataSource ds = new DriverManagerDataSource(db.getJdbcUrl(), db.getUsername(), db.getPassword());
         DSLContext dsl = DSL.using(ds, SQLDialect.POSTGRES);
 
@@ -48,6 +52,6 @@ class BackupTestRestorer {
         env.setProperty("spring.datasource.password", db.getPassword());
 
         new BackupRestoreService(props, dsl, seaweed, attachmentProps, env)
-                .restore(new ByteArrayInputStream(archive), mode, false);
+                .restore(new ByteArrayInputStream(archive), mode, force);
     }
 }
