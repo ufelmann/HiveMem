@@ -21,9 +21,9 @@ public class SummarizerRepository {
     public List<UUID> findCellsNeedingSummary(int limit) {
         var rows = dsl.fetch(
                 "SELECT id FROM cells WHERE 'needs_summary' = ANY(tags) "
-                + "AND status='active' "
-                + "AND ('summarize_throttled' != ALL(tags) OR updated_at < now() - interval '15 minutes') "
-                + "ORDER BY updated_at LIMIT ?", limit);
+                + "AND status='committed' AND valid_until IS NULL "
+                + "AND ('summarize_throttled' != ALL(tags) OR created_at < now() - interval '15 minutes') "
+                + "ORDER BY created_at LIMIT ?", limit);
         List<UUID> ids = new ArrayList<>();
         for (Record r : rows) ids.add(r.get(0, UUID.class));
         return ids;
@@ -31,7 +31,7 @@ public class SummarizerRepository {
 
     public Optional<CellSnapshot> findCellSnapshot(UUID id) {
         var rec = dsl.fetchOptional(
-                "SELECT id, content, summary, key_points, insight, tags FROM cells WHERE id = ? AND status='active'", id);
+                "SELECT id, content, summary, key_points, insight, tags FROM cells WHERE id = ? AND status='committed' AND valid_until IS NULL", id);
         return rec.map(r -> new CellSnapshot(
                 r.get("id", UUID.class),
                 r.get("content", String.class),

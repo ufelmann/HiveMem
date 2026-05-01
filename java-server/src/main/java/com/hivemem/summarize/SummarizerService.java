@@ -85,8 +85,18 @@ public class SummarizerService {
 
             // Push through WriteToolService.reviseCell so the embedding is regenerated
             // (via encodeForCell) and ops_log is updated for sync replication.
-            writeService.reviseCell(SYSTEM_PRINCIPAL, cellId, snap.content(), result.summary());
+            var reviseResult = writeService.reviseCell(SYSTEM_PRINCIPAL, cellId, snap.content(), result.summary());
+            // reviseCell supersedes the old cell and creates a new row that inherits tags
+            // (including needs_summary). Remove needs_summary from both the old and new rows.
             repo.removeNeedsSummaryTag(cellId);
+            Object newIdObj = reviseResult.get("new_id");
+            if (newIdObj != null) {
+                try {
+                    repo.removeNeedsSummaryTag(UUID.fromString(newIdObj.toString()));
+                } catch (IllegalArgumentException ignored) {
+                    // not a valid UUID string — skip
+                }
+            }
         } catch (HttpClientErrorException.TooManyRequests e) {
             log.warn("Anthropic 429 for cell {}, marking throttled", cellId);
             repo.tagThrottled(cellId);
