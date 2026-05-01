@@ -1,0 +1,18 @@
+type: contract
+prompt: |
+  Du extrahierst Fakten aus einem Vertrag.
+  Identifiziere Vertragsparteien (parties — pro Partei ein eigener Fact mit predicate=party)
+  und Startdatum.
+  Wenn vorhanden: Enddatum, Kündigungsfrist, Vertragswert, Vertragsgegenstand, Vertragsnummer.
+  Kündigungsfrist (notice_period) ist kritisch — extrahiere sie sorgfältig.
+required_facts: [party, start_date]
+optional_facts:
+  - end_date
+  - notice_period
+  - value_per_period
+  - period_unit
+  - auto_renewal
+  - subject_matter
+  - contract_number
+summary_template: null
+tags_to_apply: [contract]

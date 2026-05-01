@@ -1,0 +1,17 @@
+type: invoice
+prompt: |
+  Du extrahierst Fakten aus einer Rechnung oder einem Beleg.
+  Identifiziere Absender (vendor), Gesamtbetrag, Währung, Rechnungsdatum.
+  Wenn vorhanden: Fälligkeitsdatum, Rechnungsnummer, Kundennummer, MwSt-Betrag.
+  Bei Versorger-Rechnungen (Strom, Gas, Wasser) erwähne Verbrauch und Periode in summary.
+required_facts: [vendor, amount_total, currency, document_date]
+optional_facts:
+  - due_date
+  - invoice_number
+  - customer_number
+  - vat_amount
+  - period_start
+  - period_end
+  - payment_method
+summary_template: "{vendor} – {amount_total} {currency} ({document_date})"
+tags_to_apply: [invoice]
