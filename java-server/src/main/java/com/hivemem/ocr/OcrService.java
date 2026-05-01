@@ -86,8 +86,13 @@ public class OcrService {
             // Push the OCR'd text into the cell. reviseCell will recompute the embedding
             // (encodeForCell), and since the new content is long with no summary, the
             // SummarizerService picks it up automatically via needs_summary.
-            writeService.reviseCell(SYSTEM_PRINCIPAL, cellId, out.toString().trim(), null);
+            var reviseResult = writeService.reviseCell(SYSTEM_PRINCIPAL, cellId, out.toString().trim(), null);
+            // Remove tag from the original cell AND from the new revision (which inherits tags).
             repo.removeOcrPendingTag(cellId);
+            Object newIdObj = reviseResult.get("new_id");
+            if (newIdObj != null) {
+                repo.removeOcrPendingTag(UUID.fromString(newIdObj.toString()));
+            }
         } catch (Exception e) {
             log.error("OCR failed for cell {}: {}", cellId, e.getMessage(), e);
             repo.tagFailed(cellId);
