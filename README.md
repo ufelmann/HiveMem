@@ -1,7 +1,77 @@
 # HiveMem
+
 <img width="1637" height="811" alt="image" src="https://github.com/user-attachments/assets/b9ceda91-0678-4d9b-bae8-2b5ba69d53d4" />
 
-Personal knowledge system with semantic search, temporal knowledge graph, and progressive summarization. MCP server backed by PostgreSQL (pgvector) with external embeddings. 31 tools, append-only versioning, role-based token auth, agent fleet with approval workflow.
+> **Your second brain — and it stays yours. Forever. Local.**
+>
+> A sovereign personal knowledge system. The conversations, decisions, documents, and
+> half-formed thoughts you produce across Claude, ChatGPT, Gemini, Copilot — and
+> the files you accumulate in real life — all come home to one place that
+> outlives any vendor and obeys only you.
+
+---
+
+## Why HiveMem exists
+
+When you think hard today, you often think with an LLM in the loop. School,
+work, authorities, court cases, taxes, family, health, relationships — these
+conversations contain your most private thinking. More intimate than any diary.
+
+And then they evaporate:
+
+- Your subscription lapses or you switch providers → **history gone**
+- The provider retires a model or rewrites their ToS → **answers no longer reproducible**
+- An account ban, a provider going under, a country blocking the service → **everything lost**
+- The data sits on a vendor's servers, fed into training, served on subpoena, exposed in the next breach
+
+HiveMem is built around the opposite stance:
+
+1. **Sovereignty** — Your data lives in your instance. Postgres + SeaweedFS,
+   on hardware you control. No vendor sees the contents unless you explicitly
+   route a single LLM call through them.
+2. **Persistence** — Everything is append-only with `valid_from`/`valid_until`.
+   No subscription change can revoke access. No retention policy you didn't
+   author can delete what's yours.
+3. **Portability** — A HiveMem instance packs into one encrypted archive
+   (Postgres dump + binary store + config) and restores anywhere.
+   Vendor lock-in: zero.
+4. **Aggregation** — What you write in Claude.ai, ChatGPT, Gemini, Claude
+   Code, Copilot lands in HiveMem too. Those tools become front-ends;
+   HiveMem holds the truth.
+5. **Privacy by realm** — Strict separation per life area
+   (`legal`, `medical`, `private`, `work`). Per-realm routing rules: anything
+   touching authorities or health stays on local models, never reaches a
+   cloud provider.
+
+## Knowledge doesn't rot here — there's a Queen, and you control her
+
+A long-running periodic agent — the **Queen** — wakes on a schedule, surveys
+your knowledge, and dispatches specialized worker agents (**Bees**) to keep
+the garden tended. She watches for incomplete extractions, isolated cells
+without connections, stale facts that haven't been reconfirmed in months,
+duplicate candidates, recurring entities that deserve their own cell, and
+realms whose blueprint has fallen behind activity.
+
+She works under your terms:
+
+- **You control her.** Pause, dry-run, or kill-switch in config.
+  Anything risky she *proposes*, never executes silently.
+- **You teach her.** A conversation interface in the web UI lets you say
+  in natural language what matters: *"For images I care about whiteboard
+  contents"*, *"For utility bills I want consumption versus prior period"*,
+  *"In legal realm extract minimum, prioritize privacy."*
+  These become persistent preferences folded into every Bee prompt.
+- **You watch her.** Every run, every Bee task, every model used, every
+  decision to downgrade a tier because subscription quota was running low —
+  all logged in an `agent_tasks` audit table.
+- **She respects your money.** Smart model-tier routing — Opus for her own
+  reasoning, Haiku-class for tunnel suggestions, local Tesseract / Ollama
+  for OCR and bulk classification when budget is tight.
+
+→ **[Read the full vision](documentation/vision.md)** — sovereignty argument,
+the Queen architecture, scientific foundations.
+
+---
 
 [![CI](https://github.com/ufelmann/HiveMem/actions/workflows/ci.yml/badge.svg)](https://github.com/ufelmann/HiveMem/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/ufelmann/HiveMem/graph/badge.svg)](https://codecov.io/gh/ufelmann/HiveMem)
@@ -32,14 +102,15 @@ Personal knowledge system with semantic search, temporal knowledge graph, and pr
 
 | | |
 |---|---|
+| [Vision](documentation/vision.md) | **Why HiveMem exists, the Queen, scientific foundations** |
 | [Getting Started](documentation/getting-started.md) | Prerequisites, embedding service, token creation, connect to Claude |
 | [The Structure](documentation/structure.md) | Realms, signals, topics, cells, tunnels — the knowledge hierarchy |
 | [Architecture](documentation/architecture.md) | System diagram, data model, security matrix |
 | [Tools](documentation/tools.md) | All 31 MCP tools, search signals, progressive summarization |
 | [Authentication](documentation/auth.md) | Roles, token management, security details |
+| [OAuth + Custom Connector](documentation/oauth.md) | Add HiveMem as a Claude.ai/ChatGPT Custom Connector |
 | [Hook Integration](documentation/hook/) | Auto-inject context into Claude Code sessions |
 | [Operations](documentation/operations.md) | Backups, deployment, migrations, debugging |
-| [Vision](documentation/vision.md) | Scientific foundations, Zettelkasten, PARA |
 
 ## License
 
