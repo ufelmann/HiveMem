@@ -33,11 +33,18 @@ class PostgresDumpRestoreIT {
 
     @Test
     void dumpAndRestoreRoundTrip() throws Exception {
+        // PostgresDumper uses --data-only; schema must exist on both sides (Flyway is
+        // responsible in production). Mirror that here by creating the table on each.
         try (Connection c = DriverManager.getConnection(
                 SOURCE.getJdbcUrl(), SOURCE.getUsername(), SOURCE.getPassword());
              Statement st = c.createStatement()) {
             st.execute("CREATE TABLE t (id INT PRIMARY KEY, name TEXT)");
             st.execute("INSERT INTO t VALUES (1,'foo'),(2,'bar')");
+        }
+        try (Connection c = DriverManager.getConnection(
+                TARGET.getJdbcUrl(), TARGET.getUsername(), TARGET.getPassword());
+             Statement st = c.createStatement()) {
+            st.execute("CREATE TABLE t (id INT PRIMARY KEY, name TEXT)");
         }
 
         ByteArrayOutputStream dump = new ByteArrayOutputStream();
