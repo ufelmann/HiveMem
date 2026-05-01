@@ -82,7 +82,7 @@ class SummarizerServiceIT {
                 {
                   "id":"msg_x","type":"message","model":"haiku",
                   "usage":{"input_tokens":2000,"output_tokens":50},
-                  "content":[{"type":"text","text":"{\\"summary\\":\\"Mocked summary about a long cell.\\",\\"key_points\\":[\\"a\\"],\\"insight\\":\\"i\\",\\"tags\\":[\\"x\\"]}"}]
+                  "content":[{"type":"text","text":"{\\"summary\\":\\"Mocked summary about a long cell.\\",\\"key_points\\":[\\"a\\"],\\"insight\\":\\"i\\",\\"tags\\":[\\"x\\"],\\"document_type\\":\\"other\\",\\"facts\\":[]}"}]
                 }
                 """;
 
@@ -128,7 +128,11 @@ class SummarizerServiceIT {
         // --- Execute the same sequence as SummarizerService.summarizeOne ---
         var snap = repo.findCellSnapshot(id).orElseThrow(
                 () -> new AssertionError("Cell not found — check status/valid_until conditions"));
-        var result = anthropic.summarize(snap.content());
+        com.hivemem.extraction.ExtractionProfile profile =
+                new com.hivemem.extraction.ExtractionProfile(
+                        "other", "p", java.util.List.of("topic"),
+                        java.util.List.of(), null, java.util.List.of());
+        var result = anthropic.summarize(snap.content(), profile);
         budget.recordCall(result.inputTokens(), result.outputTokens());
         var reviseResult = writeService.reviseCell(
                 new AuthPrincipal("system-summarizer", AuthRole.ADMIN),
