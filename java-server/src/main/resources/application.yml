@@ -61,6 +61,16 @@ hivemem:
     call-timeout-seconds: ${HIVEMEM_SUMMARIZE_TIMEOUT:30}
     max-input-chars: ${HIVEMEM_SUMMARIZE_MAX_INPUT:8000}
     summary-threshold-chars: ${HIVEMEM_SUMMARIZE_THRESHOLD:500}
+  ocr:
+    enabled: ${HIVEMEM_OCR_ENABLED:false}
+    tesseract-path: ${HIVEMEM_TESSERACT_PATH:tesseract}
+    languages: ${HIVEMEM_OCR_LANGUAGES:deu+eng}
+    scan-detection-threshold: ${HIVEMEM_OCR_SCAN_THRESHOLD:50}
+    render-dpi: ${HIVEMEM_OCR_DPI:300}
+    call-timeout-seconds: ${HIVEMEM_OCR_TIMEOUT:60}
+    backfill-interval: ${HIVEMEM_OCR_BACKFILL_INTERVAL:PT1H}
+    backfill-batch-size: ${HIVEMEM_OCR_BATCH:5}
+    max-pages: ${HIVEMEM_OCR_MAX_PAGES:50}
 
 server:
   port: ${SERVER_PORT:8421}

@@ -121,14 +121,21 @@ public class AttachmentService {
                     "pending", uploadedBy, null);
 
             UUID cellId = UUID.fromString((String) cellRow.get("id"));
+            UUID attachmentId = UUID.fromString((String) attachmentRow.get("id"));
 
-            if (NeedsSummaryDecider.needsSummary(cellContent, null)) {
+            if (parsed.scanLikely()) {
+                // Scan PDF: tag for OCR; OCR will revise content and trigger summarizer.
+                String key = (String) attachmentRow.get("s3_key_original");
+                writeRepo.tagOcrPending(cellId);
+                eventPublisher.publishEvent(
+                        new com.hivemem.ocr.OcrRequestedEvent(cellId, attachmentId, key));
+            } else if (NeedsSummaryDecider.needsSummary(cellContent, null)) {
                 writeRepo.tagNeedsSummary(cellId);
                 eventPublisher.publishEvent(new CellNeedsSummaryEvent(cellId));
             }
 
             // 7. Link cell ↔ attachment
-            repo.linkExtractionCell(UUID.fromString((String) attachmentRow.get("id")), cellId);
+            repo.linkExtractionCell(attachmentId, cellId);
 
             // 8. Tunnel to existing cell if provided
             if (optionalLinkCellId != null) {

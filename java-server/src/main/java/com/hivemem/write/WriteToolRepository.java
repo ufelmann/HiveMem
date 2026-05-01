@@ -93,6 +93,13 @@ public class WriteToolRepository {
                 + "WHERE id = ?", id);
     }
 
+    public void tagOcrPending(UUID id) {
+        dslContext.execute(
+                "UPDATE cells SET tags = "
+                + "  CASE WHEN 'ocr_pending' = ANY(tags) THEN tags ELSE array_append(tags, 'ocr_pending') END "
+                + "WHERE id = ?", id);
+    }
+
     public int upsertIdentity(String key, String content, int tokenCount) {
         return dslContext.execute("""
                 INSERT INTO identity (key, content, token_count, updated_at)

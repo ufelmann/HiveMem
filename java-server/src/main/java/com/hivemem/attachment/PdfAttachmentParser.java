@@ -1,9 +1,12 @@
 package com.hivemem.attachment;
 
+import com.hivemem.ocr.OcrProperties;
+import com.hivemem.ocr.ScanDetector;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import javax.imageio.ImageIO;
@@ -17,6 +20,20 @@ public class PdfAttachmentParser implements AttachmentParser {
 
     private static final int THUMBNAIL_MAX_WIDTH = 500;
     private static final float RENDER_DPI = 150f;
+    private static final int DEFAULT_SCAN_THRESHOLD = 50;
+
+    private final OcrProperties ocrProperties;
+    private final ScanDetector scanDetector = new ScanDetector();
+
+    @Autowired
+    public PdfAttachmentParser(OcrProperties ocrProperties) {
+        this.ocrProperties = ocrProperties;
+    }
+
+    /** Test/no-config fallback. */
+    public PdfAttachmentParser() {
+        this.ocrProperties = null;
+    }
 
     @Override
     public boolean supports(String mimeType) {
@@ -27,8 +44,14 @@ public class PdfAttachmentParser implements AttachmentParser {
     public ParseResult parse(InputStream content) throws Exception {
         try (PDDocument doc = Loader.loadPDF(content.readAllBytes())) {
             String text = new PDFTextStripper().getText(doc);
+            int pageCount = doc.getNumberOfPages();
+            int threshold = (ocrProperties != null)
+                    ? ocrProperties.getScanDetectionThreshold()
+                    : DEFAULT_SCAN_THRESHOLD;
+            boolean scanLikely = scanDetector.isScan(text, pageCount, threshold);
             byte[] thumbnail = renderFirstPageThumbnail(doc);
-            return ParseResult.withThumbnail(text.isBlank() ? null : text.strip(), thumbnail);
+            return ParseResult.withThumbnailAndScan(
+                    text.isBlank() ? null : text.strip(), thumbnail, scanLikely);
         }
     }
 
