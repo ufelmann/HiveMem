@@ -39,6 +39,18 @@ hivemem:
     s3-bucket: ${SEAWEEDFS_S3_BUCKET:hivemem-attachments}
     s3-access-key: ${SEAWEEDFS_S3_ACCESS_KEY:hivemem}
     s3-secret-key: ${SEAWEEDFS_S3_SECRET_KEY:hivemem_secret}
+    kroki-url: ${HIVEMEM_KROKI_URL:}
+    kroki-timeout-seconds: ${HIVEMEM_KROKI_TIMEOUT_SECONDS:10}
+    kroki-backfill-interval: ${HIVEMEM_KROKI_BACKFILL_INTERVAL:PT1H}
+    anthropic-api-key: ${ANTHROPIC_API_KEY:}
+    vision-model: ${HIVEMEM_VISION_MODEL:claude-haiku-4-5-20251001}
+    vision-timeout-seconds: ${HIVEMEM_VISION_TIMEOUT_SECONDS:30}
+  backup:
+    pg-dump-path: ${HIVEMEM_PG_DUMP_PATH:pg_dump}
+    psql-path: ${HIVEMEM_PSQL_PATH:psql}
+    temp-dir: ${HIVEMEM_BACKUP_TEMP_DIR:${java.io.tmpdir}/hivemem-backup}
+    export-dir: ${HIVEMEM_BACKUP_EXPORT_DIR:/var/lib/hivemem/exports}
+    export-retention-count: ${HIVEMEM_BACKUP_EXPORT_RETENTION:5}
 
 server:
   port: ${SERVER_PORT:8421}
