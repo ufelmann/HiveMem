@@ -23,6 +23,12 @@ jobs:
       - name: Verify Docker (required for Testcontainers)
         run: docker version
 
+      - name: Install tesseract for OCR integration tests
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng
+          tesseract --version
+
       - name: Run tests with coverage
         working-directory: java-server
         run: mvn -B -ntp test
