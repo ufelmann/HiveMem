@@ -28,13 +28,12 @@ public class AttachmentService {
     private final WriteToolRepository writeRepo;
     private final EmbeddingClient embeddingClient;
     private final DSLContext dsl;
-    private final NeedsSummaryDecider needsSummaryDecider;
     private final ApplicationEventPublisher eventPublisher;
 
     public AttachmentService(AttachmentProperties props, SeaweedFsClient seaweedFs,
                              ParserRegistry parsers, AttachmentRepository repo,
                              WriteToolRepository writeRepo, EmbeddingClient embeddingClient,
-                             DSLContext dsl, NeedsSummaryDecider needsSummaryDecider,
+                             DSLContext dsl,
                              ApplicationEventPublisher eventPublisher) {
         this.props = props;
         this.seaweedFs = seaweedFs;
@@ -43,7 +42,6 @@ public class AttachmentService {
         this.writeRepo = writeRepo;
         this.embeddingClient = embeddingClient;
         this.dsl = dsl;
-        this.needsSummaryDecider = needsSummaryDecider;
         this.eventPublisher = eventPublisher;
     }
 
@@ -124,7 +122,7 @@ public class AttachmentService {
 
             UUID cellId = UUID.fromString((String) cellRow.get("id"));
 
-            if (needsSummaryDecider.needsSummary(cellContent, null)) {
+            if (NeedsSummaryDecider.needsSummary(cellContent, null)) {
                 writeRepo.tagNeedsSummary(cellId);
                 eventPublisher.publishEvent(new CellNeedsSummaryEvent(cellId));
             }
