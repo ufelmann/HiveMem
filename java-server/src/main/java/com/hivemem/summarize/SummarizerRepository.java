@@ -50,6 +50,12 @@ public class SummarizerRepository {
                 + "WHERE id = ?", id);
     }
 
+    /** Remove the needs_summary tag once a summary has been written. */
+    public void removeNeedsSummaryTag(UUID id) {
+        dsl.execute(
+                "UPDATE cells SET tags = array_remove(tags, 'needs_summary') WHERE id = ?", id);
+    }
+
     /** Tag a cell as throttled (rate-limited) to defer it for the next backfill. */
     public void tagThrottled(UUID id) {
         dsl.execute(
