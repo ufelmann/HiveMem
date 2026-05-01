@@ -42,6 +42,7 @@ hivemem:
 
 server:
   port: ${SERVER_PORT:8421}
+  forward-headers-strategy: framework   # honor X-Forwarded-* from Cloudflare Tunnel / reverse proxies
   servlet:
     multipart:
       max-file-size: 500MB
