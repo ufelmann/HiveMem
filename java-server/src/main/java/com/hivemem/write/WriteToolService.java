@@ -3,8 +3,11 @@ package com.hivemem.write;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
 import com.hivemem.embedding.EmbeddingClient;
+import com.hivemem.summarize.CellNeedsSummaryEvent;
+import com.hivemem.summarize.NeedsSummaryDecider;
 import com.hivemem.sync.OpLogWriter;
 import com.hivemem.sync.PushDispatcher;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,17 +27,20 @@ public class WriteToolService {
     private final EmbeddingClient embeddingClient;
     private final OpLogWriter opLogWriter;
     private final PushDispatcher pushDispatcher;
+    private final ApplicationEventPublisher eventPublisher;
 
     public WriteToolService(
             WriteToolRepository writeToolRepository,
             EmbeddingClient embeddingClient,
             OpLogWriter opLogWriter,
-            PushDispatcher pushDispatcher
+            PushDispatcher pushDispatcher,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.writeToolRepository = writeToolRepository;
         this.embeddingClient = embeddingClient;
         this.opLogWriter = opLogWriter;
         this.pushDispatcher = pushDispatcher;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -56,7 +62,7 @@ public class WriteToolService {
             Double dedupeThreshold
     ) {
         String status = effectiveStatus(principal.role(), requestedStatus);
-        List<Float> embedding = embeddingClient.encodeDocument(content);
+        List<Float> embedding = embeddingClient.encodeForCell(content, summary);
 
         if (dedupeThreshold != null) {
             List<Map<String, Object>> duplicates = writeToolRepository.checkDuplicateCell(
@@ -86,6 +92,14 @@ public class WriteToolService {
                 principal.name(),
                 validFrom
         );
+
+        if (NeedsSummaryDecider.needsSummary(content, summary)) {
+            UUID cellId = (UUID) inserted.get("id");
+            if (cellId != null) {
+                writeToolRepository.tagNeedsSummary(cellId);
+                eventPublisher.publishEvent(new CellNeedsSummaryEvent(cellId));
+            }
+        }
 
         Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
         opPayload.put("cell_id", inserted.get("id"));
@@ -202,8 +216,16 @@ public class WriteToolService {
     @Transactional
     public Map<String, Object> reviseCell(AuthPrincipal principal, UUID oldId, String newContent, String newSummary) {
         String status = principal.role() == AuthRole.AGENT ? STATUS_PENDING : STATUS_COMMITTED;
-        List<Float> embedding = embeddingClient.encodeDocument(newContent);
+        List<Float> embedding = embeddingClient.encodeForCell(newContent, newSummary);
         Map<String, Object> result = writeToolRepository.reviseCell(oldId, newContent, newSummary, embedding, principal.name(), status);
+
+        if (NeedsSummaryDecider.needsSummary(newContent, newSummary)) {
+            Object newIdObj = result.get("new_id");
+            if (newIdObj instanceof UUID newId) {
+                writeToolRepository.tagNeedsSummary(newId);
+                eventPublisher.publishEvent(new CellNeedsSummaryEvent(newId));
+            }
+        }
 
         Map<String, Object> opPayload = new java.util.LinkedHashMap<>();
         opPayload.put("cell_id", oldId.toString());
