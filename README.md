@@ -97,6 +97,7 @@ the Queen architecture, scientific foundations.
 - **[Append-Only Versioning + Time Machine](documentation/structure.md)** — No data is ever deleted. Query your knowledge at any point in time.
 - **[Agent Fleet + Approval Workflow](documentation/auth.md)** — Agents write pending suggestions; only admins approve. Every write is human-gated.
 - **[Auto-Inject Hook for Claude Code](documentation/hook/)** — Relevant memories injected into every session automatically, before you even ask.
+- **[Full instance portability](documentation/backup.md)** — Export the entire HiveMem instance (Postgres + attachments + identity) into one tar.gz, restore it on another host with one command. Mission promise made provable.
 
 → **[Get started](documentation/getting-started.md)**
 
@@ -111,8 +112,9 @@ the Queen architecture, scientific foundations.
 | [Tools](documentation/tools.md) | All 31 MCP tools, search signals, progressive summarization |
 | [Authentication](documentation/auth.md) | Roles, token management, security details |
 | [OAuth + Custom Connector](documentation/oauth.md) | Add HiveMem as a Claude.ai/ChatGPT Custom Connector |
+| [Backup + Portability](documentation/backup.md) | Export and restore entire instances, disaster recovery, cloning |
 | [Hook Integration](documentation/hook/) | Auto-inject context into Claude Code sessions |
-| [Operations](documentation/operations.md) | Backups, deployment, migrations, debugging |
+| [Operations](documentation/operations.md) | Deployment, migrations, debugging |
 
 ## License
 

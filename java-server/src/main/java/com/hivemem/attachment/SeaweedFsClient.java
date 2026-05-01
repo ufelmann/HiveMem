@@ -70,4 +70,9 @@ public class SeaweedFsClient {
     public void delete(String key) {
         s3.deleteObject(r -> r.bucket(props.getS3Bucket()).key(key));
     }
+
+    /** Exposed for the backup module which needs raw S3 list/get/put access. */
+    public S3Client s3Client() {
+        return s3;
+    }
 }
