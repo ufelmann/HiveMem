@@ -94,7 +94,8 @@ public class OpReplayer {
             return ReplayResult.CONFLICT;
         }
         String content = text(p, "content");
-        List<Float> embedding = embeddingClient.encodeDocument(content);
+        String summary = text(p, "summary");
+        List<Float> embedding = embeddingClient.encodeForCell(content, summary);
         Float[] embArr = embedding.toArray(Float[]::new);
         String[] tags = arrayField(p, "tags");
         String[] keyPoints = arrayField(p, "key_points");
@@ -130,7 +131,8 @@ public class OpReplayer {
             return ReplayResult.SKIPPED;
         }
         String newContent = text(p, "new_content");
-        List<Float> embedding = embeddingClient.encodeDocument(newContent);
+        String newSummary = text(p, "new_summary");
+        List<Float> embedding = embeddingClient.encodeForCell(newContent, newSummary);
         Float[] embArr = embedding.toArray(Float[]::new);
         String status = textOrDefault(p, "status", "committed");
 

@@ -51,6 +51,16 @@ hivemem:
     temp-dir: ${HIVEMEM_BACKUP_TEMP_DIR:${java.io.tmpdir}/hivemem-backup}
     export-dir: ${HIVEMEM_BACKUP_EXPORT_DIR:/var/lib/hivemem/exports}
     export-retention-count: ${HIVEMEM_BACKUP_EXPORT_RETENTION:5}
+  summarize:
+    enabled: ${HIVEMEM_SUMMARIZE_ENABLED:false}
+    anthropic-api-key: ${ANTHROPIC_API_KEY:}
+    model: ${HIVEMEM_SUMMARIZE_MODEL:claude-haiku-4-5-20251001}
+    daily-budget-usd: ${HIVEMEM_SUMMARIZE_DAILY_BUDGET:1.00}
+    backfill-interval: ${HIVEMEM_SUMMARIZE_BACKFILL_INTERVAL:PT5M}
+    backfill-batch-size: ${HIVEMEM_SUMMARIZE_BATCH:10}
+    call-timeout-seconds: ${HIVEMEM_SUMMARIZE_TIMEOUT:30}
+    max-input-chars: ${HIVEMEM_SUMMARIZE_MAX_INPUT:8000}
+    summary-threshold-chars: ${HIVEMEM_SUMMARIZE_THRESHOLD:500}
 
 server:
   port: ${SERVER_PORT:8421}

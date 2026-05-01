@@ -86,6 +86,13 @@ public class WriteToolRepository {
         return result;
     }
 
+    public void tagNeedsSummary(UUID id) {
+        dslContext.execute(
+                "UPDATE cells SET tags = "
+                + "  CASE WHEN 'needs_summary' = ANY(tags) THEN tags ELSE array_append(tags, 'needs_summary') END "
+                + "WHERE id = ?", id);
+    }
+
     public int upsertIdentity(String key, String content, int tokenCount) {
         return dslContext.execute("""
                 INSERT INTO identity (key, content, token_count, updated_at)

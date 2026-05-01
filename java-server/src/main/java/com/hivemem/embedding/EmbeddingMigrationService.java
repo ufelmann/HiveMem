@@ -114,7 +114,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
                     break;
                 }
                 for (EmbeddingStateRepository.CellRow row : batch) {
-                    List<Float> embedding = embeddingClient.encodeDocument(row.content());
+                    List<Float> embedding = embeddingClient.encodeForCell(row.content(), row.summary());
                     stateRepository.updateEmbedding(row.id(), embedding);
                 }
                 done += batch.size();

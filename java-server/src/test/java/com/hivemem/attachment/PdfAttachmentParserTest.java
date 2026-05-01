@@ -34,7 +34,7 @@ class PdfAttachmentParserTest {
     }
 
     @Test
-    void extractedTextIsCappedAt10000Chars() throws Exception {
+    void extractsLongTextWithoutTruncation() throws Exception {
         // Build a PDF with > 10 000 chars of text
         StringBuilder sb = new StringBuilder();
         while (sb.length() < 11_000) sb.append("Lorem ipsum dolor sit amet. ");
@@ -46,12 +46,8 @@ class PdfAttachmentParserTest {
         }
 
         assertThat(result.extractedText()).isNotNull();
-        assertThat(result.wasTextTruncated()).isTrue();
-        // Exact length: MAX_TEXT_CHARS chars + "… [truncated]" suffix (the suffix is 15 chars: 1 for … + 14 for " [truncated]")
-        // Just verify it's well within bounds and truncation happened
-        assertThat(result.extractedText().length())
-            .as("Text must be capped at 10 000 chars plus truncation suffix")
-            .isLessThanOrEqualTo(ParseResult.MAX_TEXT_CHARS + 20);
+        // Verify that text is not truncated - should contain full content
+        assertThat(result.extractedText().length()).isGreaterThan(10_000);
     }
 
     private byte[] buildSinglePagePdf(String text) throws Exception {
