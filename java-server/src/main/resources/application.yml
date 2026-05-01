@@ -39,6 +39,16 @@ hivemem:
     s3-bucket: ${SEAWEEDFS_S3_BUCKET:hivemem-attachments}
     s3-access-key: ${SEAWEEDFS_S3_ACCESS_KEY:hivemem}
     s3-secret-key: ${SEAWEEDFS_S3_SECRET_KEY:hivemem_secret}
+  ocr:
+    enabled: ${HIVEMEM_OCR_ENABLED:false}
+    tesseract-path: ${HIVEMEM_TESSERACT_PATH:tesseract}
+    languages: ${HIVEMEM_OCR_LANGUAGES:deu+eng}
+    scan-detection-threshold: ${HIVEMEM_OCR_SCAN_THRESHOLD:50}
+    render-dpi: ${HIVEMEM_OCR_DPI:300}
+    call-timeout-seconds: ${HIVEMEM_OCR_TIMEOUT:60}
+    backfill-interval: ${HIVEMEM_OCR_BACKFILL_INTERVAL:PT1H}
+    backfill-batch-size: ${HIVEMEM_OCR_BATCH:5}
+    max-pages: ${HIVEMEM_OCR_MAX_PAGES:50}
 
 server:
   port: ${SERVER_PORT:8421}
