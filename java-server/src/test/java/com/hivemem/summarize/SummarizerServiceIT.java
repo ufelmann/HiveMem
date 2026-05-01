@@ -114,11 +114,10 @@ class SummarizerServiceIT {
         PeerClient peerClient = mock(PeerClient.class);
         PushDispatcher pushDispatcher = new PushDispatcher(peerRepo, syncOpsRepo, peerClient, instanceConfig);
 
-        NeedsSummaryDecider decider = new NeedsSummaryDecider(500);
         org.springframework.context.ApplicationEventPublisher noopPublisher = e -> {};
 
         WriteToolService writeService = new WriteToolService(
-                writeRepo, embedding, opLogWriter, pushDispatcher, decider, noopPublisher);
+                writeRepo, embedding, opLogWriter, pushDispatcher, noopPublisher);
 
         // AnthropicSummarizer with configureRequestFactory=false — uses mock-bound RestClient
         AnthropicSummarizer anthropic = new AnthropicSummarizer(

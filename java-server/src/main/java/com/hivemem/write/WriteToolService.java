@@ -27,7 +27,6 @@ public class WriteToolService {
     private final EmbeddingClient embeddingClient;
     private final OpLogWriter opLogWriter;
     private final PushDispatcher pushDispatcher;
-    private final NeedsSummaryDecider needsSummaryDecider;
     private final ApplicationEventPublisher eventPublisher;
 
     public WriteToolService(
@@ -35,14 +34,12 @@ public class WriteToolService {
             EmbeddingClient embeddingClient,
             OpLogWriter opLogWriter,
             PushDispatcher pushDispatcher,
-            NeedsSummaryDecider needsSummaryDecider,
             ApplicationEventPublisher eventPublisher
     ) {
         this.writeToolRepository = writeToolRepository;
         this.embeddingClient = embeddingClient;
         this.opLogWriter = opLogWriter;
         this.pushDispatcher = pushDispatcher;
-        this.needsSummaryDecider = needsSummaryDecider;
         this.eventPublisher = eventPublisher;
     }
 
@@ -96,7 +93,7 @@ public class WriteToolService {
                 validFrom
         );
 
-        if (needsSummaryDecider.needsSummary(content, summary)) {
+        if (NeedsSummaryDecider.needsSummary(content, summary)) {
             UUID cellId = (UUID) inserted.get("id");
             if (cellId != null) {
                 writeToolRepository.tagNeedsSummary(cellId);
@@ -222,7 +219,7 @@ public class WriteToolService {
         List<Float> embedding = embeddingClient.encodeForCell(newContent, newSummary);
         Map<String, Object> result = writeToolRepository.reviseCell(oldId, newContent, newSummary, embedding, principal.name(), status);
 
-        if (needsSummaryDecider.needsSummary(newContent, newSummary)) {
+        if (NeedsSummaryDecider.needsSummary(newContent, newSummary)) {
             Object newIdObj = result.get("new_id");
             if (newIdObj instanceof UUID newId) {
                 writeToolRepository.tagNeedsSummary(newId);

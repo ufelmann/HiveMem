@@ -28,13 +28,12 @@ public class AttachmentService {
     private final WriteToolRepository writeRepo;
     private final EmbeddingClient embeddingClient;
     private final DSLContext dsl;
-    private final NeedsSummaryDecider needsSummaryDecider;
     private final ApplicationEventPublisher eventPublisher;
 
     public AttachmentService(AttachmentProperties props, SeaweedFsClient seaweedFs,
                              ParserRegistry parsers, AttachmentRepository repo,
                              WriteToolRepository writeRepo, EmbeddingClient embeddingClient,
-                             DSLContext dsl, NeedsSummaryDecider needsSummaryDecider,
+                             DSLContext dsl,
                              ApplicationEventPublisher eventPublisher) {
         this.props = props;
         this.seaweedFs = seaweedFs;
@@ -43,7 +42,6 @@ public class AttachmentService {
         this.writeRepo = writeRepo;
         this.embeddingClient = embeddingClient;
         this.dsl = dsl;
-        this.needsSummaryDecider = needsSummaryDecider;
         this.eventPublisher = eventPublisher;
     }
 
@@ -131,7 +129,7 @@ public class AttachmentService {
                 writeRepo.tagOcrPending(cellId);
                 eventPublisher.publishEvent(
                         new com.hivemem.ocr.OcrRequestedEvent(cellId, attachmentId, key));
-            } else if (needsSummaryDecider.needsSummary(cellContent, null)) {
+            } else if (NeedsSummaryDecider.needsSummary(cellContent, null)) {
                 writeRepo.tagNeedsSummary(cellId);
                 eventPublisher.publishEvent(new CellNeedsSummaryEvent(cellId));
             }
