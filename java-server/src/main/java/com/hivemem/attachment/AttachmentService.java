@@ -1,10 +1,13 @@
 package com.hivemem.attachment;
 
 import com.hivemem.embedding.EmbeddingClient;
+import com.hivemem.summarize.CellNeedsSummaryEvent;
+import com.hivemem.summarize.NeedsSummaryDecider;
 import com.hivemem.write.WriteToolRepository;
 import org.jooq.DSLContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,11 +28,14 @@ public class AttachmentService {
     private final WriteToolRepository writeRepo;
     private final EmbeddingClient embeddingClient;
     private final DSLContext dsl;
+    private final NeedsSummaryDecider needsSummaryDecider;
+    private final ApplicationEventPublisher eventPublisher;
 
     public AttachmentService(AttachmentProperties props, SeaweedFsClient seaweedFs,
                              ParserRegistry parsers, AttachmentRepository repo,
                              WriteToolRepository writeRepo, EmbeddingClient embeddingClient,
-                             DSLContext dsl) {
+                             DSLContext dsl, NeedsSummaryDecider needsSummaryDecider,
+                             ApplicationEventPublisher eventPublisher) {
         this.props = props;
         this.seaweedFs = seaweedFs;
         this.parsers = parsers;
@@ -37,6 +43,8 @@ public class AttachmentService {
         this.writeRepo = writeRepo;
         this.embeddingClient = embeddingClient;
         this.dsl = dsl;
+        this.needsSummaryDecider = needsSummaryDecider;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -106,18 +114,20 @@ public class AttachmentService {
             String cellContent = (parsed.extractedText() != null && !parsed.extractedText().isBlank())
                     ? parsed.extractedText()
                     : (originalFilename != null ? originalFilename : "unknown file");
-            List<String> tags = parsed.wasTextTruncated()
-                    ? List.of("chunked_pending")
-                    : List.of();
-            List<Float> embedding = embeddingClient.encodeDocument(cellContent);
+            List<Float> embedding = embeddingClient.encodeForCell(cellContent, null);
 
             Map<String, Object> cellRow = writeRepo.addCell(
                     cellContent, embedding, realm, signal, topic,
                     "attachment:" + attachmentRow.get("id"),
-                    tags, null, null, null, null, null,
+                    List.of(), null, null, null, null, null,
                     "pending", uploadedBy, null);
 
             UUID cellId = UUID.fromString((String) cellRow.get("id"));
+
+            if (needsSummaryDecider.needsSummary(cellContent, null)) {
+                writeRepo.tagNeedsSummary(cellId);
+                eventPublisher.publishEvent(new CellNeedsSummaryEvent(cellId));
+            }
 
             // 7. Link cell ↔ attachment
             repo.linkExtractionCell(UUID.fromString((String) attachmentRow.get("id")), cellId);
