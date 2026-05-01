@@ -87,3 +87,7 @@ Phase 1. Realm-scoped routing comes with the planned Provider-Abstraction featur
 (see SP3 backlog Item I). If you have realms that must never go through Claude
 (e.g., `legal`, `medical`), keep the summarizer disabled until Item I lands —
 or only enable it on a separate HiveMem instance for the realms that may use it.
+
+## Verwandte Pipeline-Schritte
+
+Siehe [Document-Type Extraction](extraction.md) — Profile-basierte Fakten-Extraktion läuft im selben Anthropic-Call wie der Summarizer.
