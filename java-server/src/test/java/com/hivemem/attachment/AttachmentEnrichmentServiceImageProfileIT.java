@@ -132,8 +132,27 @@ class AttachmentEnrichmentServiceImageProfileIT {
 
         svc.describeAndRevise(UUID.randomUUID(), cellId, "k", "image/png");
 
-        verify(dsl).execute(contains("array_remove"),
+        org.mockito.InOrder order = inOrder(dsl);
+        order.verify(dsl).execute(contains("array_remove"),
                 eq("subtype_whiteboard_photo"), eq("subtype_document_scan"),
                 eq("subtype_photo_general"), eq(cellId));
+        order.verify(dsl).execute(contains("array_append"),
+                eq("subtype_whiteboard_photo"), eq("subtype_whiteboard_photo"), eq(cellId));
+    }
+
+    @Test
+    void emptyContent_tagsVisionFailedAndRemovesPending() {
+        UUID cellId = UUID.randomUUID();
+        when(visionClient.describeImage(any(), anyString()))
+                .thenReturn(new VisionClient.ImageDescriptionResult(
+                        "photo_general", "", 50, 5));
+
+        svc.describeAndRevise(UUID.randomUUID(), cellId, "k", "image/png");
+
+        verify(budget).recordCall(50, 5);
+        verify(writeService, never()).reviseCell(any(), any(), anyString(), any());
+        verify(dsl).execute(contains("array_append"),
+                eq("vision_failed"), eq("vision_failed"), eq(cellId));
+        verify(dsl).execute(contains("array_remove"), eq("vision_pending"), eq(cellId));
     }
 }
