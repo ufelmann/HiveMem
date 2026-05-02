@@ -40,6 +40,21 @@ public class ExtractionProfileRegistry {
         return profiles.get("other");
     }
 
+    public ExtractionProfile resolveImageSubType(String subType) {
+        String key = switch (subType == null ? "" : subType) {
+            case "whiteboard_photo" -> "image-whiteboard";
+            case "document_scan"    -> "image-document-scan";
+            default                  -> "image-photo-general";
+        };
+        ExtractionProfile p = profiles.get(key);
+        if (p == null) {
+            // image-photo-general is required; fall back to "other" only if YAMLs are
+            // misconfigured at deploy time
+            return fallback();
+        }
+        return p;
+    }
+
     public boolean isKnown(String type) {
         return type != null && profiles.containsKey(type);
     }

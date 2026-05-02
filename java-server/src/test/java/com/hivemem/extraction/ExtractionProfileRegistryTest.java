@@ -28,4 +28,20 @@ class ExtractionProfileRegistryTest {
         assertTrue(registry.isKnown("other"));
         assertFalse(registry.isKnown("garbage"));
     }
+
+    @Test
+    void resolvesImageSubTypeMappings() {
+        ExtractionProfileRegistry registry = new ExtractionProfileRegistry();
+
+        assertEquals("image-whiteboard",
+                registry.resolveImageSubType("whiteboard_photo").type());
+        assertEquals("image-document-scan",
+                registry.resolveImageSubType("document_scan").type());
+        assertEquals("image-photo-general",
+                registry.resolveImageSubType("photo_general").type());
+        assertEquals("image-photo-general",
+                registry.resolveImageSubType("garbage_value").type());
+        assertEquals("image-photo-general",
+                registry.resolveImageSubType(null).type());
+    }
 }
