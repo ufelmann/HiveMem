@@ -18,6 +18,9 @@ public class OcrProperties {
     private Duration backfillInterval = Duration.ofHours(1);
     private int backfillBatchSize = 5;
     private int maxPages = 50;
+    private boolean visionFallbackEnabled = false;
+    private int visionFallbackMinCharsPerPage = 30;
+    private int visionFallbackMaxPagesPerDoc = 20;
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean v) { this.enabled = v; }
@@ -37,4 +40,10 @@ public class OcrProperties {
     public void setBackfillBatchSize(int v) { this.backfillBatchSize = v; }
     public int getMaxPages() { return maxPages; }
     public void setMaxPages(int v) { this.maxPages = v; }
+    public boolean isVisionFallbackEnabled() { return visionFallbackEnabled; }
+    public void setVisionFallbackEnabled(boolean v) { this.visionFallbackEnabled = v; }
+    public int getVisionFallbackMinCharsPerPage() { return visionFallbackMinCharsPerPage; }
+    public void setVisionFallbackMinCharsPerPage(int v) { this.visionFallbackMinCharsPerPage = v; }
+    public int getVisionFallbackMaxPagesPerDoc() { return visionFallbackMaxPagesPerDoc; }
+    public void setVisionFallbackMaxPagesPerDoc(int v) { this.visionFallbackMaxPagesPerDoc = v; }
 }
