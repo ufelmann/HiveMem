@@ -75,4 +75,43 @@ class VisionClientTest {
         assertThrows(HttpClientErrorException.TooManyRequests.class,
                 () -> c.describe(new byte[]{1, 2}, "image/png"));
     }
+
+
+    @Test
+    void describeImageReturnsParsedResultOn200() {
+        RestClient.Builder b = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(b).build();
+        String resp = """
+                {
+                  "usage":{"input_tokens":150,"output_tokens":80},
+                  "content":[{"type":"text","text":"{\\"sub_type\\":\\"whiteboard_photo\\",\\"content\\":\\"Roadmap: Q1 -> Q2\\"}"}]
+                }
+                """;
+        server.expect(requestTo("https://api.anthropic.com/v1/messages"))
+                .andRespond(withSuccess(resp, MediaType.APPLICATION_JSON));
+
+        VisionClient c = new VisionClient(propsWith("k"), b, false);
+        VisionClient.ImageDescriptionResult r =
+                c.describeImage(new byte[]{1, 2, 3, 4}, "image/png");
+
+        assertEquals("whiteboard_photo", r.subType());
+        assertEquals("Roadmap: Q1 -> Q2", r.content());
+        assertEquals(150, r.inputTokens());
+        assertEquals(80, r.outputTokens());
+    }
+
+    @Test
+    void describeImageRejectsOversizeImage() {
+        VisionClient c = new VisionClient(propsWith("k"), RestClient.builder(), false);
+        byte[] tooBig = new byte[2 * 1024 * 1024];
+        assertThrows(VisionClient.OversizeImageException.class,
+                () -> c.describeImage(tooBig, "image/png"));
+    }
+
+    @Test
+    void describeImageRejectsUnsupportedMime() {
+        VisionClient c = new VisionClient(propsWith("k"), RestClient.builder(), false);
+        assertThrows(IllegalArgumentException.class,
+                () -> c.describeImage(new byte[]{1, 2}, "image/tiff"));
+    }
 }

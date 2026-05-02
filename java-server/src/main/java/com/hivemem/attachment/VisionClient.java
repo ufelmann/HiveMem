@@ -18,6 +18,9 @@ public class VisionClient {
 
     public record VisionResult(String description, int inputTokens, int outputTokens) {}
 
+    public record ImageDescriptionResult(
+            String subType, String content, int inputTokens, int outputTokens) {}
+
     public static class OversizeImageException extends RuntimeException {
         public OversizeImageException(String msg) { super(msg); }
     }
@@ -36,6 +39,29 @@ public class VisionClient {
                     + "Lese-Reihenfolge. Übernimm Tabellen als Markdown-Tabellen. Lass keine "
                     + "Information weg. Antworte NUR mit dem transkribierten Text, ohne "
                     + "Vorwort, ohne Kommentar, ohne Markdown-Code-Fences.";
+
+
+    private static final String IMAGE_CLASSIFY_PROMPT =
+            "Analysiere das Bild und liefere strukturiertes Ergebnis als JSON.\n\n"
+            + "1) Identifiziere den Bildtyp (sub_type), genau einer von:\n"
+            + "   - \"whiteboard_photo\": Foto eines Whiteboards/Notiz mit Text, "
+            + "Pfeilen, Skizzen.\n"
+            + "   - \"document_scan\": Foto/Scan eines Dokuments (Brief, Rechnung, "
+            + "Vertrag) mit erkennbarem Volltext in Lese-Reihenfolge.\n"
+            + "   - \"photo_general\": alles andere (Foto, Screenshot, Grafik, "
+            + "Person, Objekt).\n\n"
+            + "2) Liefere \"content\" abhängig vom sub_type:\n"
+            + "   - whiteboard_photo: extrahiere ALLEN sichtbaren Text und "
+            + "beschreibe Struktur (Hierarchie, Pfeile, Verbindungen). "
+            + "Markdown-Liste erlaubt.\n"
+            + "   - document_scan: transkribiere den vollständigen sichtbaren Text "
+            + "wörtlich in Lese-Reihenfolge. Tabellen als Markdown-Tabellen. "
+            + "KEIN Vorwort.\n"
+            + "   - photo_general: prägnante Beschreibung (max 200 Wörter): was zu "
+            + "sehen ist, erkennbarer Text, Kontext.\n\n"
+            + "Antworte AUSSCHLIESSLICH mit folgendem JSON, keine Code-Fences, "
+            + "kein Vorwort:\n"
+            + "{\"sub_type\":\"<value>\",\"content\":\"<value>\"}";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -78,6 +104,21 @@ public class VisionClient {
      */
     public VisionResult transcribe(byte[] imageBytes, String mimeType) {
         return call(imageBytes, mimeType, TRANSCRIBE_PROMPT, 4000);
+    }
+
+
+    /**
+     * Image-classification call: returns sub_type + sub-type-appropriate content.
+     * Uses the same call() pipeline as describe()/transcribe(), then parses the
+     * Haiku JSON response via {@link AnthropicVisionResponseParser}.
+     */
+    public ImageDescriptionResult describeImage(byte[] imageBytes, String mimeType) {
+        VisionResult raw = call(imageBytes, mimeType, IMAGE_CLASSIFY_PROMPT, 4000);
+        AnthropicVisionResponseParser.Parsed parsed =
+                AnthropicVisionResponseParser.parse(raw.description());
+        return new ImageDescriptionResult(
+                parsed.subType(), parsed.content(),
+                raw.inputTokens(), raw.outputTokens());
     }
 
     private VisionResult call(byte[] imageBytes, String mimeType, String prompt, int maxTokens) {
