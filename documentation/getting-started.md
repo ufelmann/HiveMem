@@ -151,7 +151,7 @@ claude mcp add --scope user hivemem --transport http http://localhost:8421/mcp \
   --header "Authorization: Bearer YOUR_TOKEN_HERE"
 ```
 
-Restart Claude Code. The 30 HiveMem tools are now available in every session.
+Restart Claude Code. The 34 HiveMem tools are now available in every session.
 
 **Manual config** (`~/.claude.json` for user-level, or `.mcp.json` for project-level):
 
@@ -189,7 +189,7 @@ Add to `claude_desktop_config.json`:
 
 ## Teach Your Agent to Use HiveMem
 
-The MCP server ships instructions that tell the agent *how* to use the 30 tools. But the agent won't reliably *remember to archive* unless you tell it to in your own CLAUDE.md.
+The MCP server ships instructions that tell the agent *how* to use the 34 tools. But the agent won't reliably *remember to archive* unless you tell it to in your own CLAUDE.md.
 
 Add this to your **user-level** CLAUDE.md (`~/.claude/CLAUDE.md`) so it applies to every project:
 

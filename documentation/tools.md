@@ -1,6 +1,6 @@
 # Tools
 
-HiveMem exposes **34 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, attachments, and admin.
+HiveMem exposes **34 MCP tools** across search, knowledge graph, progressive summarization, agent fleet, references, attachments, and admin. Large file uploads can also use the REST endpoint (`POST /api/attachments`) — see [Attachments](#attachments).
 
 ## Feature Overview
 
@@ -19,7 +19,7 @@ HiveMem exposes **34 MCP tools** across search, knowledge graph, progressive sum
 
 ## Tool List
 
-**Read (15):**
+**Read (17):**
 
 1. `status`: System overview and counts.
 2. `search`: Semantic similarity + keyword search; returns metadata by default and supports `include` for optional fields.
@@ -36,34 +36,42 @@ HiveMem exposes **34 MCP tools** across search, knowledge graph, progressive sum
 13. `reading_list`: Manage unread/in-progress sources.
 14. `list_agents`: View active agent fleet.
 15. `diary_read`: Read agent diary entries.
+16. `list_attachments`: List all file attachments linked to a cell (metadata only, no file content).
+17. `get_attachment_info`: Get metadata for a single attachment by ID. Return fields include `cell_id` (UUID of the extraction cell), `content_uri` (`hivemem://attachments/{id}/content`), and `thumbnail_uri` (`hivemem://attachments/{id}/thumbnail` or null). Download via `GET /api/attachments/{id}/content`.
 
-**Write (17):**
+**Write (15):**
 
-16. `add_cell`: Store a cell with content, summary, key points, and insight; optional `dedupe_threshold` runs an embedding-based dedupe gate in one call.
-17. `add_tunnel`: Link two cells together.
-18. `kg_add`: Fact triple; optional `on_conflict` (`insert`|`return`|`reject`) gates against active conflicts.
-19. `kg_invalidate`: Soft-delete/expire a fact.
-20. `update_identity`: Update session context facts.
-21. `add_reference`: Store source documents/URLs.
-22. `link_reference`: Cite source for a cell.
-23. `remove_tunnel`: Expire a cell link.
-24. `revise_cell`: Create a new version of a cell.
-25. `revise_fact`: Create a new version of a fact.
-26. `register_agent`: Add an agent to the fleet.
-27. `diary_write`: Agent-private reflection tool.
-28. `update_blueprint`: Update realm narrative.
-29. `reclassify_cell`: Move a cell to a different realm/signal/topic in-place without creating a new revision. Leaves content, embeddings, tunnels, facts, and references untouched. Use for taxonomy migrations.
-
-**Attachments (3):**
-
-30. `upload_attachment`: Upload a file attachment (Base64-encoded). Required params: `realm` (target realm), `data` (Base64 payload), `filename`. Optional: `signal`, `topic`, `cell_id` (existing cell — creates a `related_to` tunnel). Always creates a new `pending` Cell whose content is the extracted text (or the filename if no text could be extracted); the Classifier agent enriches the cell asynchronously. Stores original in SeaweedFS, generates JPEG thumbnail at ingest. Returns `{ attachment_id, cell_id, mime_type, size_bytes, has_thumbnail }`. For large files, prefer `POST /api/attachments` (multipart).
-31. `list_attachments`: List all file attachments linked to a cell (metadata only, no file content).
-32. `get_attachment_info`: Get metadata for a single attachment by ID. Return fields include `cell_id` (UUID of the extraction cell), `content_uri` (`hivemem://attachments/{id}/content`), and `thumbnail_uri` (`hivemem://attachments/{id}/thumbnail` or null). Download via `GET /api/attachments/{id}/content`.
+18. `add_cell`: Store a cell with content, summary, key points, and insight; optional `dedupe_threshold` runs an embedding-based dedupe gate in one call.
+19. `add_tunnel`: Link two cells together.
+20. `kg_add`: Fact triple; optional `on_conflict` (`insert`|`return`|`reject`) gates against active conflicts.
+21. `kg_invalidate`: Soft-delete/expire a fact.
+22. `update_identity`: Update session context facts.
+23. `add_reference`: Store source documents/URLs.
+24. `link_reference`: Cite source for a cell.
+25. `remove_tunnel`: Expire a cell link.
+26. `revise_cell`: Create a new version of a cell.
+27. `revise_fact`: Create a new version of a fact.
+28. `register_agent`: Add an agent to the fleet.
+29. `diary_write`: Agent-private reflection tool.
+30. `update_blueprint`: Update realm narrative.
+31. `reclassify_cell`: Move a cell to a different realm/signal/topic in-place without creating a new revision. Leaves content, embeddings, tunnels, facts, and references untouched. Use for taxonomy migrations.
+32. `upload_attachment`: Upload a file attachment (Base64-encoded). Required params: `realm` (target realm), `data` (Base64 payload), `filename`. Optional: `signal`, `topic`, `cell_id` (existing cell — creates a `related_to` tunnel). Always creates a new `pending` Cell whose content is the extracted text (or the filename if no text could be extracted); the Classifier agent enriches the cell asynchronously. Stores original in SeaweedFS, generates JPEG thumbnail at ingest. Returns `{ attachment_id, cell_id, mime_type, size_bytes, has_thumbnail }`. For large files (>~10 MB) prefer `POST /api/attachments` (multipart) — see [Attachments](#attachments).
 
 **Admin (2):**
 
 33. `approve_pending`: Admin tool to batch approve or reject agent writes.
 34. `health`: Monitor DB and service state.
+
+## Attachments
+
+In addition to the MCP tools above (`upload_attachment`, `list_attachments`, `get_attachment_info`), HiveMem exposes a parallel REST API under `/api/attachments` for efficient binary transfers — the JSON-RPC `upload_attachment` requires base64 encoding, which is wasteful for large files. The REST endpoints use the same token authentication as MCP.
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/attachments` (multipart) | Upload a file. Required form fields: `realm`, `file`. Optional: `signal`, `topic`, `cell_id` (creates a `related_to` tunnel to that cell). Same downstream behaviour as `upload_attachment`. |
+| `GET /api/attachments/{id}/content` | Download the original binary. |
+| `GET /api/attachments/{id}/thumbnail` | Download the JPEG thumbnail when present. |
+| `DELETE /api/attachments/{id}` | Soft-delete an attachment. |
 
 ## Search Signals
 
