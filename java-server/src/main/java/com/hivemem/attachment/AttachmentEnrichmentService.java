@@ -2,6 +2,7 @@ package com.hivemem.attachment;
 
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
+import com.hivemem.extraction.ExtractionProfileRegistry;
 import com.hivemem.write.WriteToolService;
 import org.jooq.DSLContext;
 import org.slf4j.Logger;
@@ -29,11 +30,12 @@ public class AttachmentEnrichmentService {
     private final AttachmentProperties props;
     private final KrokiClient krokiClient;
     private final VisionClient visionClient;
-    private final VisionBudgetTracker visionBudget;
     private final SeaweedFsClient seaweedFs;
     private final AttachmentRepository attachmentRepo;
     private final WriteToolService writeService;
     private final DSLContext dsl;
+    private final ExtractionProfileRegistry profileRegistry;
+    private final VisionBudgetTracker visionBudget;
 
     public AttachmentEnrichmentService(AttachmentProperties props,
                                        KrokiClient krokiClient,
@@ -41,15 +43,18 @@ public class AttachmentEnrichmentService {
                                        SeaweedFsClient seaweedFs,
                                        AttachmentRepository attachmentRepo,
                                        WriteToolService writeService,
-                                       DSLContext dsl) {
+                                       DSLContext dsl,
+                                       ExtractionProfileRegistry profileRegistry,
+                                       VisionBudgetTracker visionBudget) {
         this.props = props;
         this.krokiClient = krokiClient;
         this.visionClient = visionClient;
-        this.visionBudget = new VisionBudgetTracker(dsl, props.getVisionDailyBudgetUsd());
         this.seaweedFs = seaweedFs;
         this.attachmentRepo = attachmentRepo;
         this.writeService = writeService;
         this.dsl = dsl;
+        this.profileRegistry = profileRegistry;
+        this.visionBudget = visionBudget;
     }
 
     // ── Event listeners (after-commit) ─────────────────────────────────────
@@ -133,11 +138,26 @@ public class AttachmentEnrichmentService {
             return;
         }
         try {
-            VisionClient.VisionResult r = visionClient.describe(imageBytes, mimeType);
+            VisionClient.ImageDescriptionResult r = visionClient.describeImage(imageBytes, mimeType);
             visionBudget.recordCall(r.inputTokens(), r.outputTokens());
-            writeService.reviseCell(SYSTEM_PRINCIPAL, cellId, r.description(), null);
+
+            if (r.content() == null || r.content().isBlank()) {
+                log.info("Vision returned empty content for cell {} — leaving vision_pending for retry",
+                        cellId);
+                return;
+            }
+
+            writeService.reviseCell(SYSTEM_PRINCIPAL, cellId, r.content(), null);
+
+            com.hivemem.extraction.ExtractionProfile profile =
+                    profileRegistry.resolveImageSubType(r.subType());
+            cleanOldSubtypeTags(cellId);
+            applyTag(cellId, "subtype_" + r.subType());
+            for (String t : profile.tagsToApply()) {
+                applyTag(cellId, t);
+            }
             removeTag(cellId, "vision_pending");
-            log.debug("Vision description stored for cell {}", cellId);
+            log.debug("Vision sub-type {} stored for cell {}", r.subType(), cellId);
         } catch (HttpClientErrorException.TooManyRequests e) {
             log.warn("Vision 429 for cell {} — will retry on backfill", cellId);
         } catch (VisionClient.OversizeImageException e) {
@@ -153,14 +173,26 @@ public class AttachmentEnrichmentService {
         }
     }
 
+    private void applyTag(UUID cellId, String tag) {
+        dsl.execute(
+                "UPDATE cells SET tags = "
+                        + "CASE WHEN ? = ANY(tags) THEN tags ELSE array_append(tags, ?) END "
+                        + "WHERE id = ?", tag, tag, cellId);
+    }
+
+    private void cleanOldSubtypeTags(UUID cellId) {
+        dsl.execute(
+                "UPDATE cells SET tags = array_remove(array_remove(array_remove(tags, ?), ?), ?) "
+                        + "WHERE id = ?",
+                "subtype_whiteboard_photo", "subtype_document_scan",
+                "subtype_photo_general", cellId);
+    }
+
     private void removeTag(UUID cellId, String tag) {
         dsl.execute("UPDATE cells SET tags = array_remove(tags, ?) WHERE id = ?", tag, cellId);
     }
 
     private void tagFailed(UUID cellId, String tag) {
-        dsl.execute(
-                "UPDATE cells SET tags = "
-                        + "CASE WHEN ? = ANY(tags) THEN tags ELSE array_append(tags, ?) END "
-                        + "WHERE id = ?", tag, tag, cellId);
+        applyTag(cellId, tag);
     }
 }
