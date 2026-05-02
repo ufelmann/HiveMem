@@ -49,6 +49,9 @@ experience.
 | `hivemem.ocr.backfill-interval` | `PT1H` | Documentation only — see note below |
 | `hivemem.ocr.backfill-batch-size` | `5` | Cells per backfill run |
 | `hivemem.ocr.max-pages` | `50` | Hard cap on pages OCR'd per PDF |
+| `hivemem.ocr.vision-fallback-enabled` | `false` | Use Claude Haiku 4.5 to re-OCR pages where Tesseract output is sparse |
+| `hivemem.ocr.vision-fallback-min-chars-per-page` | `30` | Threshold below which a page is sent to Vision |
+| `hivemem.ocr.vision-fallback-max-pages-per-doc` | `20` | Hard cap on Vision-OCR'd pages per document |
 
 The actual scheduler interval is set via `HIVEMEM_OCR_BACKFILL_INTERVAL_MS`
 (milliseconds). Default is `3600000` (1 hour).
@@ -86,7 +89,8 @@ The backfill retries `ocr_failed` cells older than 1 hour automatically.
 `tesseract --list-langs` inside the container; install missing packs.
 
 **OCR returns empty text:** image quality too low (faded scan, dark photo) or
-DPI too low. Try `HIVEMEM_OCR_DPI=400`. If still empty, try Vision OCR (Phase 2).
+DPI too low. Try `HIVEMEM_OCR_DPI=400`. If still empty, enable the Vision-OCR
+fallback (see below).
 
 **`ocr_pending` stuck on many cells:** check application logs for tesseract
 errors, or whether the attachment can be downloaded from SeaweedFS.
@@ -94,10 +98,44 @@ errors, or whether the attachment can be downloaded from SeaweedFS.
 **PDF is password-protected:** PDFBox throws on load; cell gets `ocr_failed`.
 Operator must remove the password externally.
 
+## Vision-OCR fallback (Phase 2)
+
+For pages where Tesseract returns sparse text (tables, whiteboard photos,
+handwritten notes, skewed scans), `OcrService` can re-run the rasterized PNG
+through Claude Haiku 4.5 via `VisionClient.transcribe()`. The Vision result
+replaces the Tesseract output for that page only — strong Tesseract pages stay
+on the local engine.
+
+**Enabling:**
+
+    HIVEMEM_OCR_ENABLED=true
+    HIVEMEM_OCR_VISION_FALLBACK_ENABLED=true
+    ANTHROPIC_API_KEY=sk-ant-...
+
+**Decision logic, per page:**
+
+1. Tesseract runs first (always).
+2. If the page text length is below `vision-fallback-min-chars-per-page`
+   (default 30) AND the per-document Vision cap (`vision-fallback-max-pages-per-doc`,
+   default 20) is not yet reached AND the daily Vision budget
+   (`hivemem.attachment.vision-daily-budget-usd`, default $1.00) still has room,
+   the page is re-transcribed with Vision.
+3. On Vision error (oversize image, 4xx, network), the original Tesseract
+   output is kept.
+
+**Cost:** Claude Haiku 4.5 is ~$0.002–0.005 per page depending on image size.
+The shared `vision_usage` table (also used by image-description) enforces the
+daily cap — once exhausted, fallback is silently skipped until the next day.
+
+**When to enable:** keep it off for archives where Tesseract works well
+(typed-text scans). Enable for receipts, tax notices, table-heavy invoices,
+and whiteboard photos where Tesseract regularly returns near-empty pages.
+
 ## Limits and what's next
 
-Phase 1 is Tesseract-only and PDF-only. Complex layouts (tables, whiteboard photos,
-handwritten text, gekippte Scans) need Vision-OCR — which is planned as Phase 2 once
-the multi-provider routing (item I) lands. Until then, those documents will be in
-HiveMem with limited OCR quality, but they remain in SeaweedFS and you can re-process
-them by removing the `ocr_failed` tag and waiting for the next backfill.
+Phase 2 covers the Tesseract→Vision page-level fallback for PDFs (this
+document). Per-realm provider routing (e.g., `legal` realm forced to local
+Ollama, never to anthropic-api) still depends on item I (provider abstraction).
+Until then, enabling the Vision fallback routes all eligible pages to the
+configured Anthropic API key — do not enable it on instances that hold
+data which must stay local.

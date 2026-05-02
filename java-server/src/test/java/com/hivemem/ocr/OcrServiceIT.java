@@ -158,7 +158,9 @@ class OcrServiceIT {
         WriteToolService writeService = new WriteToolService(
                 writeRepo, embedding, opLogWriter, pushDispatcher, noopPublisher);
 
-        OcrService service = new OcrService(ocrProps, ocrRepo, seaweed, writeService);
+        OcrService service = new OcrService(
+                ocrProps, ocrRepo, seaweed, writeService,
+                /*visionClient*/ null, /*attachmentProps*/ null, /*dsl*/ null);
 
         // 5. Run OCR
         service.processOne(cellId, s3Key);

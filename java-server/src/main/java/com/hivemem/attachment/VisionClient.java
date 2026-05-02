@@ -30,6 +30,13 @@ public class VisionClient {
                     + "(Foto, Screenshot, Whiteboard, Diagramm), erkennbarer Text, Kontextrelevantes. "
                     + "Antworte als zusammenhängender Text, max 200 Wörter.";
 
+    private static final String TRANSCRIBE_PROMPT =
+            "Du transkribierst eine gescannte Dokumentseite. Gib den vollständigen "
+                    + "sichtbaren Text exakt so wieder, wie er auf der Seite steht, in der "
+                    + "Lese-Reihenfolge. Übernimm Tabellen als Markdown-Tabellen. Lass keine "
+                    + "Information weg. Antworte NUR mit dem transkribierten Text, ohne "
+                    + "Vorwort, ohne Kommentar, ohne Markdown-Code-Fences.";
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final AttachmentProperties props;
@@ -62,6 +69,18 @@ public class VisionClient {
      * Lets HttpClientErrorException.TooManyRequests bubble for 429 (caller backoff).
      */
     public VisionResult describe(byte[] imageBytes, String mimeType) {
+        return call(imageBytes, mimeType, DESCRIBE_PROMPT, 600);
+    }
+
+    /**
+     * OCR-style transcription: returns the verbatim text seen on the image.
+     * Used by OcrService as a fallback when Tesseract output is too sparse.
+     */
+    public VisionResult transcribe(byte[] imageBytes, String mimeType) {
+        return call(imageBytes, mimeType, TRANSCRIBE_PROMPT, 4000);
+    }
+
+    private VisionResult call(byte[] imageBytes, String mimeType, String prompt, int maxTokens) {
         if (imageBytes == null || imageBytes.length == 0) {
             throw new IllegalArgumentException("imageBytes empty");
         }
@@ -77,7 +96,7 @@ public class VisionClient {
 
         Map<String, Object> body = Map.of(
                 "model", props.getVisionModel(),
-                "max_tokens", 600,
+                "max_tokens", maxTokens,
                 "messages", List.of(Map.of(
                         "role", "user",
                         "content", List.of(
@@ -86,7 +105,7 @@ public class VisionClient {
                                                 "type", "base64",
                                                 "media_type", mimeType,
                                                 "data", base64)),
-                                Map.of("type", "text", "text", DESCRIBE_PROMPT)
+                                Map.of("type", "text", "text", prompt)
                         )))
         );
 
