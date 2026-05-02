@@ -68,8 +68,9 @@ She works under your terms:
   reasoning, Haiku-class for tunnel suggestions, local Tesseract / Ollama
   for OCR and bulk classification when budget is tight.
 
-→ **[Read the full vision](documentation/vision.md)** — sovereignty argument,
-the Queen architecture, scientific foundations.
+→ **[Scientific foundations](documentation/vision.md)** — the cognitive-science
+and PKM theory HiveMem's design is built on (Working Memory, Cognitive Load,
+Extended Mind, Forgetting Curve, Zettelkasten, PARA).
 
 ---
 
@@ -81,7 +82,7 @@ the Queen architecture, scientific foundations.
 [![Spring Boot](https://img.shields.io/badge/spring%20boot-4.0.5-6DB33F)](https://spring.io/projects/spring-boot)
 [![PostgreSQL](https://img.shields.io/badge/postgresql-17-336791)](https://postgresql.org)
 [![Tests](https://img.shields.io/badge/tests-JUnit%20%2B%20Testcontainers-brightgreen)](https://github.com/ufelmann/HiveMem/actions/workflows/ci.yml)
-[![MCP Tools](https://img.shields.io/badge/MCP%20tools-31-orange)](documentation/tools.md)
+[![MCP Tools](https://img.shields.io/badge/MCP%20tools-34-orange)](documentation/tools.md)
 [![License: Sustainable Use](https://img.shields.io/badge/license-Sustainable%20Use-blue)](https://github.com/ufelmann/HiveMem/blob/main/LICENSE)
 [![SafeSkill](https://safeskill.dev/api/badge/ufelmann-hivemem)](https://safeskill.dev/scan/ufelmann-hivemem)
 
@@ -107,11 +108,11 @@ the Queen architecture, scientific foundations.
 
 | | |
 |---|---|
-| [Vision](documentation/vision.md) | **Why HiveMem exists, the Queen, scientific foundations** |
+| [Vision](documentation/vision.md) | Cognitive-science and PKM foundations behind HiveMem's design |
 | [Getting Started](documentation/getting-started.md) | Prerequisites, embedding service, token creation, connect to Claude |
 | [The Structure](documentation/structure.md) | Realms, signals, topics, cells, tunnels — the knowledge hierarchy |
 | [Architecture](documentation/architecture.md) | System diagram, data model, security matrix |
-| [Tools](documentation/tools.md) | All 31 MCP tools, search signals, progressive summarization |
+| [Tools](documentation/tools.md) | All 34 MCP tools, the parallel REST attachment API, search signals, progressive summarization |
 | [Authentication](documentation/auth.md) | Roles, token management, security details |
 | [OAuth + Custom Connector](documentation/oauth.md) | Add HiveMem as a Claude.ai/ChatGPT Custom Connector |
 | [Backup + Portability](documentation/backup.md) | Export and restore entire instances, disaster recovery, cloning |

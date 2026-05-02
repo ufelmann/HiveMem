@@ -2,19 +2,21 @@
 
 ## Backups
 
-The `hivemem-backup` script is included in the Docker image. It is also called automatically before embedding reencoding.
+For full instance portability (Postgres + SeaweedFS attachments + manifest in one tar.gz, with `--mode=move` and `--mode=clone` restore), use the dedicated backup CLI documented in [Backup + Portability](backup.md). Quick form:
 
 ```bash
-# Manual backup (adjust container name if needed)
+java -jar app.jar --spring.profiles.active=backup \
+    backup export --out /var/lib/hivemem/exports/backup.tar.gz
+```
+
+For a quick Postgres-only safety net (no attachments, no manifest), the raw `pg_dump` route is still available — but `backup.md` is the canonical mechanism for disaster recovery and host migration:
+
+```bash
+# Postgres-only quick dump (no attachments)
 docker exec hivemem-db pg_dump -U hivemem hivemem | gzip > "hivemem-$(date +%Y%m%d).sql.gz"
 ```
 
-To automate daily backups:
-
-```bash
-# crontab -e
-45 1 * * * docker exec hivemem-db pg_dump -U hivemem hivemem | gzip > /path/to/backups/hivemem-$(date +\%Y\%m\%d).sql.gz
-```
+The Postgres-only dump alone is **not** sufficient if attachments are enabled — the `attachments` table references SeaweedFS objects by S3 key.
 
 ## Run Tests
 

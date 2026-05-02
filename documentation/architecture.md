@@ -39,9 +39,14 @@ erDiagram
         TEXT summary
         TEXT[] key_points
         TEXT insight
+        TEXT[] tags
+        TEXT document_type
+        TEXT source
         TEXT actionability
         SMALLINT importance
         TEXT status
+        TEXT created_by
+        TIMESTAMPTZ created_at
         TIMESTAMPTZ valid_from
         TIMESTAMPTZ valid_until
     }
@@ -142,8 +147,8 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 | Category | Tools | Access Role | Data Flow | HITL Required? | Description |
 |---|---|---|---|---|---|
 | **Search** | `search`, `search_kg`, `quick_facts`, `time_machine` | `reader` | Read Only | No | 6-signal semantic & keyword search. |
-| **Read** | `status`, `get_cell`, `list_realms`, `traverse`, `wake_up`, `get_blueprint`, `history` | `reader` | Read Only | No | Navigation and context retrieval. |
-| **Write** | `add_cell`, `kg_add`, `kg_invalidate`, `revise_cell`, `revise_fact`, `update_identity`, `update_blueprint` | `agent` | Propose Change | Yes (for Agents) | Append-only knowledge capture. |
+| **Read** | `status`, `get_cell`, `list`, `traverse`, `wake_up`, `get_blueprint`, `history`, `pending_approvals`, `reading_list`, `list_agents`, `diary_read`, `list_attachments`, `get_attachment_info` | `reader` | Read Only | No | Navigation and context retrieval. |
+| **Write** | `add_cell`, `kg_add`, `kg_invalidate`, `revise_cell`, `revise_fact`, `reclassify_cell`, `update_identity`, `update_blueprint`, `upload_attachment` | `agent` | Propose Change | Yes (for Agents) | Append-only knowledge capture. |
 | **Tunnels** | `add_tunnel`, `remove_tunnel` | `agent` | Link Discovery | Yes | Cell-to-cell semantic linking. |
 | **Approval** | `approve_pending` | `admin` | Commit Change | Yes | Batch approve or reject pending agent writes. |
 | **Agent** | `register_agent`, `list_agents`, `diary_write`, `diary_read` | `admin` | Fleet Management | Yes | Autonomous fleet orchestration. |
