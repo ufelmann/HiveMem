@@ -34,7 +34,9 @@ public class ToolPermissionService {
             "get_blueprint",
             "reading_list",
             "list_agents",
-            "diary_read"
+            "diary_read",
+            "list_attachments",
+            "get_attachment_info"
     );
 
     private static final Set<String> WRITE_TOOLS = tools(
@@ -51,7 +53,8 @@ public class ToolPermissionService {
             "revise_fact",
             "register_agent",
             "diary_write",
-            "update_blueprint"
+            "update_blueprint",
+            "upload_attachment"
     );
 
     private static final Set<String> ADMIN_TOOLS = tools(
