@@ -22,6 +22,27 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 
 *What HiveMem adopts:* Actionability field (actionable / reference / someday / archive). Wake-up prioritizes actionable over reference. Realms map to Areas.
 
+## Image sub-types (since 2026-05-02)
+
+Each image-format attachment (`image/jpeg`, `image/png`, `image/gif`,
+`image/webp`) is classified by Claude Haiku into one of three sub-types in the
+same Vision call that produces the cell content:
+
+| Sub-type | Cell content | Tag |
+|----------|--------------|-----|
+| `whiteboard_photo` | Extracted text + structural notes (hierarchy, arrows) | `subtype_whiteboard_photo`, `whiteboard`, `has_text` |
+| `document_scan` | Verbatim transcription in reading order, tables as Markdown | `subtype_document_scan`, `document`, `has_text` |
+| `photo_general` | Concise description (max 200 words) | `subtype_photo_general`, `photo` |
+
+Tag values are driven by `extraction-profiles/image-*.yaml`. To change which
+extra tags get applied per sub-type, edit the YAML — no code change needed.
+
+**Cost:** the sub-type classification is part of the same Vision call as the
+content generation (no extra request). `max_tokens` for image describe is 4000
+(was 600 before this change), to fit verbatim transcription of full document
+pages. Daily budget is shared with the OCR Vision fallback via
+`hivemem.attachment.vision-daily-budget-usd`.
+
 ## References
 
 - Cowan, N. (2001). *The magical number 4 in short-term memory.* Behavioral and Brain Sciences, 24(1), 87-114.
