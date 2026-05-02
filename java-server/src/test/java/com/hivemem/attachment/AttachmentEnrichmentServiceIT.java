@@ -1,6 +1,7 @@
 package com.hivemem.attachment;
 
 import com.hivemem.embedding.FixedEmbeddingClient;
+import com.hivemem.extraction.ExtractionProfileRegistry;
 import com.hivemem.sync.InstanceConfig;
 import com.hivemem.sync.OpLogWriter;
 import com.hivemem.sync.PeerClient;
@@ -106,7 +107,9 @@ class AttachmentEnrichmentServiceIT {
         AttachmentRepository repo = new AttachmentRepository(dsl);
         WriteToolService writeService = buildWriteService();
         AttachmentEnrichmentService svc = new AttachmentEnrichmentService(
-                props, kroki, vision, seaweed, repo, writeService, dsl);
+                props, kroki, vision, seaweed, repo, writeService, dsl,
+                new ExtractionProfileRegistry(),
+                new VisionBudgetTracker(dsl, props.getVisionDailyBudgetUsd()));
 
         svc.renderAndStore(attId, cellId, fileHash, "text/x-mermaid", "graph TD; A-->B");
 
@@ -165,7 +168,9 @@ class AttachmentEnrichmentServiceIT {
         AttachmentRepository repo = new AttachmentRepository(dsl);
         WriteToolService writeService = buildWriteService();
         AttachmentEnrichmentService svc = new AttachmentEnrichmentService(
-                props, kroki, vision, seaweed, repo, writeService, dsl);
+                props, kroki, vision, seaweed, repo, writeService, dsl,
+                new ExtractionProfileRegistry(),
+                new VisionBudgetTracker(dsl, props.getVisionDailyBudgetUsd()));
 
         svc.describeAndRevise(attId, cellId, fileHash + ".png", "image/png");
 
