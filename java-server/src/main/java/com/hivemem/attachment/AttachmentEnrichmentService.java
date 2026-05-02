@@ -142,8 +142,9 @@ public class AttachmentEnrichmentService {
             visionBudget.recordCall(r.inputTokens(), r.outputTokens());
 
             if (r.content() == null || r.content().isBlank()) {
-                log.info("Vision returned empty content for cell {} — leaving vision_pending for retry",
-                        cellId);
+                log.info("Vision returned empty content for cell {} — tagging vision_failed", cellId);
+                tagFailed(cellId, "vision_failed");
+                removeTag(cellId, "vision_pending");
                 return;
             }
 
