@@ -1,0 +1,8 @@
+type: image-whiteboard
+prompt: |
+  Foto eines Whiteboards oder einer Notiz: extrahiere den vollständigen
+  sichtbaren Text und beschreibe Struktur, Hierarchie, Pfeile und Verbindungen.
+required_facts: []
+optional_facts: []
+summary_template: null
+tags_to_apply: [whiteboard, has_text]
