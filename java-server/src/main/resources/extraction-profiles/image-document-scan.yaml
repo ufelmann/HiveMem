@@ -1,0 +1,9 @@
+type: image-document-scan
+prompt: |
+  Foto/Scan eines Dokuments (Brief, Rechnung, Vertrag): transkribiere den
+  vollständigen sichtbaren Text wörtlich in Lese-Reihenfolge. Tabellen als
+  Markdown-Tabellen.
+required_facts: []
+optional_facts: []
+summary_template: null
+tags_to_apply: [document, has_text]

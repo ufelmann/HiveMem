@@ -1,0 +1,8 @@
+type: image-photo-general
+prompt: |
+  Allgemeines Bild: prägnante Beschreibung was zu sehen ist, erkennbarer Text,
+  Kontext.
+required_facts: []
+optional_facts: []
+summary_template: null
+tags_to_apply: [photo]
