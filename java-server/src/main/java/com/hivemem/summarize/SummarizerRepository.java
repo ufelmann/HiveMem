@@ -60,8 +60,7 @@ public class SummarizerRepository {
     public void tagThrottled(UUID id) {
         dsl.execute(
                 "UPDATE cells SET tags = "
-                + "  CASE WHEN 'summarize_throttled' = ANY(tags) THEN tags ELSE array_append(tags, 'summarize_throttled') END, "
-                + "updated_at = now() "
+                + "  CASE WHEN 'summarize_throttled' = ANY(tags) THEN tags ELSE array_append(tags, 'summarize_throttled') END "
                 + "WHERE id = ?", id);
     }
 
