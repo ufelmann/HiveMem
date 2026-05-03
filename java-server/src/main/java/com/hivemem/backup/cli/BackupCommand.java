@@ -18,6 +18,7 @@ import java.io.FileOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.function.IntConsumer;
 
 @Component
 @Profile("backup")
@@ -25,13 +26,20 @@ public class BackupCommand implements ApplicationRunner {
 
     private final BackupService exportSvc;
     private final BackupRestoreService restoreSvc;
-    private final ConfigurableApplicationContext ctx;
+    private final IntConsumer exitFn;
 
     public BackupCommand(BackupService exportSvc, BackupRestoreService restoreSvc,
                          ConfigurableApplicationContext ctx) {
+        this(exportSvc, restoreSvc, code -> {
+            SpringApplication.exit(ctx, () -> code);
+            System.exit(code);
+        });
+    }
+
+    BackupCommand(BackupService exportSvc, BackupRestoreService restoreSvc, IntConsumer exitFn) {
         this.exportSvc = exportSvc;
         this.restoreSvc = restoreSvc;
-        this.ctx = ctx;
+        this.exitFn = exitFn;
     }
 
     @Override
@@ -111,9 +119,6 @@ public class BackupCommand implements ApplicationRunner {
     }
 
     private void exit(int code) {
-        SpringApplication.exit(ctx, () -> code);
-        // SpringApplication.exit may be async on some setups; fall through with System.exit
-        // to guarantee the JVM terminates with the right code in CLI mode.
-        System.exit(code);
+        exitFn.accept(code);
     }
 }
