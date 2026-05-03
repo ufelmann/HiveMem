@@ -271,6 +271,265 @@ class OpReplayerIntegrationTest {
     }
 
     @Test
+    void reviseCellArchivesOldAndInsertsNew() {
+        UUID oldId = insertMinimalCell();
+        UUID newId = UUID.randomUUID();
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("cell_id", oldId.toString());
+        payload.put("new_cell_id", newId.toString());
+        payload.put("new_content", "revised content");
+        payload.put("new_summary", "revised summary");
+        payload.put("status", "committed");
+
+        OpDto op = new OpDto(30L, UUID.randomUUID(), "revise_cell", payload, OffsetDateTime.now());
+        assertThat(replayer.replay(sourcePeer, op)).isEqualTo(OpReplayer.ReplayResult.REPLAYED);
+
+        var oldRow = dsl.fetchOne("SELECT valid_until FROM cells WHERE id = ?", oldId);
+        assertThat(oldRow.get("valid_until", OffsetDateTime.class)).isNotNull();
+
+        var newRow = dsl.fetchOne("SELECT content, parent_id FROM cells WHERE id = ?", newId);
+        assertThat(newRow.get("content", String.class)).isEqualTo("revised content");
+        assertThat(newRow.get("parent_id", UUID.class)).isEqualTo(oldId);
+    }
+
+    @Test
+    void reviseCellSkippedWhenNewIdMissing() {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("cell_id", UUID.randomUUID().toString());
+        OpDto op = new OpDto(31L, UUID.randomUUID(), "revise_cell", payload, OffsetDateTime.now());
+        assertThat(replayer.replay(sourcePeer, op)).isEqualTo(OpReplayer.ReplayResult.SKIPPED);
+    }
+
+    @Test
+    void reviseCellSkippedWhenNewIdAlreadyExists() {
+        UUID oldId = insertMinimalCell();
+        UUID newId = insertMinimalCell();
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("cell_id", oldId.toString());
+        payload.put("new_cell_id", newId.toString());
+        payload.put("new_content", "x");
+        payload.put("new_summary", "y");
+
+        OpDto op = new OpDto(32L, UUID.randomUUID(), "revise_cell", payload, OffsetDateTime.now());
+        assertThat(replayer.replay(sourcePeer, op)).isEqualTo(OpReplayer.ReplayResult.SKIPPED);
+    }
+
+    @Test
+    void reviseCellSkippedWhenOldNotFound() {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("cell_id", UUID.randomUUID().toString());
+        payload.put("new_cell_id", UUID.randomUUID().toString());
+        payload.put("new_content", "x");
+        payload.put("new_summary", "y");
+        OpDto op = new OpDto(33L, UUID.randomUUID(), "revise_cell", payload, OffsetDateTime.now());
+        assertThat(replayer.replay(sourcePeer, op)).isEqualTo(OpReplayer.ReplayResult.SKIPPED);
+    }
+
+    @Test
+    void kgAddInsertsFact() {
+        UUID factId = UUID.randomUUID();
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("fact_id", factId.toString());
+        payload.put("subject", "earth");
+        payload.put("predicate", "is");
+        payload.put("object", "round");
+        payload.put("confidence", 0.95);
+        payload.put("status", "committed");
+
+        OpDto op = new OpDto(40L, UUID.randomUUID(), "kg_add", payload, OffsetDateTime.now());
+        assertThat(replayer.replay(sourcePeer, op)).isEqualTo(OpReplayer.ReplayResult.REPLAYED);
+
+        var row = dsl.fetchOne("SELECT subject, predicate, \"object\" FROM facts WHERE id = ?", factId);
+        assertThat(row.get("subject", String.class)).isEqualTo("earth");
+        assertThat(row.get("predicate", String.class)).isEqualTo("is");
+        assertThat(row.get("object", String.class)).isEqualTo("round");
+
+        OpDto op2 = new OpDto(41L, UUID.randomUUID(), "kg_add", payload, OffsetDateTime.now());
+        assertThat(replayer.replay(sourcePeer, op2)).isEqualTo(OpReplayer.ReplayResult.SKIPPED);
+    }
+
+    @Test
+    void kgInvalidateClosesFact() {
+        UUID factId = insertMinimalFact();
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("fact_id", factId.toString());
+        OpDto op = new OpDto(42L, UUID.randomUUID(), "kg_invalidate", payload, OffsetDateTime.now());
+        assertThat(replayer.replay(sourcePeer, op)).isEqualTo(OpReplayer.ReplayResult.REPLAYED);
+
+        var validUntil = dsl.fetchOne("SELECT valid_until FROM facts WHERE id = ?", factId)
+                .get("valid_until", OffsetDateTime.class);
+        assertThat(validUntil).isNotNull();
+    }
+
+    @Test
+    void reviseFactArchivesOldAndInsertsNew() {
+        UUID oldId = insertMinimalFact();
+        UUID newId = UUID.randomUUID();
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("fact_id", oldId.toString());
+        payload.put("new_fact_id", newId.toString());
+        payload.put("new_object", "new-object-value");
+        payload.put("status", "committed");
+
+        OpDto op = new OpDto(43L, UUID.randomUUID(), "revise_fact", payload, OffsetDateTime.now());
+        assertThat(replayer.replay(sourcePeer, op)).isEqualTo(OpReplayer.ReplayResult.REPLAYED);
+
+        assertThat(dsl.fetchOne("SELECT valid_until FROM facts WHERE id = ?", oldId)
+                .get("valid_until", OffsetDateTime.class)).isNotNull();
+        assertThat(dsl.fetchOne("SELECT \"object\" FROM facts WHERE id = ?", newId)
+                .get("object", String.class)).isEqualTo("new-object-value");
+    }
+
+    @Test
+    void reviseFactSkippedWhenNewIdMissing() {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("fact_id", UUID.randomUUID().toString());
+        OpDto op = new OpDto(44L, UUID.randomUUID(), "revise_fact", payload, OffsetDateTime.now());
+        assertThat(replayer.replay(sourcePeer, op)).isEqualTo(OpReplayer.ReplayResult.SKIPPED);
+    }
+
+    @Test
+    void reviseFactSkippedWhenOldNotFound() {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("fact_id", UUID.randomUUID().toString());
+        payload.put("new_fact_id", UUID.randomUUID().toString());
+        payload.put("new_object", "x");
+        OpDto op = new OpDto(45L, UUID.randomUUID(), "revise_fact", payload, OffsetDateTime.now());
+        assertThat(replayer.replay(sourcePeer, op)).isEqualTo(OpReplayer.ReplayResult.SKIPPED);
+    }
+
+    @Test
+    void addTunnelInsertsAndDeduplicates() {
+        UUID fromCell = insertMinimalCell();
+        UUID toCell = insertMinimalCell();
+        UUID tunnelId = UUID.randomUUID();
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("tunnel_id", tunnelId.toString());
+        payload.put("from_cell_id", fromCell.toString());
+        payload.put("to_cell_id", toCell.toString());
+        payload.put("relation", "related_to");
+        payload.put("note", "test note");
+        payload.put("status", "committed");
+        payload.put("agent_id", "test-agent");
+
+        OpDto op = new OpDto(50L, UUID.randomUUID(), "add_tunnel", payload, OffsetDateTime.now());
+        assertThat(replayer.replay(sourcePeer, op)).isEqualTo(OpReplayer.ReplayResult.REPLAYED);
+
+        long count = dsl.fetchOne("SELECT count(*) AS c FROM tunnels WHERE id = ?", tunnelId)
+                .get("c", Long.class);
+        assertThat(count).isEqualTo(1L);
+
+        OpDto op2 = new OpDto(51L, UUID.randomUUID(), "add_tunnel", payload, OffsetDateTime.now());
+        assertThat(replayer.replay(sourcePeer, op2)).isEqualTo(OpReplayer.ReplayResult.SKIPPED);
+    }
+
+    @Test
+    void removeTunnelClosesTunnel() {
+        UUID fromCell = insertMinimalCell();
+        UUID toCell = insertMinimalCell();
+        UUID tunnelId = UUID.randomUUID();
+        dsl.execute("""
+                INSERT INTO tunnels (id, from_cell, to_cell, relation, status, created_by)
+                VALUES (?::uuid, ?::uuid, ?::uuid, 'related_to', 'committed', 'test')
+                """, tunnelId, fromCell, toCell);
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("tunnel_id", tunnelId.toString());
+        OpDto op = new OpDto(52L, UUID.randomUUID(), "remove_tunnel", payload, OffsetDateTime.now());
+        assertThat(replayer.replay(sourcePeer, op)).isEqualTo(OpReplayer.ReplayResult.REPLAYED);
+
+        var validUntil = dsl.fetchOne("SELECT valid_until FROM tunnels WHERE id = ?", tunnelId)
+                .get("valid_until", OffsetDateTime.class);
+        assertThat(validUntil).isNotNull();
+    }
+
+    @Test
+    void registerAgentUpsertsAgent() {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("name", "replayed-agent");
+        payload.put("focus", "test focus");
+        payload.put("schedule", "0 0 * * *");
+        payload.putObject("autonomy").put("default", "auto_apply");
+        payload.putObject("model_routing").put("default", "claude-opus");
+        payload.putArray("tools").add("search").add("write");
+
+        OpDto op = new OpDto(60L, UUID.randomUUID(), "register_agent", payload, OffsetDateTime.now());
+        assertThat(replayer.replay(sourcePeer, op)).isEqualTo(OpReplayer.ReplayResult.REPLAYED);
+
+        var row = dsl.fetchOne("SELECT focus, schedule FROM agents WHERE name = ?", "replayed-agent");
+        assertThat(row.get("focus", String.class)).isEqualTo("test focus");
+        assertThat(row.get("schedule", String.class)).isEqualTo("0 0 * * *");
+
+        // upsert: change focus
+        payload.put("focus", "updated focus");
+        OpDto op2 = new OpDto(61L, UUID.randomUUID(), "register_agent", payload, OffsetDateTime.now());
+        replayer.replay(sourcePeer, op2);
+        assertThat(dsl.fetchOne("SELECT focus FROM agents WHERE name = ?", "replayed-agent")
+                .get("focus", String.class)).isEqualTo("updated focus");
+    }
+
+    @Test
+    void approvePendingAlsoUpdatesFactsAndTunnels() {
+        UUID factId = insertPendingFact();
+        UUID fromCell = insertMinimalCell();
+        UUID toCell = insertMinimalCell();
+        UUID tunnelId = UUID.randomUUID();
+        dsl.execute("""
+                INSERT INTO tunnels (id, from_cell, to_cell, relation, status, created_by)
+                VALUES (?::uuid, ?::uuid, ?::uuid, 'related_to', 'pending', 'test')
+                """, tunnelId, fromCell, toCell);
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("decision", "committed");
+        payload.putArray("ids").add(factId.toString()).add(tunnelId.toString());
+        OpDto op = new OpDto(70L, UUID.randomUUID(), "approve_pending", payload, OffsetDateTime.now());
+        assertThat(replayer.replay(sourcePeer, op)).isEqualTo(OpReplayer.ReplayResult.REPLAYED);
+
+        assertThat(dsl.fetchOne("SELECT status FROM facts WHERE id = ?", factId)
+                .get("status", String.class)).isEqualTo("committed");
+        assertThat(dsl.fetchOne("SELECT status FROM tunnels WHERE id = ?", tunnelId)
+                .get("status", String.class)).isEqualTo("committed");
+    }
+
+    @Test
+    void replayAllReturnsCountsAndHandlesNullInputs() {
+        assertThat(replayer.replayAll(null, java.util.List.of()).replayed()).isEqualTo(0);
+        assertThat(replayer.replayAll(sourcePeer, null).replayed()).isEqualTo(0);
+
+        UUID cellId = UUID.randomUUID();
+        ObjectNode addPayload = objectMapper.createObjectNode();
+        addPayload.put("cell_id", cellId.toString());
+        addPayload.put("content", "batch");
+        addPayload.put("realm", "eng");
+        addPayload.put("signal", "facts");
+        addPayload.put("topic", "t");
+        addPayload.put("status", "committed");
+
+        ObjectNode unknownPayload = objectMapper.createObjectNode();
+
+        var batch = java.util.List.of(
+                new OpDto(80L, UUID.randomUUID(), "add_cell", addPayload, OffsetDateTime.now()),
+                new OpDto(81L, UUID.randomUUID(), "unknown_op", unknownPayload, OffsetDateTime.now()));
+
+        OpReplayer.BatchResult result = replayer.replayAll(sourcePeer, batch);
+        assertThat(result.replayed()).isEqualTo(1);
+        assertThat(result.skipped()).isEqualTo(1);
+    }
+
+    @Test
+    void replayReturnsSkippedWhenExecutionThrows() {
+        // Malformed UUID in cell_id triggers IllegalArgumentException, caught and downgraded to SKIPPED
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("cell_id", "not-a-uuid");
+        payload.put("content", "x");
+        OpDto op = new OpDto(90L, UUID.randomUUID(), "add_cell", payload, OffsetDateTime.now());
+        assertThat(replayer.replay(sourcePeer, op)).isEqualTo(OpReplayer.ReplayResult.SKIPPED);
+    }
+
+    @Test
     void approvePendingTransitionsStatus() {
         UUID cellId = insertPendingCell();
 
@@ -311,6 +570,24 @@ class OpReplayerIntegrationTest {
                 INSERT INTO agents (name, focus) VALUES (?, 'test focus')
                 ON CONFLICT (name) DO NOTHING
                 """, name);
+    }
+
+    private UUID insertMinimalFact() {
+        UUID factId = UUID.randomUUID();
+        dsl.execute("""
+                INSERT INTO facts (id, subject, predicate, "object", confidence, status)
+                VALUES (?::uuid, 's', 'p', 'o', 1.0, 'committed')
+                """, factId);
+        return factId;
+    }
+
+    private UUID insertPendingFact() {
+        UUID factId = UUID.randomUUID();
+        dsl.execute("""
+                INSERT INTO facts (id, subject, predicate, "object", confidence, status)
+                VALUES (?::uuid, 's', 'p', 'o', 1.0, 'pending')
+                """, factId);
+        return factId;
     }
 
     private UUID insertMinimalReference() {
