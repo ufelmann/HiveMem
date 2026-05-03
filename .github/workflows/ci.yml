@@ -41,15 +41,15 @@ jobs:
             tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng
           tesseract --version
 
-      - name: Run tests with coverage
+      - name: Run tests with coverage (unit + integration)
         working-directory: java-server
-        run: mvn -B -ntp test
+        run: mvn -B -ntp verify
 
       - name: Publish test report
         if: always()
         uses: mikepenz/action-junit-report@v6
         with:
-          report_paths: "java-server/target/surefire-reports/TEST-*.xml"
+          report_paths: "java-server/target/{surefire,failsafe}-reports/TEST-*.xml"
           check_name: Java test results
 
       - name: Upload coverage to Codecov
