@@ -43,30 +43,20 @@ HiveMem is built around the opposite stance:
    touching authorities or health stays on local models, never reaches a
    cloud provider.
 
-## Knowledge doesn't rot here — there's a Queen, and you control her
+## Knowledge doesn't rot here
 
-A long-running periodic agent — the **Queen** — wakes on a schedule, surveys
-your knowledge, and dispatches specialized worker agents (**Bees**) to keep
-the garden tended. She watches for incomplete extractions, isolated cells
-without connections, stale facts that haven't been reconfirmed in months,
-duplicate candidates, recurring entities that deserve their own cell, and
-realms whose blueprint has fallen behind activity.
+The long-term goal is a periodic agent — the **Queen** — that wakes on a
+schedule, surveys your knowledge, and dispatches specialized worker agents
+(**Bees**) to flag isolated cells, stale facts, duplicate candidates, and
+realms drifting from their blueprint. Everything risky stays a *proposal*
+that flows through the existing approval workflow; you keep the kill switch.
 
-She works under your terms:
+The schema, agent registry, and approval pipeline are in place today. The
+scheduler, the Bees themselves, the audit table, and the conversation UI
+that teaches the Queen your preferences are not yet built.
 
-- **You control her.** Pause, dry-run, or kill-switch in config.
-  Anything risky she *proposes*, never executes silently.
-- **You teach her.** A conversation interface in the web UI lets you say
-  in natural language what matters: *"For images I care about whiteboard
-  contents"*, *"For utility bills I want consumption versus prior period"*,
-  *"In legal realm extract minimum, prioritize privacy."*
-  These become persistent preferences folded into every Bee prompt.
-- **You watch her.** Every run, every Bee task, every model used, every
-  decision to downgrade a tier because subscription quota was running low —
-  all logged in an `agent_tasks` audit table.
-- **She respects your money.** Smart model-tier routing — Opus for her own
-  reasoning, Haiku-class for tunnel suggestions, local Tesseract / Ollama
-  for OCR and bulk classification when budget is tight.
+→ **[Roadmap](documentation/roadmap.md)** — what's planned, what's partial,
+and the order of work.
 
 → **[Scientific foundations](documentation/vision.md)** — the cognitive-science
 and PKM theory HiveMem's design is built on (Working Memory, Cognitive Load,
@@ -104,6 +94,29 @@ Extended Mind, Forgetting Curve, Zettelkasten, PARA).
 
 → **[Get started](documentation/getting-started.md)**
 
+## Feature Status
+
+Honest snapshot of what is shipping today versus what the surrounding prose
+describes as the long-term shape. See the [roadmap](documentation/roadmap.md)
+for details on every 🟡 / 🔴 row.
+
+| Feature | Status | Notes |
+|---|---|---|
+| [6-Signal Ranked Search](documentation/tools.md#search-signals) | ✅ Stable | semantic + keyword + recency + importance + popularity + graph proximity, all wired into one SQL ranker |
+| [Progressive Summarization](documentation/tools.md#progressive-summarization) | ✅ Stable | content / summary / key points / insight, all four populated automatically |
+| [Auto-Summarizer for long cells](documentation/summarizer.md) | ✅ Stable | summary is embedded for semantic search, cost-capped per realm |
+| [OCR for scanned PDFs](documentation/ocr.md) | ✅ Stable | Tesseract, async backfill, Vision fallback |
+| [Document-Type Extraction](documentation/extraction.md) | ✅ Stable | invoices/contracts/etc → typed facts in the knowledge graph |
+| [Kroki + Vision](documentation/kroki-vision.md) | ✅ Stable | diagram thumbnails + Claude Haiku image description, opt-in, budget-capped |
+| [Append-Only Versioning + Time Machine](documentation/structure.md) | ✅ Stable | `time_machine` queries by event time and ingestion time |
+| [Agent Approval Workflow](documentation/auth.md) | ✅ Stable | every agent write lands as `pending` until an admin approves |
+| [Auto-Inject Hook (Claude Code)](documentation/hook/) | ✅ Stable | 6-stage filter pipeline, Bearer-token auth |
+| [Full Instance Portability](documentation/backup.md) | ✅ Stable | one-command tar.gz of Postgres + attachments + identity |
+| [OAuth Custom Connector](documentation/oauth.md) | ✅ Stable | RFC 8414 / 9728 discovery, PKCE |
+| Temporal Knowledge Graph | 🟡 Partial | bi-temporal facts and multi-hop traversal ship; **automatic contradiction detection is not yet implemented** |
+| Privacy by Realm — model routing | 🟡 Partial | data segregation by realm works; **per-realm enforcement of "stays on local models" is not yet wired into the LLM call path** |
+| Queen + Bees periodic agent | 🔴 Planned | `agents` table, registration tool, and approval pipeline exist; **no scheduler, no Bees, no `agent_tasks` audit table, no conversation UI** |
+
 ## Documentation
 
 | | |
@@ -118,6 +131,7 @@ Extended Mind, Forgetting Curve, Zettelkasten, PARA).
 | [Backup + Portability](documentation/backup.md) | Export and restore entire instances, disaster recovery, cloning |
 | [Hook Integration](documentation/hook/) | Auto-inject context into Claude Code sessions |
 | [Operations](documentation/operations.md) | Deployment, migrations, debugging |
+| [Roadmap](documentation/roadmap.md) | What's planned, what's partial, order of work |
 
 ## License
 
