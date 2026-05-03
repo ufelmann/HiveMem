@@ -82,7 +82,26 @@ fleet:
 
 Each of those is intended to ship as its own PR. Until the first three
 land, the Queen narrative in the README should be read as design intent,
-not running code.
+not running code. The execution model is tracked in
+[#28 Asynchronous Curator](https://github.com/ufelmann/HiveMem/issues/28).
+
+## Tracked GitHub issues
+
+The README's Feature Status focuses on whether existing prose matches running
+code. These open issues describe larger work that is *not yet promised in the
+README* but is on the agenda:
+
+| Issue | Topic | Relation |
+|---|---|---|
+| [#1](https://github.com/ufelmann/HiveMem/issues/1) | Multi-Master Sync Protocol (op-log replication) | Mirror one hive across laptop / desktop / home server. Design finalized 2026-04-25; sub-projects pending. |
+| [#23](https://github.com/ufelmann/HiveMem/issues/23) | LongMemEval benchmark suite | End-to-end evaluation against Zep / Mem0 / MemGPT. |
+| [#26](https://github.com/ufelmann/HiveMem/issues/26) | Progressive wake-up: multi-layer session bootstrap | Replaces today's monolithic `wake_up` with layered loading. |
+| [#28](https://github.com/ufelmann/HiveMem/issues/28) | Asynchronous Curator — move agent work off the hot path | The execution model behind the Queen+Bees entry above. |
+| [#29](https://github.com/ufelmann/HiveMem/issues/29) | Research-driven roadmap (meta) | Tracks priority and sequencing across #23, #26, #28 and related research-driven tickets. |
+| [#30](https://github.com/ufelmann/HiveMem/issues/30) | SP2 — Attachment storage upload API | Paperless+Obsidian sub-project. |
+| [#31](https://github.com/ufelmann/HiveMem/issues/31) | SP4 — Markdown editor + Obsidian vault import | UI on top of the existing knowledge UI. |
+| [#32](https://github.com/ufelmann/HiveMem/issues/32) | SP3 — Ingest pipeline (OCR + email/doc → cells) | Extends today's OCR/extraction into a full ingest flow; depends on #30. |
+| [#33](https://github.com/ufelmann/HiveMem/issues/33) | SP5 — Paperless-style consumption folder watcher | Depends on #32. |
 
 ## How this page stays honest
 
