@@ -39,7 +39,7 @@ No other MCP tool signatures changed.
 ### Migration from 6.0.x
 
 1. `docker exec hivemem hivemem-backup`
-2. `docker pull ghcr.io/ufelmann/hivemem:6.1.0`
+2. `docker pull ghcr.io/visterion/hivemem:6.1.0`
 3. Restart with the new image — Flyway runs `V0011` automatically. The
    migration is idempotent and safe to re-run.
 4. Update any client code that calls `update_blueprint` or reads
@@ -48,9 +48,9 @@ No other MCP tool signatures changed.
 ### Docker
 
 ```bash
-docker pull ghcr.io/ufelmann/hivemem:6.1.0
+docker pull ghcr.io/visterion/hivemem:6.1.0
 ```
 
 ### Full Changelog
 
-https://github.com/ufelmann/HiveMem/compare/v6.0.1...v6.1.0
+https://github.com/visterion/HiveMem/compare/v6.0.1...v6.1.0

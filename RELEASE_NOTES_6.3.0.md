@@ -48,8 +48,8 @@ development version temporarily dropped are fully available again.
 ### Migration from 6.2.x
 
 1. `docker exec hivemem hivemem-backup`
-2. `docker pull ghcr.io/ufelmann/hivemem:6.3.0`
-3. `docker pull ghcr.io/ufelmann/hivemem-embeddings:6.3.0`
+2. `docker pull ghcr.io/visterion/hivemem:6.3.0`
+3. `docker pull ghcr.io/visterion/hivemem-embeddings:6.3.0`
 4. Restart the stack with the new tags. No schema migrations are needed.
 5. Optionally, start requesting `content` only via `include` in search
    payloads to reduce token/bandwidth cost on search-heavy workloads.
@@ -74,12 +74,12 @@ model name are frozen at first run.
 ### Docker
 
 ```bash
-docker pull ghcr.io/ufelmann/hivemem:6.3.0
-docker pull ghcr.io/ufelmann/hivemem-embeddings:6.3.0
+docker pull ghcr.io/visterion/hivemem:6.3.0
+docker pull ghcr.io/visterion/hivemem-embeddings:6.3.0
 ```
 
 Use `:main` only if you explicitly want the rolling branch build.
 
 ### Full Changelog
 
-https://github.com/ufelmann/HiveMem/compare/v6.2.0...v6.3.0
+https://github.com/visterion/HiveMem/compare/v6.2.0...v6.3.0

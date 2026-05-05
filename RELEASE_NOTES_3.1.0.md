@@ -25,13 +25,13 @@ Complete rewrite from Python to Java. Production-verified against migrated 2.x d
 
 1. Backup: `docker exec hivemem hivemem-backup`
 2. Start pgvector/pgvector:pg17, load the sanitized dump (strip `ag_catalog` lines)
-3. `docker run ghcr.io/ufelmann/hivemem:3.1.0` with the four env vars
+3. `docker run ghcr.io/visterion/hivemem:3.1.0` with the four env vars
 4. Flyway auto-migrates (baseline-on-migrate); existing API tokens stay valid (same SHA-256)
 
 ### Docker
 
 ```bash
-docker pull ghcr.io/ufelmann/hivemem:3.1.0
+docker pull ghcr.io/visterion/hivemem:3.1.0
 ```
 
 ### Security Fixes
@@ -43,4 +43,4 @@ docker pull ghcr.io/ufelmann/hivemem:3.1.0
 
 ### Full Changelog
 
-https://github.com/ufelmann/HiveMem/compare/v2.1.0...v3.1.0
+https://github.com/visterion/HiveMem/compare/v2.1.0...v3.1.0

@@ -7,7 +7,7 @@
 > external references are footnoted where needed.
 >
 > **Status:** plan committed, implementation pending — tracks issue
-> [#23](https://github.com/ufelmann/HiveMem/issues/23).
+> [#23](https://github.com/visterion/HiveMem/issues/23).
 >
 > **Recommended execution skill:** `superpowers:subagent-driven-development`
 > (fresh subagent per task with review between). Fallback:
@@ -1636,9 +1636,9 @@ Deprecated for this benchmark (do not use):
 - Embedding service (swap the model here): [`embedding-service/`](../../embedding-service/)
 
 ### Tracking
-- GitHub issue this plan implements: <https://github.com/ufelmann/HiveMem/issues/23>
-- Research-driven roadmap overview (meta): <https://github.com/ufelmann/HiveMem/issues/29>
+- GitHub issue this plan implements: <https://github.com/visterion/HiveMem/issues/23>
+- Research-driven roadmap overview (meta): <https://github.com/visterion/HiveMem/issues/29>
 - Related tickets that synergise:
-  - Bi-temporal model (already shipped): <https://github.com/ufelmann/HiveMem/issues/24>
-  - Graph proximity (follow-up): <https://github.com/ufelmann/HiveMem/issues/25>
-  - Proactive search triggers (already shipped): <https://github.com/ufelmann/HiveMem/issues/22>
+  - Bi-temporal model (already shipped): <https://github.com/visterion/HiveMem/issues/24>
+  - Graph proximity (follow-up): <https://github.com/visterion/HiveMem/issues/25>
+  - Proactive search triggers (already shipped): <https://github.com/visterion/HiveMem/issues/22>

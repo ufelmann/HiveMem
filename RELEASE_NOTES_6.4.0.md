@@ -65,7 +65,7 @@ keeps the MCP tool catalogue agent-focused.
 ### Upgrade
 
 ```bash
-docker pull ghcr.io/ufelmann/hivemem:6.4.0
+docker pull ghcr.io/visterion/hivemem:6.4.0
 docker stop hivemem && docker rm hivemem
 docker run -d --name hivemem \
   --network hivemem-net -p 8421:8421 \
@@ -73,5 +73,5 @@ docker run -d --name hivemem \
   -e HIVEMEM_JDBC_URL=... -e HIVEMEM_DB_USER=... -e HIVEMEM_DB_PASSWORD=... \
   -e HIVEMEM_EMBEDDING_URL=http://hivemem-embeddings:80 \
   --restart unless-stopped \
-  ghcr.io/ufelmann/hivemem:6.4.0
+  ghcr.io/visterion/hivemem:6.4.0
 ```

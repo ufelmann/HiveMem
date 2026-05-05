@@ -25,7 +25,7 @@ adds a usable first-party web app flow on top of it.
     for MCP clients that inspect schemas strictly.
 - **Documentation and Docker usage clarified.**
   - README now distinguishes the rolling image
-    `ghcr.io/ufelmann/hivemem:main` from semver release tags.
+    `ghcr.io/visterion/hivemem:main` from semver release tags.
   - Test-count claims were de-hardcoded so the README stops drifting as the
     suite grows.
 
@@ -44,7 +44,7 @@ Token-based API access for MCP clients remains supported.
 ### Migration from 6.1.x
 
 1. `docker exec hivemem hivemem-backup`
-2. `docker pull ghcr.io/ufelmann/hivemem:6.2.0`
+2. `docker pull ghcr.io/visterion/hivemem:6.2.0`
 3. Restart the container with the new image tag.
 4. If you deploy the browser UI, validate the login flow and session-cookie
    behavior in front of your reverse proxy.
@@ -52,12 +52,12 @@ Token-based API access for MCP clients remains supported.
 ### Docker
 
 ```bash
-docker pull ghcr.io/ufelmann/hivemem:6.2.0
-docker pull ghcr.io/ufelmann/hivemem-embeddings:6.2.0
+docker pull ghcr.io/visterion/hivemem:6.2.0
+docker pull ghcr.io/visterion/hivemem-embeddings:6.2.0
 ```
 
 Use `:main` only if you explicitly want the rolling branch build.
 
 ### Full Changelog
 
-https://github.com/ufelmann/HiveMem/compare/v6.1.0...v6.2.0
+https://github.com/visterion/HiveMem/compare/v6.1.0...v6.2.0

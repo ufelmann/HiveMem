@@ -52,7 +52,7 @@ services:
     restart: unless-stopped
 
   hivemem-embeddings:
-    image: ghcr.io/ufelmann/hivemem-embeddings:latest
+    image: ghcr.io/visterion/hivemem-embeddings:latest
     container_name: hivemem-embeddings
     volumes:
       - hivemem-embeddings-models:/app/models
@@ -61,7 +61,7 @@ services:
     restart: unless-stopped
 
   hivemem:
-    image: ghcr.io/ufelmann/hivemem:latest
+    image: ghcr.io/visterion/hivemem:latest
     container_name: hivemem
     ports:
       - "8421:8421"
@@ -107,7 +107,7 @@ For a pinned production rollout, use the current release tags such as `:8.1.0`. 
 ### Build from source (optional)
 
 ```bash
-git clone https://github.com/ufelmann/HiveMem.git
+git clone https://github.com/visterion/HiveMem.git
 cd HiveMem
 docker build -t hivemem .
 ```

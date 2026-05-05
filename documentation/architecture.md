@@ -170,6 +170,6 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 
 - **Privacy First:** HiveMem is 100% self-hosted. Your data never leaves your infrastructure.
 - **Auditability:** All tool calls and authentication events are logged to `/data/audit.log`.
-- **SafeSkill Score:** **100/100 (Verified Safe)**. See [SafeSkill Report](https://safeskill.dev/scan/ufelmann-hivemem).
+- **SafeSkill Score:** **100/100 (Verified Safe)**. See [SafeSkill Report](https://safeskill.dev/scan/visterion-hivemem).
 - **Transparency:** 7/7 points. See [SAFE.md](../SAFE.md) for the security manifest.
 - **Human-in-the-Loop:** All agent writes require manual approval via `approve_pending`.

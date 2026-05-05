@@ -10,7 +10,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability, please report it via [GitHub Issues](https://github.com/ufelmann/HiveMem/issues) or directly to the maintainer. We take security seriously and will investigate all reports.
+If you discover a security vulnerability, please report it via [GitHub Issues](https://github.com/visterion/HiveMem/issues) or directly to the maintainer. We take security seriously and will investigate all reports.
 
 ## Privacy & Data Sovereignty
 

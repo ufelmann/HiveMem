@@ -44,7 +44,7 @@ prevents the Flyway migration from failing on databases that carry pre-rename
 ### Migration from 5.x
 
 1. `docker exec hivemem hivemem-backup`
-2. `docker pull ghcr.io/ufelmann/hivemem:6.0.1`
+2. `docker pull ghcr.io/visterion/hivemem:6.0.1`
 3. Restart the container — Flyway runs `V0010` automatically. Preflight aborts
    cleanly if the `drawers` table is already gone or `cells` already exists.
 4. Update any consumer that calls the old MCP tool or field names.
@@ -52,7 +52,7 @@ prevents the Flyway migration from failing on databases that carry pre-rename
 ### Docker
 
 ```bash
-docker pull ghcr.io/ufelmann/hivemem:6.0.1
+docker pull ghcr.io/visterion/hivemem:6.0.1
 ```
 
 Note: `:6.0.0` exists but lacks the `V0010` legacy-value normalization. Prefer
@@ -60,4 +60,4 @@ Note: `:6.0.0` exists but lacks the `V0010` legacy-value normalization. Prefer
 
 ### Full Changelog
 
-https://github.com/ufelmann/HiveMem/compare/v5.0.0...v6.0.1
+https://github.com/visterion/HiveMem/compare/v5.0.0...v6.0.1

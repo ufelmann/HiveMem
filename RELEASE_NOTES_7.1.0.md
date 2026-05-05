@@ -45,7 +45,7 @@ regenerate `ranked_search()` with the active dim (or parameterize it).
 ### Upgrade
 
 ```bash
-docker pull ghcr.io/ufelmann/hivemem:7.1.0
+docker pull ghcr.io/visterion/hivemem:7.1.0
 docker stop hivemem && docker rm hivemem
 docker run -d --name hivemem \
   --network hivemem-net -p 8421:8421 \
@@ -53,7 +53,7 @@ docker run -d --name hivemem \
   -e HIVEMEM_JDBC_URL=... -e HIVEMEM_DB_USER=... -e HIVEMEM_DB_PASSWORD=... \
   -e HIVEMEM_EMBEDDING_URL=http://hivemem-embeddings:80 \
   --restart unless-stopped \
-  ghcr.io/ufelmann/hivemem:7.1.0
+  ghcr.io/visterion/hivemem:7.1.0
 ```
 
 No breaking changes vs 7.0.0; MCP tool names are unchanged.

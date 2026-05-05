@@ -5,11 +5,11 @@ Thank you for your interest in contributing to HiveMem! This guide will help you
 ## How to Contribute
 
 ### Reporting Bugs
-- Use [GitHub Issues](https://github.com/ufelmann/HiveMem/issues) to report bugs.
+- Use [GitHub Issues](https://github.com/visterion/HiveMem/issues) to report bugs.
 - Include a clear description of the issue, steps to reproduce, and your environment (OS, Java version, Docker version).
 
 ### Suggesting Features
-- Use [GitHub Discussions](https://github.com/ufelmann/HiveMem/discussions) to suggest and discuss new features.
+- Use [GitHub Discussions](https://github.com/visterion/HiveMem/discussions) to suggest and discuss new features.
 
 ### Pull Requests
 1. Fork the repository.
@@ -36,7 +36,7 @@ HiveMem requires Java 25, Maven, and Docker (for running tests with Testcontaine
 
 ```bash
 # Clone the repository
-git clone https://github.com/ufelmann/HiveMem.git
+git clone https://github.com/visterion/HiveMem.git
 cd HiveMem
 
 # Run tests (Testcontainers starts a pgvector/pgvector:pg17 container automatically)
