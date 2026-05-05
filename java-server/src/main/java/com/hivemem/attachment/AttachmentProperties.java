@@ -17,9 +17,9 @@ public class AttachmentProperties {
     private int krokiTimeoutSeconds = 10;
     private long krokiBackfillIntervalMs = 3_600_000L;
 
-    private String anthropicApiKey = "";
+    private String vistierieBaseUrl = "http://vistierie:8090";
+    private String vistierieToken = "";
     private int visionTimeoutSeconds = 30;
-    private String visionModel = "claude-haiku-4-5-20251001";
     private double visionDailyBudgetUsd = 1.0;
     private long visionBackfillIntervalMs = 3_600_000L;
     private long visionMaxInputBytes = 5L * 1024 * 1024;
@@ -42,12 +42,12 @@ public class AttachmentProperties {
     public long getKrokiBackfillIntervalMs() { return krokiBackfillIntervalMs; }
     public void setKrokiBackfillIntervalMs(long v) { this.krokiBackfillIntervalMs = v; }
 
-    public String getAnthropicApiKey() { return anthropicApiKey; }
-    public void setAnthropicApiKey(String v) { this.anthropicApiKey = v; }
+    public String getVistierieBaseUrl() { return vistierieBaseUrl; }
+    public void setVistierieBaseUrl(String v) { this.vistierieBaseUrl = v; }
+    public String getVistierieToken() { return vistierieToken; }
+    public void setVistierieToken(String v) { this.vistierieToken = v; }
     public int getVisionTimeoutSeconds() { return visionTimeoutSeconds; }
     public void setVisionTimeoutSeconds(int v) { this.visionTimeoutSeconds = v; }
-    public String getVisionModel() { return visionModel; }
-    public void setVisionModel(String v) { this.visionModel = v; }
     public double getVisionDailyBudgetUsd() { return visionDailyBudgetUsd; }
     public void setVisionDailyBudgetUsd(double v) { this.visionDailyBudgetUsd = v; }
     public long getVisionBackfillIntervalMs() { return visionBackfillIntervalMs; }

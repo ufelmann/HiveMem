@@ -1,7 +1,8 @@
 package com.hivemem.attachment;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -9,12 +10,14 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.Base64;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 @Component
 public class VisionClient {
+
+    private static final Logger log = LoggerFactory.getLogger(VisionClient.class);
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     public record VisionResult(String description, int inputTokens, int outputTokens) {}
 
@@ -28,6 +31,10 @@ public class VisionClient {
     private static final Set<String> SUPPORTED_MIME = Set.of(
             "image/jpeg", "image/png", "image/gif", "image/webp");
 
+    private static final Set<String> KNOWN_SUB_TYPES =
+            Set.of("whiteboard_photo", "document_scan", "photo_general");
+    private static final String DEFAULT_SUB_TYPE = "photo_general";
+
     private static final String DESCRIBE_PROMPT =
             "Beschreibe das Bild kurz aber präzise: was ist zu sehen, welcher Bildtyp "
                     + "(Foto, Screenshot, Whiteboard, Diagramm), erkennbarer Text, Kontextrelevantes. "
@@ -39,7 +46,6 @@ public class VisionClient {
                     + "Lese-Reihenfolge. Übernimm Tabellen als Markdown-Tabellen. Lass keine "
                     + "Information weg. Antworte NUR mit dem transkribierten Text, ohne "
                     + "Vorwort, ohne Kommentar, ohne Markdown-Code-Fences.";
-
 
     private static final String IMAGE_CLASSIFY_PROMPT =
             "Analysiere das Bild und liefere strukturiertes Ergebnis als JSON.\n\n"
@@ -63,30 +69,35 @@ public class VisionClient {
             + "kein Vorwort:\n"
             + "{\"sub_type\":\"<value>\",\"content\":\"<value>\"}";
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-
-    private final AttachmentProperties props;
-    private final RestClient client;
+    private final RestClient http;
+    private final String vistierieToken;
+    private final long visionMaxInputBytes;
 
     @Autowired
-    public VisionClient(AttachmentProperties props, RestClient.Builder builder) {
-        this(props, builder, true);
+    public VisionClient(AttachmentProperties props) {
+        this(buildRestClient(props), props.getVistierieToken(), props.getVisionMaxInputBytes());
     }
 
-    VisionClient(AttachmentProperties props, RestClient.Builder builder, boolean configureRequestFactory) {
-        this.props = props;
-        if (configureRequestFactory) {
-            int timeoutMs = props.getVisionTimeoutSeconds() * 1000;
-            SimpleClientHttpRequestFactory rf = new SimpleClientHttpRequestFactory();
-            rf.setConnectTimeout(timeoutMs);
-            rf.setReadTimeout(timeoutMs);
-            builder = builder.requestFactory(rf);
-        }
-        this.client = builder.build();
+    /** Package-private constructor for tests. */
+    VisionClient(RestClient http, String vistierieToken, long visionMaxInputBytes) {
+        this.http = http;
+        this.vistierieToken = vistierieToken;
+        this.visionMaxInputBytes = visionMaxInputBytes;
+    }
+
+    private static RestClient buildRestClient(AttachmentProperties props) {
+        int timeoutMs = props.getVisionTimeoutSeconds() * 1000;
+        SimpleClientHttpRequestFactory rf = new SimpleClientHttpRequestFactory();
+        rf.setConnectTimeout(timeoutMs);
+        rf.setReadTimeout(timeoutMs);
+        return RestClient.builder()
+                .baseUrl(props.getVistierieBaseUrl())
+                .requestFactory(rf)
+                .build();
     }
 
     public boolean isEnabled() {
-        return props.getAnthropicApiKey() != null && !props.getAnthropicApiKey().isBlank();
+        return vistierieToken != null && !vistierieToken.isBlank();
     }
 
     /**
@@ -95,7 +106,7 @@ public class VisionClient {
      * Lets HttpClientErrorException.TooManyRequests bubble for 429 (caller backoff).
      */
     public VisionResult describe(byte[] imageBytes, String mimeType) {
-        return call(imageBytes, mimeType, DESCRIBE_PROMPT, 600);
+        return call(imageBytes, mimeType, DESCRIBE_PROMPT, 600, "vision_describe");
     }
 
     /**
@@ -103,69 +114,87 @@ public class VisionClient {
      * Used by OcrService as a fallback when Tesseract output is too sparse.
      */
     public VisionResult transcribe(byte[] imageBytes, String mimeType) {
-        return call(imageBytes, mimeType, TRANSCRIBE_PROMPT, 4000);
+        return call(imageBytes, mimeType, TRANSCRIBE_PROMPT, 4000, "vision_transcribe");
     }
-
 
     /**
      * Image-classification call: returns sub_type + sub-type-appropriate content.
-     * Uses the same call() pipeline as describe()/transcribe(), then parses the
-     * Haiku JSON response via {@link AnthropicVisionResponseParser}.
+     * The Vistierie response text is a JSON blob; this method parses it inline.
      */
     public ImageDescriptionResult describeImage(byte[] imageBytes, String mimeType) {
-        VisionResult raw = call(imageBytes, mimeType, IMAGE_CLASSIFY_PROMPT, 4000);
-        AnthropicVisionResponseParser.Parsed parsed =
-                AnthropicVisionResponseParser.parse(raw.description());
-        return new ImageDescriptionResult(
-                parsed.subType(), parsed.content(),
-                raw.inputTokens(), raw.outputTokens());
+        VisionResult raw = call(imageBytes, mimeType, IMAGE_CLASSIFY_PROMPT, 4000, "vision_classify");
+        String subType = DEFAULT_SUB_TYPE;
+        String content = raw.description();
+        // Parse JSON classification response (three fallback strategies)
+        JsonNode node = tryParseJson(raw.description());
+        if (node == null) {
+            int first = raw.description().indexOf('{');
+            int last = raw.description().lastIndexOf('}');
+            if (first >= 0 && last > first) {
+                node = tryParseJson(raw.description().substring(first, last + 1));
+            }
+        }
+        if (node != null && node.isObject()) {
+            String st = node.path("sub_type").asText("");
+            subType = KNOWN_SUB_TYPES.contains(st) ? st : DEFAULT_SUB_TYPE;
+            content = node.path("content").asText("");
+        } else {
+            log.warn("Vision classification response not parseable as JSON (len={})",
+                    raw.description().length());
+            subType = DEFAULT_SUB_TYPE;
+            content = raw.description();
+        }
+        return new ImageDescriptionResult(subType, content, raw.inputTokens(), raw.outputTokens());
     }
 
-    private VisionResult call(byte[] imageBytes, String mimeType, String prompt, int maxTokens) {
+    private JsonNode tryParseJson(String text) {
+        try {
+            JsonNode n = MAPPER.readTree(text);
+            return n.isObject() ? n : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private VisionResult call(byte[] imageBytes, String mimeType, String prompt, int maxTokens,
+                               String purpose) {
         if (imageBytes == null || imageBytes.length == 0) {
             throw new IllegalArgumentException("imageBytes empty");
         }
-        if (imageBytes.length > props.getVisionMaxInputBytes()) {
+        if (imageBytes.length > visionMaxInputBytes) {
             throw new OversizeImageException("image " + imageBytes.length
-                    + " bytes exceeds cap " + props.getVisionMaxInputBytes());
+                    + " bytes exceeds cap " + visionMaxInputBytes);
         }
         if (!SUPPORTED_MIME.contains(mimeType)) {
             throw new IllegalArgumentException("Unsupported image mime: " + mimeType);
         }
 
-        String base64 = Base64.getEncoder().encodeToString(imageBytes);
-
-        Map<String, Object> body = Map.of(
-                "model", props.getVisionModel(),
-                "max_tokens", maxTokens,
-                "messages", List.of(Map.of(
-                        "role", "user",
-                        "content", List.of(
-                                Map.of("type", "image",
-                                        "source", Map.of(
-                                                "type", "base64",
-                                                "media_type", mimeType,
-                                                "data", base64)),
-                                Map.of("type", "text", "text", prompt)
-                        )))
+        var body = Map.<String, Object>of(
+                "purpose", purpose,
+                "realm", "attachment",
+                "image", Map.of(
+                        "type", "base64",
+                        "media_type", mimeType,
+                        "data", Base64.getEncoder().encodeToString(imageBytes)),
+                "prompt", prompt,
+                "max_tokens", maxTokens
         );
 
-        JsonNode resp = client.post()
-                .uri("https://api.anthropic.com/v1/messages")
-                .header("x-api-key", props.getAnthropicApiKey())
-                .header("anthropic-version", "2023-06-01")
-                .contentType(MediaType.APPLICATION_JSON)
+        JsonNode resp = http.post()
+                .uri("/llm/vision")
+                .header("Authorization", "Bearer " + vistierieToken)
+                .header("content-type", "application/json")
                 .body(body)
                 .retrieve()
                 .body(JsonNode.class);
 
-        if (resp == null) throw new IllegalStateException("Anthropic returned null");
-        String text = resp.path("content").path(0).path("text").asText();
+        if (resp == null) throw new IllegalStateException("Vistierie returned null");
+        String text = resp.path("text").asText();
         if (text == null || text.isBlank()) {
-            throw new IllegalStateException("Anthropic returned empty text");
+            throw new IllegalStateException("Vistierie returned empty text");
         }
-        int inputTokens = resp.path("usage").path("input_tokens").asInt(0);
-        int outputTokens = resp.path("usage").path("output_tokens").asInt(0);
+        int inputTokens = resp.path("usage").path("inputTokens").asInt(0);
+        int outputTokens = resp.path("usage").path("outputTokens").asInt(0);
         return new VisionResult(text.strip(), inputTokens, outputTokens);
     }
 }
