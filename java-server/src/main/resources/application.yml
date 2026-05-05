@@ -42,8 +42,8 @@ hivemem:
     kroki-url: ${HIVEMEM_KROKI_URL:}
     kroki-timeout-seconds: ${HIVEMEM_KROKI_TIMEOUT_SECONDS:10}
     kroki-backfill-interval: ${HIVEMEM_KROKI_BACKFILL_INTERVAL:PT1H}
-    anthropic-api-key: ${ANTHROPIC_API_KEY:}
-    vision-model: ${HIVEMEM_VISION_MODEL:claude-haiku-4-5-20251001}
+    vistierie-base-url: ${HIVEMEM_VISTIERIE_BASE_URL:http://vistierie:8090}
+    vistierie-token: ${HIVEMEM_VISTIERIE_TOKEN:}
     vision-timeout-seconds: ${HIVEMEM_VISION_TIMEOUT_SECONDS:30}
   backup:
     pg-dump-path: ${HIVEMEM_PG_DUMP_PATH:pg_dump}

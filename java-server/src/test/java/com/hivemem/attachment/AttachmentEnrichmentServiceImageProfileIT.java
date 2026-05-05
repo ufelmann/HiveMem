@@ -39,7 +39,7 @@ class AttachmentEnrichmentServiceImageProfileIT {
     void setUp() throws Exception {
         props = new AttachmentProperties();
         props.setEnabled(true);
-        props.setAnthropicApiKey("k");
+        props.setVistierieToken("k");
         props.setVisionDailyBudgetUsd(10.0);
 
         visionClient = mock(VisionClient.class);

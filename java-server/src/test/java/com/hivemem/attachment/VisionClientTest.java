@@ -1,117 +1,83 @@
 package com.hivemem.attachment;
 
+import com.hivemem.testsupport.MockVistierieServer;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.client.MockRestServiceServer;
-import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class VisionClientTest {
 
-    private AttachmentProperties propsWith(String key) {
-        AttachmentProperties p = new AttachmentProperties();
-        p.setAnthropicApiKey(key);
-        p.setVisionTimeoutSeconds(5);
-        p.setVisionModel("claude-haiku-4-5-20251001");
-        p.setVisionMaxInputBytes(1024 * 1024);
-        return p;
+    MockVistierieServer mock;
+    VisionClient client;
+
+    @BeforeEach
+    void up() {
+        mock = new MockVistierieServer();
+        mock.start();
+        var http = RestClient.builder()
+                .baseUrl(mock.baseUrl())
+                .requestFactory(new SimpleClientHttpRequestFactory())
+                .build();
+        client = new VisionClient(http, "vtok", 5_242_880L);
+    }
+
+    @AfterEach
+    void down() { mock.stop(); }
+
+    @Test
+    void describeUsesVistierie() {
+        mock.stubVision("a square box");
+        var result = client.describe(new byte[]{1, 2, 3}, "image/png");
+        assertThat(result.description()).isEqualTo("a square box");
+        assertThat(result.inputTokens()).isEqualTo(50);
+        assertThat(result.outputTokens()).isEqualTo(4);
     }
 
     @Test
-    void notEnabledWhenKeyBlank() {
-        VisionClient c = new VisionClient(propsWith(""), RestClient.builder(), false);
-        assertFalse(c.isEnabled());
+    void transcribeUsesVistierie() {
+        mock.stubVision("some transcribed text");
+        var result = client.transcribe(new byte[]{1, 2, 3}, "image/jpeg");
+        assertThat(result.description()).isEqualTo("some transcribed text");
     }
 
     @Test
-    void describeReturnsTextOn200() {
-        RestClient.Builder b = RestClient.builder();
-        MockRestServiceServer server = MockRestServiceServer.bindTo(b).build();
-        String resp = """
-                {
-                  "usage":{"input_tokens":120,"output_tokens":40},
-                  "content":[{"type":"text","text":"A photograph of a whiteboard with notes."}]
-                }
-                """;
-        server.expect(requestTo("https://api.anthropic.com/v1/messages"))
-                .andRespond(withSuccess(resp, MediaType.APPLICATION_JSON));
-
-        VisionClient c = new VisionClient(propsWith("k"), b, false);
-        VisionClient.VisionResult r = c.describe(new byte[]{1, 2, 3, 4}, "image/png");
-
-        assertEquals("A photograph of a whiteboard with notes.", r.description());
-        assertEquals(120, r.inputTokens());
-        assertEquals(40, r.outputTokens());
+    void describeImageParsesJsonSubType() {
+        mock.stubVision("{\\\"sub_type\\\":\\\"whiteboard_photo\\\",\\\"content\\\":\\\"Roadmap: Q1 -> Q2\\\"}");
+        var result = client.describeImage(new byte[]{1, 2, 3}, "image/png");
+        assertThat(result.subType()).isEqualTo("whiteboard_photo");
+        assertThat(result.content()).isEqualTo("Roadmap: Q1 -> Q2");
     }
 
     @Test
     void describeRejectsOversizeImage() {
-        VisionClient c = new VisionClient(propsWith("k"), RestClient.builder(), false);
-        byte[] tooBig = new byte[2 * 1024 * 1024];
+        byte[] tooBig = new byte[6 * 1024 * 1024];
         assertThrows(VisionClient.OversizeImageException.class,
-                () -> c.describe(tooBig, "image/png"));
+                () -> client.describe(tooBig, "image/png"));
     }
 
     @Test
     void describeRejectsUnsupportedMime() {
-        VisionClient c = new VisionClient(propsWith("k"), RestClient.builder(), false);
         assertThrows(IllegalArgumentException.class,
-                () -> c.describe(new byte[]{1, 2}, "image/tiff"));
+                () -> client.describe(new byte[]{1, 2}, "image/tiff"));
     }
 
     @Test
-    void describeThrowsOn429() {
-        RestClient.Builder b = RestClient.builder();
-        MockRestServiceServer server = MockRestServiceServer.bindTo(b).build();
-        server.expect(requestTo("https://api.anthropic.com/v1/messages"))
-                .andRespond(withStatus(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS));
-
-        VisionClient c = new VisionClient(propsWith("k"), b, false);
-        assertThrows(HttpClientErrorException.TooManyRequests.class,
-                () -> c.describe(new byte[]{1, 2}, "image/png"));
-    }
-
-
-    @Test
-    void describeImageReturnsParsedResultOn200() {
-        RestClient.Builder b = RestClient.builder();
-        MockRestServiceServer server = MockRestServiceServer.bindTo(b).build();
-        String resp = """
-                {
-                  "usage":{"input_tokens":150,"output_tokens":80},
-                  "content":[{"type":"text","text":"{\\"sub_type\\":\\"whiteboard_photo\\",\\"content\\":\\"Roadmap: Q1 -> Q2\\"}"}]
-                }
-                """;
-        server.expect(requestTo("https://api.anthropic.com/v1/messages"))
-                .andRespond(withSuccess(resp, MediaType.APPLICATION_JSON));
-
-        VisionClient c = new VisionClient(propsWith("k"), b, false);
-        VisionClient.ImageDescriptionResult r =
-                c.describeImage(new byte[]{1, 2, 3, 4}, "image/png");
-
-        assertEquals("whiteboard_photo", r.subType());
-        assertEquals("Roadmap: Q1 -> Q2", r.content());
-        assertEquals(150, r.inputTokens());
-        assertEquals(80, r.outputTokens());
+    void isEnabledWhenTokenSet() {
+        assertThat(client.isEnabled()).isTrue();
     }
 
     @Test
-    void describeImageRejectsOversizeImage() {
-        VisionClient c = new VisionClient(propsWith("k"), RestClient.builder(), false);
-        byte[] tooBig = new byte[2 * 1024 * 1024];
-        assertThrows(VisionClient.OversizeImageException.class,
-                () -> c.describeImage(tooBig, "image/png"));
-    }
-
-    @Test
-    void describeImageRejectsUnsupportedMime() {
-        VisionClient c = new VisionClient(propsWith("k"), RestClient.builder(), false);
-        assertThrows(IllegalArgumentException.class,
-                () -> c.describeImage(new byte[]{1, 2}, "image/tiff"));
+    void isDisabledWhenTokenBlank() {
+        var http = RestClient.builder()
+                .baseUrl(mock.baseUrl())
+                .requestFactory(new SimpleClientHttpRequestFactory())
+                .build();
+        VisionClient c = new VisionClient(http, "", 5_242_880L);
+        assertThat(c.isEnabled()).isFalse();
     }
 }

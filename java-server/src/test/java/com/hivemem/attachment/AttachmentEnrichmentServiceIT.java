@@ -16,7 +16,9 @@ import org.jooq.impl.DSL;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
+import com.hivemem.testsupport.MockVistierieServer;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -98,7 +100,7 @@ class AttachmentEnrichmentServiceIT {
         props.setEnabled(true);
         props.setKrokiUrl("http://kroki.test");
         props.setKrokiTimeoutSeconds(5);
-        props.setAnthropicApiKey(""); // disable vision
+        props.setVistierieToken(""); // disable vision
 
         KrokiClient kroki = new KrokiClient(props, krokiBuilder, false);
         VisionClient vision = mock(VisionClient.class);
@@ -142,28 +144,27 @@ class AttachmentEnrichmentServiceIT {
                     + "VALUES ('" + cellId + "', '" + attId + "', true, now())");
         }
 
-        RestClient.Builder visionBuilder = RestClient.builder();
-        MockRestServiceServer visionServer = MockRestServiceServer.bindTo(visionBuilder).build();
-        String visionResp = """
-                {
-                  "usage":{"input_tokens":150,"output_tokens":60},
-                  "content":[{"type":"text","text":"A whiteboard photo with handwritten notes about authentication."}]
-                }
-                """;
-        visionServer.expect(requestTo("https://api.anthropic.com/v1/messages"))
-                .andRespond(withSuccess(visionResp, MediaType.APPLICATION_JSON));
+        MockVistierieServer visionMock = new MockVistierieServer();
+        visionMock.start();
+        try {
+        visionMock.stubVision("A whiteboard photo with handwritten notes about authentication.");
+
+        RestClient visionHttp = RestClient.builder()
+                .baseUrl(visionMock.baseUrl())
+                .requestFactory(new SimpleClientHttpRequestFactory())
+                .build();
 
         AttachmentProperties props = new AttachmentProperties();
         props.setEnabled(true);
         props.setKrokiUrl(""); // disable kroki
-        props.setAnthropicApiKey("k");
+        props.setVistierieToken("k");
         props.setVisionTimeoutSeconds(5);
         props.setVisionDailyBudgetUsd(1.0);
         props.setVisionMaxInputBytes(10 * 1024 * 1024);
 
         KrokiClient kroki = mock(KrokiClient.class);
         when(kroki.isEnabled()).thenReturn(false);
-        VisionClient vision = new VisionClient(props, visionBuilder, false);
+        VisionClient vision = new VisionClient(visionHttp, "k", props.getVisionMaxInputBytes());
 
         AttachmentRepository repo = new AttachmentRepository(dsl);
         WriteToolService writeService = buildWriteService();
@@ -183,7 +184,10 @@ class AttachmentEnrichmentServiceIT {
 
         var usageRow = dsl.fetchOne("SELECT total_calls, total_input_tokens FROM vision_usage");
         assertEquals(1, usageRow.get("total_calls", Integer.class));
-        assertEquals(150, usageRow.get("total_input_tokens", Integer.class));
+        assertEquals(50, usageRow.get("total_input_tokens", Integer.class));
+        } finally {
+            visionMock.stop();
+        }
     }
 
     private WriteToolService buildWriteService() throws Exception {
