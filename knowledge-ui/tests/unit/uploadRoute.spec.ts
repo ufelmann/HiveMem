@@ -1,16 +1,37 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import { defineComponent, h } from 'vue'
 import { vuetify } from '../../src/plugins/vuetify'
 import { i18n } from '../../src/i18n'
-import { router } from '../../src/router'
 import UploadRoute from '../../src/pages/UploadRoute.vue'
 import { useUploadsStore } from '../../src/stores/uploads'
 
-const g = { global: { plugins: [vuetify, i18n, router] } }
+const Stage = defineComponent({ render: () => h('div', 'STAGE') })
+
+// A stub router, not the app router — see uploadFab.spec.ts: the real router's
+// initial navigation resolves lazy imports after environment teardown.
+function makeRouter() {
+  return createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', name: 'search', component: Stage },
+      { path: '/upload', name: 'upload', component: Stage },
+    ],
+  })
+}
 
 describe('UploadRoute', () => {
-  beforeEach(() => setActivePinia(createPinia()))
+  let g: { global: { plugins: [typeof vuetify, typeof i18n, ReturnType<typeof makeRouter>] } }
+
+  beforeEach(async () => {
+    setActivePinia(createPinia())
+    const router = makeRouter()
+    router.push('/upload')
+    await router.isReady()
+    g = { global: { plugins: [vuetify, i18n, router] } }
+  })
 
   it('shows the empty hint when there are no jobs', () => {
     const w = mount(UploadRoute, g)
