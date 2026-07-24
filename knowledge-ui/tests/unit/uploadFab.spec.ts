@@ -7,14 +7,37 @@ vi.mock('../../src/api/uploadClient', async () => {
 })
 
 import { createPinia, setActivePinia } from 'pinia'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import { defineComponent, h } from 'vue'
 import { vuetify } from '../../src/plugins/vuetify'
 import { i18n } from '../../src/i18n'
-import { router } from '../../src/router'
 import UploadFab from '../../src/components/shell/UploadFab.vue'
 import { useUploadsStore } from '../../src/stores/uploads'
 
+const Stage = defineComponent({ render: () => h('div', 'STAGE') })
+
+// A stub router, not the app router: installing the real one kicks off the initial
+// navigation, whose lazy route imports resolve after the test environment is torn
+// down (EnvironmentTeardownError -> vitest exits 1 even with every test passing).
+function makeRouter() {
+  return createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', name: 'search', component: Stage },
+      { path: '/upload', name: 'upload', component: Stage },
+    ],
+  })
+}
+
 describe('UploadFab', () => {
-  beforeEach(() => setActivePinia(createPinia()))
+  let router: ReturnType<typeof makeRouter>
+
+  beforeEach(async () => {
+    setActivePinia(createPinia())
+    router = makeRouter()
+    router.push('/')
+    await router.isReady()
+  })
 
   it('has a file input and a camera-capture input with correct attrs', () => {
     const w = mount(UploadFab, { global: { plugins: [vuetify, i18n, router] } })
