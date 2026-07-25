@@ -72,8 +72,8 @@ public class AuthorizationController {
 
     private static final SecureRandom RNG = new SecureRandom();
 
-    private static final String CONSENT_HTML_HEAD = """
-            <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Authorize access</title><style>
+    /** Shared by every page this controller serves, so they can't drift apart visually. */
+    private static final String HTML_STYLE = """
             *{margin:0;padding:0;box-sizing:border-box}
             body{background:#000;color:#ccc;height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif}
             main{display:flex;flex-direction:column;align-items:center;gap:16px;max-width:360px;text-align:center}
@@ -83,7 +83,18 @@ public class AuthorizationController {
             .actions{display:flex;gap:24px}
             button{background:transparent;border:1px solid #333;color:#ccc;cursor:pointer;font-size:13px;padding:8px 24px}
             button:hover{border-color:#666;color:#fff}
-            </style></head><body><main>
+            """;
+
+    /** Opening markup up to {@code <main>}; only the title differs between pages. */
+    private static String htmlHead(String title) {
+        return "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>" + title
+                + "</title><style>\n" + HTML_STYLE + "</style></head><body><main>\n";
+    }
+
+    private static final String CONSENT_HTML_HEAD = htmlHead("Authorize access");
+
+    private static final String CONSENT_HTML_TAIL = """
+            </main></body></html>
             """;
 
     /**
@@ -92,16 +103,13 @@ public class AuthorizationController {
      * HumanPrincipalResolver#resolve — so claiming either one would be a guess, and guessing
      * the wrong one is what made the split-host outage expensive to diagnose.
      */
-    private static final String NOT_SIGNED_IN_HTML = """
-            <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Not signed in</title></head>
-            <body><h1>403 &mdash; Not signed in to HiveMem.</h1>
+    private static final String NOT_SIGNED_IN_HTML = htmlHead("Not signed in")
+            + """
+            <h1>403 &mdash; Not signed in to HiveMem.</h1>
             <p>This request carried no verified Cloudflare Access identity, or the verified
-            email has no HiveMem account.</p></body></html>
-            """;
-
-    private static final String CONSENT_HTML_TAIL = """
-            </main></body></html>
-            """;
+            email has no HiveMem account.</p>
+            """
+            + CONSENT_HTML_TAIL;
 
     private final OAuthProperties props;
     private final OAuthRepository repo;

@@ -111,11 +111,16 @@ class AuthorizationControllerSplitHostTest {
     }
 
     @Test
-    void unauthenticatedRequestOnMachineHostRedirectsToGuiHostWithQueryVerbatim() throws Exception {
+    void unauthenticatedRequestOnMachineHostRedirectsToGuiHostWithQueryVerbatim(CapturedOutput output)
+            throws Exception {
         mockMvc.perform(get(URI.create("https://" + MACHINE_HOST + "/oauth/authorize?" + query())))
                 .andExpect(status().isFound())
                 .andExpect(header().string("Location",
                         "https://gui.example.com/oauth/authorize?" + query()));
+
+        // The redirect is the busiest path in this flow. Hoisting the WARN above the host
+        // comparison would keep every other assertion green while flooding prod logs.
+        assertThat(output).doesNotContain("OAuth consent refused");
     }
 
     @Test
@@ -187,7 +192,8 @@ class AuthorizationControllerSplitHostTest {
         assertThat(output).contains("accessJwtPresent=false");
         // Pin the level too: a downgrade to DEBUG would silently remove the diagnosability
         // this branch exists to provide, and every other assertion here would stay green.
-        assertThat(output).containsPattern("WARN.*OAuth consent refused.*host=" + GUI_HOST);
+        assertThat(output).containsPattern(
+                "WARN.*OAuth consent refused.*host=" + java.util.regex.Pattern.quote(GUI_HOST));
     }
 
     /**
