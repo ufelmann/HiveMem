@@ -3,6 +3,7 @@ package com.hivemem.summarize;
 import com.hivemem.consumption.DocumentDedupService;
 import com.hivemem.extraction.ExtractionProfileRegistry;
 import com.hivemem.extraction.ExtractionProperties;
+import com.hivemem.llm.LlmCallCost;
 import com.hivemem.queen.ArchivistTrigger;
 import com.hivemem.write.WriteToolService;
 import org.junit.jupiter.api.Test;
@@ -45,7 +46,8 @@ class SummarizerServiceTriggerTest {
         // Empty summary -> the "give up" branch, which removes needs_summary but must still
         // notify the archivist since the cell is now settled (no other tag will fire it).
         when(anthropic.summarize(any(), any())).thenReturn(
-                new SummaryResult(null, null, List.of(), null, List.of(), null, List.of(), null, false, 0, 0));
+                new SummaryResult(null, null, List.of(), null, List.of(), null, List.of(), null, false,
+                        LlmCallCost.ZERO));
 
         SummarizerService service = new SummarizerService(
                 props, extractionProps, repo, budget, anthropic, writeService, registry, dedup);

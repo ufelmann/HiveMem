@@ -2,6 +2,7 @@ package com.hivemem.summarize;
 
 import com.hivemem.extraction.ExtractionProfile;
 import com.hivemem.extraction.FactSpec;
+import com.hivemem.llm.LlmCallCost;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -171,17 +172,15 @@ public class AnthropicSummarizer {
         String language = parsed.hasNonNull("language") ? parsed.path("language").asText() : null;
         boolean taxRelevant = parsed.path("tax_relevant").asBoolean(false);
 
-        // Vistierie usage fields are camelCase (inputTokens / outputTokens)
-        int inputTokens = resp.path("usage").path("inputTokens").asInt(0);
-        int outputTokens = resp.path("usage").path("outputTokens").asInt(0);
+        LlmCallCost cost = LlmCallCost.from(resp);
 
         return new SummaryResult(title, summary, keyPoints, insight, tags,
-                documentType, facts, language, taxRelevant, inputTokens, outputTokens);
+                documentType, facts, language, taxRelevant, cost);
     }
 
     /** Result of the cheap title backfill call; {@code title} is null on an empty/blank
-     *  response, but the token usage is still reported so the caller can charge the budget. */
-    public record TitleResult(String title, int inputTokens, int outputTokens) {}
+     *  response, but the cost record is still reported so the caller can charge the budget. */
+    public record TitleResult(String title, LlmCallCost cost) {}
 
     /**
      * Cheap title-only completion used to backfill a short title for already-summarized cells
@@ -189,7 +188,7 @@ public class AnthropicSummarizer {
      * handful of tokens; the model returns the bare title, which we strip of fences/quotes.
      */
     public TitleResult generateTitle(String summary) {
-        if (summary == null || summary.isBlank()) return new TitleResult(null, 0, 0);
+        if (summary == null || summary.isBlank()) return new TitleResult(null, LlmCallCost.ZERO);
         String system = "You title documents for a personal knowledge base. "
                 + "Given a document summary, reply with ONLY a concise title of at most 6 words. "
                 + "No quotes, no punctuation at the ends, no prose, no explanation. "
@@ -204,23 +203,21 @@ public class AnthropicSummarizer {
                 "max_tokens", 32
         );
         JsonNode resp = postComplete(body, "title_cell");
-        if (resp == null) return new TitleResult(null, 0, 0);
-        int inputTokens = resp.path("usage").path("inputTokens").asInt(0);
-        int outputTokens = resp.path("usage").path("outputTokens").asInt(0);
+        if (resp == null) return new TitleResult(null, LlmCallCost.ZERO);
+        LlmCallCost cost = LlmCallCost.from(resp);
         String text = resp.path("text").asText(null);
-        if (text == null || text.isBlank()) return new TitleResult(null, inputTokens, outputTokens);
+        if (text == null || text.isBlank()) return new TitleResult(null, cost);
         // Take the first non-empty line, drop code fences and surrounding quotes.
         String line = text.strip();
         if (line.startsWith("```")) line = stripJsonFences(line);
         int nl = line.indexOf('\n');
         if (nl >= 0) line = line.substring(0, nl);
         line = line.strip().replaceAll("^[\"'»«„]+", "").replaceAll("[\"'»«„]+$", "").strip();
-        return new TitleResult(line.isBlank() ? null : line, inputTokens, outputTokens);
+        return new TitleResult(line.isBlank() ? null : line, cost);
     }
 
-    /** Result of the cheap backfill tax classifier; carries token usage for budget charging. */
-    public record TaxClassification(boolean taxRelevant, String language,
-                                    int inputTokens, int outputTokens) {}
+    /** Result of the cheap backfill tax classifier; carries the cost record for budget charging. */
+    public record TaxClassification(boolean taxRelevant, String language, LlmCallCost cost) {}
 
     /**
      * Cheap classifier for the backfill: given a document summary, decide tax relevance and
@@ -228,7 +225,9 @@ public class AnthropicSummarizer {
      * {@code (false, null)} on an empty/blank response.
      */
     public TaxClassification classifyTaxRelevance(String summary) {
-        if (summary == null || summary.isBlank()) return new TaxClassification(false, null, 0, 0);
+        if (summary == null || summary.isBlank()) {
+            return new TaxClassification(false, null, LlmCallCost.ZERO);
+        }
         String system = "You classify documents for a personal knowledge base. "
                 + "Decide whether the document could matter for a private German income-tax "
                 + "return (invoices for craftsman/services, donation receipts, salary statements, "
@@ -245,20 +244,19 @@ public class AnthropicSummarizer {
                 "max_tokens", 32
         );
         JsonNode resp = postComplete(body, "classify_tax");
-        if (resp == null) return new TaxClassification(false, null, 0, 0);
-        int inputTokens = resp.path("usage").path("inputTokens").asInt(0);
-        int outputTokens = resp.path("usage").path("outputTokens").asInt(0);
+        if (resp == null) return new TaxClassification(false, null, LlmCallCost.ZERO);
+        LlmCallCost cost = LlmCallCost.from(resp);
         String text = resp.path("text").asText(null);
         if (text == null || text.isBlank()) {
-            return new TaxClassification(false, null, inputTokens, outputTokens);
+            return new TaxClassification(false, null, cost);
         }
         try {
             JsonNode parsed = MAPPER.readTree(stripJsonFences(text));
             boolean tax = parsed.path("tax_relevant").asBoolean(false);
             String lang = parsed.hasNonNull("language") ? parsed.path("language").asText() : null;
-            return new TaxClassification(tax, lang, inputTokens, outputTokens);
+            return new TaxClassification(tax, lang, cost);
         } catch (Exception e) {
-            return new TaxClassification(false, null, inputTokens, outputTokens);
+            return new TaxClassification(false, null, cost);
         }
     }
 
@@ -289,10 +287,12 @@ public class AnthropicSummarizer {
                     .retrieve()
                     .body(JsonNode.class);
             long ms = (System.nanoTime() - t0) / 1_000_000;
-            int in = resp == null ? 0 : resp.path("usage").path("inputTokens").asInt(0);
-            int out = resp == null ? 0 : resp.path("usage").path("outputTokens").asInt(0);
-            log.info("Vistierie /llm/complete purpose={} model={} in={} out={} took={}ms",
-                    purpose, model, in, out, ms);
+            // Report what Vistierie actually did (its routed provider/model and every token kind),
+            // not what HiveMem asked for: the two may differ.
+            LlmCallCost cost = LlmCallCost.from(resp);
+            log.info("Vistierie /llm/complete purpose={} provider={} model={} in={} cacheW={} cacheR={} out={} took={}ms",
+                    purpose, cost.provider(), cost.model(), cost.inputTokens(),
+                    cost.cacheCreationTokens(), cost.cacheReadTokens(), cost.outputTokens(), ms);
             return resp;
         } catch (RuntimeException e) {
             long ms = (System.nanoTime() - t0) / 1_000_000;

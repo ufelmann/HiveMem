@@ -23,6 +23,20 @@ public class MockVistierieServer {
     }
 
     /**
+     * Full-envelope stub: the caller supplies the raw /llm/complete response body verbatim, so a
+     * test can vary provider/model/usage beyond {@link #stubComplete}'s canned envelope.
+     */
+    public void stubCompleteRaw(String json) {
+        stubFor(post(urlEqualTo("/llm/complete")).willReturn(okJson(json)));
+    }
+
+    /** 200 with no body at all → the RestClient hands the caller a null JsonNode. */
+    public void stubCompleteEmptyBody() {
+        stubFor(post(urlEqualTo("/llm/complete")).willReturn(
+                aResponse().withStatus(200).withHeader("Content-Type", "application/json")));
+    }
+
+    /**
      * Like {@link #stubComplete} but enforces Vistierie's real /llm/complete contract, so a
      * malformed request fails the way prod did instead of being silently accepted. Returns 200 +
      * the canned text ONLY when the request has a non-blank agent_name and purpose, a top-level

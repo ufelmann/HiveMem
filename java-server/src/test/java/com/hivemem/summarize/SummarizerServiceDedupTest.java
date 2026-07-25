@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.hivemem.consumption.DocumentDedupService;
 import com.hivemem.extraction.ExtractionProfileRegistry;
 import com.hivemem.extraction.ExtractionProperties;
+import com.hivemem.llm.LlmCallCost;
 import com.hivemem.write.WriteToolService;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +46,8 @@ class SummarizerServiceDedupTest {
         when(repo.findCellAttachmentMeta(any())).thenReturn(Optional.empty()); // avoid NPE in pickProfile
         SummaryResult result = new SummaryResult(
                 "Title", "a generated summary", List.of(), null, List.of(),
-                "invoice", List.of(), "de", false, 1, 1);
+                "invoice", List.of(), "de", false,
+                new LlmCallCost("anthropic", "claude-haiku-4-5", 1, 1, 0, 0, 0L));
         when(anthropic.summarize(any(), any())).thenReturn(result);
     }
 

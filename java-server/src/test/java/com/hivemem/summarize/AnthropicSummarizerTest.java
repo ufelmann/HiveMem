@@ -1,6 +1,7 @@
 package com.hivemem.summarize;
 
 import com.hivemem.extraction.ExtractionProfile;
+import com.hivemem.llm.LlmCallCost;
 import com.hivemem.testsupport.MockVistierieServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,8 +66,32 @@ class AnthropicSummarizerTest {
         assertThat(r.keyPoints()).containsExactly("Has 3 widgets", "Color is red");
         assertThat(r.insight()).isEqualTo("Widgets are fragile.");
         assertThat(r.tags()).containsExactly("widgets", "red");
-        assertThat(r.inputTokens()).isEqualTo(10);
-        assertThat(r.outputTokens()).isEqualTo(3);
+        assertThat(r.cost().inputTokens()).isEqualTo(10);
+        assertThat(r.cost().outputTokens()).isEqualTo(3);
+    }
+
+    @Test
+    void summaryResultCarriesTheProvidersOwnModelNotTheRequestedOne() {
+        mock.stubCompleteRaw("""
+                {"text":"{\\"summary\\":\\"s\\",\\"key_points\\":[],\\"tags\\":[]}",
+                 "usage":{"inputTokens":2,"outputTokens":1487,
+                          "cacheCreationInputTokens":25681,"cacheReadInputTokens":0},
+                 "provider":"claude-subscription","model":"claude-sonnet-5","cost_micros":0}
+                """);
+
+        SummaryResult r = summarizer.summarize("content", minimalProfile());
+
+        assertThat(r.cost().model()).isEqualTo("claude-sonnet-5");
+        assertThat(r.cost().provider()).isEqualTo("claude-subscription");
+        assertThat(r.cost().totalInputTokens()).isEqualTo(25683);
+        assertThat(r.cost().outputTokens()).isEqualTo(1487);
+    }
+
+    @Test
+    void nullBodyPathsYieldTheZeroCostRecordInsteadOfThrowing() {
+        mock.stubCompleteEmptyBody();
+        assertThat(summarizer.generateTitle("a summary").cost()).isSameAs(LlmCallCost.ZERO);
+        assertThat(summarizer.classifyTaxRelevance("a summary").cost()).isSameAs(LlmCallCost.ZERO);
     }
 
     @Test
@@ -143,8 +168,9 @@ class AnthropicSummarizerTest {
     void generateTitleOnBlankInputSpendsNoTokens() {
         AnthropicSummarizer.TitleResult title = summarizer.generateTitle("   ");
         assertThat(title.title()).isNull();
-        assertThat(title.inputTokens()).isZero();
-        assertThat(title.outputTokens()).isZero();
+        assertThat(title.cost()).isSameAs(LlmCallCost.ZERO);
+        assertThat(title.cost().inputTokens()).isZero();
+        assertThat(title.cost().outputTokens()).isZero();
     }
 
     @Test
@@ -310,7 +336,26 @@ class AnthropicSummarizerTest {
         summarizer.summarize("some content", minimalProfile());
 
         assertThat(output).contains(
-                "Vistierie /llm/complete purpose=summarize_cell model=claude-haiku-4-5 in=10 out=3");
+                "Vistierie /llm/complete purpose=summarize_cell provider=anthropic "
+                        + "model=claude-haiku-4-5 in=10 cacheW=0 cacheR=0 out=3");
+    }
+
+    @Test
+    void logsTheRoutedModelAndCacheTokensNotTheRequestedModel(CapturedOutput output) {
+        // Vistierie may route elsewhere than HiveMem asked for (requested: claude-haiku-4-5).
+        mock.stubCompleteRaw("""
+                {"text":"{\\"summary\\":\\"s\\",\\"key_points\\":[],\\"tags\\":[]}",
+                 "usage":{"inputTokens":2,"outputTokens":1487,
+                          "cacheCreationInputTokens":25681,"cacheReadInputTokens":7},
+                 "provider":"claude-subscription","model":"claude-sonnet-5","cost_micros":0}
+                """);
+
+        summarizer.summarize("some content", minimalProfile());
+
+        assertThat(output).contains(
+                "Vistierie /llm/complete purpose=summarize_cell provider=claude-subscription "
+                        + "model=claude-sonnet-5 in=2 cacheW=25681 cacheR=7 out=1487");
+        assertThat(output).doesNotContain("model=claude-haiku-4-5 in=2");
     }
 
     @Test

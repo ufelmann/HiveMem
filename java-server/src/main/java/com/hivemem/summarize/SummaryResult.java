@@ -1,6 +1,7 @@
 package com.hivemem.summarize;
 
 import com.hivemem.extraction.FactSpec;
+import com.hivemem.llm.LlmCallCost;
 
 import java.util.List;
 
@@ -14,8 +15,7 @@ public record SummaryResult(
         List<FactSpec> facts,
         String language,
         boolean taxRelevant,
-        int inputTokens,
-        int outputTokens
+        LlmCallCost cost
 ) {
     public SummaryResult {
         keyPoints = keyPoints == null ? List.of() : List.copyOf(keyPoints);
