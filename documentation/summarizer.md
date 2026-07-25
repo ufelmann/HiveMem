@@ -77,11 +77,16 @@ completions), each logging its own `Vistierie /llm/complete` line, followed by t
 `Summarize LLM call` summary line:
 
     Vistierie /llm/complete purpose=<purpose> model=<model> in=<tokens> out=<tokens> took=<ms>ms
-    Summarize LLM call cell=<uuid> model=<model> in=<tokens> out=<tokens> cost=$<cost> day=$<spend>/<budget> took=<ms>ms
+    Summarize LLM call cell=<uuid> provider=<provider> model=<model> in=<uncached> cacheW=<tokens> cacheR=<tokens> out=<tokens> cost=€<cost> day=€<spend>/<budget> took=<ms>ms
 
 The first line comes from the Vistierie gateway client; the second from the
 summarizer itself and includes the cost of that call plus the cumulative spend for
-the current UTC day.
+the current UTC day. `provider` and `model` are the ones Vistierie actually routed
+to, which may differ from the configured model. Amounts are EUR (the
+`daily-budget-usd` property name is historical). `in=` counts only the uncached
+input tokens; `cacheW=`/`cacheR=` are the cache-write and cache-read tokens, which
+are billed too. The vision path logs the same fields — see
+[vision.md](vision.md#cost-logging).
 
 Embedding failures caused by an unconvertible content type (e.g.
 `application/octet-stream`) log a WARN line before the original exception is

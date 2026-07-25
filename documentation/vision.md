@@ -43,6 +43,23 @@ content generation (no extra request). `max_tokens` for image describe is 4000
 pages. Daily budget is shared with the OCR Vision fallback via
 `hivemem.attachment.vision-daily-budget-usd`.
 
+### Cost logging
+
+Every vision call emits one INFO line, mirroring the summarize path (see
+[summarizer.md](summarizer.md#logging--cost-visibility)):
+
+    Vision LLM call cell=<uuid> provider=<provider> model=<model> in=<uncached> cacheW=<tokens> cacheR=<tokens> out=<tokens> cost=€<cost> day=€<spend>/<budget>
+
+The OCR vision fallback logs the same line with an extra `page=<n>`. `provider` and
+`model` are the ones Vistierie actually routed to, which may differ from what was
+requested; `cost` is the amount that was booked to `vision_usage`, and amounts are
+EUR (the `vision-daily-budget-usd` property name is historical).
+
+A call the provider answers with blank text is still a billed call: its cost is
+booked before the failure is handled, so the hourly `vision_pending` retry cannot
+spend without ever moving `total_cost_usd`. A failure while booking the cost is
+logged at WARN and never discards the description or transcript.
+
 **Agent identity:** every `/llm/vision` request is billed to a Vistierie agent named by
 `hivemem.attachment.vision-agent-name` (default `document-separator`). Vistierie requires
 this field and rejects a request without it with HTTP 400 *before* any provider call, so a
