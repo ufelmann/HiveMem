@@ -44,8 +44,12 @@ New cells trigger the summarizer within seconds via the AFTER_COMMIT event.
 
 **All amounts are EUR.** What a call costs is not computed by HiveMem: Vistierie reports
 `cost_micros` for the call it actually routed, and HiveMem books that value unchanged
-(EUR-micros → EUR). Only if the response carries no cost does HiveMem fall back to an
-internal price table, and it logs a WARN when it does.
+(EUR-micros → EUR) — but only when the reported `cost_micros` is strictly positive.
+Otherwise: a call with no response body at all and a call Vistierie routed over the Claude
+subscription (`provider=claude-subscription`) book zero silently — that is the true cost.
+Every other case, including a *negative* `cost_micros`, falls back to an internal price table
+and logs a WARN. The `> 0` guard is deliberate: booking a negative amount would credit the
+daily budget and defeat the spend gate.
 
 The daily budget is capped at `1.00` **EUR** (configurable via
 `HIVEMEM_SUMMARIZE_DAILY_BUDGET`). When exceeded, cells stay tagged and resume the next
@@ -90,7 +94,7 @@ several Vistierie calls (the main summarize plus the cheap `title_cell` / `class
 completions), each logging its own `Vistierie /llm/complete` line, followed by the single
 `Summarize LLM call` summary line:
 
-    Vistierie /llm/complete purpose=<purpose> model=<model> in=<tokens> out=<tokens> took=<ms>ms
+    Vistierie /llm/complete purpose=<purpose> provider=<provider> model=<model> in=<uncached> cacheW=<tokens> cacheR=<tokens> out=<tokens> took=<ms>ms
     Summarize LLM call cell=<uuid> provider=<provider> model=<model> in=<uncached> cacheW=<tokens> cacheR=<tokens> out=<tokens> cost=€<cost> day=€<spend>/<budget> took=<ms>ms
 
 The first line comes from the Vistierie gateway client; the second from the
@@ -98,8 +102,9 @@ summarizer itself and includes the cost of that call plus the cumulative spend f
 the current UTC day. `provider` and `model` are the ones Vistierie actually routed
 to — not what HiveMem requested, so this may differ from the configured model. Amounts
 are EUR, taken from Vistierie's `cost_micros` (the `daily-budget-usd` property name is
-historical; the budget it configures is an EUR budget). A subscription-routed call logs
-`cost=€0.00` — that is correct, not a bug, and see the
+historical; the budget it configures is an EUR budget). Booked amounts are rendered at six
+decimals, so a subscription-routed call logs `cost=€0.000000` — that is correct, not a bug;
+see the
 [cost model](#cost-model) for what it means for the daily cap. `in=` counts only the uncached
 input tokens; `cacheW=`/`cacheR=` are the cache-write and cache-read tokens, which
 are billed too. The vision path logs the same fields — see
@@ -121,7 +126,7 @@ detail, or `WARN` to quiet the per-call lines during a large backfill batch.
 |----------|---------|---------|
 | `hivemem.summarize.enabled` | `false` | Master switch |
 | `hivemem.summarize.vistierie-token` (`HIVEMEM_VISTIERIE_TOKEN`) | empty | Tenant token for the Vistierie `/llm/complete` gateway — required to enable |
-| `hivemem.summarize.model` | `claude-haiku-4-5` | Which Claude model |
+| `hivemem.summarize.model` | `claude-haiku-4-5` | The model HiveMem *requests*; Vistierie may route to a different one (see [Logging](#logging--cost-visibility)) |
 | `hivemem.summarize.language` (`HIVEMEM_SUMMARIZE_LANGUAGE`) | `${HIVEMEM_LANGUAGE:de}` *(inherits global)* | Default output language (ISO 639-1) when the content's language is unclear; source language preserved otherwise |
 | `hivemem.summarize.daily-budget-usd` | `1.00` | Hard cost cap per UTC day, **in EUR** — the `usd` in the key is historical (see [Cost model](#cost-model)) |
 | `hivemem.summarize.backfill-interval` | `PT5M` | Documentation only — see note below |

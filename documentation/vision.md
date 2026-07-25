@@ -25,8 +25,9 @@ HiveMem is built on the premise that well-structured external knowledge systems 
 ## Image sub-types (since 2026-05-02)
 
 Each image-format attachment (`image/jpeg`, `image/png`, `image/gif`,
-`image/webp`) is classified by Claude Haiku into one of three sub-types in the
-same Vision call that produces the cell content:
+`image/webp`) is classified into one of three sub-types in the same Vision call
+that produces the cell content. HiveMem sends no model field — Vistierie picks the
+model and reports back which one it routed to (see [Cost logging](#cost-logging)):
 
 | Sub-type | Cell content | Tag |
 |----------|--------------|-----|
@@ -57,8 +58,11 @@ may differ from the configured model; `cost` is the amount that was booked to
 `vision_usage`.
 
 **Amounts are EUR.** They are Vistierie's `cost_micros` for the call it actually routed,
-booked unchanged (EUR-micros → EUR); only when the response carries no cost does HiveMem
-fall back to an internal price table, logging a WARN when it does. The `usd` in
+booked unchanged (EUR-micros → EUR) — but only when the reported `cost_micros` is strictly
+positive. A call with no response body and a call routed over the Claude subscription
+(`provider=claude-subscription`) book zero silently; every other case, including a *negative*
+`cost_micros`, falls back to an internal price table and logs a WARN. The `> 0` guard is
+deliberate — booking a negative amount would credit the daily budget. The `usd` in
 `vision-daily-budget-usd` and in `vision_usage.total_cost_usd` is a historical name kept
 for config and schema compatibility — the budget it configures is an EUR budget.
 

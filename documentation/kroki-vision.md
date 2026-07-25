@@ -3,7 +3,7 @@
 Async-Anreicherung nach Attachment-Upload:
 
 - **Kroki:** Diagramm-Quelltexte (Mermaid, PlantUML, Graphviz, D2) werden zu PNG-Thumbnails gerendert und in SeaweedFS unter `s3_key_thumbnail` abgelegt.
-- **Vision:** Bilder (image/jpeg|png|gif|webp) erhalten eine Claude-Haiku-Bildbeschreibung; der Cell-Content wird von „Dateiname" auf KI-Beschreibung revidiert.
+- **Vision:** Bilder (image/jpeg|png|gif|webp) erhalten eine KI-Bildbeschreibung über Vistieries `/llm/vision`; HiveMem gibt kein Modell vor — welches Modell antwortet, entscheidet Vistierie und meldet es im Response zurück. Der Cell-Content wird von „Dateiname" auf KI-Beschreibung revidiert.
 
 ## Pipeline
 

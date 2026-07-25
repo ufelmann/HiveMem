@@ -40,7 +40,8 @@ Both features should be enabled together for the full pipeline:
 
     HIVEMEM_OCR_ENABLED=true
     HIVEMEM_SUMMARIZE_ENABLED=true
-    ANTHROPIC_API_KEY=sk-ant-...
+    HIVEMEM_VISTIERIE_BASE_URL=http://vistierie:8090
+    HIVEMEM_VISTIERIE_TOKEN=<tenant token>
 
 OCR alone (without the summarizer) gives you searchable raw text via the keyword
 index but not via semantic embedding for long cells. Both together is the full
@@ -59,7 +60,7 @@ experience.
 | `hivemem.ocr.backfill-interval` | `PT1H` | Backfill scheduler interval (ISO-8601, env: `HIVEMEM_OCR_BACKFILL_INTERVAL`) |
 | `hivemem.ocr.backfill-batch-size` | `5` | Cells per backfill run |
 | `hivemem.ocr.max-pages` | `50` | Hard cap on pages OCR'd per PDF |
-| `hivemem.ocr.vision-fallback-enabled` | `false` | Use Claude Haiku 4.5 to re-OCR pages where Tesseract output is sparse |
+| `hivemem.ocr.vision-fallback-enabled` | `false` | Use the Vistierie Vision route to re-OCR pages where Tesseract output is sparse |
 | `hivemem.ocr.vision-fallback-min-chars-per-page` | `30` | Threshold below which a page is sent to Vision |
 | `hivemem.ocr.vision-fallback-max-pages-per-doc` | `20` | Hard cap on Vision-OCR'd pages per document |
 | `hivemem.ocr.drop-blank-pages` | `true` | Drop a page when it is BOTH near-white AND produced no text (combo signal) |
@@ -116,7 +117,8 @@ Operator must remove the password externally.
 
 For pages where Tesseract returns sparse text (tables, whiteboard photos,
 handwritten notes, skewed scans), `OcrService` can re-run the rasterized PNG
-through Claude Haiku 4.5 via `VisionClient.transcribe()`. The Vision result
+through `VisionClient.transcribe()`, which posts it to Vistierie's `/llm/vision`
+with no model field — Vistierie decides which model handles it. The Vision result
 replaces the Tesseract output for that page only — strong Tesseract pages stay
 on the local engine.
 
@@ -124,7 +126,12 @@ on the local engine.
 
     HIVEMEM_OCR_ENABLED=true
     HIVEMEM_OCR_VISION_FALLBACK_ENABLED=true
-    ANTHROPIC_API_KEY=sk-ant-...
+    HIVEMEM_VISTIERIE_BASE_URL=http://vistierie:8090
+    HIVEMEM_VISTIERIE_TOKEN=<tenant token>
+
+`HIVEMEM_VISTIERIE_TOKEN` (`hivemem.attachment.vistierie-token`) is the switch: empty
+means Vision is disabled — see [kroki-vision.md](kroki-vision.md) for the full attachment
+config block.
 
 **Decision logic, per page:**
 
@@ -142,8 +149,9 @@ on the local engine.
 booked in EUR; a haiku-class page is roughly €0.002–0.005 depending on image size.
 The shared `vision_usage` table (also used by image-description) enforces the
 daily cap — once exhausted, fallback is silently skipped until the next day. A call
-Vistierie routes over the Claude subscription costs and books `0.00`, so it does not
-consume the cap at all (see [vision.md](vision.md#cost-logging)).
+Vistierie routes over the Claude subscription (`provider=claude-subscription`) reports
+zero cost and is booked as `0.00`, so it does not consume the cap at all (see
+[vision.md](vision.md#cost-logging)).
 
 **When to enable:** keep it off for archives where Tesseract works well
 (typed-text scans). Enable for receipts, tax notices, table-heavy invoices,
@@ -154,6 +162,6 @@ and whiteboard photos where Tesseract regularly returns near-empty pages.
 Phase 2 covers the Tesseract→Vision page-level fallback for PDFs (this
 document). Per-realm provider routing (e.g., `legal` realm forced to local
 Ollama, never to anthropic-api) still depends on item I (provider abstraction).
-Until then, enabling the Vision fallback routes all eligible pages to the
-configured Anthropic API key — do not enable it on instances that hold
+Until then, enabling the Vision fallback sends all eligible pages to the
+configured Vistierie gateway — do not enable it on instances that hold
 data which must stay local.
