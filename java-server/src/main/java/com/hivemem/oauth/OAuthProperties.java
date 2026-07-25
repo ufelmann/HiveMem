@@ -51,6 +51,14 @@ public class OAuthProperties {
      */
     private String authorizeRedirectBaseUrl = "";
 
+    /**
+     * Host component of {@link #authorizeRedirectBaseUrl}, derived once at startup by
+     * {@link #validateAuthorizeRedirectBaseUrl()} so the request path never re-parses the
+     * URI on every unauthenticated consent request. Empty when the base URL is empty; never
+     * {@code null}.
+     */
+    private String authorizeRedirectHost = "";
+
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
@@ -76,6 +84,8 @@ public class OAuthProperties {
         this.authorizeRedirectBaseUrl = authorizeRedirectBaseUrl;
     }
 
+    public String getAuthorizeRedirectHost() { return authorizeRedirectHost; }
+
     /**
      * Fail-closed validation, mirroring {@code HumanAuthResolverConfig}'s blank-team-domain
      * check: a misconfigured value must abort startup rather than silently sending the
@@ -86,6 +96,7 @@ public class OAuthProperties {
     void validateAuthorizeRedirectBaseUrl() {
         if (authorizeRedirectBaseUrl == null || authorizeRedirectBaseUrl.isBlank()) {
             authorizeRedirectBaseUrl = "";
+            authorizeRedirectHost = "";
             return;
         }
         String original = authorizeRedirectBaseUrl;
@@ -113,5 +124,6 @@ public class OAuthProperties {
                             + original);
         }
         authorizeRedirectBaseUrl = value;
+        authorizeRedirectHost = uri.getHost();
     }
 }

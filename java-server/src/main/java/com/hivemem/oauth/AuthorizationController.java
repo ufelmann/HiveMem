@@ -136,14 +136,17 @@ public class AuthorizationController {
                 // target are equal, so the request falls through to the 403 below instead
                 // of redirecting to itself. That holds even when Access is misconfigured at
                 // the target or the verified email has no api_tokens row — one honest page,
-                // never a redirect loop. getServerName() reflects X-Forwarded-Host because
-                // application.yml sets server.forward-headers-strategy: framework.
-                if (!target.isBlank() && !targetHostEquals(target, request.getServerName())) {
+                // never a redirect loop, as long as the ingress preserves the public Host.
+                // getServerName() reflects X-Forwarded-Host because application.yml sets
+                // server.forward-headers-strategy: framework.
+                if (!target.isBlank() && !props.getAuthorizeRedirectHost().equalsIgnoreCase(request.getServerName())) {
                     String query = request.getQueryString();
                     // Verbatim: the query is already percent-encoded by the client, and
-                    // re-encoding would corrupt state and code_challenge. Set the header
-                    // directly rather than via URI.create, which would reject characters a
-                    // client may legally leave raw.
+                    // re-encoding would corrupt state and code_challenge. The header is set
+                    // directly rather than via URI.create because a malformed percent-escape
+                    // (a stray '%', which Tomcat itself lets through) would throw there and
+                    // turn a bad request into a 500. Tomcat already rejects raw CR/LF/space
+                    // and other illegal request-target bytes with 400 before we see them.
                     String location = target + "/oauth/authorize"
                             + (query == null || query.isBlank() ? "" : "?" + query);
                     return ResponseEntity.status(302)
@@ -272,12 +275,6 @@ public class AuthorizationController {
                 .filter(s -> !"write".equals(s))
                 .collect(Collectors.joining(" "));
         return granted.isBlank() ? "read" : granted;
-    }
-
-    /** Case-insensitive host match between the configured target origin and this request. */
-    private static boolean targetHostEquals(String targetBaseUrl, String requestHost) {
-        String targetHost = URI.create(targetBaseUrl).getHost();
-        return targetHost != null && targetHost.equalsIgnoreCase(requestHost);
     }
 
     private static String issueCsrfToken(HttpSession session) {

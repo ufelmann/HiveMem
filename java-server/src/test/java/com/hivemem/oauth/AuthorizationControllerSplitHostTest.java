@@ -107,8 +107,7 @@ class AuthorizationControllerSplitHostTest {
 
     @Test
     void unauthenticatedRequestOnMachineHostRedirectsToGuiHostWithQueryVerbatim() throws Exception {
-        mockMvc.perform(get(URI.create("/oauth/authorize?" + query()))
-                        .with(request -> { request.setServerName(MACHINE_HOST); return request; }))
+        mockMvc.perform(get(URI.create("https://" + MACHINE_HOST + "/oauth/authorize?" + query())))
                 .andExpect(status().isFound())
                 .andExpect(header().string("Location",
                         "https://gui.example.com/oauth/authorize?" + query()));
@@ -116,16 +115,14 @@ class AuthorizationControllerSplitHostTest {
 
     @Test
     void unauthenticatedRequestOnGuiHostIsForbiddenNotRedirected() throws Exception {
-        mockMvc.perform(get(URI.create("/oauth/authorize?" + query()))
-                        .with(request -> { request.setServerName(GUI_HOST); return request; }))
+        mockMvc.perform(get(URI.create("https://" + GUI_HOST + "/oauth/authorize?" + query())))
                 .andExpect(status().isForbidden())
                 .andExpect(header().doesNotExist("Location"));
     }
 
     @Test
     void hostComparisonIsCaseInsensitive() throws Exception {
-        mockMvc.perform(get(URI.create("/oauth/authorize?" + query()))
-                        .with(request -> { request.setServerName("GUI.EXAMPLE.COM"); return request; }))
+        mockMvc.perform(get(URI.create("https://GUI.EXAMPLE.COM/oauth/authorize?" + query())))
                 .andExpect(status().isForbidden());
     }
 
@@ -144,17 +141,15 @@ class AuthorizationControllerSplitHostTest {
 
     @Test
     void authenticatedRequestOnMachineHostRendersConsentWithoutRedirect() throws Exception {
-        mockMvc.perform(get(URI.create("/oauth/authorize?" + query()))
-                        .header("Cf-Access-Jwt-Assertion", AccessJwtTestFixtures.signedFor(KNOWN_EMAIL))
-                        .with(request -> { request.setServerName(MACHINE_HOST); return request; }))
+        mockMvc.perform(get(URI.create("https://" + MACHINE_HOST + "/oauth/authorize?" + query()))
+                        .header("Cf-Access-Jwt-Assertion", AccessJwtTestFixtures.signedFor(KNOWN_EMAIL)))
                 .andExpect(status().isOk());
     }
 
     @Test
     void authenticatedRequestOnGuiHostRendersConsentPage() throws Exception {
-        mockMvc.perform(get(URI.create("/oauth/authorize?" + query()))
-                        .header("Cf-Access-Jwt-Assertion", AccessJwtTestFixtures.signedFor(KNOWN_EMAIL))
-                        .with(request -> { request.setServerName(GUI_HOST); return request; }))
+        mockMvc.perform(get(URI.create("https://" + GUI_HOST + "/oauth/authorize?" + query()))
+                        .header("Cf-Access-Jwt-Assertion", AccessJwtTestFixtures.signedFor(KNOWN_EMAIL)))
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("requests access to HiveMem")));
     }

@@ -111,6 +111,28 @@ class OAuthPropertiesTest {
     }
 
     @Test
+    void hostIsDerivedWithoutThePortSoThatPortIsNotComparedAtRequestTime() {
+        OAuthProperties props = withBase("https://gui.example.com:8443");
+        props.validateAuthorizeRedirectBaseUrl();
+        assertThat(props.getAuthorizeRedirectBaseUrl()).isEqualTo("https://gui.example.com:8443");
+        assertThat(props.getAuthorizeRedirectHost()).isEqualTo("gui.example.com");
+    }
+
+    @Test
+    void hostKeepsTheConfiguredCaseSoTheRequestComparisonMustBeCaseInsensitive() {
+        OAuthProperties props = withBase("https://GUI.EXAMPLE.COM");
+        props.validateAuthorizeRedirectBaseUrl();
+        assertThat(props.getAuthorizeRedirectHost()).isEqualTo("GUI.EXAMPLE.COM");
+    }
+
+    @Test
+    void blankValueYieldsAnEmptyHostNotNull() {
+        OAuthProperties props = withBase("");
+        props.validateAuthorizeRedirectBaseUrl();
+        assertThat(props.getAuthorizeRedirectHost()).isNotNull().isEmpty();
+    }
+
+    @Test
     void validValueBindsFromTheEnvironmentAndIsNormalisedDuringStartup() {
         new ApplicationContextRunner()
                 .withUserConfiguration(EnableOAuthPropertiesConfig.class)
