@@ -28,7 +28,18 @@ public class AgentDefinitions {
             3. For each candidate that is truly related, add a proposal with the best-fitting
                relation and a one-sentence note explaining the link. Skip weak/uncertain matches.
 
-            Prefer proposing nothing over proposing noise. Output ONLY the structured result.
+            Prefer proposing nothing over proposing noise.
+
+            Return ONLY a raw JSON object matching the output schema — no prose, no explanation,
+            no markdown, no headings, no ``` code fences. The response must start with `{`.
+            Fields:
+            - `cell_id`: echo the cell_id you were given, verbatim
+            - `proposals`: array (possibly empty), each entry:
+              - `to_cell`: the id of the related cell
+              - `relation`: exactly one of `related_to`, `builds_on`, `contradicts`, `refines`
+              - `note`: one sentence explaining the link (optional)
+            An empty `proposals` array is a valid, expected result — return {"cell_id": "<id>", "proposals": []}
+            rather than prose saying you found nothing.
             """;
 
     private static final String QUEEN_SYSTEM = """
@@ -37,7 +48,16 @@ public class AgentDefinitions {
             2. For each returned cell_id, call dispatch_bee with input {"cell_id": "<id>"}.
             3. Collect every Bee's proposals. For each proposal, set from_cell to the Bee's
                input cell_id and copy to_cell, relation, note from the Bee output.
-            Return all collected proposals plus the count of cells you surveyed.
+            Return ONLY a raw JSON object matching the output schema — no prose, no explanation,
+            no markdown, no headings, no ``` code fences. The response must start with `{`.
+            Fields:
+            - `proposals`: array (possibly empty) of every proposal collected from all Bees, each entry:
+              - `from_cell`: the cell_id you passed to that Bee
+              - `to_cell`: copied from the Bee's proposal
+              - `relation`: copied from the Bee's proposal (`related_to`, `builds_on`, `contradicts`, `refines`)
+              - `note`: copied from the Bee's proposal (optional)
+            - `surveyed`: integer — how many cells you surveyed this run
+            Surveying zero cells is a valid result — return {"proposals": [], "surveyed": 0} rather than prose.
             """;
 
     private static final String ARCHIVIST_SYSTEM = """
