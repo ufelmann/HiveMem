@@ -1,0 +1,1 @@
+{"text":"OK.","stop_reason":"end_turn","usage":{"inputTokens":2,"outputTokens":5,"cacheCreationInputTokens":3261,"cacheReadInputTokens":19834},"provider":"claude-subscription","model":"claude-sonnet-5","cost_micros":0,"llm_call_id":"95EFEB0005584AF6BCDEE218D52314AF"}
