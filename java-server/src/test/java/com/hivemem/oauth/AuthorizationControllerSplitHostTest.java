@@ -8,9 +8,12 @@ import com.hivemem.embedding.FixedEmbeddingClient;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
@@ -27,6 +30,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.net.URI;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -43,6 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
+@ExtendWith(OutputCaptureExtension.class)
 @Import(AuthorizationControllerSplitHostTest.TestConfig.class)
 @TestPropertySource(properties = {
         "hivemem.oauth.enabled=true",
@@ -152,6 +157,41 @@ class AuthorizationControllerSplitHostTest {
                         .header("Cf-Access-Jwt-Assertion", AccessJwtTestFixtures.signedFor(KNOWN_EMAIL)))
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("requests access to HiveMem")));
+    }
+
+    /**
+     * The resolver returns an empty Optional both when no Access JWT was presented and when a
+     * verified email has no {@code api_tokens} row, so the page must not diagnose either one.
+     */
+    @Test
+    void forbiddenPageDoesNotAssertAnUnprovableCause() throws Exception {
+        mockMvc.perform(get(URI.create("https://" + GUI_HOST + "/oauth/authorize?" + query())))
+                .andExpect(status().isForbidden())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Not signed in to HiveMem")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("No HiveMem account for this identity"))))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("no HiveMem account")));
+    }
+
+    @Test
+    void forbiddenBranchLogsHostAndWhetherAJwtWasPresent(CapturedOutput output) throws Exception {
+        mockMvc.perform(get(URI.create("https://" + GUI_HOST + "/oauth/authorize?" + query())))
+                .andExpect(status().isForbidden());
+
+        assertThat(output).contains("host=" + GUI_HOST);
+        assertThat(output).contains("accessJwtPresent=false");
+    }
+
+    @Test
+    void forbiddenBranchLogsJwtPresentWhenEmailIsUnknownAndNeverLogsTheEmail(CapturedOutput output)
+            throws Exception {
+        mockMvc.perform(get(URI.create("https://" + GUI_HOST + "/oauth/authorize?" + query()))
+                        .header("Cf-Access-Jwt-Assertion",
+                                AccessJwtTestFixtures.signedFor("stranger@example.com")))
+                .andExpect(status().isForbidden());
+
+        assertThat(output).contains("accessJwtPresent=true");
+        assertThat(output).doesNotContain("stranger@example.com");
     }
 
     @TestConfiguration(proxyBeanMethods = false)

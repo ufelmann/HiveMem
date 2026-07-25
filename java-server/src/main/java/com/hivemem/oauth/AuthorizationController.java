@@ -9,6 +9,8 @@ import com.hivemem.auth.LoginController;
 import com.hivemem.auth.TokenService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -62,6 +64,8 @@ import java.util.stream.Collectors;
 @RestController
 public class AuthorizationController {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthorizationController.class);
+
     /** Session attribute holding the one-time consent anti-CSRF token. */
     static final String CSRF_SESSION_ATTR = "hivemem.oauth.csrf";
 
@@ -79,6 +83,19 @@ public class AuthorizationController {
             button{background:transparent;border:1px solid #333;color:#ccc;cursor:pointer;font-size:13px;padding:8px 24px}
             button:hover{border-color:#666;color:#fff}
             </style></head><body><main>
+            """;
+
+    /**
+     * Deliberately names both possibilities. The resolver cannot distinguish "no Access JWT
+     * on this request" from "JWT valid, but the email has no api_tokens row" — see
+     * HumanPrincipalResolver#resolve — so claiming either one would be a guess, and guessing
+     * the wrong one is what made the split-host outage expensive to diagnose.
+     */
+    private static final String NOT_SIGNED_IN_HTML = """
+            <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Not signed in</title></head>
+            <body><h1>403 &mdash; Not signed in to HiveMem</h1>
+            <p>This request carried no verified Cloudflare Access identity, or the verified
+            email has no HiveMem account.</p></body></html>
             """;
 
     private static final String CONSENT_HTML_TAIL = """
@@ -153,11 +170,15 @@ public class AuthorizationController {
                             .header(HttpHeaders.LOCATION, location)
                             .build();
                 }
-                // Access already authenticated the browser; a null principal here means the
-                // email has no api_tokens row. /login does not exist in this mode.
+                // Both causes are indistinguishable here, so log the two facts that tell
+                // them apart — never the JWT itself or the email, matching the existing
+                // rule that JWT failure detail stays out of responses and logs.
+                log.warn("OAuth consent refused: no HiveMem principal resolved (host={} accessJwtPresent={})",
+                        request.getServerName(),
+                        request.getHeader("Cf-Access-Jwt-Assertion") != null);
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .contentType(MediaType.TEXT_HTML)
-                        .body("<html><body><h1>403</h1><p>No HiveMem account for this identity.</p></body></html>");
+                        .body(NOT_SIGNED_IN_HTML);
             }
             String fullUrl = request.getRequestURI()
                     + (request.getQueryString() == null ? "" : "?" + request.getQueryString());
