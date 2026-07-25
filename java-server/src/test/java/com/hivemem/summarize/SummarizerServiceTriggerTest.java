@@ -86,7 +86,9 @@ class SummarizerServiceTriggerTest {
 
         assertThat(out).contains("provider=claude-subscription")
                 .contains("model=claude-sonnet-5")
-                .contains("cost=€");
+                // Not just "cost=€": that also passes for "cost=€null" when recordCall is
+                // unstubbed. Require the amount recordCall returned.
+                .containsPattern("cost=€\\d+\\.\\d+ ");
         assertThat(out).doesNotContain("cost=$");
     }
 
@@ -99,9 +101,10 @@ class SummarizerServiceTriggerTest {
 
         service.summarizeOne(cellId);
 
-        assertThat(out).contains("in=2").contains("cacheW=25681").contains("cacheR=4096")
-                .contains("out=1487")
-                .contains("cost=€0.002343");
+        // One contiguous string, not four bare substrings: "in=2" alone also matches inside
+        // "in=29779" (the totalInputTokens mistake this test exists to catch).
+        assertThat(out).contains("in=2 cacheW=25681 cacheR=4096 out=1487 ")
+                .contains("cost=€0.002343 ");
     }
 
     /**
