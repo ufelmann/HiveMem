@@ -1,34 +1,31 @@
 package com.hivemem.summarize;
 
+import com.hivemem.llm.LlmCallCost;
+import com.hivemem.llm.LlmCostPolicy;
 import org.jooq.DSLContext;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Tracks per-day Anthropic call cost in the {@code summarize_usage} table and gates
- * further calls when the configured daily budget is exhausted.
+ * Tracks per-day LLM call cost in the {@code summarize_usage} table and gates further calls
+ * when the configured daily budget is exhausted. What a call costs is decided by
+ * {@link LlmCostPolicy}, from the cost Vistierie reports for the call it actually routed.
  *
- * <p>Pricing for Claude Haiku 4.5 (pinned for Phase 1; later configurable via Item I):
- * <ul>
- *   <li>$0.80 per 1M input tokens</li>
- *   <li>$4.00 per 1M output tokens</li>
- * </ul>
+ * <p>NOTE ON UNITS: every amount here is EUR. The column {@code total_cost_usd} and the
+ * property {@code daily-budget-usd} keep their names for historical reasons — renaming them
+ * would be a migration and a breaking config change; see Decision 2 of the design spec.
  */
 public class SummarizeBudgetTracker {
-
-    private static final BigDecimal INPUT_PRICE_PER_1M = new BigDecimal("0.80");
-    private static final BigDecimal OUTPUT_PRICE_PER_1M = new BigDecimal("4.00");
-    private static final BigDecimal MILLION = new BigDecimal(1_000_000);
 
     // Estimated worst-case cost of a single summarize call, reserved while a call is in flight
     // so concurrent workers cannot all pass canSpend() before any cost has actually been
     // recorded (check-then-act overshoot). Mirrors VisionBudgetTracker.
     private static final double EST_CALL_COST_USD = 0.01;
 
+    private final LlmCostPolicy policy = new LlmCostPolicy();
     private final DSLContext dsl;
     private final double dailyBudgetUsd;
     private final AtomicInteger inFlightCalls = new AtomicInteger();
@@ -47,7 +44,10 @@ public class SummarizeBudgetTracker {
         return todaySpent.doubleValue() + reserved < dailyBudgetUsd;
     }
 
-    /** Total USD recorded for today (UTC), or zero if no calls yet. Read-only; for logging. */
+    /**
+     * Total EUR recorded for today (UTC), or zero if no calls yet. Read-only; for logging.
+     * The {@code usd} in the name is historical — see the class Javadoc.
+     */
     public BigDecimal todaySpendUsd() {
         return dsl.fetchOptional(
                 "SELECT total_cost_usd FROM summarize_usage WHERE day = ?", today())
@@ -55,7 +55,7 @@ public class SummarizeBudgetTracker {
                 .orElse(BigDecimal.ZERO);
     }
 
-    /** The configured daily budget in USD (for logging the running total vs cap). */
+    /** The configured daily budget in EUR (for logging the running total vs cap). */
     public double dailyBudgetUsd() {
         return dailyBudgetUsd;
     }
@@ -70,8 +70,18 @@ public class SummarizeBudgetTracker {
         inFlightCalls.decrementAndGet();
     }
 
-    public void recordCall(int inputTokens, int outputTokens) {
-        BigDecimal cost = costOf(inputTokens, outputTokens);
+    /**
+     * Books one call. Returns the amount booked, in EUR, so the caller can log exactly what
+     * was charged instead of recomputing it.
+     *
+     * <p>NOTE ON UNITS: the column is named {@code total_cost_usd} for historical reasons but
+     * holds EUR — Vistierie prices in EUR-micros and HiveMem books that unit unchanged. The
+     * configured {@code daily-budget-usd} is therefore a EUR budget. Renaming either would be
+     * a migration / a breaking config change; see Decision 2 of the design spec.
+     */
+    public BigDecimal recordCall(LlmCallCost call) {
+        BigDecimal cost = policy.eurFor(call);
+        int inputTokens = call.totalInputTokens();
         dsl.execute(
                 "INSERT INTO summarize_usage (day, total_calls, total_input_tokens, total_output_tokens, total_cost_usd) "
                 + "VALUES (?, 1, ?, ?, ?) "
@@ -80,15 +90,8 @@ public class SummarizeBudgetTracker {
                 + "  total_input_tokens = summarize_usage.total_input_tokens + EXCLUDED.total_input_tokens, "
                 + "  total_output_tokens = summarize_usage.total_output_tokens + EXCLUDED.total_output_tokens, "
                 + "  total_cost_usd = summarize_usage.total_cost_usd + EXCLUDED.total_cost_usd",
-                today(), inputTokens, outputTokens, cost);
-    }
-
-    static BigDecimal costOf(int inputTokens, int outputTokens) {
-        BigDecimal inCost = new BigDecimal(inputTokens).multiply(INPUT_PRICE_PER_1M)
-                .divide(MILLION, 6, RoundingMode.HALF_UP);
-        BigDecimal outCost = new BigDecimal(outputTokens).multiply(OUTPUT_PRICE_PER_1M)
-                .divide(MILLION, 6, RoundingMode.HALF_UP);
-        return inCost.add(outCost);
+                today(), inputTokens, call.outputTokens(), cost);
+        return cost;
     }
 
     private static LocalDate today() {

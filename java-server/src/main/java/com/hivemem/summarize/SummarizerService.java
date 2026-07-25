@@ -8,6 +8,7 @@ import com.hivemem.extraction.ExtractionProfileRegistry;
 import com.hivemem.extraction.ExtractionProperties;
 import com.hivemem.extraction.FactSpec;
 import com.hivemem.extraction.PreClassifier;
+import com.hivemem.llm.LlmCallCost;
 import com.hivemem.queen.ArchivistTrigger;
 import com.hivemem.write.WriteToolService;
 import org.jooq.DSLContext;
@@ -23,6 +24,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Comparator;
@@ -151,18 +153,18 @@ public class SummarizerService {
 
         try {
             SummaryResult result;
+            BigDecimal booked;
             long t0 = System.nanoTime();
             budget.beginCall();
             try {
                 result = anthropic.summarize(snap.content(), profile);
-                budget.recordCall(result.inputTokens(), result.outputTokens());
+                booked = budget.recordCall(callCostOf(result.inputTokens(), result.outputTokens()));
             } finally {
                 budget.endCall();
             }
             long ms = (System.nanoTime() - t0) / 1_000_000;
-            log.info("Summarize LLM call cell={} model={} in={} out={} cost=${} day=${}/{} took={}ms",
-                    cellId, props.getModel(), result.inputTokens(), result.outputTokens(),
-                    SummarizeBudgetTracker.costOf(result.inputTokens(), result.outputTokens()),
+            log.info("Summarize LLM call cell={} model={} in={} out={} cost=€{} day=€{}/{} took={}ms",
+                    cellId, props.getModel(), result.inputTokens(), result.outputTokens(), booked,
                     budget.todaySpendUsd(), String.format("%.2f", budget.dailyBudgetUsd()), ms);
 
             if (result.summary() == null || result.summary().isBlank()) {
@@ -247,7 +249,7 @@ public class SummarizerService {
                     title = anthropic.generateTitle(summary);
                     // Charge the call to the daily budget — even when the title comes back
                     // blank — so the canSpend() gate actually bounds the backfill.
-                    budget.recordCall(title.inputTokens(), title.outputTokens());
+                    budget.recordCall(callCostOf(title.inputTokens(), title.outputTokens()));
                 } finally {
                     budget.endCall();
                 }
@@ -302,13 +304,22 @@ public class SummarizerService {
         return processed;
     }
 
+    /**
+     * Bridges the token counts the summarizer still returns into a cost record. Temporary: once
+     * {@link AnthropicSummarizer} carries the provider's own {@link LlmCallCost} out of the
+     * Vistierie envelope, these call sites pass that record straight through and this helper goes.
+     */
+    private LlmCallCost callCostOf(int inputTokens, int outputTokens) {
+        return new LlmCallCost(null, props.getModel(), inputTokens, outputTokens, 0, 0, 0L);
+    }
+
     /** Wraps a classifyTaxRelevance call with the budget's in-flight reservation. */
     private AnthropicSummarizer.TaxClassification classifyWithBudget(String summary) {
         budget.beginCall();
         try {
             AnthropicSummarizer.TaxClassification c = anthropic.classifyTaxRelevance(summary);
             // Charge the classifier call to the daily budget (see backfillTitles).
-            budget.recordCall(c.inputTokens(), c.outputTokens());
+            budget.recordCall(callCostOf(c.inputTokens(), c.outputTokens()));
             return c;
         } finally {
             budget.endCall();

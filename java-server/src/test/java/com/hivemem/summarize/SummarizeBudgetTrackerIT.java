@@ -1,5 +1,6 @@
 package com.hivemem.summarize;
 
+import com.hivemem.llm.LlmCallCost;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
@@ -12,7 +13,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import javax.sql.DataSource;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
 @Testcontainers
@@ -37,6 +41,11 @@ class SummarizeBudgetTrackerIT {
         dsl.execute("DELETE FROM summarize_usage");
     }
 
+    /** A call whose cost Vistierie reported explicitly, in EUR-micros. */
+    private static LlmCallCost call(int inputTokens, int outputTokens, long costMicros) {
+        return new LlmCallCost("bedrock", "claude-haiku-4-5", inputTokens, outputTokens, 0, 0, costMicros);
+    }
+
     @Test
     void canSpend_whenNoUsageYet() {
         SummarizeBudgetTracker t = new SummarizeBudgetTracker(dsl, 1.00);
@@ -46,22 +55,22 @@ class SummarizeBudgetTrackerIT {
     @Test
     void canSpend_underBudget() {
         SummarizeBudgetTracker t = new SummarizeBudgetTracker(dsl, 1.00);
-        t.recordCall(1000, 200);                  // ~$0.0016
+        t.recordCall(call(1000, 200, 1_600L));    // €0.0016
         assertTrue(t.canSpend());
     }
 
     @Test
     void cannotSpend_overBudget() {
         SummarizeBudgetTracker t = new SummarizeBudgetTracker(dsl, 0.001);  // tiny budget
-        t.recordCall(1000, 200);
+        t.recordCall(call(1000, 200, 1_600L));
         assertFalse(t.canSpend());
     }
 
     @Test
     void recordCallUpserts() {
         SummarizeBudgetTracker t = new SummarizeBudgetTracker(dsl, 100.00);
-        t.recordCall(500, 100);
-        t.recordCall(500, 100);
+        t.recordCall(call(500, 100, 800L));
+        t.recordCall(call(500, 100, 800L));
         Long calls = ((Number) dsl.fetchOne("SELECT total_calls FROM summarize_usage").get(0)).longValue();
         assertEquals(2L, calls.longValue());
     }
@@ -71,7 +80,7 @@ class SummarizeBudgetTrackerIT {
         // Insert a row for "today" using explicit UTC, then confirm canSpend()/recordCall() see
         // the exact same day regardless of the JVM's default timezone.
         SummarizeBudgetTracker t = new SummarizeBudgetTracker(dsl, 0.001);
-        t.recordCall(1_000_000, 0); // definitely exceeds a $0.001 budget
+        t.recordCall(call(1_000_000, 0, 800_000L)); // €0.80 definitely exceeds a 0.001 budget
         java.time.LocalDate utcToday = java.time.LocalDate.now(java.time.ZoneOffset.UTC);
         Long rows = ((Number) dsl.fetchOne(
                 "SELECT count(*) FROM summarize_usage WHERE day = ?", utcToday).get(0)).longValue();
@@ -130,7 +139,7 @@ class SummarizeBudgetTrackerIT {
                     if (t.canSpend()) {
                         callsMade.incrementAndGet();
                         Thread.sleep(150); // stand-in for the real (slow) LLM round-trip
-                        t.recordCall(1000, 200);
+                        t.recordCall(call(1000, 200, 1_600L));
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -156,11 +165,44 @@ class SummarizeBudgetTrackerIT {
     void todaySpendUsd_reflectsRecordedCostAndExposesBudget() {
         SummarizeBudgetTracker t = new SummarizeBudgetTracker(dsl, 5.00);
         assertEquals(0, t.todaySpendUsd().signum(), "no usage yet → zero");
-        t.recordCall(1000, 200);
-        assertEquals(
-                SummarizeBudgetTracker.costOf(1000, 200).doubleValue(),
-                t.todaySpendUsd().doubleValue(),
-                1e-9);
+        // The tracker stores exactly what it booked; how the amount itself is derived from a
+        // call is LlmCostPolicy's contract and is covered by LlmCostPolicyTest.
+        BigDecimal booked = t.recordCall(call(1000, 200, 1_600L));
+        assertEquals(booked.doubleValue(), t.todaySpendUsd().doubleValue(), 1e-9);
         assertEquals(5.00, t.dailyBudgetUsd());
+    }
+
+    @Test
+    void recordsAllInputKindsAndReturnsTheBookedAmount() {
+        var tracker = new SummarizeBudgetTracker(dsl, 30.0);
+        var c = new LlmCallCost("bedrock", "claude-haiku-4-5", 2, 1487, 25681, 0, 5950L);
+
+        BigDecimal booked = tracker.recordCall(c);
+
+        assertThat(booked).isEqualByComparingTo(new BigDecimal("0.005950"));
+        var row = dsl.fetchOne(
+                "SELECT total_calls, total_input_tokens, total_output_tokens, total_cost_usd "
+                        + "FROM summarize_usage WHERE day = ?", LocalDate.now(ZoneOffset.UTC));
+        assertThat(row.get("total_calls", Integer.class)).isEqualTo(1);
+        // 2 + 25681 + 0 — the cache tokens are input too.
+        assertThat(row.get("total_input_tokens", Integer.class)).isEqualTo(25683);
+        assertThat(row.get("total_output_tokens", Integer.class)).isEqualTo(1487);
+        assertThat(row.get("total_cost_usd", BigDecimal.class))
+                .isEqualByComparingTo(new BigDecimal("0.005950"));
+    }
+
+    @Test
+    void subscriptionCallCostsNothingButStillCounts() {
+        var tracker = new SummarizeBudgetTracker(dsl, 30.0);
+        var c = new LlmCallCost("claude-subscription", "claude-sonnet-5", 2, 1487, 25681, 0, 0L);
+
+        assertThat(tracker.recordCall(c)).isEqualByComparingTo(BigDecimal.ZERO);
+
+        var row = dsl.fetchOne(
+                "SELECT total_calls, total_input_tokens, total_cost_usd FROM summarize_usage WHERE day = ?",
+                LocalDate.now(ZoneOffset.UTC));
+        assertThat(row.get("total_calls", Integer.class)).isEqualTo(1);
+        assertThat(row.get("total_input_tokens", Integer.class)).isEqualTo(25683);
+        assertThat(row.get("total_cost_usd", BigDecimal.class)).isEqualByComparingTo(BigDecimal.ZERO);
     }
 }
