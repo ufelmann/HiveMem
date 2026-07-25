@@ -212,7 +212,8 @@ class SummarizerServiceIT {
         buildService().summarizeOne(id);
 
         assertThat(output).contains(
-                "Summarize LLM call cell=" + id + " model=claude-haiku-4-5 in=10 out=3");
+                "Summarize LLM call cell=" + id + " provider=anthropic model=claude-haiku-4-5"
+                        + " in=10 cacheW=0 cacheR=0 out=3");
         assertThat(output).contains("/10.00");   // buildService sets dailyBudgetUsd = 10.0
     }
 

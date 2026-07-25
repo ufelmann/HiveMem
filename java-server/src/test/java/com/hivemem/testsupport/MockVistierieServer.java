@@ -27,12 +27,12 @@ public class MockVistierieServer {
      * test can vary provider/model/usage beyond {@link #stubComplete}'s canned envelope.
      */
     public void stubCompleteRaw(String json) {
-        stubFor(post(urlEqualTo("/llm/complete")).willReturn(okJson(json)));
+        stubFor(post(urlEqualTo("/llm/complete")).atPriority(1).willReturn(okJson(json)));
     }
 
     /** 200 with no body at all → the RestClient hands the caller a null JsonNode. */
     public void stubCompleteEmptyBody() {
-        stubFor(post(urlEqualTo("/llm/complete")).willReturn(
+        stubFor(post(urlEqualTo("/llm/complete")).atPriority(1).willReturn(
                 aResponse().withStatus(200).withHeader("Content-Type", "application/json")));
     }
 

@@ -162,10 +162,16 @@ public class SummarizerService {
                 budget.endCall();
             }
             long ms = (System.nanoTime() - t0) / 1_000_000;
-            log.info("Summarize LLM call cell={} model={} in={} out={} cost=€{} day=€{}/{} took={}ms",
-                    cellId, props.getModel(), result.cost().inputTokens(),
-                    result.cost().outputTokens(), booked,
-                    budget.todaySpendUsd(), String.format("%.2f", budget.dailyBudgetUsd()), ms);
+            // Report what the provider actually did, not what HiveMem asked for: Vistierie may
+            // route to a different model, and Anthropic bills the cache tokens that inputTokens
+            // excludes. `booked` is the amount recordCall charged -- never recomputed here.
+            log.info("Summarize LLM call cell={} provider={} model={} in={} cacheW={} cacheR={} out={} "
+                            + "cost=€{} day=€{}/{} took={}ms",
+                    cellId, result.cost().provider(), result.cost().model(),
+                    result.cost().inputTokens(), result.cost().cacheCreationTokens(),
+                    result.cost().cacheReadTokens(), result.cost().outputTokens(),
+                    booked, budget.todaySpendUsd(),
+                    String.format("%.2f", budget.dailyBudgetUsd()), ms);
 
             if (result.summary() == null || result.summary().isBlank()) {
                 // Loop guard: reviseCell(content, null) would re-tag needs_summary on the new

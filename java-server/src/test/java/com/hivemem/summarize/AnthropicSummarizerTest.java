@@ -75,7 +75,7 @@ class AnthropicSummarizerTest {
         mock.stubCompleteRaw("""
                 {"text":"{\\"summary\\":\\"s\\",\\"key_points\\":[],\\"tags\\":[]}",
                  "usage":{"inputTokens":2,"outputTokens":1487,
-                          "cacheCreationInputTokens":25681,"cacheReadInputTokens":0},
+                          "cacheCreationInputTokens":25681,"cacheReadInputTokens":4096},
                  "provider":"claude-subscription","model":"claude-sonnet-5","cost_micros":0}
                 """);
 
@@ -83,7 +83,8 @@ class AnthropicSummarizerTest {
 
         assertThat(r.cost().model()).isEqualTo("claude-sonnet-5");
         assertThat(r.cost().provider()).isEqualTo("claude-subscription");
-        assertThat(r.cost().totalInputTokens()).isEqualTo(25683);
+        // Non-zero cacheRead on purpose: with 0 the total could not detect a dropped field.
+        assertThat(r.cost().totalInputTokens()).isEqualTo(29779);
         assertThat(r.cost().outputTokens()).isEqualTo(1487);
     }
 
