@@ -2,6 +2,7 @@ package com.hivemem.attachment;
 
 import com.hivemem.extraction.ExtractionProfile;
 import com.hivemem.extraction.ExtractionProfileRegistry;
+import com.hivemem.llm.LlmCallCost;
 import com.hivemem.queen.ArchivistTrigger;
 import com.hivemem.write.WriteToolService;
 import org.jooq.DSLContext;
@@ -262,7 +263,7 @@ class AttachmentEnrichmentServiceUnitTest {
         svc.describeAndRevise(UUID.randomUUID(), UUID.randomUUID(), "k", "image/png");
 
         verifyNoInteractions(visionClient, writeService, profileRegistry);
-        verify(visionBudget, never()).recordCall(anyInt(), anyInt());
+        verify(visionBudget, never()).recordCall(any());
     }
 
     @Test
@@ -270,11 +271,11 @@ class AttachmentEnrichmentServiceUnitTest {
         UUID cell = UUID.randomUUID();
         stubDownload();
         when(visionClient.describeImage(any(), eq("image/png")))
-                .thenReturn(new VisionClient.ImageDescriptionResult("photo_general", "  ", 5, 1));
+                .thenReturn(new VisionClient.ImageDescriptionResult("photo_general", "  ", cost(5, 1)));
 
         svc.describeAndRevise(UUID.randomUUID(), cell, "k", "image/png");
 
-        verify(visionBudget).recordCall(5, 1);
+        verify(visionBudget).recordCall(cost(5, 1));
         verify(writeService, never()).reviseCell(any(), any(), any(), any());
         // applyTag(vision_failed): 4-arg execute. removeTag(vision_pending): 3-arg execute.
         verify(dsl).execute(anyString(), eq("vision_failed"), eq("vision_failed"), eq(cell));
@@ -287,7 +288,7 @@ class AttachmentEnrichmentServiceUnitTest {
         stubDownload();
         when(visionClient.describeImage(any(), eq("image/png")))
                 .thenReturn(new VisionClient.ImageDescriptionResult(
-                        "whiteboard_photo", "A drawing", 10, 5));
+                        "whiteboard_photo", "A drawing", cost(10, 5)));
         ExtractionProfile profile = new ExtractionProfile(
                 "image", "p", null, null, null, List.of("contains_text", "structured"));
         when(profileRegistry.resolveImageSubType("whiteboard_photo")).thenReturn(profile);
@@ -313,7 +314,7 @@ class AttachmentEnrichmentServiceUnitTest {
         UUID newCell = UUID.randomUUID();
         stubDownload();
         when(visionClient.describeImage(any(), eq("image/png")))
-                .thenReturn(new VisionClient.ImageDescriptionResult("photo_general", "A photo", 10, 5));
+                .thenReturn(new VisionClient.ImageDescriptionResult("photo_general", "A photo", cost(10, 5)));
         when(writeService.reviseCell(any(), eq(oldCell), eq("A photo"), eq(null)))
                 .thenReturn(java.util.Map.<String, Object>of("new_id", newCell));
         ExtractionProfile profile = new ExtractionProfile("image", "p", null, null, null, List.of());
@@ -396,7 +397,8 @@ class AttachmentEnrichmentServiceUnitTest {
         lenient().when(seaweedFs.download(anyString())).thenReturn(is);
     }
 
-    private static int anyInt() {
-        return org.mockito.ArgumentMatchers.anyInt();
+    /** A stand-in Vistierie cost record; the vision tracker is mocked, only identity matters. */
+    private static LlmCallCost cost(int inputTokens, int outputTokens) {
+        return new LlmCallCost("bedrock", "claude-haiku-4-5", inputTokens, outputTokens, 0, 0, 1L);
     }
 }

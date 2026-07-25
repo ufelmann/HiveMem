@@ -39,8 +39,8 @@ class VisionClientTest {
         mock.stubVision("a square box");
         var result = client.describe(new byte[]{1, 2, 3}, "image/png");
         assertThat(result.description()).isEqualTo("a square box");
-        assertThat(result.inputTokens()).isEqualTo(50);
-        assertThat(result.outputTokens()).isEqualTo(4);
+        assertThat(result.cost().inputTokens()).isEqualTo(50);
+        assertThat(result.cost().outputTokens()).isEqualTo(4);
     }
 
     @Test

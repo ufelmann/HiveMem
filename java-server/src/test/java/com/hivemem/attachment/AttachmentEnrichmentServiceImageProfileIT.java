@@ -2,6 +2,7 @@ package com.hivemem.attachment;
 
 import com.hivemem.extraction.ExtractionProfile;
 import com.hivemem.extraction.ExtractionProfileRegistry;
+import com.hivemem.llm.LlmCallCost;
 import com.hivemem.queen.ArchivistTrigger;
 import com.hivemem.write.WriteToolService;
 import org.jooq.DSLContext;
@@ -76,7 +77,7 @@ class AttachmentEnrichmentServiceImageProfileIT {
                 .thenReturn(new VisionClient.ImageDescriptionResult(
                         "whiteboard_photo",
                         "Sprint planning notes:\n- TLS rollout\n- DB migration",
-                        200, 80));
+                        cost(200, 80)));
 
         svc.describeAndRevise(attId, cellId, "img-key", "image/png");
 
@@ -84,7 +85,7 @@ class AttachmentEnrichmentServiceImageProfileIT {
         verify(writeService).reviseCell(any(), eq(cellId), contentCap.capture(), isNull());
         assertTrue(contentCap.getValue().contains("Sprint planning notes"));
 
-        verify(budget).recordCall(200, 80);
+        verify(budget).recordCall(cost(200, 80));
 
         ExtractionProfile profile = registry.resolveImageSubType("whiteboard_photo");
         assertEquals("image-whiteboard", profile.type());
@@ -104,7 +105,7 @@ class AttachmentEnrichmentServiceImageProfileIT {
         UUID cellId = UUID.randomUUID();
         when(visionClient.describeImage(any(), anyString()))
                 .thenReturn(new VisionClient.ImageDescriptionResult(
-                        "document_scan", "Sehr geehrte Damen und Herren ...", 300, 200));
+                        "document_scan", "Sehr geehrte Damen und Herren ...", cost(300, 200)));
 
         svc.describeAndRevise(UUID.randomUUID(), cellId, "k", "image/jpeg");
 
@@ -121,7 +122,7 @@ class AttachmentEnrichmentServiceImageProfileIT {
         UUID cellId = UUID.randomUUID();
         when(visionClient.describeImage(any(), anyString()))
                 .thenReturn(new VisionClient.ImageDescriptionResult(
-                        "photo_general", "A golden retriever in a park.", 100, 30));
+                        "photo_general", "A golden retriever in a park.", cost(100, 30)));
 
         svc.describeAndRevise(UUID.randomUUID(), cellId, "k", "image/jpeg");
 
@@ -136,7 +137,7 @@ class AttachmentEnrichmentServiceImageProfileIT {
         UUID cellId = UUID.randomUUID();
         when(visionClient.describeImage(any(), anyString()))
                 .thenReturn(new VisionClient.ImageDescriptionResult(
-                        "whiteboard_photo", "x", 10, 10));
+                        "whiteboard_photo", "x", cost(10, 10)));
 
         svc.describeAndRevise(UUID.randomUUID(), cellId, "k", "image/png");
 
@@ -153,14 +154,19 @@ class AttachmentEnrichmentServiceImageProfileIT {
         UUID cellId = UUID.randomUUID();
         when(visionClient.describeImage(any(), anyString()))
                 .thenReturn(new VisionClient.ImageDescriptionResult(
-                        "photo_general", "", 50, 5));
+                        "photo_general", "", cost(50, 5)));
 
         svc.describeAndRevise(UUID.randomUUID(), cellId, "k", "image/png");
 
-        verify(budget).recordCall(50, 5);
+        verify(budget).recordCall(cost(50, 5));
         verify(writeService, never()).reviseCell(any(), any(), anyString(), any());
         verify(dsl).execute(contains("array_append"),
                 eq("vision_failed"), eq("vision_failed"), eq(cellId));
         verify(dsl).execute(contains("array_remove"), eq("vision_pending"), eq(cellId));
+    }
+
+    /** A stand-in Vistierie cost record; the vision tracker is mocked, only identity matters. */
+    private static LlmCallCost cost(int inputTokens, int outputTokens) {
+        return new LlmCallCost("bedrock", "claude-haiku-4-5", inputTokens, outputTokens, 0, 0, 1L);
     }
 }

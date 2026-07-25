@@ -1,5 +1,6 @@
 package com.hivemem.attachment;
 
+import com.hivemem.llm.LlmCallCost;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,10 +20,11 @@ public class VisionClient {
     private static final Logger log = LoggerFactory.getLogger(VisionClient.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    public record VisionResult(String description, int inputTokens, int outputTokens) {}
+    /** A vision call's text plus what Vistierie reports it cost, for the budget tracker. */
+    public record VisionResult(String description, LlmCallCost cost) {}
 
-    public record ImageDescriptionResult(
-            String subType, String content, int inputTokens, int outputTokens) {}
+    /** {@link #describeImage}'s parsed classification, carrying the same cost record. */
+    public record ImageDescriptionResult(String subType, String content, LlmCallCost cost) {}
 
     public static class OversizeImageException extends RuntimeException {
         public OversizeImageException(String msg) { super(msg); }
@@ -148,7 +150,7 @@ public class VisionClient {
             subType = DEFAULT_SUB_TYPE;
             content = raw.description();
         }
-        return new ImageDescriptionResult(subType, content, raw.inputTokens(), raw.outputTokens());
+        return new ImageDescriptionResult(subType, content, raw.cost());
     }
 
     private JsonNode tryParseJson(String text) {
@@ -201,8 +203,8 @@ public class VisionClient {
         if (text == null || text.isBlank()) {
             throw new IllegalStateException("Vistierie returned empty text");
         }
-        int inputTokens = resp.path("usage").path("inputTokens").asInt(0);
-        int outputTokens = resp.path("usage").path("outputTokens").asInt(0);
-        return new VisionResult(text.strip(), inputTokens, outputTokens);
+        // Report what Vistierie actually did (its routed provider/model and every token kind),
+        // not what HiveMem asked for: the two may differ.
+        return new VisionResult(text.strip(), LlmCallCost.from(resp));
     }
 }

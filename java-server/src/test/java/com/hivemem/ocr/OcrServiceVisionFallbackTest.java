@@ -3,6 +3,7 @@ package com.hivemem.ocr;
 import com.hivemem.attachment.SeaweedFsClient;
 import com.hivemem.attachment.VisionBudgetTracker;
 import com.hivemem.attachment.VisionClient;
+import com.hivemem.llm.LlmCallCost;
 import com.hivemem.consumption.DocumentDedupService;
 import com.hivemem.write.WriteToolService;
 import org.junit.jupiter.api.BeforeEach;
@@ -89,14 +90,13 @@ class OcrServiceVisionFallbackTest {
     void invokesVision_whenTesseractOutputBelowThreshold() throws Exception {
         when(tesseract.ocr(any(), anyString(), anyInt())).thenReturn("xx"); // sparse → triggers fallback
         when(visionClient.transcribe(any(), eq("image/png")))
-                .thenReturn(new VisionClient.VisionResult(
-                        "FULL VISION TRANSCRIPT", 100, 50));
+                .thenReturn(new VisionClient.VisionResult("FULL VISION TRANSCRIPT", cost(100, 50)));
 
         UUID cellId = UUID.randomUUID();
         build().processOne(cellId, "key");
 
         verify(visionClient, times(2)).transcribe(any(), eq("image/png"));
-        verify(visionBudget, times(2)).recordCall(100, 50);
+        verify(visionBudget, times(2)).recordCall(cost(100, 50));
 
         var contentCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
         verify(writeService).reviseCell(any(), eq(cellId), contentCaptor.capture(), any());
@@ -115,7 +115,7 @@ class OcrServiceVisionFallbackTest {
         build().processOne(UUID.randomUUID(), "key");
 
         verify(visionClient, never()).transcribe(any(), anyString());
-        verify(visionBudget, never()).recordCall(anyInt(), anyInt());
+        verify(visionBudget, never()).recordCall(any());
     }
 
     @Test
@@ -146,7 +146,7 @@ class OcrServiceVisionFallbackTest {
         props.setVisionFallbackMaxPagesPerDoc(2);
         when(tesseract.ocr(any(), anyString(), anyInt())).thenReturn("xx");
         when(visionClient.transcribe(any(), anyString()))
-                .thenReturn(new VisionClient.VisionResult("V", 10, 10));
+                .thenReturn(new VisionClient.VisionResult("V", cost(10, 10)));
 
         build().processOne(UUID.randomUUID(), "key");
 
@@ -195,5 +195,10 @@ class OcrServiceVisionFallbackTest {
         build().processOne(UUID.randomUUID(), "key");
 
         verify(dedup, never()).findAndDiscardDuplicate(any());
+    }
+
+    /** A stand-in Vistierie cost record; the vision tracker is mocked, only identity matters. */
+    private static LlmCallCost cost(int inputTokens, int outputTokens) {
+        return new LlmCallCost("bedrock", "claude-haiku-4-5", inputTokens, outputTokens, 0, 0, 1L);
     }
 }

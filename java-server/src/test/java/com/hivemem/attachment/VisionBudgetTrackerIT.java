@@ -1,5 +1,6 @@
 package com.hivemem.attachment;
 
+import com.hivemem.llm.LlmCallCost;
 import org.flywaydb.core.Flyway;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
@@ -13,6 +14,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import javax.sql.DataSource;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
 @Testcontainers
@@ -45,19 +51,58 @@ class VisionBudgetTrackerIT {
     @Test
     void canSpendBlocksWhenBudgetExhausted() {
         VisionBudgetTracker t = new VisionBudgetTracker(dsl, 0.001);
-        t.recordCall(2_000_000, 0); // ~$2 input cost
+        t.recordCall(call(2_000_000, 0, 2_000_000L)); // €2.00 reported by Vistierie
         assertFalse(t.canSpend());
     }
 
+    /**
+     * Every input kind Vistierie reports has to reach {@code total_input_tokens}: with prompt
+     * caching on, the bulk of the real input sits in the two cache fields, so booking only
+     * {@code inputTokens} under-counts by orders of magnitude. The booked EUR amount is
+     * Vistierie's own {@code cost_micros}, not a locally recomputed price.
+     */
     @Test
-    void recordCallUpserts() {
+    void booksAllInputKindsAndTheVistierieCost() {
+        VisionBudgetTracker t = new VisionBudgetTracker(dsl, 5.0);
+        var call = new LlmCallCost("bedrock", "claude-haiku-4-5", 1500, 300, 4000, 21000, 2343L);
+
+        assertThat(t.recordCall(call)).isEqualByComparingTo(new BigDecimal("0.002343"));
+
+        var row = dsl.fetchOne(
+                "SELECT total_input_tokens, total_output_tokens, total_cost_usd "
+                        + "FROM vision_usage WHERE day = ?", LocalDate.now(ZoneOffset.UTC));
+        assertThat(row.get("total_input_tokens", Integer.class)).isEqualTo(26500); // 1500+4000+21000
+        assertThat(row.get("total_output_tokens", Integer.class)).isEqualTo(300);
+        assertThat(row.get("total_cost_usd", BigDecimal.class))
+                .isEqualByComparingTo(new BigDecimal("0.002343"));
+    }
+
+    @Test
+    void recordCallAccumulatesTheDaysTotalsInsteadOfOverwritingThem() {
+        // The whole point of the ON CONFLICT clause: a second call for the same day must ADD to
+        // the row, not replace it. Every value below is deliberately distinct from every other
+        // and from each sum, so a pure-overwrite upsert ("= EXCLUDED.x") cannot coincidentally
+        // produce the expected numbers — if accumulation regresses, canSpend() would see only
+        // the last call and the daily cap would be silently unbounded.
         VisionBudgetTracker t = new VisionBudgetTracker(dsl, 100);
-        t.recordCall(1_000_000, 100_000);
-        t.recordCall(500_000, 50_000);
-        var row = dsl.fetchOne("SELECT total_calls, total_input_tokens, total_output_tokens FROM vision_usage");
-        assertEquals(2, row.get("total_calls", Integer.class));
-        assertEquals(1_500_000, row.get("total_input_tokens", Integer.class));
-        assertEquals(150_000, row.get("total_output_tokens", Integer.class));
+
+        t.recordCall(call(1_000_000, 100_000, 800L));  // €0.000800
+        // Second call: different everything, and cache tokens count as input too.
+        t.recordCall(new LlmCallCost("bedrock", "claude-haiku-4-5", 7000, 30, 1200, 40, 2_500L));
+
+        var row = dsl.fetchOne(
+                "SELECT total_calls, total_input_tokens, total_output_tokens, total_cost_usd "
+                        + "FROM vision_usage WHERE day = ?", LocalDate.now(ZoneOffset.UTC));
+        assertThat(row.get("total_calls", Integer.class)).isEqualTo(2);
+        assertThat(row.get("total_input_tokens", Integer.class))
+                .isEqualTo(1_008_240);                                              // 1000000+7000+1200+40
+        assertThat(row.get("total_output_tokens", Integer.class)).isEqualTo(100_030); // 100000+30
+        assertThat(row.get("total_cost_usd", BigDecimal.class))                       // 0.000800+0.002500
+                .isEqualByComparingTo(new BigDecimal("0.003300"));
+    }
+
+    private static LlmCallCost call(int in, int out, long costMicros) {
+        return new LlmCallCost("bedrock", "claude-haiku-4-5", in, out, 0, 0, costMicros);
     }
 
     @Test

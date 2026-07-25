@@ -164,7 +164,7 @@ public class AttachmentEnrichmentService {
             visionBudget.beginCall();
             try {
                 r = visionClient.describeImage(imageBytes, mimeType);
-                visionBudget.recordCall(r.inputTokens(), r.outputTokens());
+                visionBudget.recordCall(r.cost());
             } finally {
                 visionBudget.endCall();
             }

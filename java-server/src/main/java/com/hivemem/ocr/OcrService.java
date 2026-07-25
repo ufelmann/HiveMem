@@ -232,7 +232,7 @@ public class OcrService {
             visionBudget.beginCall();
             try {
                 vr = visionClient.transcribe(pngBytes, "image/png");
-                visionBudget.recordCall(vr.inputTokens(), vr.outputTokens());
+                visionBudget.recordCall(vr.cost());
             } finally {
                 visionBudget.endCall();
             }
