@@ -41,7 +41,8 @@ extra tags get applied per sub-type, edit the YAML — no code change needed.
 content generation (no extra request). `max_tokens` for image describe is 4000
 (was 600 before this change), to fit verbatim transcription of full document
 pages. Daily budget is shared with the OCR Vision fallback via
-`hivemem.attachment.vision-daily-budget-usd`.
+`hivemem.attachment.vision-daily-budget-usd` — an **EUR** budget despite the key name, see
+[Cost logging](#cost-logging).
 
 ### Cost logging
 
@@ -51,9 +52,27 @@ Every vision call emits one INFO line, mirroring the summarize path (see
     Vision LLM call cell=<uuid> provider=<provider> model=<model> in=<uncached> cacheW=<tokens> cacheR=<tokens> out=<tokens> cost=€<cost> day=€<spend>/<budget>
 
 The OCR vision fallback logs the same line with an extra `page=<n>`. `provider` and
-`model` are the ones Vistierie actually routed to, which may differ from what was
-requested; `cost` is the amount that was booked to `vision_usage`, and amounts are
-EUR (the `vision-daily-budget-usd` property name is historical).
+`model` are the ones Vistierie actually routed to — not what HiveMem requested, so they
+may differ from the configured model; `cost` is the amount that was booked to
+`vision_usage`.
+
+**Amounts are EUR.** They are Vistierie's `cost_micros` for the call it actually routed,
+booked unchanged (EUR-micros → EUR); only when the response carries no cost does HiveMem
+fall back to an internal price table, logging a WARN when it does. The `usd` in
+`vision-daily-budget-usd` and in `vision_usage.total_cost_usd` is a historical name kept
+for config and schema compatibility — the budget it configures is an EUR budget.
+
+**Limitation — the daily gate does not bound subscription traffic.** A call Vistierie
+routes over the Claude subscription (`provider=claude-subscription`) reports zero cost and
+is booked as `0.00` by design, because that is what it costs. Such calls never move
+`total_cost_usd`, so the daily budget never trips for them, however many run. The cap
+bounds pay-per-token routes only.
+
+**Figures recorded before this version are not comparable.** Earlier rows were estimated
+from the model HiveMem *requested* rather than the one Vistierie routed to, omitted cache
+read/write tokens, and were labelled USD. Old `vision_usage` rows are kept as they are (the
+gate reads only the current UTC day), so a trend across the upgrade date compares two
+different measurements.
 
 A call the provider answers with blank text is still a billed call: its cost is
 booked before the failure is handled, so the hourly `vision_pending` retry cannot

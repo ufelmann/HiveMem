@@ -132,14 +132,18 @@ on the local engine.
 2. If the page text length is below `vision-fallback-min-chars-per-page`
    (default 30) AND the per-document Vision cap (`vision-fallback-max-pages-per-doc`,
    default 20) is not yet reached AND the daily Vision budget
-   (`hivemem.attachment.vision-daily-budget-usd`, default $1.00) still has room,
+   (`hivemem.attachment.vision-daily-budget-usd`, default 1.00 EUR — the `usd` in the
+   key is historical, see [vision.md](vision.md#cost-logging)) still has room,
    the page is re-transcribed with Vision.
 3. On Vision error (oversize image, 4xx, network), the original Tesseract
    output is kept.
 
-**Cost:** Claude Haiku 4.5 is ~$0.002–0.005 per page depending on image size.
+**Cost:** the cost of record is whatever Vistierie reports for the call it routed,
+booked in EUR; a haiku-class page is roughly €0.002–0.005 depending on image size.
 The shared `vision_usage` table (also used by image-description) enforces the
-daily cap — once exhausted, fallback is silently skipped until the next day.
+daily cap — once exhausted, fallback is silently skipped until the next day. A call
+Vistierie routes over the Claude subscription costs and books `0.00`, so it does not
+consume the cap at all (see [vision.md](vision.md#cost-logging)).
 
 **When to enable:** keep it off for archives where Tesseract works well
 (typed-text scans). Enable for receipts, tax notices, table-heavy invoices,

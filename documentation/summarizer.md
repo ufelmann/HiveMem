@@ -42,18 +42,32 @@ New cells trigger the summarizer within seconds via the AFTER_COMMIT event.
 
 ## Cost model
 
-Claude Haiku 4.5:
-- Input: $0.80 / 1M tokens
-- Output: $4.00 / 1M tokens
+**All amounts are EUR.** What a call costs is not computed by HiveMem: Vistierie reports
+`cost_micros` for the call it actually routed, and HiveMem books that value unchanged
+(EUR-micros → EUR). Only if the response carries no cost does HiveMem fall back to an
+internal price table, and it logs a WARN when it does.
 
-A typical cell (~2k input + ~400 output) costs about $0.0024.
+The daily budget is capped at `1.00` **EUR** (configurable via
+`HIVEMEM_SUMMARIZE_DAILY_BUDGET`). When exceeded, cells stay tagged and resume the next
+UTC day. The `usd` in `daily-budget-usd` and in the `summarize_usage.total_cost_usd`
+column is a historical name kept for config and schema compatibility — the unit is EUR.
 
-The daily budget is capped at $1.00 (configurable via `HIVEMEM_SUMMARIZE_DAILY_BUDGET`).
-When exceeded, cells stay tagged and resume the next UTC day.
+**Limitation — the daily gate does not bound subscription traffic.** A call Vistierie
+routes over the Claude subscription (`provider=claude-subscription`) reports a cost of
+zero, and HiveMem books `0.00` for it by design, because that is what the call actually
+costs. Such calls therefore never move `total_cost_usd` and the daily budget never trips,
+no matter how many of them run. The budget bounds pay-per-token routes only; volume on
+the subscription route is limited by Vistierie's own quotas, not by this setting.
+
+**Figures recorded before this version are not comparable.** Earlier rows were estimated
+from the model HiveMem *requested* rather than the one Vistierie routed to, omitted cache
+read/write tokens entirely, and were labelled USD. Old `summarize_usage` rows are left in
+place (the gate only ever reads the current UTC day), so any trend across the upgrade date
+compares two different measurements.
 
 ## Monitoring
 
-Daily usage:
+Daily usage (`total_cost_usd` is EUR, see above):
 
     SELECT day, total_calls, total_cost_usd
     FROM summarize_usage
@@ -82,8 +96,11 @@ completions), each logging its own `Vistierie /llm/complete` line, followed by t
 The first line comes from the Vistierie gateway client; the second from the
 summarizer itself and includes the cost of that call plus the cumulative spend for
 the current UTC day. `provider` and `model` are the ones Vistierie actually routed
-to, which may differ from the configured model. Amounts are EUR (the
-`daily-budget-usd` property name is historical). `in=` counts only the uncached
+to — not what HiveMem requested, so this may differ from the configured model. Amounts
+are EUR, taken from Vistierie's `cost_micros` (the `daily-budget-usd` property name is
+historical; the budget it configures is an EUR budget). A subscription-routed call logs
+`cost=€0.00` — that is correct, not a bug, and see the
+[cost model](#cost-model) for what it means for the daily cap. `in=` counts only the uncached
 input tokens; `cacheW=`/`cacheR=` are the cache-write and cache-read tokens, which
 are billed too. The vision path logs the same fields — see
 [vision.md](vision.md#cost-logging).
@@ -106,7 +123,7 @@ detail, or `WARN` to quiet the per-call lines during a large backfill batch.
 | `hivemem.summarize.vistierie-token` (`HIVEMEM_VISTIERIE_TOKEN`) | empty | Tenant token for the Vistierie `/llm/complete` gateway — required to enable |
 | `hivemem.summarize.model` | `claude-haiku-4-5` | Which Claude model |
 | `hivemem.summarize.language` (`HIVEMEM_SUMMARIZE_LANGUAGE`) | `${HIVEMEM_LANGUAGE:de}` *(inherits global)* | Default output language (ISO 639-1) when the content's language is unclear; source language preserved otherwise |
-| `hivemem.summarize.daily-budget-usd` | `1.00` | Hard cost cap per UTC day |
+| `hivemem.summarize.daily-budget-usd` | `1.00` | Hard cost cap per UTC day, **in EUR** — the `usd` in the key is historical (see [Cost model](#cost-model)) |
 | `hivemem.summarize.backfill-interval` | `PT5M` | Documentation only — see note below |
 | `hivemem.summarize.backfill-batch-size` | `10` | Cells per backfill run |
 | `hivemem.summarize.summary-threshold-chars` | `500` | Min content length to trigger needs_summary |

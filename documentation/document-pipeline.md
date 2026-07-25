@@ -102,8 +102,10 @@ lifecycle, are documented in **[consumption.md](consumption.md)**.
   enrichment is eventually consistent even across restarts or outages.
 - **Reconcile sweep.** Stale consumption separation jobs degrade to a single
   `pending` document rather than getting stuck (see consumption.md).
-- **Budget caps.** Vision/LLM calls are bounded by a daily USD budget so a large
-  import can't run up an unbounded bill.
+- **Budget caps.** Vision/LLM calls are bounded by a daily **EUR** budget (the
+  `*-daily-budget-usd` keys are historical names) so a large import can't run up an
+  unbounded bill. Calls Vistierie routes over the Claude subscription cost `0.00` and
+  therefore do not consume the cap — see [vision.md](vision.md#cost-logging).
 
 ## Where it all lands (persistence)
 

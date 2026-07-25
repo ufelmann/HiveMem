@@ -26,10 +26,11 @@ hivemem:
     kroki-url: ${HIVEMEM_KROKI_URL:}                # leer = Kroki deaktiviert
     kroki-timeout-seconds: 10
     kroki-backfill-interval: PT1H                   # ISO-8601 (env: HIVEMEM_KROKI_BACKFILL_INTERVAL)
-    anthropic-api-key: ${ANTHROPIC_API_KEY:}        # leer = Vision deaktiviert
+    vistierie-base-url: ${HIVEMEM_VISTIERIE_BASE_URL:http://vistierie:8090}
+    vistierie-token: ${HIVEMEM_VISTIERIE_TOKEN:}    # leer = Vision deaktiviert
+    vision-agent-name: document-separator           # Vistierie-Agent, dem die Calls verrechnet werden
     vision-timeout-seconds: 30
-    vision-model: claude-haiku-4-5-20251001
-    vision-daily-budget-usd: 1.0
+    vision-daily-budget-usd: 1.0                    # Einheit ist EUR — das `usd` im Namen ist historisch
     vision-backfill-interval: PT1H                  # ISO-8601 (env: HIVEMEM_VISION_BACKFILL_INTERVAL)
     vision-max-input-bytes: 5242880                 # 5 MB
 ```

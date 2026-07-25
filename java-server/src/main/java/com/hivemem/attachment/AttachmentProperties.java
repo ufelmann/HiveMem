@@ -24,6 +24,15 @@ public class AttachmentProperties {
     /** Vistierie agent the vision calls are billed to; required by /llm/vision (@NotBlank). */
     private String visionAgentName = "document-separator";
     private int visionTimeoutSeconds = 30;
+    /**
+     * Daily spend cap for vision calls, shared by image description and the OCR Vision
+     * fallback. NOTE ON UNITS: the unit is EUR, not USD — Vistierie prices in EUR-micros and
+     * HiveMem books that unit unchanged. The {@code usd} in the name is kept deliberately for
+     * config compatibility: {@code hivemem.attachment.vision-daily-budget-usd} is already
+     * deployed, so renaming would be a breaking config change (and the matching
+     * {@code vision_usage.total_cost_usd} column would need a migration). See Decision 2 of
+     * the design spec.
+     */
     private double visionDailyBudgetUsd = 1.0;
     private Duration visionBackfillInterval = Duration.ofHours(1);
     private long visionMaxInputBytes = 5L * 1024 * 1024;

@@ -23,6 +23,13 @@ public class SummarizerProperties {
     /** Backend default output language (ISO 639-1) for the summarizer when the content's
      *  language is unclear; preserved source language otherwise. */
     private String language = "de";
+    /**
+     * Daily spend cap. NOTE ON UNITS: the unit is EUR, not USD — Vistierie prices in EUR-micros
+     * and HiveMem books that unit unchanged. The {@code usd} in the name is kept deliberately
+     * for config compatibility: {@code hivemem.summarize.daily-budget-usd} /
+     * {@code HIVEMEM_SUMMARIZE_DAILY_BUDGET} are already deployed, so renaming would be a
+     * breaking config change. See Decision 2 of the design spec.
+     */
     private double dailyBudgetUsd = 1.00;
     private Duration backfillInterval = Duration.ofMinutes(5);
     private int backfillBatchSize = 10;
