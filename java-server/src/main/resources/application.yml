@@ -43,6 +43,7 @@ hivemem:
   oauth:
     enabled: ${HIVEMEM_OAUTH_ENABLED:false}
     issuer: ${HIVEMEM_OAUTH_ISSUER:}
+    authorize-redirect-base-url: ${HIVEMEM_OAUTH_AUTHORIZE_REDIRECT_BASE_URL:}
   access:
     enabled: ${HIVEMEM_ACCESS_ENABLED:false}
     team-domain: ${HIVEMEM_ACCESS_TEAM_DOMAIN:}
