@@ -67,12 +67,27 @@ class SummarizeBudgetTrackerIT {
     }
 
     @Test
-    void recordCallUpserts() {
+    void recordCallAccumulatesTheDaysTotalsInsteadOfOverwritingThem() {
+        // The whole point of the ON CONFLICT clause: a second call for the same day must ADD to
+        // the row, not replace it. Every value below is deliberately distinct from every other
+        // and from each sum, so a pure-overwrite upsert ("= EXCLUDED.x") cannot coincidentally
+        // produce the expected numbers — if accumulation regresses, todaySpendUsd() would report
+        // only the last call and the daily cap would be silently unbounded.
         SummarizeBudgetTracker t = new SummarizeBudgetTracker(dsl, 100.00);
-        t.recordCall(call(500, 100, 800L));
-        t.recordCall(call(500, 100, 800L));
-        Long calls = ((Number) dsl.fetchOne("SELECT total_calls FROM summarize_usage").get(0)).longValue();
-        assertEquals(2L, calls.longValue());
+
+        t.recordCall(call(500, 100, 800L));   // in 500, out 100, €0.000800
+        // Second call: different everything, and cache-creation tokens count as input too.
+        t.recordCall(new LlmCallCost("bedrock", "claude-haiku-4-5", 7000, 30, 1200, 0, 2_500L));
+
+        var row = dsl.fetchOne(
+                "SELECT total_calls, total_input_tokens, total_output_tokens, total_cost_usd "
+                        + "FROM summarize_usage WHERE day = ?", LocalDate.now(ZoneOffset.UTC));
+        assertThat(row.get("total_calls", Integer.class)).isEqualTo(2);
+        assertThat(row.get("total_input_tokens", Integer.class)).isEqualTo(8700);   // 500 + 7000 + 1200
+        assertThat(row.get("total_output_tokens", Integer.class)).isEqualTo(130);   // 100 + 30
+        assertThat(row.get("total_cost_usd", BigDecimal.class))                     // 0.000800 + 0.002500
+                .isEqualByComparingTo(new BigDecimal("0.003300"));
+        assertThat(t.todaySpendUsd()).isEqualByComparingTo(new BigDecimal("0.003300"));
     }
 
     @Test
@@ -96,7 +111,7 @@ class SummarizeBudgetTrackerIT {
         // returns). beginCall()/endCall() reserve the estimated cost up front so a caller
         // already in flight is visible to everyone else's canSpend() check immediately —
         // deterministically reproduced here without needing a real race.
-        double budgetForOneCall = 0.01; // exactly EST_CALL_COST_USD
+        double budgetForOneCall = 0.01; // exactly EST_CALL_COST_EUR
         SummarizeBudgetTracker t = new SummarizeBudgetTracker(dsl, budgetForOneCall);
 
         assertTrue(t.canSpend()); // nothing in flight, nothing recorded yet

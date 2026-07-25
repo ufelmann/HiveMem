@@ -20,10 +20,22 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class SummarizeBudgetTracker {
 
-    // Estimated worst-case cost of a single summarize call, reserved while a call is in flight
-    // so concurrent workers cannot all pass canSpend() before any cost has actually been
-    // recorded (check-then-act overshoot). Mirrors VisionBudgetTracker.
-    private static final double EST_CALL_COST_USD = 0.01;
+    /**
+     * Coarse per-call reservation held while a summarize call is in flight, so concurrent
+     * workers cannot all pass {@link #canSpend()} before any cost has actually been recorded
+     * (check-then-act overshoot). Mirrors VisionBudgetTracker.
+     *
+     * <p>The unit is EUR, like everything else in this class. This is <em>not</em> a price and
+     * is not derived from {@link LlmCostPolicy}: it is a placeholder stand-in for a cost that
+     * is only known after the call returns.
+     *
+     * <p>LIMITATION: the value assumes a haiku-class model. Vistierie chooses the model, so if
+     * it routes to an opus-class model an actual call can cost up to roughly 40x this
+     * reservation — in that case the in-flight reservation under-reserves by the same factor
+     * and the daily cap can be overshot correspondingly under concurrency. Committed spend is
+     * unaffected: {@link #recordCall} always books the real reported cost.
+     */
+    private static final double EST_CALL_COST_EUR = 0.01;
 
     private final LlmCostPolicy policy = new LlmCostPolicy();
     private final DSLContext dsl;
@@ -36,7 +48,7 @@ public class SummarizeBudgetTracker {
     }
 
     public boolean canSpend() {
-        double reserved = inFlightCalls.get() * EST_CALL_COST_USD;
+        double reserved = inFlightCalls.get() * EST_CALL_COST_EUR;
         BigDecimal todaySpent = dsl.fetchOptional(
                 "SELECT total_cost_usd FROM summarize_usage WHERE day = ?", today())
                 .map(r -> r.get(0, BigDecimal.class))
