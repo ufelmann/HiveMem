@@ -19,6 +19,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import org.mockito.ArgumentCaptor;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -388,6 +391,31 @@ class AttachmentEnrichmentServiceUnitTest {
         // Generic exception should not tag failed (might be transient — backfill retries).
         verify(dsl, never()).execute(anyString(), any(), any());
         verify(dsl, never()).execute(anyString(), any(), any(), any());
+    }
+
+
+    /**
+     * The tracker must receive the PROVIDER's own record, not one rebuilt from the model
+     * HiveMem requested with the cache tokens zeroed: Vistierie may route elsewhere, and with
+     * prompt caching on the bulk of the input sits in the cache fields. Rebuilding would book a
+     * wrong model and under-count total_input_tokens by orders of magnitude.
+     */
+    @Test
+    void describeAndRevise_booksTheProvidersOwnCostRecordUnchanged() {
+        stubDownload();
+        LlmCallCost fromProvider = new LlmCallCost(
+                "claude-subscription", "claude-sonnet-5", 1500, 300, 4000, 21000, 2343L);
+        when(visionClient.describeImage(any(), eq("image/png")))
+                .thenReturn(new VisionClient.ImageDescriptionResult(
+                        "photo_general", "A photo", fromProvider));
+        when(profileRegistry.resolveImageSubType(anyString()))
+                .thenReturn(new ExtractionProfile("image", "p", null, null, null, List.of()));
+
+        svc.describeAndRevise(UUID.randomUUID(), UUID.randomUUID(), "k", "image/png");
+
+        ArgumentCaptor<LlmCallCost> booked = ArgumentCaptor.forClass(LlmCallCost.class);
+        verify(visionBudget).recordCall(booked.capture());
+        assertThat(booked.getValue()).isSameAs(fromProvider);
     }
 
     // ── helpers ────────────────────────────────────────────────────────────

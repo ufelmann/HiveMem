@@ -3,8 +3,8 @@ package com.hivemem.ocr;
 import com.hivemem.attachment.SeaweedFsClient;
 import com.hivemem.attachment.VisionBudgetTracker;
 import com.hivemem.attachment.VisionClient;
-import com.hivemem.llm.LlmCallCost;
 import com.hivemem.consumption.DocumentDedupService;
+import com.hivemem.llm.LlmCallCost;
 import com.hivemem.write.WriteToolService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,6 +14,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.mockito.ArgumentCaptor;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -105,6 +108,27 @@ class OcrServiceVisionFallbackTest {
                 "Expected vision output in revised content, got: " + content);
         assertTrue(content.contains("[page=1]"));
         assertTrue(content.contains("[page=2]"));
+    }
+
+    /**
+     * The tracker must receive the PROVIDER's own record, not one rebuilt from the model
+     * HiveMem requested with the cache tokens zeroed: Vistierie may route elsewhere, and with
+     * prompt caching on the bulk of the input sits in the cache fields. Rebuilding would book a
+     * wrong model and under-count total_input_tokens by orders of magnitude.
+     */
+    @Test
+    void booksTheProvidersOwnCostRecordUnchanged() throws Exception {
+        when(tesseract.ocr(any(), anyString(), anyInt())).thenReturn("xx"); // sparse → fallback
+        LlmCallCost fromProvider = new LlmCallCost(
+                "claude-subscription", "claude-sonnet-5", 1500, 300, 4000, 21000, 2343L);
+        when(visionClient.transcribe(any(), eq("image/png")))
+                .thenReturn(new VisionClient.VisionResult("TRANSCRIPT", fromProvider));
+
+        build().processOne(UUID.randomUUID(), "key");
+
+        ArgumentCaptor<LlmCallCost> booked = ArgumentCaptor.forClass(LlmCallCost.class);
+        verify(visionBudget, times(2)).recordCall(booked.capture());
+        assertThat(booked.getAllValues()).allSatisfy(c -> assertThat(c).isSameAs(fromProvider));
     }
 
     @Test

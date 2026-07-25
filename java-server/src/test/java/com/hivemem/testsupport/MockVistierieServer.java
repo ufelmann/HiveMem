@@ -82,6 +82,14 @@ public class MockVistierieServer {
                 """.formatted(text))));
     }
 
+    /**
+     * Full-envelope stub: the caller supplies the raw /llm/vision response body verbatim, so a
+     * test can vary provider/model/usage/cost beyond {@link #stubVision}'s canned envelope.
+     */
+    public void stubVisionRaw(String json) {
+        stubFor(post(urlEqualTo("/llm/vision")).willReturn(okJson(json)));
+    }
+
     /** Agent does not exist yet → GET 404, so the client will POST to create. */
     public void stubAgentMissingThenCreate(String name) {
         stubFor(get(urlEqualTo("/agents/" + name))

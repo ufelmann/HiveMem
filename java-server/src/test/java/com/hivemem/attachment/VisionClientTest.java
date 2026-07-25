@@ -43,6 +43,50 @@ class VisionClientTest {
         assertThat(result.cost().outputTokens()).isEqualTo(4);
     }
 
+    /**
+     * Vistierie may route the vision call to a different provider/model than HiveMem asked for,
+     * and with prompt caching on the bulk of the input sits in the two cache fields. The result
+     * must carry the envelope's own facts — reconstructing them from the request would book a
+     * wrong model and under-count input tokens by orders of magnitude.
+     */
+    @Test
+    void carriesProviderModelAndCacheTokensOutOfTheVisionEnvelope() {
+        mock.stubVisionRaw("""
+                {"text":"a description",
+                 "usage":{"inputTokens":1500,"outputTokens":300,
+                          "cacheCreationInputTokens":4000,"cacheReadInputTokens":21000},
+                 "provider":"bedrock","model":"eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+                 "cost_micros":2343}
+                """);
+
+        VisionClient.VisionResult r = client.transcribe(new byte[]{1, 2, 3}, "image/png");
+
+        assertThat(r.cost().provider()).isEqualTo("bedrock");
+        assertThat(r.cost().model()).isEqualTo("eu.anthropic.claude-haiku-4-5-20251001-v1:0");
+        assertThat(r.cost().totalInputTokens()).isEqualTo(26500);
+        assertThat(r.cost().outputTokens()).isEqualTo(300);
+        assertThat(r.cost().costMicros()).isEqualTo(2343L);
+    }
+
+    /** describeImage parses the text envelope but must pass the cost record through untouched. */
+    @Test
+    void describeImageKeepsTheEnvelopesCostRecord() {
+        mock.stubVisionRaw("""
+                {"text":"{\\"sub_type\\":\\"photo_general\\",\\"content\\":\\"x\\"}",
+                 "usage":{"inputTokens":11,"outputTokens":22,
+                          "cacheCreationInputTokens":33,"cacheReadInputTokens":44},
+                 "provider":"claude-subscription","model":"claude-sonnet-5","cost_micros":0}
+                """);
+
+        VisionClient.ImageDescriptionResult r = client.describeImage(new byte[]{1, 2, 3}, "image/png");
+
+        assertThat(r.content()).isEqualTo("x");
+        assertThat(r.cost().provider()).isEqualTo("claude-subscription");
+        assertThat(r.cost().model()).isEqualTo("claude-sonnet-5");
+        assertThat(r.cost().totalInputTokens()).isEqualTo(88);
+        assertThat(r.cost().outputTokens()).isEqualTo(22);
+    }
+
     @Test
     void transcribeUsesVistierie() {
         mock.stubVision("some transcribed text");
