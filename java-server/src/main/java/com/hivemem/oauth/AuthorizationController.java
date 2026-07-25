@@ -127,6 +127,29 @@ public class AuthorizationController {
         AuthPrincipal principal = resolvePrincipal(request);
         if (principal == null) {
             if (accessProperties.isEnabled()) {
+                String target = props.getAuthorizeRedirectBaseUrl();
+                // Split-host deployments serve the consent page from an Access-protected
+                // hostname while the issuer host stays open for machine callers. Redirect
+                // there so Cloudflare can supply an identity.
+                //
+                // The host comparison IS the loop guard: on the target host source and
+                // target are equal, so the request falls through to the 403 below instead
+                // of redirecting to itself. That holds even when Access is misconfigured at
+                // the target or the verified email has no api_tokens row — one honest page,
+                // never a redirect loop. getServerName() reflects X-Forwarded-Host because
+                // application.yml sets server.forward-headers-strategy: framework.
+                if (!target.isBlank() && !targetHostEquals(target, request.getServerName())) {
+                    String query = request.getQueryString();
+                    // Verbatim: the query is already percent-encoded by the client, and
+                    // re-encoding would corrupt state and code_challenge. Set the header
+                    // directly rather than via URI.create, which would reject characters a
+                    // client may legally leave raw.
+                    String location = target + "/oauth/authorize"
+                            + (query == null || query.isBlank() ? "" : "?" + query);
+                    return ResponseEntity.status(302)
+                            .header(HttpHeaders.LOCATION, location)
+                            .build();
+                }
                 // Access already authenticated the browser; a null principal here means the
                 // email has no api_tokens row. /login does not exist in this mode.
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
@@ -249,6 +272,12 @@ public class AuthorizationController {
                 .filter(s -> !"write".equals(s))
                 .collect(Collectors.joining(" "));
         return granted.isBlank() ? "read" : granted;
+    }
+
+    /** Case-insensitive host match between the configured target origin and this request. */
+    private static boolean targetHostEquals(String targetBaseUrl, String requestHost) {
+        String targetHost = URI.create(targetBaseUrl).getHost();
+        return targetHost != null && targetHost.equalsIgnoreCase(requestHost);
     }
 
     private static String issueCsrfToken(HttpSession session) {
