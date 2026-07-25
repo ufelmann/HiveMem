@@ -1,8 +1,11 @@
 package com.hivemem.oauth;
 
+import jakarta.annotation.PostConstruct;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.Duration;
 
 /**
@@ -35,6 +38,19 @@ public class OAuthProperties {
     /** Whether to allow Dynamic Client Registration (RFC 7591). Required by Claude.ai Custom Connector flow. */
     private boolean dynamicClientRegistrationEnabled = true;
 
+    /**
+     * Origin of the host that serves the browser consent page, when it differs from the
+     * issuer — e.g. {@code https://gui.example.com}. Used only by
+     * {@code AuthorizationController}: a {@code GET /oauth/authorize} that arrives on a
+     * different host in Access mode without a resolvable principal is redirected here
+     * instead of being refused, so the consent step can run behind Cloudflare Access while
+     * the issuer host stays open for machine callers.
+     *
+     * <p>Empty (the default) disables the redirect entirely — single-host deployments
+     * behave exactly as before.
+     */
+    private String authorizeRedirectBaseUrl = "";
+
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
@@ -53,5 +69,47 @@ public class OAuthProperties {
     public boolean isDynamicClientRegistrationEnabled() { return dynamicClientRegistrationEnabled; }
     public void setDynamicClientRegistrationEnabled(boolean dynamicClientRegistrationEnabled) {
         this.dynamicClientRegistrationEnabled = dynamicClientRegistrationEnabled;
+    }
+
+    public String getAuthorizeRedirectBaseUrl() { return authorizeRedirectBaseUrl; }
+    public void setAuthorizeRedirectBaseUrl(String authorizeRedirectBaseUrl) {
+        this.authorizeRedirectBaseUrl = authorizeRedirectBaseUrl;
+    }
+
+    /**
+     * Fail-closed validation, mirroring {@code HumanAuthResolverConfig}'s blank-team-domain
+     * check: a misconfigured value must abort startup rather than silently sending the
+     * consent step somewhere unintended. Normalises a trailing slash away so the caller can
+     * concatenate a path without producing a double slash.
+     */
+    @PostConstruct
+    void validateAuthorizeRedirectBaseUrl() {
+        if (authorizeRedirectBaseUrl == null || authorizeRedirectBaseUrl.isBlank()) {
+            authorizeRedirectBaseUrl = "";
+            return;
+        }
+        String value = authorizeRedirectBaseUrl.trim();
+        while (value.endsWith("/")) {
+            value = value.substring(0, value.length() - 1);
+        }
+        URI uri;
+        try {
+            uri = new URI(value);
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException(
+                    "hivemem.oauth.authorize-redirect-base-url is not a valid URI: " + value, e);
+        }
+        boolean originOnly = "https".equalsIgnoreCase(uri.getScheme())
+                && uri.getHost() != null && !uri.getHost().isBlank()
+                && (uri.getRawPath() == null || uri.getRawPath().isEmpty())
+                && uri.getRawQuery() == null
+                && uri.getRawFragment() == null;
+        if (!originOnly) {
+            throw new IllegalStateException(
+                    "hivemem.oauth.authorize-redirect-base-url must be an absolute https origin "
+                            + "with no path, query or fragment (e.g. https://gui.example.com), but was: "
+                            + value);
+        }
+        authorizeRedirectBaseUrl = value;
     }
 }
