@@ -88,6 +88,7 @@ public class OAuthProperties {
             authorizeRedirectBaseUrl = "";
             return;
         }
+        String original = authorizeRedirectBaseUrl;
         String value = authorizeRedirectBaseUrl.trim();
         while (value.endsWith("/")) {
             value = value.substring(0, value.length() - 1);
@@ -97,18 +98,19 @@ public class OAuthProperties {
             uri = new URI(value);
         } catch (URISyntaxException e) {
             throw new IllegalStateException(
-                    "hivemem.oauth.authorize-redirect-base-url is not a valid URI: " + value, e);
+                    "hivemem.oauth.authorize-redirect-base-url is not a valid URI: " + original, e);
         }
         boolean originOnly = "https".equalsIgnoreCase(uri.getScheme())
                 && uri.getHost() != null && !uri.getHost().isBlank()
+                && uri.getRawUserInfo() == null
                 && (uri.getRawPath() == null || uri.getRawPath().isEmpty())
                 && uri.getRawQuery() == null
                 && uri.getRawFragment() == null;
         if (!originOnly) {
             throw new IllegalStateException(
                     "hivemem.oauth.authorize-redirect-base-url must be an absolute https origin "
-                            + "with no path, query or fragment (e.g. https://gui.example.com), but was: "
-                            + value);
+                            + "with no userinfo, path, query or fragment (e.g. https://gui.example.com), but was: "
+                            + original);
         }
         authorizeRedirectBaseUrl = value;
     }

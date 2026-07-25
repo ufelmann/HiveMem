@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class OAuthPropertiesTest {
 
-    @Configuration
+    @Configuration(proxyBeanMethods = false)
     @EnableConfigurationProperties(OAuthProperties.class)
     static class EnableOAuthPropertiesConfig {
     }
@@ -53,21 +53,21 @@ class OAuthPropertiesTest {
     void plainHttpIsRejected() {
         assertThatThrownBy(() -> withBase("http://gui.example.com").validateAuthorizeRedirectBaseUrl())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("authorize-redirect-base-url");
+                .hasMessageContaining("must be an absolute https origin");
     }
 
     @Test
     void urlWithPathIsRejected() {
         assertThatThrownBy(() -> withBase("https://gui.example.com/oauth").validateAuthorizeRedirectBaseUrl())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("authorize-redirect-base-url");
+                .hasMessageContaining("must be an absolute https origin");
     }
 
     @Test
     void urlWithQueryIsRejected() {
         assertThatThrownBy(() -> withBase("https://gui.example.com?a=b").validateAuthorizeRedirectBaseUrl())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("authorize-redirect-base-url");
+                .hasMessageContaining("must be an absolute https origin");
     }
 
     @Test
@@ -79,21 +79,35 @@ class OAuthPropertiesTest {
         // are satisfied). Confirmed via a standalone java.net.URI probe on JDK 26.
         assertThatThrownBy(() -> withBase("https:foo").validateAuthorizeRedirectBaseUrl())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("authorize-redirect-base-url");
+                .hasMessageContaining("must be an absolute https origin");
     }
 
     @Test
     void malformedUriIsRejected() {
         assertThatThrownBy(() -> withBase("https://gui example.com").validateAuthorizeRedirectBaseUrl())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("authorize-redirect-base-url");
+                .hasMessageContaining("is not a valid URI");
     }
 
     @Test
     void urlWithFragmentIsRejected() {
         assertThatThrownBy(() -> withBase("https://gui.example.com#frag").validateAuthorizeRedirectBaseUrl())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("authorize-redirect-base-url");
+                .hasMessageContaining("must be an absolute https origin");
+    }
+
+    @Test
+    void originWithUserInfoIsRejected() {
+        assertThatThrownBy(() -> withBase("https://gui.example.com@evil.com").validateAuthorizeRedirectBaseUrl())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("must be an absolute https origin");
+    }
+
+    @Test
+    void rejectionMessageReportsTheOriginallyConfiguredValue() {
+        assertThatThrownBy(() -> withBase("///").validateAuthorizeRedirectBaseUrl())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("///");
     }
 
     @Test
