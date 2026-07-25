@@ -105,6 +105,28 @@ class VisionBudgetTrackerIT {
         return new LlmCallCost("bedrock", "claude-haiku-4-5", in, out, 0, 0, costMicros);
     }
 
+    /**
+     * A subscription-routed call is free but is still a call: it has to increment
+     * {@code total_calls} and the token columns while adding exactly 0.00 to
+     * {@code total_cost_usd}. Mirrors
+     * {@code SummarizeBudgetTrackerIT.subscriptionCallCostsNothingButStillCounts}.
+     */
+    @Test
+    void subscriptionCallCostsNothingButStillCounts() {
+        VisionBudgetTracker t = new VisionBudgetTracker(dsl, 30.0);
+        var c = new LlmCallCost("claude-subscription", "claude-sonnet-5", 2, 1487, 25681, 0, 0L);
+
+        assertThat(t.recordCall(c)).isEqualByComparingTo(BigDecimal.ZERO);
+
+        var row = dsl.fetchOne(
+                "SELECT total_calls, total_input_tokens, total_output_tokens, total_cost_usd "
+                        + "FROM vision_usage WHERE day = ?", LocalDate.now(ZoneOffset.UTC));
+        assertThat(row.get("total_calls", Integer.class)).isEqualTo(1);
+        assertThat(row.get("total_input_tokens", Integer.class)).isEqualTo(25683); // 2 + 25681 + 0
+        assertThat(row.get("total_output_tokens", Integer.class)).isEqualTo(1487);
+        assertThat(row.get("total_cost_usd", BigDecimal.class)).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
     @Test
     void zeroBudgetBlocks() {
         VisionBudgetTracker t = new VisionBudgetTracker(dsl, 0.0);
