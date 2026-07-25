@@ -62,7 +62,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(OAuthEndToEndTest.TestConfig.class)
 @TestPropertySource(properties = {
         "hivemem.oauth.enabled=true",
-        "hivemem.oauth.issuer=https://hivemem.example.com"
+        "hivemem.oauth.issuer=https://hivemem.example.com",
+        "hivemem.oauth.authorize-redirect-base-url=https://gui.example.com"
 })
 class OAuthEndToEndTest {
 

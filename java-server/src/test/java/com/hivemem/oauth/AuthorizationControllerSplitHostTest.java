@@ -28,6 +28,7 @@ import java.net.URI;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -147,6 +148,15 @@ class AuthorizationControllerSplitHostTest {
                         .header("Cf-Access-Jwt-Assertion", AccessJwtTestFixtures.signedFor(KNOWN_EMAIL))
                         .with(request -> { request.setServerName(MACHINE_HOST); return request; }))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void authenticatedRequestOnGuiHostRendersConsentPage() throws Exception {
+        mockMvc.perform(get(URI.create("/oauth/authorize?" + query()))
+                        .header("Cf-Access-Jwt-Assertion", AccessJwtTestFixtures.signedFor(KNOWN_EMAIL))
+                        .with(request -> { request.setServerName(GUI_HOST); return request; }))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("requests access to HiveMem")));
     }
 
     @TestConfiguration(proxyBeanMethods = false)
