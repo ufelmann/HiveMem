@@ -43,6 +43,13 @@ content generation (no extra request). `max_tokens` for image describe is 4000
 pages. Daily budget is shared with the OCR Vision fallback via
 `hivemem.attachment.vision-daily-budget-usd`.
 
+**Agent identity:** every `/llm/vision` request is billed to a Vistierie agent named by
+`hivemem.attachment.vision-agent-name` (default `document-separator`). Vistierie requires
+this field and rejects a request without it with HTTP 400 *before* any provider call, so a
+missing or blank value disables image description and the OCR Vision fallback entirely — the
+symptom is cells stuck on `vision_pending` or tagged `ocr_failed`, with no matching rows in
+Vistierie's call audit.
+
 ## References
 
 - Cowan, N. (2001). *The magical number 4 in short-term memory.* Behavioral and Brain Sciences, 24(1), 87-114.

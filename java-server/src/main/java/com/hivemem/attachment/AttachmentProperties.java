@@ -21,6 +21,8 @@ public class AttachmentProperties {
 
     private String vistierieBaseUrl = "http://vistierie:8090";
     private String vistierieToken = "";
+    /** Vistierie agent the vision calls are billed to; required by /llm/vision (@NotBlank). */
+    private String visionAgentName = "document-separator";
     private int visionTimeoutSeconds = 30;
     private double visionDailyBudgetUsd = 1.0;
     private Duration visionBackfillInterval = Duration.ofHours(1);
@@ -47,6 +49,8 @@ public class AttachmentProperties {
     public String getVistierieBaseUrl() { return vistierieBaseUrl; }
     public void setVistierieBaseUrl(String v) { this.vistierieBaseUrl = v; }
     public String getVistierieToken() { return vistierieToken; }
+    public String getVisionAgentName() { return visionAgentName; }
+    public void setVisionAgentName(String v) { this.visionAgentName = v; }
     public void setVistierieToken(String v) { this.vistierieToken = v; }
     public int getVisionTimeoutSeconds() { return visionTimeoutSeconds; }
     public void setVisionTimeoutSeconds(int v) { this.visionTimeoutSeconds = v; }

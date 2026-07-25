@@ -7,6 +7,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.verify;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -23,7 +28,7 @@ class VisionClientTest {
                 .baseUrl(mock.baseUrl())
                 .requestFactory(new SimpleClientHttpRequestFactory())
                 .build();
-        client = new VisionClient(http, "vtok", 5_242_880L);
+        client = new VisionClient(http, "vtok", 5_242_880L, "document-separator");
     }
 
     @AfterEach
@@ -71,13 +76,50 @@ class VisionClientTest {
         assertThat(client.isEnabled()).isTrue();
     }
 
+    /**
+     * Vistierie has required agent_name on /llm/vision since 2026-05-17 (commit 27bc1ba,
+     * "enforce budgets on direct llm calls"): the field is @NotBlank and a request without it
+     * is rejected with 400 before any provider call. VisionClient was the only Vistierie caller
+     * in HiveMem still omitting it, which silently disabled image description and the OCR
+     * vision fallback in prod. Every request must carry it.
+     */
+    @Test
+    void sendsAgentNameSoVistierieAcceptsTheRequest() {
+        mock.stubVision("a square box");
+
+        client.describe(new byte[]{1, 2, 3}, "image/png");
+
+        verify(postRequestedFor(urlEqualTo("/llm/vision"))
+                .withRequestBody(matchingJsonPath("$.agent_name", equalTo("document-separator"))));
+    }
+
+    @Test
+    void transcribeAlsoSendsAgentName() {
+        mock.stubVision("some text");
+
+        client.transcribe(new byte[]{1, 2, 3}, "image/png");
+
+        verify(postRequestedFor(urlEqualTo("/llm/vision"))
+                .withRequestBody(matchingJsonPath("$.agent_name", equalTo("document-separator"))));
+    }
+
+    @Test
+    void describeImageAlsoSendsAgentName() {
+        mock.stubVision("{\\\"sub_type\\\":\\\"photo_general\\\",\\\"content\\\":\\\"x\\\"}");
+
+        client.describeImage(new byte[]{1, 2, 3}, "image/png");
+
+        verify(postRequestedFor(urlEqualTo("/llm/vision"))
+                .withRequestBody(matchingJsonPath("$.agent_name", equalTo("document-separator"))));
+    }
+
     @Test
     void isDisabledWhenTokenBlank() {
         var http = RestClient.builder()
                 .baseUrl(mock.baseUrl())
                 .requestFactory(new SimpleClientHttpRequestFactory())
                 .build();
-        VisionClient c = new VisionClient(http, "", 5_242_880L);
+        VisionClient c = new VisionClient(http, "", 5_242_880L, "document-separator");
         assertThat(c.isEnabled()).isFalse();
     }
 }

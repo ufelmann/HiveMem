@@ -72,17 +72,21 @@ public class VisionClient {
     private final RestClient http;
     private final String vistierieToken;
     private final long visionMaxInputBytes;
+    private final String agentName;
 
     @Autowired
     public VisionClient(AttachmentProperties props) {
-        this(buildRestClient(props), props.getVistierieToken(), props.getVisionMaxInputBytes());
+        this(buildRestClient(props), props.getVistierieToken(), props.getVisionMaxInputBytes(),
+                props.getVisionAgentName());
     }
 
     /** Package-private constructor for tests. */
-    VisionClient(RestClient http, String vistierieToken, long visionMaxInputBytes) {
+    VisionClient(RestClient http, String vistierieToken, long visionMaxInputBytes,
+                 String agentName) {
         this.http = http;
         this.vistierieToken = vistierieToken;
         this.visionMaxInputBytes = visionMaxInputBytes;
+        this.agentName = agentName;
     }
 
     private static RestClient buildRestClient(AttachmentProperties props) {
@@ -169,7 +173,11 @@ public class VisionClient {
             throw new IllegalArgumentException("Unsupported image mime: " + mimeType);
         }
 
+        // agent_name is @NotBlank on Vistierie's /llm/vision since 2026-05-17 (budget
+        // enforcement on direct LLM calls) — omitting it is rejected with 400 before any
+        // provider call is made.
         var body = Map.<String, Object>of(
+                "agent_name", agentName,
                 "purpose", purpose,
                 "realm", "attachment",
                 "image", Map.of(

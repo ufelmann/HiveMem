@@ -167,7 +167,7 @@ class AttachmentEnrichmentServiceIT {
 
         KrokiClient kroki = mock(KrokiClient.class);
         when(kroki.isEnabled()).thenReturn(false);
-        VisionClient vision = new VisionClient(visionHttp, "k", props.getVisionMaxInputBytes());
+        VisionClient vision = new VisionClient(visionHttp, "k", props.getVisionMaxInputBytes(), "document-separator");
 
         AttachmentRepository repo = new AttachmentRepository(dsl);
         WriteToolService writeService = buildWriteService();
