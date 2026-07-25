@@ -1,5 +1,6 @@
 package com.hivemem.oauth;
 
+import com.hivemem.auth.AccessJwtResolver;
 import com.hivemem.auth.AccessProperties;
 import com.hivemem.auth.AuthFilter;
 import com.hivemem.auth.AuthPrincipal;
@@ -93,7 +94,7 @@ public class AuthorizationController {
      */
     private static final String NOT_SIGNED_IN_HTML = """
             <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Not signed in</title></head>
-            <body><h1>403 &mdash; Not signed in to HiveMem</h1>
+            <body><h1>403 &mdash; Not signed in to HiveMem.</h1>
             <p>This request carried no verified Cloudflare Access identity, or the verified
             email has no HiveMem account.</p></body></html>
             """;
@@ -173,9 +174,14 @@ public class AuthorizationController {
                 // Both causes are indistinguishable here, so log the two facts that tell
                 // them apart — never the JWT itself or the email, matching the existing
                 // rule that JWT failure detail stays out of responses and logs.
+                //
+                // Presence is judged exactly as AccessJwtResolver#resolve judges it: a blank
+                // header counts as absent there, so reporting it as present here would
+                // misdiagnose the request in the same way the old page did.
+                String accessJwt = request.getHeader(AccessJwtResolver.HEADER);
                 log.warn("OAuth consent refused: no HiveMem principal resolved (host={} accessJwtPresent={})",
                         request.getServerName(),
-                        request.getHeader("Cf-Access-Jwt-Assertion") != null);
+                        accessJwt != null && !accessJwt.isBlank());
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .contentType(MediaType.TEXT_HTML)
                         .body(NOT_SIGNED_IN_HTML);

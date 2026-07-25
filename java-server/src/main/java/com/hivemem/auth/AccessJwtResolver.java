@@ -36,7 +36,12 @@ import java.util.Set;
 public class AccessJwtResolver implements HumanPrincipalResolver {
 
     private static final Logger log = LoggerFactory.getLogger(AccessJwtResolver.class);
-    private static final String HEADER = "Cf-Access-Jwt-Assertion";
+    /**
+     * The header Cloudflare Access injects. Public because callers outside this class must
+     * agree on it — notably the OAuth consent 403, which logs whether it was present.
+     * Renaming it in one place must not silently make that log line lie.
+     */
+    public static final String HEADER = "Cf-Access-Jwt-Assertion";
 
     private final ConfigurableJWTProcessor<SecurityContext> processor;
     private final TokenService tokenService;

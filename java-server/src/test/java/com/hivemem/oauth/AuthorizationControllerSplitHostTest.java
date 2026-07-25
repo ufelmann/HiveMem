@@ -170,7 +170,12 @@ class AuthorizationControllerSplitHostTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Not signed in to HiveMem")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("No HiveMem account for this identity"))))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("no HiveMem account")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("no HiveMem account")))
+                // The half that was actually true in the incident. Without this the three
+                // assertions above are jointly satisfied by a page that still names only the
+                // unprovable cause.
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "no verified Cloudflare Access identity")));
     }
 
     @Test
@@ -180,6 +185,23 @@ class AuthorizationControllerSplitHostTest {
 
         assertThat(output).contains("host=" + GUI_HOST);
         assertThat(output).contains("accessJwtPresent=false");
+        // Pin the level too: a downgrade to DEBUG would silently remove the diagnosability
+        // this branch exists to provide, and every other assertion here would stay green.
+        assertThat(output).containsPattern("WARN.*OAuth consent refused.*host=" + GUI_HOST);
+    }
+
+    /**
+     * AccessJwtResolver treats a blank header as no credential, so the log must agree —
+     * otherwise it reports a JWT that the resolver never saw.
+     */
+    @Test
+    void blankAccessHeaderIsLoggedAsNoJwt(CapturedOutput output) throws Exception {
+        mockMvc.perform(get(URI.create("https://" + GUI_HOST + "/oauth/authorize?" + query()))
+                        .header("Cf-Access-Jwt-Assertion", ""))
+                .andExpect(status().isForbidden());
+
+        assertThat(output).contains("accessJwtPresent=false");
+        assertThat(output).doesNotContain("accessJwtPresent=true");
     }
 
     @Test
