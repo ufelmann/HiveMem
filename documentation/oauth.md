@@ -11,10 +11,11 @@ provider-side store of your knowledge.
 This document covers:
 
 1. Enabling OAuth on the HiveMem server
-2. Exposing the server publicly via Cloudflare Tunnel (recommended)
-3. Adding HiveMem as a Custom Connector
-4. Verification
-5. Security model and limits
+2. Split-host deployments (machine host + Access-protected human host)
+3. Exposing the server publicly via Cloudflare Tunnel (recommended)
+4. Adding HiveMem as a Custom Connector
+5. Verification
+6. Security model and limits
 
 ## 1. Enable OAuth
 
@@ -57,7 +58,53 @@ This honours `X-Forwarded-Proto` / `X-Forwarded-Host` set by Cloudflare Tunnel,
 Nginx, Caddy, etc. so absolute URLs in OAuth responses come out as `https://...`
 even though Spring sees a plain HTTP request internally.
 
-## 2. Expose the server via Cloudflare Tunnel
+## 2. Split-host deployments (machine host + Access-protected human host)
+
+Some deployments serve one HiveMem origin under two hostnames: a machine hostname for
+`/mcp`, `/hooks`, `/sync` and the OAuth machine endpoints, and a separate
+Cloudflare-Access-protected hostname for the browser GUI. Cloudflare Access must not sit in
+front of the machine hostname — MCP clients, hooks and peer sync cannot present an Access
+login.
+
+That split breaks the connector flow at exactly one point. Every step but one is a
+server-to-server call from the MCP client and correctly belongs on the machine host, but
+`GET /oauth/authorize` renders the **browser** consent page. Discovery advertises it on the
+issuer host, so the browser lands on the machine hostname — where Cloudflare injects no
+`Cf-Access-Jwt-Assertion`, no principal resolves, and the consent step returns `403`.
+
+Set `hivemem.oauth.authorize-redirect-base-url` to the origin of the Access-protected
+hostname to fix this:
+
+```yaml
+hivemem:
+  oauth:
+    issuer: https://mem.example.com                        # machine host, no Access
+    authorize-redirect-base-url: https://gui.example.com   # human host, behind Access
+```
+
+(env: `HIVEMEM_OAUTH_AUTHORIZE_REDIRECT_BASE_URL`)
+
+A `GET /oauth/authorize` that arrives on any host other than the configured target in Access
+mode (`HIVEMEM_ACCESS_ENABLED=true`) without a resolvable principal is then answered with a
+`302` to the same path on the human host, carrying the query string unchanged. Access authenticates the browser there, the consent page renders,
+and its form posts back to the human host; the client's `redirect_uri` and the subsequent
+`/oauth/token` call are unaffected, because the authorization code is stored server-side and
+is not host-bound. **Discovery is not changed** — the client only ever sees the issuer host,
+so no client needs to accept a cross-origin `authorization_endpoint`.
+
+The value must be an absolute `https` origin — scheme, host and optional port only, with no
+userinfo, path, query or fragment (a trailing slash is tolerated and normalised away);
+anything else aborts startup. Leaving it empty (the default) disables the redirect, which is
+correct for every single-hostname deployment.
+
+**No redirect loop is possible.** The redirect only fires when the request's own host
+differs from the configured target, as long as the ingress preserves the public `Host`. A
+request that reaches the human host and still cannot be authenticated — misconfigured
+Access, or an email with no `api_tokens` row — renders the 403 page instead. That page names
+both possible causes, and the branch logs the request host plus whether an Access JWT was
+present (never the JWT or the email).
+
+## 3. Expose the server via Cloudflare Tunnel
 
 Cloudflare Tunnel terminates TLS at Cloudflare's edge, requires no port forwarding
 or firewall changes, and gives you a stable HTTPS URL backed by Cloudflare's
@@ -87,7 +134,7 @@ cloudflared tunnel run hivemem
 #   cloudflared service install
 ```
 
-## 3. Add HiveMem as a Custom Connector
+## 4. Add HiveMem as a Custom Connector
 
 The flow below is the same for Claude.ai, ChatGPT, and Grok — only the menu
 labels differ; the wording uses Claude.ai as the example client.
@@ -115,7 +162,7 @@ labels differ; the wording uses Claude.ai as the example client.
 
 You should now see HiveMem's tools available in your connector sidebar.
 
-## 4. Verification
+## 5. Verification
 
 Discovery endpoint:
 
@@ -156,7 +203,7 @@ WWW-Authenticate: Bearer resource_metadata="https://hivemem.example.com/.well-kn
 
 When OAuth is disabled, `/mcp` returns a bare `401` with no `WWW-Authenticate` header.
 
-## 5. Security model
+## 6. Security model
 
 ### Public clients only (PKCE mandatory)
 
@@ -215,7 +262,7 @@ For multi-tenant or higher-stakes deployments, set
 `dynamic-client-registration-enabled: false` and pre-provision clients
 directly via SQL into `oauth_clients`.
 
-## 6. Internals reference
+## 7. Internals reference
 
 - Schema: `java-server/src/main/resources/db/migration/V0025__oauth.sql`
 - Discovery: `OAuthDiscoveryController`

@@ -42,7 +42,7 @@ mapping is created (`hivemem-token set-email`).
 | `/hooks`, `/sync` (incl. `/sync/ops`) | Machine | Bearer token (`AuthFilter`) |
 | `/vistierie/**` | Machine (webhook) | Controller-level webhook token (constant-time check), not `AuthFilter` |
 | `/login`, `/logout` | Human | Public in legacy mode (rate-limited); `410 Gone` in access mode |
-| `/oauth/authorize` | Human | Controller resolves its own principal (Access JWT, session, or the OAuth test attribute) |
+| `/oauth/authorize` | Human | Controller resolves its own principal (Access JWT, session, or the OAuth test attribute); in split-host deployments an unauthenticated Access-mode `GET` is `302`'d to `hivemem.oauth.authorize-redirect-base-url` (see [oauth.md](oauth.md#2-split-host-deployments-machine-host--access-protected-human-host)) |
 | `/oauth/token`, `/oauth/register`, `/.well-known/oauth-*` | Machine | PKCE / DCR — public, no `HumanAuthFilter` involvement |
 | `/api/config` | — | Public, unauthenticated; returns `{"authMode":"access"|"legacy"}` so the SPA can pick its re-auth strategy before making its first authenticated call |
 
@@ -162,7 +162,9 @@ production enable step.
    the normal HiveMem web-UI session and approve the request on an explicit consent page
    (client name + requested scope). Only the consent form's POST — protected by a
    session-bound one-time anti-CSRF token — issues the authorization code; a plain GET never
-   does. Denying redirects back to the client with `error=access_denied`.
+   does. Denying redirects back to the client with `error=access_denied`. In split-host
+   deployments this step may first bounce through a `302` to the Access-protected hostname —
+   see [oauth.md](oauth.md#2-split-host-deployments-machine-host--access-protected-human-host).
 3. **Token** — the client exchanges the returned authorization code at `/oauth/token` for an
    access token and a refresh token (refresh tokens rotate on every use).
 4. **Access `/mcp`** — subsequent MCP calls send the access token as a bearer; the client

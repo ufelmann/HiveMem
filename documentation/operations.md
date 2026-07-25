@@ -93,6 +93,9 @@ security model see [OAuth 2.0 + Custom Connector Setup](oauth.md).
 | `HIVEMEM_OAUTH_ENABLED` | `false` | Set to `true` to activate the OAuth endpoints |
 | `HIVEMEM_OAUTH_ISSUER` | *(empty)* | The **public HTTPS origin** the server is reached at |
 
+In split-host deployments also set `HIVEMEM_OAUTH_AUTHORIZE_REDIRECT_BASE_URL` — see
+[OAuth → Split-host deployments](oauth.md#2-split-host-deployments-machine-host--access-protected-human-host).
+
 `HIVEMEM_OAUTH_ISSUER` **must** be the public HTTPS origin (e.g. `https://mem.example.com`),
 not the internal container URL. It flows verbatim into the discovery metadata (`issuer`,
 `authorization_endpoint`, `token_endpoint`, …) and into the `iss` of issued tokens, so any
@@ -140,6 +143,7 @@ full path matrix and status-code behavior.
 | `HIVEMEM_ACCESS_TEAM_DOMAIN` | *(empty)* | Your Cloudflare Access team domain, e.g. `https://<your-team>.cloudflareaccess.com` — used to fetch the JWKS and verify the JWT issuer |
 | `HIVEMEM_ACCESS_AUD` | *(empty)* | The Access application's Audience (AUD) tag — verified against the JWT's `aud` claim |
 | `HIVEMEM_ACCESS_JWKS_TTL` | `PT15M` | How long the fetched JWKS is cached before HiveMem re-fetches it (ISO-8601 duration) |
+| `HIVEMEM_OAUTH_AUTHORIZE_REDIRECT_BASE_URL` | *(empty)* | Split-host deployments only: origin of the Access-protected hostname that serves the OAuth consent page, e.g. `https://gui.example.com`. Without it the browser consent step returns `403` on the machine hostname — see [OAuth → Split-host deployments](oauth.md#2-split-host-deployments-machine-host--access-protected-human-host) |
 
 With `enabled=true`, a blank `team-domain` or `audience` fails application startup — this is a
 fail-closed check: there is no state where Access "believes" it's on but nothing actually
@@ -192,7 +196,12 @@ order:
    `enabled=true` yet).
 5. **Set `HIVEMEM_ACCESS_ENABLED=true`** and recreate the `hivemem` service. This is the step
    that actually locks out session login — only take it once steps 1–4 are verified.
-6. Verify from every device that needs access, including any installed PWA (iOS/Android
+6. **If OAuth Custom Connectors are enabled and the GUI runs on a different hostname than
+   the issuer**, set `HIVEMEM_OAUTH_AUTHORIZE_REDIRECT_BASE_URL` to the GUI origin. Skipping
+   this leaves every connector pairing dead-ended at a `403` on the consent page, while the
+   machine endpoints keep working — so the failure looks like a Claude.ai problem rather than
+   a configuration one.
+7. Verify from every device that needs access, including any installed PWA (iOS/Android
    home-screen shells re-check auth independently of a desktop browser tab).
 
 ## Attachment Storage (SeaweedFS)
