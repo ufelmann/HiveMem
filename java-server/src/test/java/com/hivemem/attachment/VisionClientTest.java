@@ -87,6 +87,31 @@ class VisionClientTest {
         assertThat(r.cost().outputTokens()).isEqualTo(22);
     }
 
+    /**
+     * A blank answer is a failure only for the functional path — the provider call was made and
+     * billed. The exception therefore carries the call's cost so the caller can book it; without
+     * it the cell keeps its pending tag, the hourly backfill pays for the same image again every
+     * hour, {@code total_cost_usd} never moves and the daily cap never fires.
+     */
+    @Test
+    void blankTextFailureCarriesTheCostThatWasAlreadyBilled() {
+        mock.stubVisionRaw("""
+                {"text":"   ",
+                 "usage":{"inputTokens":1500,"outputTokens":300,
+                          "cacheCreationInputTokens":4000,"cacheReadInputTokens":21000},
+                 "provider":"bedrock","model":"eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+                 "cost_micros":2343}
+                """);
+
+        var ex = assertThrows(VisionClient.EmptyResponseException.class,
+                () -> client.transcribe(new byte[]{1, 2, 3}, "image/png"));
+
+        assertThat(ex.cost().provider()).isEqualTo("bedrock");
+        assertThat(ex.cost().costMicros()).isEqualTo(2343L);
+        assertThat(ex.cost().totalInputTokens()).isEqualTo(26500);
+        assertThat(ex.cost().outputTokens()).isEqualTo(300);
+    }
+
     @Test
     void transcribeUsesVistierie() {
         mock.stubVision("some transcribed text");

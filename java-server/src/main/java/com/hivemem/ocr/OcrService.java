@@ -7,6 +7,7 @@ import com.hivemem.attachment.VisionClient;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
 import com.hivemem.consumption.DocumentDedupService;
+import com.hivemem.llm.LlmCallCost;
 import com.hivemem.queen.ArchivistTrigger;
 import com.hivemem.summarize.NeedsSummaryDecider;
 import com.hivemem.write.WriteToolService;
@@ -22,6 +23,7 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -232,7 +234,7 @@ public class OcrService {
             visionBudget.beginCall();
             try {
                 vr = visionClient.transcribe(pngBytes, "image/png");
-                visionBudget.recordCall(vr.cost());
+                bookAndLogVisionCall(cellId, pageNum, vr.cost());
             } finally {
                 visionBudget.endCall();
             }
@@ -240,9 +242,39 @@ public class OcrService {
         } catch (VisionClient.OversizeImageException e) {
             log.info("Vision-OCR skipped (oversize) page {} of cell {}", pageNum, cellId);
             return null;
+        } catch (VisionClient.EmptyResponseException e) {
+            // The provider answered with nothing but was still billed. Book the cost, then fail
+            // exactly as the generic branch below does (no retry-semantics change).
+            bookAndLogVisionCall(cellId, pageNum, e.cost());
+            log.warn("Vision-OCR failed page {} of cell {}: {}", pageNum, cellId, e.getMessage());
+            return null;
         } catch (Exception e) {
             log.warn("Vision-OCR failed page {} of cell {}: {}", pageNum, cellId, e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Books one vision call and logs what it cost, mirroring SummarizerService's per-call line:
+     * the provider and the model Vistierie actually ROUTED to (which may differ from what was
+     * asked for), every token kind Anthropic bills, and the amount {@code recordCall} returned —
+     * never a locally recomputed one.
+     *
+     * <p>"Cost accounting must never break the functional path" (see {@link LlmCallCost}): a
+     * failing booking is a WARN, not a discarded, already-paid-for transcript.
+     */
+    private void bookAndLogVisionCall(UUID cellId, int pageNum, LlmCallCost cost) {
+        try {
+            BigDecimal booked = visionBudget.recordCall(cost);
+            log.info("Vision LLM call cell={} page={} provider={} model={} in={} cacheW={} "
+                            + "cacheR={} out={} cost=€{} day=€{}/{}",
+                    cellId, pageNum, cost.provider(), cost.model(), cost.inputTokens(),
+                    cost.cacheCreationTokens(), cost.cacheReadTokens(), cost.outputTokens(),
+                    booked, visionBudget.todaySpendUsd(),
+                    String.format("%.2f", visionBudget.dailyBudgetUsd()));
+        } catch (Exception e) {
+            log.warn("Vision cost booking failed for page {} of cell {} (call still happened): {}",
+                    pageNum, cellId, e.getMessage());
         }
     }
 }

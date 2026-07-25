@@ -30,6 +30,25 @@ public class VisionClient {
         public OversizeImageException(String msg) { super(msg); }
     }
 
+    /**
+     * The provider answered with no usable text. This is a failure of the functional path only:
+     * the call was made and billed, so the exception carries the call's cost and callers must
+     * still book it. Without that, an image the model always answers blank keeps its pending
+     * tag, the hourly backfill pays for it again every hour, {@code total_cost_usd} never moves
+     * and the daily cap never fires — an unbounded spend loop.
+     */
+    public static class EmptyResponseException extends IllegalStateException {
+        private final transient LlmCallCost cost;
+
+        public EmptyResponseException(String msg, LlmCallCost cost) {
+            super(msg);
+            this.cost = cost;
+        }
+
+        /** What the (billed) call cost, for the caller to book. */
+        public LlmCallCost cost() { return cost; }
+    }
+
     private static final Set<String> SUPPORTED_MIME = Set.of(
             "image/jpeg", "image/png", "image/gif", "image/webp");
 
@@ -201,7 +220,9 @@ public class VisionClient {
         if (resp == null) throw new IllegalStateException("Vistierie returned null");
         String text = resp.path("text").asText();
         if (text == null || text.isBlank()) {
-            throw new IllegalStateException("Vistierie returned empty text");
+            // The call was already made and billed — hand the cost to the caller so it gets
+            // booked even though there is nothing usable to return.
+            throw new EmptyResponseException("Vistierie returned empty text", LlmCallCost.from(resp));
         }
         // Report what Vistierie actually did (its routed provider/model and every token kind),
         // not what HiveMem asked for: the two may differ.

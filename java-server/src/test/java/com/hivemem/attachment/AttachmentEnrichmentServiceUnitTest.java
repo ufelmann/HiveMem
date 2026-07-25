@@ -8,12 +8,16 @@ import com.hivemem.write.WriteToolService;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -42,6 +46,7 @@ import static org.mockito.Mockito.when;
  * {@link AttachmentEnrichmentServiceIT} and
  * {@link AttachmentEnrichmentServiceImageProfileIT}.
  */
+@ExtendWith(OutputCaptureExtension.class)
 class AttachmentEnrichmentServiceUnitTest {
 
     private AttachmentProperties props;
@@ -416,6 +421,80 @@ class AttachmentEnrichmentServiceUnitTest {
         ArgumentCaptor<LlmCallCost> booked = ArgumentCaptor.forClass(LlmCallCost.class);
         verify(visionBudget).recordCall(booked.capture());
         assertThat(booked.getValue()).isSameAs(fromProvider);
+    }
+
+    /**
+     * Acceptance criterion 4 of the cost-accounting spec: the vision per-call INFO line has to
+     * name the provider and the model Vistierie actually ROUTED to, every token kind, and the
+     * amount {@code recordCall} booked — mirroring the summarize line
+     * ({@code SummarizerServiceTriggerTest.logsAllFourTokenKindsFromTheProvidersRecord}).
+     */
+    @Test
+    void describeAndRevise_logsRoutedProviderModelTokensAndBookedCost(CapturedOutput out) {
+        stubDownload();
+        when(visionClient.describeImage(any(), eq("image/png")))
+                .thenReturn(new VisionClient.ImageDescriptionResult("photo_general", "A photo",
+                        new LlmCallCost("bedrock", "claude-haiku-4-5", 2, 1487, 25681, 4096, 2343L)));
+        when(profileRegistry.resolveImageSubType(anyString()))
+                .thenReturn(new ExtractionProfile("image", "p", null, null, null, List.of()));
+        when(visionBudget.recordCall(any())).thenReturn(new BigDecimal("0.002343"));
+        when(visionBudget.todaySpendUsd()).thenReturn(new BigDecimal("0.004686"));
+        when(visionBudget.dailyBudgetUsd()).thenReturn(5.0);
+
+        svc.describeAndRevise(UUID.randomUUID(), UUID.randomUUID(), "k", "image/png");
+
+        assertThat(out).contains("provider=bedrock ").contains("model=claude-haiku-4-5 ");
+        // One contiguous string, not four bare substrings: "in=2" alone also matches inside
+        // "in=29779" (the totalInputTokens mistake this assertion exists to catch).
+        assertThat(out).contains("in=2 cacheW=25681 cacheR=4096 out=1487 ");
+        // Not just "cost=€": that also passes for "cost=€null" when recordCall's return value
+        // is discarded. Require the amount recordCall returned.
+        assertThat(out).containsPattern("cost=€\\d+\\.\\d+ ").contains("cost=€0.002343 ");
+        assertThat(out).contains("day=€0.004686/5.00");
+        assertThat(out).doesNotContain("cost=$");
+    }
+
+    /**
+     * Vistierie answered, and was billed, with no usable text. The cost has to be booked anyway:
+     * the cell keeps {@code vision_pending}, the hourly backfill re-picks it, and every round
+     * pays for a real vision call — if nothing is booked, {@code total_cost_usd} never moves and
+     * the daily cap never fires, so the loop is unbounded.
+     */
+    @Test
+    void describeAndRevise_booksTheCostOfABlankTextResponse() {
+        stubDownload();
+        LlmCallCost paidFor = new LlmCallCost(
+                "bedrock", "claude-haiku-4-5", 1500, 300, 4000, 21000, 2343L);
+        when(visionClient.describeImage(any(), anyString())).thenThrow(
+                new VisionClient.EmptyResponseException("Vistierie returned empty text", paidFor));
+
+        svc.describeAndRevise(UUID.randomUUID(), UUID.randomUUID(), "k", "image/png");
+
+        ArgumentCaptor<LlmCallCost> booked = ArgumentCaptor.forClass(LlmCallCost.class);
+        verify(visionBudget).recordCall(booked.capture());
+        assertThat(booked.getValue()).isSameAs(paidFor);
+    }
+
+    /**
+     * "Cost accounting must never break the functional path" (LlmCallCost's javadoc): a transient
+     * Postgres error while booking must not throw away an already-paid-for description.
+     */
+    @Test
+    void describeAndRevise_keepsTheDescriptionWhenBookingTheCostFails() {
+        UUID cell = UUID.randomUUID();
+        stubDownload();
+        when(visionClient.describeImage(any(), eq("image/png")))
+                .thenReturn(new VisionClient.ImageDescriptionResult(
+                        "photo_general", "A photo", cost(10, 5)));
+        when(profileRegistry.resolveImageSubType(anyString()))
+                .thenReturn(new ExtractionProfile("image", "p", null, null, null, List.of()));
+        when(visionBudget.recordCall(any()))
+                .thenThrow(new org.jooq.exception.DataAccessException("connection reset"));
+
+        svc.describeAndRevise(UUID.randomUUID(), cell, "k", "image/png");
+
+        verify(writeService).reviseCell(any(), eq(cell), eq("A photo"), eq(null));
+        verify(dsl).execute(anyString(), eq("vision_pending"), eq(cell));
     }
 
     // ── helpers ────────────────────────────────────────────────────────────

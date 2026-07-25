@@ -57,6 +57,22 @@ public class VisionBudgetTracker {
         return spent == null || spent.doubleValue() + reserved < dailyBudgetUsd;
     }
 
+    /**
+     * Total EUR recorded for today (UTC), or zero if no calls yet. Read-only; for logging.
+     * The {@code usd} in the name is historical — see the class Javadoc.
+     */
+    public BigDecimal todaySpendUsd() {
+        return dsl.fetchOptional(
+                "SELECT total_cost_usd FROM vision_usage WHERE day = ?", today())
+                .map(r -> r.get(0, BigDecimal.class))
+                .orElse(BigDecimal.ZERO);
+    }
+
+    /** The configured daily budget in EUR (for logging the running total vs cap). */
+    public double dailyBudgetUsd() {
+        return dailyBudgetUsd;
+    }
+
     /** Mark a vision call as in flight; MUST be paired with {@link #endCall()} in a finally. */
     public void beginCall() {
         inFlightCalls.incrementAndGet();

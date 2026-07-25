@@ -8,8 +8,12 @@ import com.hivemem.llm.LlmCallCost;
 import com.hivemem.write.WriteToolService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 import java.io.ByteArrayInputStream;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -29,6 +33,7 @@ import static org.mockito.Mockito.*;
  * Uses the package-private test constructor so we can swap in mocked
  * {@link TesseractRunner}, {@link PdfPageRasterizer}, and {@link VisionClient}.
  */
+@ExtendWith(OutputCaptureExtension.class)
 class OcrServiceVisionFallbackTest {
 
     private OcrProperties props;
@@ -219,6 +224,79 @@ class OcrServiceVisionFallbackTest {
         build().processOne(UUID.randomUUID(), "key");
 
         verify(dedup, never()).findAndDiscardDuplicate(any());
+    }
+
+    /**
+     * Acceptance criterion 4 of the cost-accounting spec: the vision per-call INFO line has to
+     * name the provider and the model Vistierie actually ROUTED to, every token kind, and the
+     * amount {@code recordCall} booked — mirroring the summarize line
+     * ({@code SummarizerServiceTriggerTest.logsAllFourTokenKindsFromTheProvidersRecord}).
+     */
+    @Test
+    void logsRoutedProviderModelTokensAndBookedCost(CapturedOutput out) throws Exception {
+        stubPages(List.of("PAGE1".getBytes())); // one page → exactly one call, one log line
+        when(tesseract.ocr(any(), anyString(), anyInt())).thenReturn("xx"); // sparse → fallback
+        when(visionClient.transcribe(any(), eq("image/png"))).thenReturn(
+                new VisionClient.VisionResult("TRANSCRIPT",
+                        new LlmCallCost("bedrock", "claude-haiku-4-5", 2, 1487, 25681, 4096, 2343L)));
+        when(visionBudget.recordCall(any())).thenReturn(new BigDecimal("0.002343"));
+        when(visionBudget.todaySpendUsd()).thenReturn(new BigDecimal("0.004686"));
+        when(visionBudget.dailyBudgetUsd()).thenReturn(5.0);
+
+        build().processOne(UUID.randomUUID(), "key");
+
+        assertThat(out).contains("provider=bedrock ").contains("model=claude-haiku-4-5 ");
+        // One contiguous string, not four bare substrings: "in=2" alone also matches inside
+        // "in=29779" (the totalInputTokens mistake this assertion exists to catch).
+        assertThat(out).contains("in=2 cacheW=25681 cacheR=4096 out=1487 ");
+        // Not just "cost=€": that also passes for "cost=€null" when recordCall's return value
+        // is discarded. Require the amount recordCall returned.
+        assertThat(out).containsPattern("cost=€\\d+\\.\\d+ ").contains("cost=€0.002343 ");
+        assertThat(out).contains("day=€0.004686/5.00");
+        assertThat(out).doesNotContain("cost=$");
+    }
+
+    /**
+     * Vistierie answered, and was billed, with no usable text. The cost has to be booked anyway,
+     * or a page that always comes back blank is paid for on every retry while
+     * {@code total_cost_usd} never moves and the daily cap never fires.
+     */
+    @Test
+    void booksTheCostOfABlankTextResponse() throws Exception {
+        stubPages(List.of("PAGE1".getBytes()));
+        when(tesseract.ocr(any(), anyString(), anyInt())).thenReturn("xx"); // sparse → fallback
+        LlmCallCost paidFor = new LlmCallCost(
+                "bedrock", "claude-haiku-4-5", 1500, 300, 4000, 21000, 2343L);
+        when(visionClient.transcribe(any(), anyString())).thenThrow(
+                new VisionClient.EmptyResponseException("Vistierie returned empty text", paidFor));
+
+        build().processOne(UUID.randomUUID(), "key");
+
+        ArgumentCaptor<LlmCallCost> booked = ArgumentCaptor.forClass(LlmCallCost.class);
+        verify(visionBudget).recordCall(booked.capture());
+        assertThat(booked.getValue()).isSameAs(paidFor);
+    }
+
+    /**
+     * "Cost accounting must never break the functional path" (LlmCallCost's javadoc): a transient
+     * Postgres error while booking the cost must not throw away an already-paid-for transcript
+     * and fall back to two characters of Tesseract output.
+     */
+    @Test
+    void keepsTheVisionTranscriptWhenBookingTheCostFails() throws Exception {
+        stubPages(List.of("PAGE1".getBytes()));
+        when(tesseract.ocr(any(), anyString(), anyInt())).thenReturn("xx"); // sparse → fallback
+        when(visionClient.transcribe(any(), eq("image/png")))
+                .thenReturn(new VisionClient.VisionResult("FULL VISION TRANSCRIPT", cost(100, 50)));
+        when(visionBudget.recordCall(any()))
+                .thenThrow(new org.jooq.exception.DataAccessException("connection reset"));
+
+        UUID cellId = UUID.randomUUID();
+        build().processOne(cellId, "key");
+
+        var captor = ArgumentCaptor.forClass(String.class);
+        verify(writeService).reviseCell(any(), eq(cellId), captor.capture(), any());
+        assertThat(captor.getValue()).contains("FULL VISION TRANSCRIPT");
     }
 
     /** A stand-in Vistierie cost record; the vision tracker is mocked, only identity matters. */

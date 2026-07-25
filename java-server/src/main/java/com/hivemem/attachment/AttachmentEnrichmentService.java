@@ -3,6 +3,7 @@ package com.hivemem.attachment;
 import com.hivemem.auth.AuthPrincipal;
 import com.hivemem.auth.AuthRole;
 import com.hivemem.extraction.ExtractionProfileRegistry;
+import com.hivemem.llm.LlmCallCost;
 import com.hivemem.queen.ArchivistTrigger;
 import com.hivemem.write.WriteToolService;
 import org.jooq.DSLContext;
@@ -17,6 +18,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.web.client.HttpClientErrorException;
 
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -164,7 +166,7 @@ public class AttachmentEnrichmentService {
             visionBudget.beginCall();
             try {
                 r = visionClient.describeImage(imageBytes, mimeType);
-                visionBudget.recordCall(r.cost());
+                bookAndLogVisionCall(cellId, r.cost());
             } finally {
                 visionBudget.endCall();
             }
@@ -214,8 +216,37 @@ public class AttachmentEnrichmentService {
             removeTag(cellId, "vision_pending");
             archivistTrigger.maybeTrigger(cellId);
             log.info("Vision skipped (unsupported mime) for cell {}: {}", cellId, e.getMessage());
+        } catch (VisionClient.EmptyResponseException e) {
+            // The provider answered with nothing but was still billed. Book the cost, then fail
+            // exactly as the generic branch below does (no tagging change: the backfill retries).
+            bookAndLogVisionCall(cellId, e.cost());
+            log.warn("Vision describe failed for cell {}: {}", cellId, e.getMessage());
         } catch (Exception e) {
             log.warn("Vision describe failed for cell {}: {}", cellId, e.getMessage());
+        }
+    }
+
+    /**
+     * Books one vision call and logs what it cost, mirroring SummarizerService's per-call line:
+     * the provider and the model Vistierie actually ROUTED to (which may differ from what was
+     * asked for), every token kind Anthropic bills, and the amount {@code recordCall} returned —
+     * never a locally recomputed one.
+     *
+     * <p>"Cost accounting must never break the functional path" (see {@link LlmCallCost}): a
+     * failing booking is a WARN, not a lost description.
+     */
+    private void bookAndLogVisionCall(UUID cellId, LlmCallCost cost) {
+        try {
+            BigDecimal booked = visionBudget.recordCall(cost);
+            log.info("Vision LLM call cell={} provider={} model={} in={} cacheW={} cacheR={} out={} "
+                            + "cost=€{} day=€{}/{}",
+                    cellId, cost.provider(), cost.model(), cost.inputTokens(),
+                    cost.cacheCreationTokens(), cost.cacheReadTokens(), cost.outputTokens(),
+                    booked, visionBudget.todaySpendUsd(),
+                    String.format("%.2f", visionBudget.dailyBudgetUsd()));
+        } catch (Exception e) {
+            log.warn("Vision cost booking failed for cell {} (call still happened): {}",
+                    cellId, e.getMessage());
         }
     }
 
