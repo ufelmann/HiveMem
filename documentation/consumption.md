@@ -166,8 +166,9 @@ consumption executor, never throws to the caller):
      punctuation-insensitively; a date carrying a `Stand ...` prefix (the print
      date of a generic enclosure such as a Datenschutz notice) never anchors a
      mailing, and the contract/customer/tax reference is deliberately left out of
-     the key. The merged mailing's confidence is the minimum of the two, so a
-     merge lands in `pending` review rather than committing silently.
+     the key. The merged mailing's confidence is the minimum over all merged
+     mailings, which biases a merge towards the `pending` review queue rather
+     than guaranteeing it.
    - **Page placement on merge.** A page pulled in by a merge is inserted right
      behind its own printed-label family in the target mailing — not appended at
      the end — but only while that family stays unambiguous (no label number

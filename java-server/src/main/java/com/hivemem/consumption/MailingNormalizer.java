@@ -52,8 +52,11 @@ public final class MailingNormalizer {
     /** Order pages inside every group, merge groups that share an anchor key, order again. The
      *  second pass exists for the case where a merge completes a document: a group holding
      *  "1 von 3" and "3 von 3" becomes sortable only once the merge brings in "2 von 3".
-     *  Mutates and returns the given groups - DocGroup.pages is a mutable list. */
+     *  Returns a new list of the surviving groups - absorbed groups are left out of it and keep
+     *  their now-duplicated page lists. The given {@code DocGroup}s themselves are mutated in
+     *  place (DocGroup.pages is a mutable list). */
     public List<DocGroup> normalize(List<DocGroup> groups, List<PageMetadata> pages) {
+        if (groups == null) return new ArrayList<>();
         Map<Integer, PageMetadata> meta = byPage(pages);
         for (DocGroup g : groups) order(g, meta);
         List<DocGroup> merged = merge(groups, meta);
