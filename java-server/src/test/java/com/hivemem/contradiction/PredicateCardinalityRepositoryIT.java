@@ -213,13 +213,6 @@ class PredicateCardinalityRepositoryIT extends ContradictionITSupport {
                 """, UUID.randomUUID()).get("id", UUID.class);
     }
 
-    private void insertFact(String subject, String predicate, String object) {
-        dsl.execute("""
-                INSERT INTO facts (subject, predicate, "object", status)
-                VALUES (?, ?, ?, 'committed')
-                """, subject, predicate, object);
-    }
-
     private Record fetch(String predicate) {
         return dsl.fetchOne("SELECT * FROM predicate_cardinality WHERE predicate = ?", predicate);
     }

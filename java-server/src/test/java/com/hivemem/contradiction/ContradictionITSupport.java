@@ -2,7 +2,10 @@ package com.hivemem.contradiction;
 
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
+import java.time.OffsetDateTime;
+import java.util.UUID;
 import org.jooq.DSLContext;
+import org.jooq.Record;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -63,6 +66,45 @@ abstract class ContradictionITSupport {
         contradictionITSupportDsl.execute("DELETE FROM fact_contradictions");
         contradictionITSupportDsl.execute("DELETE FROM contradiction_jobs");
         contradictionITSupportDsl.execute("DELETE FROM facts");
+    }
+
+    /** A committed, open-ended fact with {@code valid_from}/{@code ingested_at} = now, confidence 1.0. */
+    protected UUID insertFact(String subject, String predicate, String object) {
+        return insertFact(subject, predicate, object, OffsetDateTime.now(), null, OffsetDateTime.now(), 1.0);
+    }
+
+    /** Full control over the bi-temporal columns and confidence, for tests exercising those directly. */
+    protected UUID insertFact(String subject, String predicate, String object, OffsetDateTime validFrom,
+            OffsetDateTime validUntil, OffsetDateTime ingestedAt, Double confidence) {
+        Record r = contradictionITSupportDsl.fetchOne("""
+                INSERT INTO facts (subject, predicate, "object", status, valid_from, valid_until,
+                                    ingested_at, confidence)
+                VALUES (?, ?, ?, 'committed', ?::timestamptz, ?::timestamptz, ?::timestamptz, ?::real)
+                RETURNING id
+                """, subject, predicate, object, validFrom, validUntil, ingestedAt, confidence);
+        return r.get("id", UUID.class);
+    }
+
+    /** A not-yet-committed fact, invisible to {@code active_facts} until {@link #markFactCommitted}. */
+    protected UUID insertPendingFact(String subject, String predicate, String object) {
+        Record r = contradictionITSupportDsl.fetchOne("""
+                INSERT INTO facts (subject, predicate, "object", status)
+                VALUES (?, ?, ?, 'pending')
+                RETURNING id
+                """, subject, predicate, object);
+        return r.get("id", UUID.class);
+    }
+
+    protected void markFactCommitted(UUID factId) {
+        contradictionITSupportDsl.execute("UPDATE facts SET status = 'committed' WHERE id = ?", factId);
+    }
+
+    /** Records a {@code fact_contradictions} row directly, bypassing dispatch — for exclusion tests. */
+    protected void recordContradiction(UUID factA, UUID factB, String subject, String predicate, String status) {
+        contradictionITSupportDsl.execute("""
+                INSERT INTO fact_contradictions (fact_a, fact_b, subject, predicate, status)
+                VALUES (?, ?, ?, ?, ?)
+                """, factA, factB, subject, predicate, status);
     }
 
     @TestConfiguration(proxyBeanMethods = false)

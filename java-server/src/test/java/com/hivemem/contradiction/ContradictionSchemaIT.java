@@ -56,11 +56,4 @@ class ContradictionSchemaIT extends ContradictionITSupport {
         assertThat(reserved.get("status", String.class)).isEqualTo("in_flight");
         assertThat(reserved.get("cardinality", String.class)).isNull();
     }
-
-    private UUID insertFact(String subject, String predicate, String object) {
-        return dsl.fetchOne("""
-                INSERT INTO facts (subject, predicate, "object", status)
-                VALUES (?, ?, ?, 'committed') RETURNING id
-                """, subject, predicate, object).get("id", UUID.class);
-    }
 }
