@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -137,8 +138,76 @@ public final class MailingNormalizer {
                 .trim();
     }
 
-    // TODO(Task 4): replaced by the real same-sender + same-issue-date merge.
+    /** Collapse groups sharing an anchor key into the first one that carried it. */
     private static List<DocGroup> merge(List<DocGroup> groups, Map<Integer, PageMetadata> meta) {
-        return new ArrayList<>(groups);
+        List<DocGroup> out = new ArrayList<>();
+        Map<AnchorKey, DocGroup> byKey = new HashMap<>();
+        for (DocGroup g : groups) {
+            AnchorKey key = anchorKey(g, meta);
+            DocGroup target = key == null ? null : byKey.get(key);
+            if (target == null) {
+                if (key != null) byKey.put(key, g);
+                out.add(g);
+            } else {
+                absorb(target, g, meta);
+            }
+        }
+        return out;
+    }
+
+    /** Move every page of `incoming` into `target`: behind its own label family where that stays
+     *  unambiguous, appended otherwise. minConfidence takes the minimum - a merged mailing should
+     *  rather land in the pending review queue than be committed silently. */
+    private static void absorb(DocGroup target, DocGroup incoming, Map<Integer, PageMetadata> meta) {
+        target.minConfidence = Math.min(target.minConfidence, incoming.minConfidence);
+
+        Map<Integer, List<Integer>> byTotal = new LinkedHashMap<>();
+        for (Integer p : incoming.pages) {
+            Label l = label(meta.get(p));
+            if (l != null) byTotal.computeIfAbsent(l.total(), t -> new ArrayList<>()).add(p);
+        }
+        Set<Integer> insertable = new HashSet<>();
+        for (Map.Entry<Integer, List<Integer>> e : byTotal.entrySet()) {
+            if (familyInsertPoint(target, meta, e.getKey(), e.getValue()) >= 0) {
+                insertable.add(e.getKey());
+            }
+        }
+        List<Integer> appended = new ArrayList<>();
+        for (Integer p : incoming.pages) {
+            Label l = label(meta.get(p));
+            if (l == null || !insertable.contains(l.total())) appended.add(p);
+        }
+        // Insert family by family, recomputing the point each time: an earlier insertion shifts
+        // the indices of everything behind it.
+        for (Integer total : insertable) {
+            List<Integer> family = byTotal.get(total);
+            int at = familyInsertPoint(target, meta, total, family);
+            if (at >= 0) target.pages.addAll(at, family);
+            else appended.addAll(family);
+        }
+        target.pages.addAll(appended);
+    }
+
+    /** Index just behind the target's label family for `total`, or -1 when there is no such family
+     *  or it would become ambiguous: a number must not appear twice in the target family, among the
+     *  incoming pages, or across the two. Ambiguity means append, i.e. today's behaviour - a wrong
+     *  insertion would split a document that is intact today. */
+    private static int familyInsertPoint(DocGroup target, Map<Integer, PageMetadata> meta,
+                                         int total, List<Integer> incoming) {
+        Set<Integer> numbers = new HashSet<>();
+        int last = -1;
+        for (int i = 0; i < target.pages.size(); i++) {
+            Label l = label(meta.get(target.pages.get(i)));
+            if (l != null && l.total() == total) {
+                if (!numbers.add(l.number())) return -1;
+                last = i;
+            }
+        }
+        if (last < 0) return -1;
+        for (Integer p : incoming) {
+            Label l = label(meta.get(p));
+            if (l == null || !numbers.add(l.number())) return -1;
+        }
+        return last + 1;
     }
 }

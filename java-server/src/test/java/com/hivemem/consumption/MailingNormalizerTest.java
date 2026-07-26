@@ -33,6 +33,11 @@ class MailingNormalizerTest {
         return new PageMetadata(page, sender, date, null, "letter", null, "a letter", false);
     }
 
+    private static PageMetadata withLabel(PageMetadata m, String label) {
+        return new PageMetadata(m.page(), m.sender(), m.date(), label, m.docType(), m.reference(),
+                m.summary(), m.blank());
+    }
+
     @Test
     void parsesTheAcceptedLabelShapes() {
         assertThat(MailingNormalizer.label(labelled(1, "Seite 2 von 3")))
@@ -238,5 +243,152 @@ class MailingNormalizerTest {
             DocGroup g = group("m", 0.9, page);
             assertThat(MailingNormalizer.anchorKey(g, meta)).as("page " + page).isNull();
         }
+    }
+
+    @Test
+    void mergesTwoGroupsWithTheSameSenderAndIssueDate() {
+        // The tax case: same Finanzamt, same Bescheid date, differently-read Steuernummer.
+        DocGroup a = group("a", 0.9, 1);
+        DocGroup b = group("b", 0.4, 2);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                new PageMetadata(1, "Finanzamt Musterstadt", "05.09.2025", null, "Bescheid",
+                        "12/345/67890", "page one", false),
+                new PageMetadata(2, "FINANZAMT  MUSTERSTADT", "05.09.2025", null, "Bescheid",
+                        "12/345/6789O", "page two", false)));
+        assertThat(out).hasSize(1);
+        assertThat(out.get(0).id).isEqualTo("a");
+        assertThat(out.get(0).descriptor).isEqualTo("a descriptor");
+        assertThat(out.get(0).pages).containsExactly(1, 2);
+        assertThat(out.get(0).minConfidence).isEqualTo(0.4);   // minimum, i.e. towards pending
+    }
+
+    @Test
+    void keepsGroupsWithDifferentIssueDatesApart() {
+        DocGroup a = group("a", 0.9, 1);
+        DocGroup b = group("b", 0.9, 2);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                letter(1, "Finanzamt", "05.09.2025"), letter(2, "Finanzamt", "06.09.2025")));
+        assertThat(out).hasSize(2);
+    }
+
+    @Test
+    void mergesThreeGroupsIntoTheFirstWithTheGlobalMinimumConfidence() {
+        DocGroup a = group("a", 0.9, 1);
+        DocGroup b = group("b", 0.3, 2);
+        DocGroup c = group("c", 0.6, 3);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b, c), List.of(
+                letter(1, "Finanzamt", "05.09.2025"), letter(2, "Finanzamt", "05.09.2025"),
+                letter(3, "Finanzamt", "05.09.2025")));
+        assertThat(out).hasSize(1);
+        assertThat(out.get(0).pages).containsExactly(1, 2, 3);
+        assertThat(out.get(0).minConfidence).isEqualTo(0.3);
+    }
+
+    @Test
+    void preservesTheOrderOfSurroundingGroups() {
+        DocGroup a = group("a", 0.9, 1);
+        DocGroup x = group("x", 0.9, 2);
+        DocGroup b = group("b", 0.9, 3);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, x, b), List.of(
+                letter(1, "Finanzamt", "05.09.2025"), letter(2, "Stadtwerke", "01.02.2025"),
+                letter(3, "Finanzamt", "05.09.2025")));
+        assertThat(out).extracting(g -> g.id).containsExactly("a", "x");
+        assertThat(out.get(0).pages).containsExactly(1, 3);
+    }
+
+    @Test
+    void leavesAnchorlessGroupsAloneAndInPlace() {
+        DocGroup a = group("a", 0.9, 1);
+        DocGroup b = group("b", 0.9, 2);
+        List<DocGroup> out = new MailingNormalizer()
+                .normalize(List.of(a, b), List.of(plain(1), plain(2)));
+        assertThat(out).extracting(g -> g.id).containsExactly("a", "b");
+    }
+
+    @Test
+    void mergeCompletesADocumentAndTheSecondOrderPassSortsIt() {
+        DocGroup a = group("a", 0.9, 1, 3);
+        DocGroup b = group("b", 0.9, 2);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                withLabel(letter(1, "Finanzamt", "05.09.2025"), "Seite 1 von 3"),
+                withLabel(letter(2, "Finanzamt", "05.09.2025"), "Seite 2 von 3"),
+                withLabel(letter(3, "Finanzamt", "05.09.2025"), "Seite 3 von 3")));
+        assertThat(out).hasSize(1);
+        assertThat(out.get(0).pages).containsExactly(1, 2, 3);
+    }
+
+    @Test
+    void insertsAMergedPageBehindItsFamilyNotBehindTheEnclosures() {
+        // [L1, E1, E2] + [L2]: appending would strand the letter's page 2 behind the enclosures,
+        // and no sort can repair it (the group mixes labelled and unlabelled pages).
+        DocGroup a = group("a", 0.9, 1, 2, 3);
+        DocGroup b = group("b", 0.9, 4);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                withLabel(letter(1, "Finanzamt", "05.09.2025"), "Seite 1 von 2"),
+                plain(2), plain(3),
+                withLabel(letter(4, "Finanzamt", "05.09.2025"), "Seite 2 von 2")));
+        assertThat(out.get(0).pages).containsExactly(1, 4, 2, 3);
+    }
+
+    @Test
+    void appendsInsteadOfSplicingWhenTheTargetFamilyIsAmbiguous() {
+        // The enclosure prints its own "Seite 1 von 2", so the total=2 family holds the number 1
+        // twice. Inserting after its last page would split the enclosure - append instead.
+        DocGroup a = group("a", 0.9, 1, 2, 3);
+        DocGroup b = group("b", 0.9, 4);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                withLabel(letter(1, "Finanzamt", "05.09.2025"), "Seite 1 von 2"),
+                withLabel(plain(2), "Seite 1 von 2"), plain(3),
+                withLabel(letter(4, "Finanzamt", "05.09.2025"), "Seite 2 von 2")));
+        assertThat(out.get(0).pages).containsExactly(1, 2, 3, 4);
+    }
+
+    @Test
+    void appendsInsteadOfSplicingWhenTheIncomingPagesAreAmbiguous() {
+        // Two incoming pages both claim "Seite 2 von 2" - one of them is foreign. Neither may be
+        // spliced into the letter.
+        DocGroup a = group("a", 0.9, 1, 2, 3);
+        DocGroup b = group("b", 0.9, 4, 5);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                withLabel(letter(1, "Finanzamt", "05.09.2025"), "Seite 1 von 2"),
+                plain(2), plain(3),
+                withLabel(letter(4, "Finanzamt", "05.09.2025"), "Seite 2 von 2"),
+                withLabel(plain(5), "Seite 2 von 2")));
+        assertThat(out.get(0).pages).containsExactly(1, 2, 3, 4, 5);
+    }
+
+    @Test
+    void appendsAnIncomingFamilyThatHasNoCounterpartInTheTarget() {
+        // The target only ever printed "von 5" labels; the incoming page's "von 9" family has no
+        // match there at all. Splicing it in at index 0 (a family that was never found) would be
+        // worse than doing nothing - append instead.
+        DocGroup a = group("a", 0.9, 1);
+        DocGroup b = group("b", 0.9, 2);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                withLabel(letter(1, "Finanzamt", "05.09.2025"), "Seite 1 von 5"),
+                withLabel(letter(2, "Finanzamt", "05.09.2025"), "Seite 1 von 9")));
+        assertThat(out.get(0).pages).containsExactly(1, 2);
+    }
+
+    @Test
+    void toleratesTheSamePageNumberInTwoMergedGroups() {
+        // PageReassembler dedupes first-wins downstream; the normalizer must not throw.
+        DocGroup a = group("a", 0.9, 1);
+        DocGroup b = group("b", 0.9, 1, 2);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                letter(1, "Finanzamt", "05.09.2025"), letter(2, "Finanzamt", "05.09.2025")));
+        assertThat(out).hasSize(1);
+        assertThat(out.get(0).pages).containsExactly(1, 1, 2);
+    }
+
+    @Test
+    void doesNotMergeABatchWhoseMetadataCarriesNoDates() {
+        // Mirrors ReassemblyIT's fixture: sender set, date null throughout.
+        DocGroup a = group("a", 0.9, 1, 3);
+        DocGroup b = group("b", 0.9, 2);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                letter(1, "S", null), letter(2, "S", null), letter(3, "S", null)));
+        assertThat(out).hasSize(2);
+        assertThat(out.get(0).pages).containsExactly(1, 3);
     }
 }
