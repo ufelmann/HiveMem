@@ -59,7 +59,8 @@ public final class MailingNormalizer {
         return merged;
     }
 
-    /** Blank pages last; the rest sorted only when the group is one complete labelled document. */
+    /** Blank pages last; the rest sorted only when the group is one complete labelled document.
+     *  Mutates {@code g.pages} in place (clear then addAll) rather than returning a new list. */
     static void order(DocGroup g, Map<Integer, PageMetadata> meta) {
         List<Integer> body = new ArrayList<>();
         List<Integer> blanks = new ArrayList<>();

@@ -165,6 +165,30 @@ class MailingNormalizerTest {
     }
 
     @Test
+    void leavesAnExtraSpuriousPageUntouchedEvenIfNumbersCoverTheRange() {
+        // All four pages print "von 3": one page beyond the family the label total claims.
+        // Kills a mutant that drops the size==total check (numbers 1..3 all present, so the
+        // range-coverage loop alone would wrongly accept this as complete).
+        DocGroup g = group("m", 0.9, 19, 22, 21, 20);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(g), List.of(
+                labelled(19, "Seite 4 von 3"), labelled(22, "Seite 3 von 3"),
+                labelled(21, "Seite 2 von 3"), labelled(20, "Seite 1 von 3")));
+        assertThat(out.get(0).pages).containsExactly(19, 22, 21, 20);
+    }
+
+    @Test
+    void leavesMismatchedTotalsUntouchedEvenWithoutNumberCollisions() {
+        // Two pages, non-colliding numbers {1,2}, but they disagree on the total (2 vs 3) - two
+        // different documents that happen to interleave cleanly. Kills a mutant that drops the
+        // shared-total check (page count would then coincidentally equal the first page's total,
+        // and 1..2 would look "complete").
+        DocGroup g = group("m", 0.9, 10, 11);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(g), List.of(
+                labelled(10, "Seite 2 von 2"), labelled(11, "Seite 1 von 3")));
+        assertThat(out.get(0).pages).containsExactly(10, 11);
+    }
+
+    @Test
     void handlesDegenerateInput() {
         assertThat(new MailingNormalizer().normalize(List.of(), List.of())).isEmpty();
         DocGroup empty = new DocGroup("e", "no pages");
