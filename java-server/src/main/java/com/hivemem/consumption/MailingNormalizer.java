@@ -1,9 +1,13 @@
 package com.hivemem.consumption;
 
 import com.hivemem.consumption.PageMetadataExtractor.PageMetadata;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -41,5 +45,61 @@ public final class MailingNormalizer {
             if (m != null) meta.putIfAbsent(m.page(), m);
         }
         return meta;
+    }
+
+    /** Order pages inside every group, merge groups that share an anchor key, order again. The
+     *  second pass exists for the case where a merge completes a document: a group holding
+     *  "1 von 3" and "3 von 3" becomes sortable only once the merge brings in "2 von 3".
+     *  Mutates and returns the given groups - DocGroup.pages is a mutable list. */
+    public List<DocGroup> normalize(List<DocGroup> groups, List<PageMetadata> pages) {
+        Map<Integer, PageMetadata> meta = byPage(pages);
+        for (DocGroup g : groups) order(g, meta);
+        List<DocGroup> merged = merge(groups, meta);
+        for (DocGroup g : merged) order(g, meta);
+        return merged;
+    }
+
+    /** Blank pages last; the rest sorted only when the group is one complete labelled document. */
+    static void order(DocGroup g, Map<Integer, PageMetadata> meta) {
+        List<Integer> body = new ArrayList<>();
+        List<Integer> blanks = new ArrayList<>();
+        for (Integer p : g.pages) {
+            PageMetadata m = meta.get(p);
+            if (m != null && m.blank()) blanks.add(p);
+            else body.add(p);
+        }
+        if (isOneCompleteDocument(body, meta)) {
+            body.sort(Comparator.comparingInt(p -> label(meta.get(p)).number()));
+        }
+        g.pages.clear();
+        g.pages.addAll(body);
+        g.pages.addAll(blanks);
+    }
+
+    /** True only when every page carries a label, all labels share one total N, there are exactly
+     *  N of them and their numbers are exactly 1..N. Anything weaker lets a partially labelled
+     *  letter+enclosure pass as one family and splices them. */
+    private static boolean isOneCompleteDocument(List<Integer> pages,
+                                                 Map<Integer, PageMetadata> meta) {
+        if (pages.isEmpty()) return false;
+        Set<Integer> numbers = new HashSet<>();
+        int total = -1;
+        for (Integer p : pages) {
+            Label l = label(meta.get(p));
+            if (l == null) return false;
+            if (total == -1) total = l.total();
+            else if (total != l.total()) return false;
+            if (!numbers.add(l.number())) return false;
+        }
+        if (pages.size() != total) return false;
+        for (int i = 1; i <= total; i++) {
+            if (!numbers.contains(i)) return false;
+        }
+        return true;
+    }
+
+    // TODO(Task 4): replaced by the real same-sender + same-issue-date merge.
+    private static List<DocGroup> merge(List<DocGroup> groups, Map<Integer, PageMetadata> meta) {
+        return new ArrayList<>(groups);
     }
 }

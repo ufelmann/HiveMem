@@ -14,6 +14,21 @@ class MailingNormalizerTest {
         return new PageMetadata(page, null, null, label, "letter", null, "a page", false);
     }
 
+    private static PageMetadata blank(int page) {
+        return new PageMetadata(page, null, null, null, "blank", null, "empty", true);
+    }
+
+    private static PageMetadata plain(int page) {
+        return new PageMetadata(page, null, null, null, "letter", null, "a page", false);
+    }
+
+    private static DocGroup group(String id, double confidence, int... pages) {
+        DocGroup g = new DocGroup(id, id + " descriptor");
+        for (int p : pages) g.pages.add(p);
+        g.minConfidence = confidence;
+        return g;
+    }
+
     @Test
     void parsesTheAcceptedLabelShapes() {
         assertThat(MailingNormalizer.label(labelled(1, "Seite 2 von 3")))
@@ -68,5 +83,92 @@ class MailingNormalizerTest {
                 labelled(12, "Seite 9 von 9")));
         assertThat(meta.keySet()).containsExactlyInAnyOrder(12, 17);
         assertThat(meta.get(12).pageLabel()).isEqualTo("Seite 1 von 2");
+    }
+
+    @Test
+    void sortsACompleteLabelledDocumentAscending() {
+        DocGroup g = group("m", 0.9, 5, 4, 6);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(g), List.of(
+                labelled(4, "Seite 1 von 3"),
+                labelled(5, "Seite 2 von 3"),
+                labelled(6, "Seite 3 von 3")));
+        assertThat(out.get(0).pages).containsExactly(4, 5, 6);
+    }
+
+    @Test
+    void leavesAnIncompleteLabelSequenceUntouched() {
+        // 1 von 3 and 3 von 3 only - not a complete 1..N, so we do not guess.
+        DocGroup g = group("m", 0.9, 6, 4);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(g), List.of(
+                labelled(4, "Seite 1 von 3"), labelled(6, "Seite 3 von 3")));
+        assertThat(out.get(0).pages).containsExactly(6, 4);
+    }
+
+    @Test
+    void leavesDuplicateLabelNumbersUntouched() {
+        DocGroup g = group("m", 0.9, 1, 2, 3);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(g), List.of(
+                labelled(1, "Seite 1 von 3"), labelled(2, "Seite 1 von 3"),
+                labelled(3, "Seite 3 von 3")));
+        assertThat(out.get(0).pages).containsExactly(1, 2, 3);
+    }
+
+    @Test
+    void neverInterleavesALetterAndAnEnclosure() {
+        // Letter pages 1-3 ("von 3") and a two-page enclosure ("von 2"), emitted correctly.
+        // A global or family-local sort would splice them; the group is not ONE document, so
+        // nothing is reordered.
+        DocGroup g = group("m", 0.9, 1, 2, 3, 4, 5);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(g), List.of(
+                labelled(1, "Seite 1 von 3"), labelled(2, "Seite 2 von 3"),
+                labelled(3, "Seite 3 von 3"), labelled(4, "Seite 1 von 2"),
+                labelled(5, "Seite 2 von 2")));
+        assertThat(out.get(0).pages).containsExactly(1, 2, 3, 4, 5);
+    }
+
+    @Test
+    void leavesAPartiallyLabelledGroupUntouched() {
+        // Vision read only two of four labels. The total=2 family {L2:2, E1:1} is even complete -
+        // sorting it would splice the enclosure into the letter. Group-level completeness refuses.
+        DocGroup g = group("m", 0.9, 1, 2, 3, 4);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(g), List.of(
+                plain(1), labelled(2, "Seite 2 von 2"), labelled(3, "Seite 1 von 2"), plain(4)));
+        assertThat(out.get(0).pages).containsExactly(1, 2, 3, 4);
+    }
+
+    @Test
+    void movesBlankPagesToTheEndAndIgnoresTheirLabels() {
+        DocGroup g = group("m", 0.9, 9, 7, 8);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(g), List.of(
+                new PageMetadata(9, null, null, "Seite 1 von 2", "blank", null, "empty", true),
+                labelled(7, "Seite 2 von 2"), labelled(8, "Seite 1 von 2")));
+        // the blank's label does not join the family; pages 7+8 form a complete 1..2 and sort
+        assertThat(out.get(0).pages).containsExactly(8, 7, 9);
+    }
+
+    @Test
+    void keepsUnlabelledPagesInTheirEmittedOrder() {
+        DocGroup g = group("m", 0.9, 16, 15, 14, 12);
+        List<DocGroup> out = new MailingNormalizer()
+                .normalize(List.of(g), List.of(plain(12), plain(14), plain(15), plain(16)));
+        assertThat(out.get(0).pages).containsExactly(16, 15, 14, 12);
+    }
+
+    @Test
+    void toleratesPagesWithoutMetadataAndNeverThrows() {
+        // p.asInt() defaults to 0 and the model hallucinates page numbers; PageReassembler filters
+        // those later. Here they are ordinary input: unlabelled, non-blank, position kept.
+        DocGroup g = group("m", 0.9, 0, 3, 99);
+        List<DocGroup> out = new MailingNormalizer()
+                .normalize(List.of(g), List.of(plain(3)));
+        assertThat(out.get(0).pages).containsExactly(0, 3, 99);
+    }
+
+    @Test
+    void handlesDegenerateInput() {
+        assertThat(new MailingNormalizer().normalize(List.of(), List.of())).isEmpty();
+        DocGroup empty = new DocGroup("e", "no pages");
+        assertThat(new MailingNormalizer().normalize(List.of(empty), List.of()).get(0).pages)
+                .isEmpty();
     }
 }
