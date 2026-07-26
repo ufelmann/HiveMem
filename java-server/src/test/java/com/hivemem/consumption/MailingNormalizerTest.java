@@ -29,6 +29,10 @@ class MailingNormalizerTest {
         return g;
     }
 
+    private static PageMetadata letter(int page, String sender, String date) {
+        return new PageMetadata(page, sender, date, null, "letter", null, "a letter", false);
+    }
+
     @Test
     void parsesTheAcceptedLabelShapes() {
         assertThat(MailingNormalizer.label(labelled(1, "Seite 2 von 3")))
@@ -194,5 +198,44 @@ class MailingNormalizerTest {
         DocGroup empty = new DocGroup("e", "no pages");
         assertThat(new MailingNormalizer().normalize(List.of(empty), List.of()).get(0).pages)
                 .isEmpty();
+    }
+
+    @Test
+    void normalizesSenderCasingWhitespaceAndPunctuation() {
+        assertThat(MailingNormalizer.normalizeSender("Finanzamt Musterstadt"))
+                .isEqualTo("finanzamt musterstadt");
+        assertThat(MailingNormalizer.normalizeSender("FINANZAMT  MUSTERSTADT"))
+                .isEqualTo("finanzamt musterstadt");
+        assertThat(MailingNormalizer.normalizeSender(" Finanzamt-Musterstadt. "))
+                .isEqualTo("finanzamt musterstadt");
+    }
+
+    @Test
+    void anchorsOnTheFirstUsablePage() {
+        DocGroup g = group("m", 0.9, 1, 2);
+        Map<Integer, PageMetadata> meta = MailingNormalizer.byPage(List.of(
+                plain(1), letter(2, "Finanzamt Musterstadt", "05.09.2025")));
+        assertThat(MailingNormalizer.anchorKey(g, meta))
+                .isEqualTo("finanzamt musterstadt 05.09.2025");
+    }
+
+    @Test
+    void refusesToAnchorOnUnusableMetadata() {
+        Map<Integer, PageMetadata> meta = MailingNormalizer.byPage(List.of(
+                letter(1, null, "05.09.2025"),                       // no sender
+                letter(2, "Finanzamt", null),                        // no date - the common case
+                letter(3, "", "05.09.2025"),                         // empty sender
+                letter(4, "   ", "05.09.2025"),                      // blank sender
+                letter(5, "-", "05.09.2025"),                        // punctuation-only sender
+                letter(6, "Finanzamt", ""),                          // empty date
+                letter(7, "Finanzamt", "   "),                       // blank date
+                letter(8, "Finanzamt", "Stand 01.01.2025"),          // enclosure print date
+                letter(9, "Finanzamt", " Stand 01.01.2025"),         // leading blank
+                letter(10, "Finanzamt", "Stand: 01.01.2025"),        // colon variant
+                new PageMetadata(11, "Finanzamt", "05.09.2025", null, "blank", null, "x", true)));
+        for (int page = 1; page <= 11; page++) {
+            DocGroup g = group("m", 0.9, page);
+            assertThat(MailingNormalizer.anchorKey(g, meta)).as("page " + page).isNull();
+        }
     }
 }

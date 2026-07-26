@@ -6,6 +6,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -97,6 +98,35 @@ public final class MailingNormalizer {
             if (!numbers.contains(i)) return false;
         }
         return true;
+    }
+
+    /** The merge key of a group, or null when nothing in it can anchor. The anchor is the first
+     *  non-blank page carrying a usable sender AND a usable issue date. `reference` is deliberately
+     *  NOT part of the key: a differently-read Steuernummer is exactly what split the tax batch. */
+    static String anchorKey(DocGroup g, Map<Integer, PageMetadata> meta) {
+        for (Integer p : g.pages) {
+            PageMetadata m = meta.get(p);
+            if (m == null || m.blank()) continue;
+            if (m.sender() == null || m.date() == null) continue;
+            String date = m.date().trim();
+            // "Stand ..." is the print date of a generic enclosure (see PageMetadataExtractor.
+            // PROMPT); it must never anchor a mailing. Trimmed and without the trailing space so
+            // " Stand 01.01.2025" and "Stand: 01.01.2025" cannot slip through.
+            if (date.isEmpty() || date.startsWith("Stand")) continue;
+            // An unreadable letterhead arrives as "" (asString(null) coerces an empty string) and
+            // punctuation-only senders normalize to "" - keying on those would merge strangers.
+            String sender = normalizeSender(m.sender());
+            if (sender.isEmpty()) continue;
+            return sender + ' ' + date;
+        }
+        return null;
+    }
+
+    static String normalizeSender(String s) {
+        return s.toLowerCase(Locale.ROOT)
+                .replaceAll("[.,\\-–/]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
     }
 
     // TODO(Task 4): replaced by the real same-sender + same-issue-date merge.
