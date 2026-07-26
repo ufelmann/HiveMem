@@ -59,13 +59,16 @@ public class MailingAssembler {
               answering.""";
 
     private final CompleteClient client;
+    private final MailingNormalizer normalizer = new MailingNormalizer();
 
     public MailingAssembler(CompleteClient client) {
         this.client = client;
     }
 
-    /** Assemble mailings from per-page metadata. DocGroup.pages keeps the model's reading order;
-     *  minConfidence carries the mailing confidence (drives committed vs pending downstream). */
+    /** Assemble mailings from per-page metadata, then hand the model's grouping to
+     *  {@link MailingNormalizer}: mailings sharing sender + issue date are merged and pages are
+     *  ordered by their printed labels. minConfidence carries the mailing confidence (drives
+     *  committed vs pending downstream). */
     public List<DocGroup> assemble(String realm, List<PageMetadataExtractor.PageMetadata> pages) {
         StringBuilder rows = new StringBuilder();
         for (PageMetadataExtractor.PageMetadata m : pages) {
@@ -102,7 +105,7 @@ public class MailingAssembler {
             g.minConfidence = m.path("confidence").asDouble(0.0);
             groups.add(g);
         }
-        return groups;
+        return normalizer.normalize(groups, pages);
     }
 
     /** Render like Python's repr so the rows match the validated prompt format exactly:

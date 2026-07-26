@@ -68,6 +68,24 @@ class MailingAssemblerTest {
     }
 
     @Test
+    void normalizesTheModelsGroupsBeforeReturningThem() {
+        CompleteClient cc = mock(CompleteClient.class);
+        when(cc.complete(eq("documents"), anyString())).thenReturn("""
+                [{"mailing":"fa","description":"Finanzamt Bescheid","confidence":0.9,"pages":[1]},
+                 {"mailing":"fa2","description":"Finanzamt Bescheid","confidence":0.5,
+                  "pages":[2]}]""");
+        List<DocGroup> groups = new MailingAssembler(cc).assemble("documents", List.of(
+                new PageMetadataExtractor.PageMetadata(1, "Finanzamt Musterstadt", "05.09.2025",
+                        null, "Bescheid", "12/345/67890", "page one", false),
+                new PageMetadataExtractor.PageMetadata(2, "Finanzamt Musterstadt", "05.09.2025",
+                        null, "Bescheid", "12/345/6789O", "page two", false)));
+        // same sender + issue date: the prompt forbids two such mailings, the normalizer enforces it
+        assertEquals(1, groups.size());
+        assertEquals(List.of(1, 2), groups.get(0).pages);
+        assertEquals(0.5, groups.get(0).minConfidence, 1e-9);
+    }
+
+    @Test
     void garbageOutputThrows() {
         CompleteClient cc = mock(CompleteClient.class);
         when(cc.complete(anyString(), anyString())).thenReturn("sorry, I cannot help with that");
