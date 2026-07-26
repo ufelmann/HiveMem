@@ -246,6 +246,39 @@ class MailingNormalizerTest {
     }
 
     @Test
+    void skipsAnUnusableStandDateAndAnchorsOnALaterPageToStillMerge() {
+        // The enclosure's "Stand ..." print date precedes the letter's real issue date in the
+        // same group. anchorKey must skip past the unusable first page and keep looking, not give
+        // up on the whole group - otherwise a mailing whose enclosure sorts first could never
+        // merge with its sibling at all. Kills a mutant that turns the date guard's `continue`
+        // into `return null`.
+        DocGroup a = group("a", 0.9, 1, 2);
+        DocGroup b = group("b", 0.9, 3);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                letter(1, "Finanzamt", "Stand 01.01.2025"),
+                letter(2, "Finanzamt", "05.09.2025"),
+                letter(3, "Finanzamt", "05.09.2025")));
+        assertThat(out).hasSize(1);
+        assertThat(out.get(0).pages).containsExactly(1, 2, 3);
+    }
+
+    @Test
+    void skipsAnUnusablePunctuationOnlySenderAndAnchorsOnALaterPageToStillMerge() {
+        // First page's sender is punctuation-only (normalizes to ""); the second page in the same
+        // group has a usable sender. anchorKey must skip past the first page and keep looking, not
+        // give up on the whole group. Kills a mutant that turns the sender guard's `continue` into
+        // `return null`.
+        DocGroup a = group("a", 0.9, 1, 2);
+        DocGroup b = group("b", 0.9, 3);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                letter(1, "-", "05.09.2025"),
+                letter(2, "Finanzamt", "05.09.2025"),
+                letter(3, "Finanzamt", "05.09.2025")));
+        assertThat(out).hasSize(1);
+        assertThat(out.get(0).pages).containsExactly(1, 2, 3);
+    }
+
+    @Test
     void mergesTwoGroupsWithTheSameSenderAndIssueDate() {
         // The tax case: same Finanzamt, same Bescheid date, differently-read Steuernummer.
         DocGroup a = group("a", 0.9, 1);
