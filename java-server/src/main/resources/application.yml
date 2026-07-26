@@ -120,6 +120,17 @@ hivemem:
     inbox-batch-limit: ${HIVEMEM_QUEEN_INBOX_BATCH_LIMIT:20}
     archivist-schedule: ${HIVEMEM_QUEEN_ARCHIVIST_SCHEDULE:0 0 4 * * *}
     archivist-debounce-seconds: ${HIVEMEM_QUEEN_ARCHIVIST_DEBOUNCE_SECONDS:60}
+  contradiction:
+    enabled: ${HIVEMEM_CONTRADICTION_ENABLED:false}
+    sweep-interval: ${HIVEMEM_CONTRADICTION_SWEEP_INTERVAL:PT1H}
+    reconcile-interval: ${HIVEMEM_CONTRADICTION_RECONCILE_INTERVAL:PT5M}
+    batch-size: ${HIVEMEM_CONTRADICTION_BATCH_SIZE:25}
+    max-runs-per-day: ${HIVEMEM_CONTRADICTION_MAX_RUNS_PER_DAY:4}
+    stale-threshold: ${HIVEMEM_CONTRADICTION_STALE_THRESHOLD:PT10M}
+    max-attempts: ${HIVEMEM_CONTRADICTION_MAX_ATTEMPTS:3}
+    max-pairs-per-group: ${HIVEMEM_CONTRADICTION_MAX_PAIRS_PER_GROUP:3}
+    cardinality-batch-size: ${HIVEMEM_CONTRADICTION_CARDINALITY_BATCH_SIZE:10}
+    cardinality-samples: ${HIVEMEM_CONTRADICTION_CARDINALITY_SAMPLES:3}
   ocr:
     enabled: ${HIVEMEM_OCR_ENABLED:false}
     tesseract-path: ${HIVEMEM_TESSERACT_PATH:tesseract}
