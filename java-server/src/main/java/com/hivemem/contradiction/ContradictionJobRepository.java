@@ -16,9 +16,14 @@ import org.springframework.stereotype.Repository;
  * <p>This mirrors {@link com.hivemem.consumption.SeparationJobRepository} in shape and style, with
  * one deliberate divergence: {@link #findStale} covers both {@code 'awaiting'} and {@code
  * 'processing'}, not just {@code 'awaiting'}. The twin's {@code findStale()} only looks at
- * {@code 'awaiting'}, which strands any job whose process died after {@link #claimByJobId} flipped
+ * {@code 'awaiting'}, which strands any job whose process died after {@link #claim} flipped
  * it to {@code 'processing'} — that row (and every item it reserved) would sit invisible to every
  * sweep forever. Covering both statuses lets the reconcile sweep recover crashed in-flight jobs too.
+ *
+ * <p>Because the reconcile sweep can now act on a job that is merely slow (not dead), the terminal
+ * writes {@link #markDone} and {@link #markFailed} are conditional UPDATEs, not unconditional ones:
+ * a webhook finishing late and the sweep timing it out race for the same row, and exactly one of
+ * them must win. Both return whether they were the winner.
  */
 @Repository
 public class ContradictionJobRepository {
@@ -50,7 +55,7 @@ public class ContradictionJobRepository {
      *
      * @return true iff this caller flipped the job from 'awaiting' to 'processing'
      */
-    public boolean claimByJobId(UUID jobId) {
+    public boolean claim(UUID jobId) {
         int updated = dsl.execute(
                 "UPDATE contradiction_jobs SET status='processing', updated_at=now() "
                         + "WHERE id=? AND status='awaiting'", jobId);
@@ -83,12 +88,28 @@ public class ContradictionJobRepository {
         return out;
     }
 
-    public void markDone(UUID jobId) {
-        dsl.execute("UPDATE contradiction_jobs SET status='done', updated_at=now() WHERE id=?", jobId);
+    /**
+     * Terminal transition to 'done', conditional on the job still being 'processing' so a webhook
+     * that finishes late cannot silently overwrite a sweep's {@link #markFailed}.
+     *
+     * @return true iff this caller made the terminal write
+     */
+    public boolean markDone(UUID jobId) {
+        return dsl.execute(
+                "UPDATE contradiction_jobs SET status='done', updated_at=now() "
+                        + "WHERE id=? AND status='processing'", jobId) == 1;
     }
 
-    public void markFailed(UUID jobId) {
-        dsl.execute("UPDATE contradiction_jobs SET status='failed', updated_at=now() WHERE id=?", jobId);
+    /**
+     * Terminal transition to 'failed', conditional on the job not already being terminal so the
+     * reconcile sweep cannot overwrite a webhook that already called {@link #markDone}.
+     *
+     * @return true iff this caller made the terminal write
+     */
+    public boolean markFailed(UUID jobId) {
+        return dsl.execute(
+                "UPDATE contradiction_jobs SET status='failed', updated_at=now() "
+                        + "WHERE id=? AND status IN ('awaiting', 'processing')", jobId) == 1;
     }
 
     /**
@@ -109,7 +130,7 @@ public class ContradictionJobRepository {
     public int countToday() {
         Record r = dsl.fetchOne("""
                 SELECT count(*) AS c FROM contradiction_jobs
-                WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'UTC')
+                WHERE created_at >= date_trunc('day', now(), 'UTC')
                 """);
         return r.get("c", Integer.class);
     }

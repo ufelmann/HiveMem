@@ -2,8 +2,6 @@ package com.hivemem.contradiction;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.hivemem.embedding.EmbeddingClient;
-import com.hivemem.embedding.FixedEmbeddingClient;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -11,49 +9,8 @@ import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-@Testcontainers
-@ActiveProfiles("test")
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
-@Import(ContradictionJobRepositoryIT.TestConfig.class)
-class ContradictionJobRepositoryIT {
-
-    @TestConfiguration(proxyBeanMethods = false)
-    static class TestConfig {
-        @Bean
-        @Primary
-        EmbeddingClient testEmbeddingClient() {
-            return new FixedEmbeddingClient();
-        }
-    }
-
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("pgvector/pgvector:pg17")
-            .withDatabaseName("hivemem").withUsername("hivemem").withPassword("hivemem")
-            .withCreateContainerCmdModifier(cmd -> cmd.withHostConfig(
-                    (cmd.getHostConfig() == null
-                            ? new com.github.dockerjava.api.model.HostConfig()
-                            : cmd.getHostConfig())
-                            .withSecurityOpts(java.util.List.of("apparmor=unconfined"))));
-
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        r.add("spring.datasource.username", POSTGRES::getUsername);
-        r.add("spring.datasource.password", POSTGRES::getPassword);
-        r.add("spring.datasource.driver-class-name", POSTGRES::getDriverClassName);
-    }
+class ContradictionJobRepositoryIT extends ContradictionITSupport {
 
     @Autowired DSLContext dsl;
     @Autowired ContradictionJobRepository jobs;
@@ -66,15 +23,15 @@ class ContradictionJobRepositoryIT {
     @Test
     void claimFlipsAwaitingToProcessingExactlyOnce() {
         UUID id = jobs.create(UUID.randomUUID(), "pairs", 5);
-        assertThat(jobs.claimByJobId(id)).isTrue();
-        assertThat(jobs.claimByJobId(id)).isFalse();
+        assertThat(jobs.claim(id)).isTrue();
+        assertThat(jobs.claim(id)).isFalse();
     }
 
     @Test
     void findStaleCoversAwaitingAndProcessing() {
         UUID awaiting = jobs.create(UUID.randomUUID(), "pairs", 1);
         UUID processing = jobs.create(UUID.randomUUID(), "cardinality", 1);
-        jobs.claimByJobId(processing);
+        jobs.claim(processing);
         age(awaiting);
         age(processing);
 
@@ -87,20 +44,38 @@ class ContradictionJobRepositoryIT {
     @Test
     void findStaleIgnoresTerminalAndFreshJobs() {
         UUID fresh = jobs.create(UUID.randomUUID(), "pairs", 1);
+
         UUID done = jobs.create(UUID.randomUUID(), "pairs", 1);
-        jobs.markDone(done);
+        assertThat(jobs.claim(done)).isTrue();
+        assertThat(jobs.markDone(done)).isTrue();
         age(done);
+
+        UUID failed = jobs.create(UUID.randomUUID(), "pairs", 1);
+        assertThat(jobs.markFailed(failed)).isTrue();
+        age(failed);
+
         assertThat(jobs.findStale(Duration.ofMinutes(10), 10))
                 .extracting(ContradictionJobRepository.Job::id)
-                .doesNotContain(fresh, done);
+                .doesNotContain(fresh, done, failed);
     }
 
+    /**
+     * Pins the real UTC-midnight boundary instead of just moving a row two days back — a coarse
+     * shift like that would still pass even if the boundary were off by many hours (e.g. by a
+     * server-timezone offset such as Europe/Berlin). Inserting exactly one minute either side of
+     * the boundary fails on any timezone-driven drift.
+     */
     @Test
     void countTodayCountsFromUtcMidnightOnly() {
-        jobs.create(UUID.randomUUID(), "pairs", 1);
-        UUID yesterday = jobs.create(UUID.randomUUID(), "pairs", 1);
-        dsl.execute("UPDATE contradiction_jobs SET created_at = now() - interval '2 days' WHERE id = ?",
-                yesterday);
+        dsl.execute("""
+                INSERT INTO contradiction_jobs (correlation_id, kind, item_count, created_at)
+                VALUES (?, 'pairs', 1, date_trunc('day', now(), 'UTC') - interval '1 minute')
+                """, UUID.randomUUID());
+        dsl.execute("""
+                INSERT INTO contradiction_jobs (correlation_id, kind, item_count, created_at)
+                VALUES (?, 'pairs', 1, date_trunc('day', now(), 'UTC') + interval '1 minute')
+                """, UUID.randomUUID());
+
         assertThat(jobs.countToday()).isEqualTo(1);
     }
 
