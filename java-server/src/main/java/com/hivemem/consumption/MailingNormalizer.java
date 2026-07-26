@@ -166,47 +166,57 @@ public final class MailingNormalizer {
             Label l = label(meta.get(p));
             if (l != null) byTotal.computeIfAbsent(l.total(), t -> new ArrayList<>()).add(p);
         }
-        Set<Integer> insertable = new HashSet<>();
+        Set<Integer> unambiguous = new HashSet<>();
         for (Map.Entry<Integer, List<Integer>> e : byTotal.entrySet()) {
-            if (familyInsertPoint(target, meta, e.getKey(), e.getValue()) >= 0) {
-                insertable.add(e.getKey());
+            if (isFamilyUnambiguous(target, meta, e.getKey(), e.getValue())) {
+                unambiguous.add(e.getKey());
             }
         }
         List<Integer> appended = new ArrayList<>();
         for (Integer p : incoming.pages) {
             Label l = label(meta.get(p));
-            if (l == null || !insertable.contains(l.total())) appended.add(p);
+            if (l == null || !unambiguous.contains(l.total())) appended.add(p);
         }
         // Insert family by family, recomputing the point each time: an earlier insertion shifts
-        // the indices of everything behind it.
-        for (Integer total : insertable) {
-            List<Integer> family = byTotal.get(total);
-            int at = familyInsertPoint(target, meta, total, family);
-            if (at >= 0) target.pages.addAll(at, family);
-            else appended.addAll(family);
+        // the indices of everything behind it. Every total here was already proven unambiguous
+        // above, so the point is always found - no fallback to append here.
+        for (Integer total : unambiguous) {
+            target.pages.addAll(familyInsertPoint(target, meta, total), byTotal.get(total));
         }
         target.pages.addAll(appended);
     }
 
-    /** Index just behind the target's label family for `total`, or -1 when there is no such family
-     *  or it would become ambiguous: a number must not appear twice in the target family, among the
-     *  incoming pages, or across the two. Ambiguity means append, i.e. today's behaviour - a wrong
-     *  insertion would split a document that is intact today. */
-    private static int familyInsertPoint(DocGroup target, Map<Integer, PageMetadata> meta,
-                                         int total, List<Integer> incoming) {
+    /** Whether inserting `incoming` into the target's label family for `total` stays unambiguous: a
+     *  number must not appear twice in the target family, among the incoming pages, or across the
+     *  two - and the target must actually have such a family. False means append, i.e. today's
+     *  behaviour - a wrong insertion would split a document that is intact today. */
+    private static boolean isFamilyUnambiguous(DocGroup target, Map<Integer, PageMetadata> meta,
+                                               int total, List<Integer> incoming) {
         Set<Integer> numbers = new HashSet<>();
+        boolean found = false;
+        for (Integer p : target.pages) {
+            Label l = label(meta.get(p));
+            if (l != null && l.total() == total) {
+                found = true;
+                if (!numbers.add(l.number())) return false;
+            }
+        }
+        if (!found) return false;
+        for (Integer p : incoming) {
+            Label l = label(meta.get(p));
+            if (l == null || !numbers.add(l.number())) return false;
+        }
+        return true;
+    }
+
+    /** Index just behind the target's label family for `total`. Only meaningful once
+     *  isFamilyUnambiguous has confirmed the family exists; recomputed on every call because an
+     *  earlier insertion shifts the indices of everything behind it. */
+    private static int familyInsertPoint(DocGroup target, Map<Integer, PageMetadata> meta, int total) {
         int last = -1;
         for (int i = 0; i < target.pages.size(); i++) {
             Label l = label(meta.get(target.pages.get(i)));
-            if (l != null && l.total() == total) {
-                if (!numbers.add(l.number())) return -1;
-                last = i;
-            }
-        }
-        if (last < 0) return -1;
-        for (Integer p : incoming) {
-            Label l = label(meta.get(p));
-            if (l == null || !numbers.add(l.number())) return -1;
+            if (l != null && l.total() == total) last = i;
         }
         return last + 1;
     }
