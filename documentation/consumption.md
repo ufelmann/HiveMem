@@ -185,7 +185,7 @@ consumption executor, never throws to the caller):
    `reassembly-confidence-threshold` (default **0.5** — aggressive, so most
    mailings commit), otherwise `pending`.
 7. **Split + ingest.** `BatchSplitter.assemble` builds one PDF per mailing
-   (arbitrary page order supported, in the reading order pass 3 returned), and
+   (arbitrary page order supported, in the normalized order step 4 produced), and
    each is ingested with `source = "consumption:"`. The staged source moves to
    `processed/`.
 
