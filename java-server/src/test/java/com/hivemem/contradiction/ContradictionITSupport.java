@@ -2,6 +2,9 @@ package com.hivemem.contradiction;
 
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
+import org.jooq.DSLContext;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -35,6 +38,32 @@ import org.testcontainers.containers.PostgreSQLContainer;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @Import(ContradictionITSupport.TestConfig.class)
 abstract class ContradictionITSupport {
+
+    @Autowired DSLContext contradictionITSupportDsl;
+
+    /**
+     * All contradiction ITs share one Postgres instance and one cached Spring context, so rows
+     * left over from one test class are visible to the next. {@code fact_contradictions.fact_a}
+     * and {@code fact_b} are plain (non-cascading) foreign keys to {@code facts.id}; {@code
+     * fact_contradictions.job_id} and {@code predicate_cardinality.job_id} are likewise plain
+     * foreign keys to {@code contradiction_jobs.id}. Deleting {@code facts} before {@code
+     * fact_contradictions} — as a subclass's own cleanup once did — throws a foreign-key violation
+     * the moment any test class in the package has left a referencing row behind (e.g. {@code
+     * ContradictionSchemaIT.pairIndexIsOrderIndependent}, which never cleans up after itself).
+     * That failure only shows up under {@code -Dfailsafe.runOrder=alphabetical} or on CI; the
+     * default filesystem run order happens to dodge it, which made it invisible until deliberately
+     * checked.
+     *
+     * <p>Deleting in strict FK-dependency order here, once, means every present and future
+     * subclass inherits a clean slate without repeating (or getting wrong) this ordering.
+     */
+    @BeforeEach
+    void cleanContradictionTables() {
+        contradictionITSupportDsl.execute("DELETE FROM predicate_cardinality");
+        contradictionITSupportDsl.execute("DELETE FROM fact_contradictions");
+        contradictionITSupportDsl.execute("DELETE FROM contradiction_jobs");
+        contradictionITSupportDsl.execute("DELETE FROM facts");
+    }
 
     @TestConfiguration(proxyBeanMethods = false)
     static class TestConfig {
