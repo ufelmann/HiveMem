@@ -116,6 +116,7 @@ hivemem:
     isolated-batch-limit: ${HIVEMEM_QUEEN_ISOLATED_BATCH_LIMIT:20}
     call-timeout-seconds: ${HIVEMEM_QUEEN_CALL_TIMEOUT:30}
     separation-webhook-token: ${HIVEMEM_QUEEN_SEPARATION_WEBHOOK_TOKEN:}
+    contradiction-webhook-token: ${HIVEMEM_QUEEN_CONTRADICTION_WEBHOOK_TOKEN:}
     document-separator-agent: ${HIVEMEM_QUEEN_SEPARATOR_AGENT:document-separator}
     inbox-batch-limit: ${HIVEMEM_QUEEN_INBOX_BATCH_LIMIT:20}
     archivist-schedule: ${HIVEMEM_QUEEN_ARCHIVIST_SCHEDULE:0 0 4 * * *}

@@ -29,6 +29,8 @@ public class QueenProperties {
     private int callTimeoutSeconds = 30;
     /** Token HiveMem expects Vistierie to present on the separation webhook callback. */
     private String separationWebhookToken = "";
+    /** Token HiveMem expects Vistierie to present on both contradiction-feature webhook callbacks. */
+    private String contradictionWebhookToken = "";
     /** Vistierie agent name that handles document separation tasks. */
     private String documentSeparatorAgent = "document-separator";
     /** Max inbox cells the archivist surveys per run. */
@@ -60,6 +62,8 @@ public class QueenProperties {
     public void setCallTimeoutSeconds(int v) { this.callTimeoutSeconds = v; }
     public String getSeparationWebhookToken() { return separationWebhookToken; }
     public void setSeparationWebhookToken(String v) { this.separationWebhookToken = v; }
+    public String getContradictionWebhookToken() { return contradictionWebhookToken; }
+    public void setContradictionWebhookToken(String v) { this.contradictionWebhookToken = v; }
     public String getDocumentSeparatorAgent() { return documentSeparatorAgent; }
     public void setDocumentSeparatorAgent(String v) { this.documentSeparatorAgent = v; }
     public int getInboxBatchLimit() { return inboxBatchLimit; }
