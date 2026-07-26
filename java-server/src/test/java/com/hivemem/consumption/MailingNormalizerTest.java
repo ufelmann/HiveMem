@@ -216,7 +216,7 @@ class MailingNormalizerTest {
         Map<Integer, PageMetadata> meta = MailingNormalizer.byPage(List.of(
                 plain(1), letter(2, "Finanzamt Musterstadt", "05.09.2025")));
         assertThat(MailingNormalizer.anchorKey(g, meta))
-                .isEqualTo("finanzamt musterstadt 05.09.2025");
+                .isEqualTo(new MailingNormalizer.AnchorKey("finanzamt musterstadt", "05.09.2025"));
     }
 
     @Test
@@ -232,8 +232,9 @@ class MailingNormalizerTest {
                 letter(8, "Finanzamt", "Stand 01.01.2025"),          // enclosure print date
                 letter(9, "Finanzamt", " Stand 01.01.2025"),         // leading blank
                 letter(10, "Finanzamt", "Stand: 01.01.2025"),        // colon variant
-                new PageMetadata(11, "Finanzamt", "05.09.2025", null, "blank", null, "x", true)));
-        for (int page = 1; page <= 11; page++) {
+                letter(11, "Finanzamt", "stand 01.01.2025"),         // lowercase variant
+                new PageMetadata(12, "Finanzamt", "05.09.2025", null, "blank", null, "x", true)));
+        for (int page = 1; page <= 12; page++) {
             DocGroup g = group("m", 0.9, page);
             assertThat(MailingNormalizer.anchorKey(g, meta)).as("page " + page).isNull();
         }

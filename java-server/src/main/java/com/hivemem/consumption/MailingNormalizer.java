@@ -100,10 +100,16 @@ public final class MailingNormalizer {
         return true;
     }
 
+    /** The merge key of a group. A plain concatenated string would be lossy: a normalized sender is
+     *  space-joined words, and a printed date can itself contain spaces (German letters print date
+     *  lines like "Musterstadt, den 5. September 2025"), so two different (sender, date) pairs could
+     *  collide on the same string. The record's generated equals/hashCode give a correct map key. */
+    record AnchorKey(String sender, String date) {}
+
     /** The merge key of a group, or null when nothing in it can anchor. The anchor is the first
      *  non-blank page carrying a usable sender AND a usable issue date. `reference` is deliberately
      *  NOT part of the key: a differently-read Steuernummer is exactly what split the tax batch. */
-    static String anchorKey(DocGroup g, Map<Integer, PageMetadata> meta) {
+    static AnchorKey anchorKey(DocGroup g, Map<Integer, PageMetadata> meta) {
         for (Integer p : g.pages) {
             PageMetadata m = meta.get(p);
             if (m == null || m.blank()) continue;
@@ -111,13 +117,15 @@ public final class MailingNormalizer {
             String date = m.date().trim();
             // "Stand ..." is the print date of a generic enclosure (see PageMetadataExtractor.
             // PROMPT); it must never anchor a mailing. Trimmed and without the trailing space so
-            // " Stand 01.01.2025" and "Stand: 01.01.2025" cannot slip through.
-            if (date.isEmpty() || date.startsWith("Stand")) continue;
+            // " Stand 01.01.2025" and "Stand: 01.01.2025" cannot slip through. Case-insensitive:
+            // the prompt only asks the model for "Stand ", nothing enforces the casing it returns
+            // (LABEL above is CASE_INSENSITIVE for the same reason).
+            if (date.isEmpty() || date.regionMatches(true, 0, "Stand", 0, 5)) continue;
             // An unreadable letterhead arrives as "" (asString(null) coerces an empty string) and
             // punctuation-only senders normalize to "" - keying on those would merge strangers.
             String sender = normalizeSender(m.sender());
             if (sender.isEmpty()) continue;
-            return sender + ' ' + date;
+            return new AnchorKey(sender, date);
         }
         return null;
     }
