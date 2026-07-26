@@ -107,6 +107,25 @@ abstract class ContradictionITSupport {
                 """, factA, factB, subject, predicate, status);
     }
 
+    /**
+     * Builds a {@link ContradictionCandidate} for two already-inserted facts, mirroring
+     * {@code ContradictionCandidateRepository}'s own row-to-{@link FactSide} mapping (confidence
+     * coalesced to 1.0). Used by {@code ContradictionRepositoryIT} to feed
+     * {@code ContradictionRepository.reserve} without re-deriving the candidate query.
+     */
+    protected ContradictionCandidate candidateOf(String subject, String predicate, UUID factA, UUID factB) {
+        return new ContradictionCandidate(subject, predicate, factSideOf(factA), factSideOf(factB));
+    }
+
+    private FactSide factSideOf(UUID factId) {
+        Record r = contradictionITSupportDsl.fetchOne("""
+                SELECT "object", valid_from, ingested_at, COALESCE(confidence, 1.0) AS confidence
+                FROM facts WHERE id = ?
+                """, factId);
+        return new FactSide(factId, r.get("object", String.class), r.get("valid_from", OffsetDateTime.class),
+                r.get("ingested_at", OffsetDateTime.class), r.get("confidence", double.class));
+    }
+
     @TestConfiguration(proxyBeanMethods = false)
     static class TestConfig {
         @Bean
