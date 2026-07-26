@@ -26,15 +26,17 @@ public final class MailingNormalizer {
      *  footer, and letting it join a family would move the non-blank pages around it. */
     static Label label(PageMetadata m) {
         if (m == null || m.blank() || m.pageLabel() == null) return null;
-        Matcher x = LABEL.matcher(m.pageLabel());
-        if (!x.matches()) return null;
-        return new Label(Integer.parseInt(x.group(1)), Integer.parseInt(x.group(2)));
+        Matcher matcher = LABEL.matcher(m.pageLabel());
+        if (!matcher.matches()) return null;
+        return new Label(Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)));
     }
 
     /** Metadata by page number - NEVER by list index: the list is neither 1-based nor contiguous.
-     *  A duplicate page number keeps the first entry instead of throwing. */
+     *  A duplicate page number keeps the first entry instead of throwing. Null-safe so the
+     *  class-level "never throws" holds even if a future caller passes null. */
     static Map<Integer, PageMetadata> byPage(List<PageMetadata> pages) {
         Map<Integer, PageMetadata> meta = new HashMap<>();
+        if (pages == null) return meta;
         for (PageMetadata m : pages) {
             if (m != null) meta.putIfAbsent(m.page(), m);
         }
