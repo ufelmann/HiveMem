@@ -158,13 +158,33 @@ consumption executor, never throws to the caller):
    extracted metadata (no images) in a single call and asks the model to group
    pages into mailings, in reading order within each mailing. Grouping is a
    reasoning task over already-extracted facts, not a vision task.
-4. **Blank drop.** A page is dropped if either the pass-1 vision signal *or* the
+4. **Normalization, deterministic.** `MailingAssembler.assemble` runs pass 3's
+   grouping through `MailingNormalizer` before returning it — this is plain Java,
+   no LLM call, and enforces what the prompt can only ask for:
+   - **Merge.** Two mailings whose first usable page shares a sender and an issue
+     date are merged into one. The sender is compared case- and
+     punctuation-insensitively; a date carrying a `Stand ...` prefix (the print
+     date of a generic enclosure such as a Datenschutz notice) never anchors a
+     mailing, and the contract/customer/tax reference is deliberately left out of
+     the key. The merged mailing's confidence is the minimum of the two, so a
+     merge lands in `pending` review rather than committing silently.
+   - **Page placement on merge.** A page pulled in by a merge is inserted right
+     behind its own printed-label family in the target mailing — not appended at
+     the end — but only while that family stays unambiguous (no label number
+     repeated on either side). Otherwise it is appended.
+   - **Ordering.** Blank pages always sort last. The remaining pages are ordered
+     by printed label only when the mailing is one complete printed document:
+     every page labelled, all labels sharing one total, and the numbers exactly
+     `1..N`. A mailing that mixes a letter with enclosures is never reordered —
+     without a way to tell two printed sequences apart, reordering could splice
+     one document into another.
+5. **Blank drop.** A page is dropped if either the pass-1 vision signal *or* the
    pixel-based detector (`blank-filter-enabled` / `blank-white-fraction`) calls it
    blank. A mailing whose pages are all blank never becomes a cell.
-5. **Status.** A mailing is `committed` if its minimum confidence ≥
+6. **Status.** A mailing is `committed` if its minimum confidence ≥
    `reassembly-confidence-threshold` (default **0.5** — aggressive, so most
    mailings commit), otherwise `pending`.
-6. **Split + ingest.** `BatchSplitter.assemble` builds one PDF per mailing
+7. **Split + ingest.** `BatchSplitter.assemble` builds one PDF per mailing
    (arbitrary page order supported, in the reading order pass 3 returned), and
    each is ingested with `source = "consumption:"`. The staged source moves to
    `processed/`.
