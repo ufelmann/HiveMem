@@ -371,6 +371,24 @@ class MailingNormalizerTest {
     }
 
     @Test
+    void recomputesTheInsertPointAfterAnEarlierFamilyInsertionShiftsIndices() {
+        // Target: [10 ("1 von 2"), 20 ("1 von 3")]; incoming: [11 ("2 von 2"), 21 ("2 von 3")].
+        // Both families are insertable. Inserting the total=2 family right after index 0 shifts
+        // page 20 from index 1 to index 2, so the total=3 family must land after index 2 (=> index
+        // 3), not after the index 1 computed before that shift. Neither group is one complete
+        // labelled document (mixed totals), so the final order() pass cannot mask a wrong result.
+        DocGroup a = group("a", 0.9, 10, 20);
+        DocGroup b = group("b", 0.9, 11, 21);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                withLabel(letter(10, "Finanzamt", "05.09.2025"), "Seite 1 von 2"),
+                withLabel(letter(20, "Finanzamt", "05.09.2025"), "Seite 1 von 3"),
+                withLabel(letter(11, "Finanzamt", "05.09.2025"), "Seite 2 von 2"),
+                withLabel(letter(21, "Finanzamt", "05.09.2025"), "Seite 2 von 3")));
+        assertThat(out).hasSize(1);
+        assertThat(out.get(0).pages).containsExactly(10, 11, 20, 21);
+    }
+
+    @Test
     void toleratesTheSamePageNumberInTwoMergedGroups() {
         // PageReassembler dedupes first-wins downstream; the normalizer must not throw.
         DocGroup a = group("a", 0.9, 1);
