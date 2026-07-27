@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -30,6 +31,15 @@ public class VistierieCardinalityClient {
     private final String callbackBaseUrl;
     private final String callbackToken;
 
+    /**
+     * Explicitly {@code @Autowired}: this class also declares a package-private constructor (for
+     * {@code VistierieCardinalityClientTest} to inject a WireMock base URL directly), and Spring's
+     * implicit single-constructor autowiring only kicks in when exactly one constructor is
+     * declared. Without this annotation, Spring falls back to a no-arg instantiation strategy and
+     * fails with "no default constructor found" the moment this bean is actually wired into an
+     * application context (as {@link ContradictionSweep} now does).
+     */
+    @Autowired
     public VistierieCardinalityClient(RestClient.Builder builder, QueenProperties props) {
         this(
                 builder,

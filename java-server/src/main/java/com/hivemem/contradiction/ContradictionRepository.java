@@ -174,6 +174,14 @@ public class ContradictionRepository {
      * this tick and must survive it, still carrying its true attempt count. A declined dispatch must
      * never walk a pair toward {@code deferred}.
      *
+     * <p>{@code job_id} is cleared to {@code NULL} on the UPDATE leg, not left pointing at the
+     * declined job: {@link ContradictionJobRepository#delete} is this path's very next call, and
+     * {@code job_id} is a plain (non-cascading) foreign key to {@code contradiction_jobs.id} — a
+     * re-reserved row left referencing the about-to-be-deleted job would make that DELETE fail with
+     * a foreign-key violation. {@code NULL} is the correct value regardless: this leg reverts the
+     * row to its pre-tick state, and a {@code retryable} row's {@code job_id} means only "the job
+     * that last touched it," which this tick did not actually do.
+     *
      * <p>{@code @Transactional}: the DELETE and UPDATE act on disjoint rows for two different
      * effects and cannot be collapsed into one statement, so atomicity is enforced by wrapping both
      * in one transaction — precedent: {@code SavedSearchRepository.save}
@@ -190,7 +198,7 @@ public class ContradictionRepository {
                 """, jobId);
         dsl.execute("""
                 UPDATE fact_contradictions
-                SET status = 'retryable', attempts = attempts - 1
+                SET status = 'retryable', attempts = attempts - 1, job_id = NULL
                 WHERE job_id = ? AND status = 'in_flight' AND attempts > 1
                 """, jobId);
     }
@@ -201,6 +209,35 @@ public class ContradictionRepository {
                 SELECT id FROM fact_contradictions WHERE job_id = ? AND status = 'in_flight' ORDER BY id
                 """, jobId);
         return toUuids(rows);
+    }
+
+    /**
+     * One {@code in_flight} row of a job, joined to both referenced facts' object values — exactly
+     * the shape {@link ContradictionSweep} needs to build a {@link PairPayload} without re-deriving
+     * this join itself.
+     */
+    public record PairForPayload(UUID id, String subject, String predicate, String objectA, String objectB) {}
+
+    /** The {@code in_flight} pairs of a job with their subject/predicate/object values, for dispatch. */
+    public List<PairForPayload> inFlightPayloadRowsOfJob(UUID jobId) {
+        var rows = dsl.fetch("""
+                SELECT fc.id, fc.subject, fc.predicate, fa."object" AS object_a, fb."object" AS object_b
+                FROM fact_contradictions fc
+                JOIN facts fa ON fa.id = fc.fact_a
+                JOIN facts fb ON fb.id = fc.fact_b
+                WHERE fc.job_id = ? AND fc.status = 'in_flight'
+                ORDER BY fc.id
+                """, jobId);
+        List<PairForPayload> out = new ArrayList<>();
+        for (Record r : rows) {
+            out.add(new PairForPayload(
+                    r.get("id", UUID.class),
+                    r.get("subject", String.class),
+                    r.get("predicate", String.class),
+                    r.get("object_a", String.class),
+                    r.get("object_b", String.class)));
+        }
+        return out;
     }
 
     /**

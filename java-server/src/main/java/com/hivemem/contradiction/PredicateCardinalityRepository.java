@@ -175,6 +175,14 @@ public class PredicateCardinalityRepository {
      * back to its pre-tick value. A stop signal must never walk a predicate toward {@code
      * deferred}.
      *
+     * <p>{@code job_id} is cleared to {@code NULL} on the UPDATE leg, not left pointing at the
+     * declined job: {@link ContradictionJobRepository#delete} is this path's very next call, and
+     * {@code job_id} is a plain foreign key to {@code contradiction_jobs.id} — a re-reserved row
+     * left referencing the about-to-be-deleted job would make that DELETE fail with a foreign-key
+     * violation. {@code NULL} is the correct value regardless: this leg reverts the row to its
+     * pre-tick state, and a {@code retryable} row's {@code job_id} means only "the job that last
+     * touched it," which this tick did not actually do.
+     *
      * <p>{@code @Transactional}: the DELETE and UPDATE cannot be collapsed into one statement (they
      * act on disjoint rows for two different effects), so atomicity is enforced by wrapping both in
      * one transaction — precedent: {@code SavedSearchRepository.save}. Without it, a crash between
@@ -190,7 +198,7 @@ public class PredicateCardinalityRepository {
                 """, jobId);
         dsl.execute("""
                 UPDATE predicate_cardinality
-                SET status = 'retryable', attempts = attempts - 1
+                SET status = 'retryable', attempts = attempts - 1, job_id = NULL
                 WHERE job_id = ? AND status = 'in_flight' AND attempts > 1
                 """, jobId);
     }
@@ -203,6 +211,34 @@ public class PredicateCardinalityRepository {
                 ORDER BY predicate
                 """, jobId);
         return toStrings(rows, "predicate");
+    }
+
+    /**
+     * The {@code sample_objects} for a Stage-A dispatch payload: the lexicographically first
+     * {@code samples} distinct objects of the predicate's <em>largest</em> group, where "largest"
+     * means the {@code (subject, predicate)} group holding the most distinct objects. The rule is
+     * pinned deliberately, not left to "whatever the query happens to return first" — otherwise the
+     * dispatch payload would be nondeterministic and untestable. Ties on group size are broken by
+     * {@code subject} ascending, for the same reason.
+     *
+     * <p>Deliberately returns no counts alongside the samples — see {@link PredicatePayload}'s
+     * Javadoc for why the judge must never see how many objects a predicate has on record.
+     */
+    public List<String> sampleObjectsForLargestGroup(String predicate, int samples) {
+        var rows = dsl.fetch("""
+                SELECT DISTINCT "object" FROM active_facts
+                WHERE predicate = ?
+                  AND subject = (
+                      SELECT subject FROM active_facts
+                      WHERE predicate = ?
+                      GROUP BY subject
+                      ORDER BY count(DISTINCT "object") DESC, subject ASC
+                      LIMIT 1
+                  )
+                ORDER BY "object" ASC
+                LIMIT ?
+                """, predicate, predicate, samples);
+        return toStrings(rows, "object");
     }
 
     /** The Stage-B gate: predicates confirmed single-valued, and only those. */

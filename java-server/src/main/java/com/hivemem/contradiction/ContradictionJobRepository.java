@@ -50,6 +50,16 @@ public class ContradictionJobRepository {
     }
 
     /**
+     * Update the real item count once it is known. Used by {@link ContradictionSweep}'s Stage B,
+     * which creates the job before the re-reserve + top-up reservation determines how many pairs
+     * actually ended up in it.
+     */
+    public void updateItemCount(UUID jobId, int itemCount) {
+        dsl.execute("UPDATE contradiction_jobs SET item_count=?, updated_at=now() WHERE id=?",
+                itemCount, jobId);
+    }
+
+    /**
      * Atomically claim an awaiting job before doing any work with it, so the webhook callback and
      * the reconcile sweep cannot both act on the same job.
      *
