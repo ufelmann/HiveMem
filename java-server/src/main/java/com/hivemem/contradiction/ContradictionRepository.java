@@ -3,6 +3,7 @@ package com.hivemem.contradiction;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.jooq.DSLContext;
 import org.jooq.Record;
@@ -278,6 +279,148 @@ public class ContradictionRepository {
                   AND (NOT EXISTS (SELECT 1 FROM active_facts af WHERE af.id = fc.fact_a)
                        OR NOT EXISTS (SELECT 1 FROM active_facts af WHERE af.id = fc.fact_b))
                 """);
+    }
+
+    /**
+     * One {@code fact_contradictions} row, as needed by {@link ContradictionService#resolve}. Only
+     * {@code factA}/{@code factB}/{@code predicate}/{@code status} are read there today;
+     * {@code subject}, {@code suggestedKeep}, {@code rationale}, {@code judgeConfidence} and {@code
+     * detectedAt} are carried for Task 14's resolve response (echoing back what a human was looking
+     * at when they decided), not dead fields.
+     */
+    public record Pair(UUID id, UUID factA, UUID factB, String subject, String predicate, String status,
+            UUID suggestedKeep, String rationale, Double judgeConfidence, OffsetDateTime detectedAt) {}
+
+    public Optional<Pair> findById(UUID id) {
+        Record r = dsl.fetchOne("""
+                SELECT id, fact_a, fact_b, subject, predicate, status, suggested_keep, rationale,
+                       judge_confidence, detected_at
+                FROM fact_contradictions WHERE id = ?
+                """, id);
+        return r == null ? Optional.empty() : Optional.of(mapPair(r));
+    }
+
+    /**
+     * Human "both facts are legitimate" resolution: {@code pending}/{@code deferred} -> {@code
+     * dismissed}. The graph is left untouched — promoting the predicate to {@code multi_valued} is
+     * a separate, explicit human act via {@link PredicateCardinalityRepository#setByHuman}, never
+     * an automatic side effect of dismissing one pair.
+     *
+     * @return true iff the row was actionable ({@code pending} or {@code deferred})
+     */
+    public boolean dismissBothLegitimate(UUID id) {
+        return dsl.execute("""
+                UPDATE fact_contradictions SET status = 'dismissed', resolved_at = now()
+                WHERE id = ? AND status IN ('pending', 'deferred')
+                """, id) == 1;
+    }
+
+    /**
+     * Human requeue: reset the attempt counter and send the pair back to {@code retryable} for
+     * another judge run. This is the human's exit from the attempt ceiling — the only path back to
+     * {@code in_flight} for a row that landed on {@code deferred}, and also usable to re-ask a
+     * {@code pending} row a human disagrees with.
+     *
+     * @return true iff the row was actionable ({@code pending} or {@code deferred})
+     */
+    public boolean requeue(UUID id) {
+        return dsl.execute("""
+                UPDATE fact_contradictions SET status = 'retryable', attempts = 0
+                WHERE id = ? AND status IN ('pending', 'deferred')
+                """, id) == 1;
+    }
+
+    /**
+     * Human "pick a winner" resolution. Called BEFORE the losing fact is invalidated, not after:
+     * this method's own {@code WHERE status IN ('pending','deferred')} guard IS the atomic
+     * check-and-claim against a concurrent resolution of the same pair, and invalidating the fact
+     * is irreversible in a way this row's status is not. See {@link
+     * ContradictionService#resolveWinner} for the full reasoning — closing the pair first and only
+     * then invalidating means the graph is only ever touched once this write has proven this call
+     * (not some concurrent one) owns the resolution. This method itself never touches {@code facts}.
+     *
+     * @return true iff the row was actionable ({@code pending} or {@code deferred})
+     */
+    public boolean markResolved(UUID id) {
+        return dsl.execute("""
+                UPDATE fact_contradictions SET status = 'resolved', resolved_at = now()
+                WHERE id = ? AND status IN ('pending', 'deferred')
+                """, id) == 1;
+    }
+
+    /** One listed pair, joined to both referenced facts' object/valid-time columns. */
+    public record PairListRow(UUID id, String subject, String predicate,
+            UUID factA, String objectA, OffsetDateTime validFromA, OffsetDateTime validUntilA,
+            UUID factB, String objectB, OffsetDateTime validFromB, OffsetDateTime validUntilB,
+            UUID suggestedKeep, String rationale, Double judgeConfidence, String status,
+            OffsetDateTime detectedAt) {}
+
+    /**
+     * Pairs for the {@code contradictions} MCP tool, joined to both referenced facts. For the
+     * {@code pending} status view specifically, both facts must still be active: {@link
+     * #autoCloseInactive} eventually closes a {@code pending} row whose fact went inactive, but a
+     * human can query in the gap between that happening and the next reconcile tick, and a stale
+     * entry there would suggest resolving a pair that no longer means anything. Other statuses
+     * (e.g. {@code deferred}, {@code resolved}) are historical review state and are deliberately
+     * not filtered this way — a human requeuing a {@code deferred} pair should still see it even
+     * if one side went inactive in the meantime.
+     */
+    public List<PairListRow> list(String status, String subject, int limit) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT fc.id, fc.subject, fc.predicate,
+                       fc.fact_a, fa."object" AS object_a, fa.valid_from AS valid_from_a,
+                       fa.valid_until AS valid_until_a,
+                       fc.fact_b, fb."object" AS object_b, fb.valid_from AS valid_from_b,
+                       fb.valid_until AS valid_until_b,
+                       fc.suggested_keep, fc.rationale, fc.judge_confidence, fc.status, fc.detected_at
+                FROM fact_contradictions fc
+                JOIN facts fa ON fa.id = fc.fact_a
+                JOIN facts fb ON fb.id = fc.fact_b
+                WHERE fc.status = ?
+                """);
+        List<Object> params = new ArrayList<>();
+        params.add(status);
+        if ("pending".equals(status)) {
+            sql.append("""
+                      AND EXISTS (SELECT 1 FROM active_facts af WHERE af.id = fc.fact_a)
+                      AND EXISTS (SELECT 1 FROM active_facts af WHERE af.id = fc.fact_b)
+                    """);
+        }
+        if (subject != null) {
+            sql.append("  AND fc.subject = ?\n");
+            params.add(subject);
+        }
+        sql.append("ORDER BY fc.detected_at DESC LIMIT ?\n");
+        params.add(limit);
+
+        var rows = dsl.fetch(sql.toString(), params.toArray());
+        List<PairListRow> out = new ArrayList<>();
+        for (Record r : rows) {
+            out.add(new PairListRow(
+                    r.get("id", UUID.class), r.get("subject", String.class), r.get("predicate", String.class),
+                    r.get("fact_a", UUID.class), r.get("object_a", String.class),
+                    r.get("valid_from_a", OffsetDateTime.class), r.get("valid_until_a", OffsetDateTime.class),
+                    r.get("fact_b", UUID.class), r.get("object_b", String.class),
+                    r.get("valid_from_b", OffsetDateTime.class), r.get("valid_until_b", OffsetDateTime.class),
+                    r.get("suggested_keep", UUID.class), r.get("rationale", String.class),
+                    r.get("judge_confidence", Double.class), r.get("status", String.class),
+                    r.get("detected_at", OffsetDateTime.class)));
+        }
+        return out;
+    }
+
+    private static Pair mapPair(Record r) {
+        return new Pair(
+                r.get("id", UUID.class),
+                r.get("fact_a", UUID.class),
+                r.get("fact_b", UUID.class),
+                r.get("subject", String.class),
+                r.get("predicate", String.class),
+                r.get("status", String.class),
+                r.get("suggested_keep", UUID.class),
+                r.get("rationale", String.class),
+                r.get("judge_confidence", Double.class),
+                r.get("detected_at", OffsetDateTime.class));
     }
 
     private static List<UUID> toUuids(Iterable<Record> rows) {

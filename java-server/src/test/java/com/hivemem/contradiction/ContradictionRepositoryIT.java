@@ -10,6 +10,8 @@ import java.util.UUID;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 
 class ContradictionRepositoryIT extends ContradictionITSupport {
@@ -282,6 +284,96 @@ class ContradictionRepositoryIT extends ContradictionITSupport {
         assertThat(fetch(deferredRowId).get("status", String.class)).isEqualTo("deferred");
         assertThat(fetch(inFlightRowId).get("status", String.class)).isEqualTo("in_flight");
         assertThat(fetch(stillPendingRowId).get("status", String.class)).isEqualTo("pending");
+    }
+
+    /**
+     * The actual concurrency safety net for {@code ContradictionService#resolve}: its own
+     * {@code ACTIONABLE_PAIR_STATUSES} check is only the fast, friendly rejection for the read-time
+     * status; this guarded UPDATE is what stops a write from landing on a row that changed status
+     * between that read and this write (or was never actionable in the first place). Covers every
+     * status the V0052 CHECK constraint allows other than {@code pending}/{@code deferred}, not just
+     * the four historical "terminal" ones - {@code in_flight} and {@code retryable} are just as
+     * illegal a target and are exactly the two a deny-list would have missed.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"in_flight", "retryable", "resolved", "dismissed", "superseded", "not_contradictory"})
+    void markResolvedRejectsEveryNonActionableStatus(String status) {
+        UUID a = insertFact("mr_" + status, "lives_in", "A");
+        UUID b = insertFact("mr_" + status, "lives_in", "B");
+        recordContradiction(a, b, "mr_" + status, "lives_in", status);
+        UUID id = fetchIdForSubject("mr_" + status);
+
+        assertThat(pairs.markResolved(id)).isFalse();
+        assertThat(fetch(id).get("status", String.class)).isEqualTo(status);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"pending", "deferred"})
+    void markResolvedAcceptsBothActionableStatuses(String status) {
+        UUID a = insertFact("mr_ok_" + status, "lives_in", "A");
+        UUID b = insertFact("mr_ok_" + status, "lives_in", "B");
+        recordContradiction(a, b, "mr_ok_" + status, "lives_in", status);
+        UUID id = fetchIdForSubject("mr_ok_" + status);
+
+        assertThat(pairs.markResolved(id)).isTrue();
+        assertThat(fetch(id).get("status", String.class)).isEqualTo("resolved");
+    }
+
+    /** See {@link #markResolvedRejectsEveryNonActionableStatus} — same safety net, different write. */
+    @ParameterizedTest
+    @ValueSource(strings = {"in_flight", "retryable", "resolved", "dismissed", "superseded", "not_contradictory"})
+    void dismissBothLegitimateRejectsEveryNonActionableStatus(String status) {
+        UUID a = insertFact("db_" + status, "lives_in", "A");
+        UUID b = insertFact("db_" + status, "lives_in", "B");
+        recordContradiction(a, b, "db_" + status, "lives_in", status);
+        UUID id = fetchIdForSubject("db_" + status);
+
+        assertThat(pairs.dismissBothLegitimate(id)).isFalse();
+        assertThat(fetch(id).get("status", String.class)).isEqualTo(status);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"pending", "deferred"})
+    void dismissBothLegitimateAcceptsBothActionableStatuses(String status) {
+        UUID a = insertFact("db_ok_" + status, "lives_in", "A");
+        UUID b = insertFact("db_ok_" + status, "lives_in", "B");
+        recordContradiction(a, b, "db_ok_" + status, "lives_in", status);
+        UUID id = fetchIdForSubject("db_ok_" + status);
+
+        assertThat(pairs.dismissBothLegitimate(id)).isTrue();
+        assertThat(fetch(id).get("status", String.class)).isEqualTo("dismissed");
+    }
+
+    /** See {@link #markResolvedRejectsEveryNonActionableStatus} — same safety net, different write. */
+    @ParameterizedTest
+    @ValueSource(strings = {"in_flight", "retryable", "resolved", "dismissed", "superseded", "not_contradictory"})
+    void requeueRejectsEveryNonActionableStatus(String status) {
+        UUID a = insertFact("rq_" + status, "lives_in", "A");
+        UUID b = insertFact("rq_" + status, "lives_in", "B");
+        recordContradiction(a, b, "rq_" + status, "lives_in", status);
+        UUID id = fetchIdForSubject("rq_" + status);
+        dsl.execute("UPDATE fact_contradictions SET attempts = 3 WHERE id = ?", id);
+
+        assertThat(pairs.requeue(id)).isFalse();
+        Record row = fetch(id);
+        assertThat(row.get("status", String.class)).isEqualTo(status);
+        // Not just the status guard: attempts must be untouched too when the write is rejected.
+        assertThat(row.get("attempts", Integer.class)).isEqualTo(3);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"pending", "deferred"})
+    void requeueAcceptsBothActionableStatuses(String status) {
+        UUID a = insertFact("rq_ok_" + status, "lives_in", "A");
+        UUID b = insertFact("rq_ok_" + status, "lives_in", "B");
+        recordContradiction(a, b, "rq_ok_" + status, "lives_in", status);
+        UUID id = fetchIdForSubject("rq_ok_" + status);
+        dsl.execute("UPDATE fact_contradictions SET attempts = 3 WHERE id = ?", id);
+
+        assertThat(pairs.requeue(id)).isTrue();
+        Record row = fetch(id);
+        assertThat(row.get("status", String.class)).isEqualTo("retryable");
+        assertThat(row.get("attempts", Integer.class)).isEqualTo(0);
     }
 
     @Test
