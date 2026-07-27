@@ -1,6 +1,8 @@
 package com.hivemem.testsupport;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
+import java.util.List;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 
@@ -10,6 +12,9 @@ public class MockVistierieServer {
     public void start() { wm.start(); configureFor("localhost", wm.port()); }
     public void stop()  { wm.stop(); }
     public String baseUrl() { return "http://localhost:" + wm.port(); }
+
+    /** All requests received so far, for assertions on raw request bodies (e.g. field-absence checks). */
+    public List<ServeEvent> allServeEvents() { return wm.getAllServeEvents(); }
 
     public void stubComplete(String text) {
         stubFor(post(urlEqualTo("/llm/complete")).willReturn(okJson("""

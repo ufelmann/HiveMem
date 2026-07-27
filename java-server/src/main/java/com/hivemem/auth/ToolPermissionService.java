@@ -48,7 +48,8 @@ public class ToolPermissionService {
             "list_cell_ids",
             "entity_overview",
             "blueprints_missing",
-            "data_quality_report"
+            "data_quality_report",
+            "contradictions"
     );
 
     private static final Set<String> WRITE_TOOLS = tools(
@@ -79,7 +80,9 @@ public class ToolPermissionService {
             "health",
             "queen_runs",
             "queen_run_detail",
-            "archivist_log"
+            "archivist_log",
+            "resolve_contradiction",
+            "predicate_cardinality"
     );
 
     private static final Set<String> WRITER_TOOLS = union(READ_TOOLS, WRITE_TOOLS);
@@ -130,7 +133,7 @@ public class ToolPermissionService {
 
     /** Realm-less reads: always allowed for scoped tokens. */
     private static final Set<String> READ_GLOBAL_TOOLS = tools(
-            "search_kg", "time_machine", "wake_up");
+            "search_kg", "time_machine", "wake_up", "contradictions");
 
     /** Reads whose response carries no filterable realm, or is realm-mixed: denied when scoped. */
     private static final Set<String> READ_DENY_WHEN_SCOPED = tools(

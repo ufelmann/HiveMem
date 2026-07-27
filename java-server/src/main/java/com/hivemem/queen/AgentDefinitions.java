@@ -14,6 +14,8 @@ public class AgentDefinitions {
     public static final String QUEEN_NAME = "queen";
     public static final String SEPARATOR_NAME = "document-separator";
     public static final String ARCHIVIST_NAME = "inbox-archivist";
+    public static final String CONTRADICTION_JUDGE_NAME = "contradiction-judge";
+    public static final String CARDINALITY_JUDGE_NAME = "predicate-cardinality-judge";
 
     private static final String BEE_SYSTEM = """
             You are an isolated-cell Bee in HiveMem, a personal knowledge graph.
@@ -71,6 +73,78 @@ public class AgentDefinitions {
             Then call reclassify_cell with a one-sentence reason (what it is + why that filing).
             If a cell's content is empty, unreadable or genuinely ambiguous, do NOT guess — call
             skip_inbox_cell with a short reason; it leaves the inbox backlog so you won't re-see it.
+            """;
+
+    private static final String CONTRADICTION_JUDGE_SYSTEM = """
+            You are the HiveMem contradiction judge. You are given a batch of candidate pairs of
+            facts. Within each pair, both facts already share the same subject and the same
+            predicate, and that predicate has already been determined (elsewhere, not by you) to
+            be single-valued — meaning a subject can genuinely hold at most one true object for
+            it at any one time.
+
+            Your ONLY question, for each pair, is: do object_a and object_b denote the SAME
+            real-world thing, or DIFFERENT things?
+            - "München" vs "Munich" — same city, different spelling/language — SAME thing, not a
+              contradiction.
+            - "Berlin" vs "Munich" — different cities — DIFFERENT things, a genuine contradiction.
+            - "2026-01-05" vs "5 Jan 2026" — same calendar date, different formatting — SAME
+              thing, not a contradiction.
+            - "42" vs "17" — different numbers — DIFFERENT things, a genuine contradiction.
+            Apply the same reasoning to any predicate: judge whether the two objects could both
+            be honestly restating the same fact (synonyms, translations, formatting/unit
+            differences, abbreviations, different levels of precision) versus actually disagreeing.
+
+            You are NOT told which fact is more up to date or currently correct, and you must NOT
+            attempt to decide that — dates and provenance are deliberately withheld from you for
+            exactly this reason. Deciding which fact wins is handled separately, in code, after
+            your verdict. Your job stops at: same thing, or different things.
+
+            Answer for EVERY pair in the batch, referencing it by its given `pair_id`. Return ONLY
+            a raw JSON object matching the output schema — no prose, no explanation, no markdown,
+            no code fences. The response must start with `{`.
+            Fields:
+            - `verdicts`: array, one entry per pair you were given:
+              - `pair_id`: echoed verbatim from the input
+              - `contradiction`: true if object_a and object_b denote different things, false if
+                they denote the same thing
+              - `confidence`: your certainty in this verdict, 0.0-1.0
+              - `rationale`: one short sentence explaining the verdict (optional)
+            Never omit a pair. Never add prose outside the JSON object.
+            """;
+
+    private static final String CARDINALITY_JUDGE_SYSTEM = """
+            You are the HiveMem predicate-cardinality judge. You are given a batch of predicates
+            used in a personal knowledge graph. For each predicate, decide whether it is
+            single-valued or multi-valued, based purely on the SEMANTICS of the predicate name.
+
+            - single_valued: a subject can honestly have at most one true object for this
+              predicate at any one time. Examples: `date_of_birth`, `capital_city`,
+              `current_employer`, `document_date`.
+            - multi_valued: a subject can legitimately hold many simultaneous true objects for
+              this predicate. Examples: `key_term`, `has_tag`, `likes`, `worked_on`, `mentions`.
+
+            The payload includes `sample_objects` — a handful of actual object values recorded for
+            this predicate. You MAY use these as legitimate semantic evidence: they can help you
+            understand what kind of value the predicate holds (a date, a name, a free-form term,
+            and so on) and confirm your reading of the predicate name. What you must NOT do is
+            judge cardinality by HOW MANY objects are recorded. A HIGH object count is NOT evidence
+            that a predicate is multi-valued — a subject holding many objects for a predicate that
+            is semantically single-valued is precisely the kind of inconsistency this system exists
+            to detect. Judging by count instead of semantics would permanently hide the very
+            contradictions this feature looks for. Decide from what the predicate name (and the
+            kind of values it holds) means, not from how often it appears.
+
+            Answer for EVERY predicate in the batch. Return ONLY a raw JSON object matching the
+            output schema — no prose, no explanation, no markdown, no code fences. The response
+            must start with `{`.
+            Fields:
+            - `verdicts`: array, one entry per predicate you were given:
+              - `predicate`: echoed verbatim from the input
+              - `cardinality`: exactly one of `single_valued`, `multi_valued`
+              - `confidence`: your certainty in this verdict, 0.0-1.0
+              - `rationale`: one short sentence explaining the verdict, referencing the semantics
+                you used (optional)
+            Never omit a predicate. Never add prose outside the JSON object.
             """;
 
     private final QueenProperties props;
@@ -250,6 +324,59 @@ public class AgentDefinitions {
         def.put("max_run_seconds", 120);
         def.put("webhook_token", props.getWebhookToken());
         def.put("schedule", props.getArchivistSchedule());
+        return def;
+    }
+
+    public Map<String, Object> contradictionJudge() {
+        Map<String, Object> verdictItem = objectSchema(
+                Map.of(
+                        "pair_id", stringProp(),
+                        "contradiction", Map.of("type", "boolean"),
+                        "confidence", Map.of("type", "number"),
+                        "rationale", stringProp()),
+                List.of("pair_id", "contradiction", "confidence"));
+        Map<String, Object> outputSchema = objectSchema(
+                Map.of("verdicts", Map.of("type", "array", "items", verdictItem)),
+                List.of("verdicts"));
+
+        Map<String, Object> def = new LinkedHashMap<>();
+        def.put("name", CONTRADICTION_JUDGE_NAME);
+        def.put("system_prompt", CONTRADICTION_JUDGE_SYSTEM);
+        def.put("model_purpose", "contradiction_judge");
+        def.put("tools", List.of());
+        def.put("output_schema", outputSchema);
+        def.put("max_turns", 1);
+        def.put("max_run_seconds", 120);
+        def.put("webhook_token", props.getWebhookToken());
+        def.put("completion_webhook", props.getHivememBaseUrl() + "/vistierie/contradiction/done");
+        def.put("completion_webhook_token", props.getContradictionWebhookToken());
+        return def;
+    }
+
+    public Map<String, Object> predicateCardinalityJudge() {
+        Map<String, Object> verdictItem = objectSchema(
+                Map.of(
+                        "predicate", stringProp(),
+                        "cardinality", Map.of("type", "string",
+                                "enum", List.of("single_valued", "multi_valued")),
+                        "confidence", Map.of("type", "number"),
+                        "rationale", stringProp()),
+                List.of("predicate", "cardinality", "confidence"));
+        Map<String, Object> outputSchema = objectSchema(
+                Map.of("verdicts", Map.of("type", "array", "items", verdictItem)),
+                List.of("verdicts"));
+
+        Map<String, Object> def = new LinkedHashMap<>();
+        def.put("name", CARDINALITY_JUDGE_NAME);
+        def.put("system_prompt", CARDINALITY_JUDGE_SYSTEM);
+        def.put("model_purpose", "predicate_cardinality");
+        def.put("tools", List.of());
+        def.put("output_schema", outputSchema);
+        def.put("max_turns", 1);
+        def.put("max_run_seconds", 120);
+        def.put("webhook_token", props.getWebhookToken());
+        def.put("completion_webhook", props.getHivememBaseUrl() + "/vistierie/cardinality/done");
+        def.put("completion_webhook_token", props.getContradictionWebhookToken());
         return def;
     }
 }

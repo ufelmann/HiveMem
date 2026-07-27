@@ -9,17 +9,16 @@ Feature Status table in the [README](../README.md#feature-status).
 
 ### Temporal Knowledge Graph: contradiction detection
 
-**Today.** Facts are bi-temporal (`valid_from` / `valid_until` /
-`ingested_at`). Multi-hop graph traversal works. The schema knows a
-`contradicts` relation type, and users (or agents) can label conflicting
-facts manually.
+**Today.** Implemented end-to-end: a throttled two-stage sweep
+(`ContradictionSweep`) dispatches a predicate-cardinality judge and a
+candidate-pair judge to Vistierie, `ContradictionWinnerSelector` picks the
+likely-current fact deterministically (never asking the judge), and
+confirmed pairs land as `pending` for human review via
+`resolve_contradiction`. Gated off by default
+(`hivemem.contradiction.enabled=false`).
 
-**Missing.** No automatic detector. Two facts that disagree about the same
-entity attribute will both sit in the graph until somebody notices.
-
-**Planned.** A periodic sweep over recently-changed facts that flags
-candidate contradictions for review (writing them as `pending` so the
-existing approval workflow handles them).
+**Missing.** A first verified live run against Vistierie — the feature has
+not yet processed a real judge callback end to end.
 
 ### Privacy by Realm: per-realm model routing
 

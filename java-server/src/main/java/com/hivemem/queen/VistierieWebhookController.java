@@ -35,12 +35,15 @@ public class VistierieWebhookController {
     private final QueenProperties props;
     private final QueenWebhookService service;
     private final ObjectProvider<com.hivemem.consumption.SeparationApplier> separationApplier;
+    private final ObjectProvider<com.hivemem.contradiction.ContradictionService> contradictionService;
 
     public VistierieWebhookController(QueenProperties props, QueenWebhookService service,
-            ObjectProvider<com.hivemem.consumption.SeparationApplier> separationApplier) {
+            ObjectProvider<com.hivemem.consumption.SeparationApplier> separationApplier,
+            ObjectProvider<com.hivemem.contradiction.ContradictionService> contradictionService) {
         this.props = props;
         this.service = service;
         this.separationApplier = separationApplier;
+        this.contradictionService = contradictionService;
     }
 
     @PostMapping("/tools/find_isolated_cells")
@@ -152,6 +155,40 @@ public class VistierieWebhookController {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
         }
         applier.apply(payload);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/contradiction/done")
+    public ResponseEntity<Void> contradictionDone(
+            @RequestHeader(name = "Authorization", required = false) String auth,
+            @RequestBody com.hivemem.contradiction.PairVerdicts payload) {
+        requireToken(auth, props.getContradictionWebhookToken());
+        var service = contradictionService.getIfAvailable();
+        if (service == null) {
+            // 200, not 503: a 5xx only makes Vistierie retry into the same wall.
+            log.warn("Contradiction pair verdicts arrived while the feature is disabled; discarding");
+            return ResponseEntity.ok().build();
+        }
+        if (payload == null || payload.run_id() == null) return ResponseEntity.badRequest().build();
+        service.applyPairVerdicts(payload.run_id(), payload.status(),
+                payload.output() == null ? null : payload.output().verdicts());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/cardinality/done")
+    public ResponseEntity<Void> cardinalityDone(
+            @RequestHeader(name = "Authorization", required = false) String auth,
+            @RequestBody com.hivemem.contradiction.CardinalityVerdicts payload) {
+        requireToken(auth, props.getContradictionWebhookToken());
+        var service = contradictionService.getIfAvailable();
+        if (service == null) {
+            // Same 200-not-503 rationale as contradictionDone above.
+            log.warn("Cardinality verdicts arrived while the feature is disabled; discarding");
+            return ResponseEntity.ok().build();
+        }
+        if (payload == null || payload.run_id() == null) return ResponseEntity.badRequest().build();
+        service.applyCardinalityVerdicts(payload.run_id(), payload.status(),
+                payload.output() == null ? null : payload.output().verdicts());
         return ResponseEntity.ok().build();
     }
 

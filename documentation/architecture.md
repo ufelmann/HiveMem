@@ -395,6 +395,39 @@ The Queen-Log UI lets admins inspect past Queen and Bee runs without leaving Hiv
 
 On a Vistierie outage, both tools degrade gracefully: `queen_runs` returns `{items:[],total:0,costAvailable:false,unavailable:true}` and `queen_run_detail` returns `{run:{},events:[],unavailable:true}`, allowing the UI to display an appropriate offline notice.
 
+### Contradiction detection sweep
+
+`ContradictionSweep` is a single `@Scheduled` tick (default hourly, gated behind `hivemem.contradiction.enabled`, default `false`) that drives two Vistierie judge agents in strict order: Stage A (`predicate_cardinality` model purpose) takes precedence over Stage B (`contradiction_judge` model purpose) whenever any predicate still lacks a cardinality verdict. Stage A asks, once per predicate, whether it is single-valued (e.g. `date_of_birth`) or multi-valued (e.g. `has_tag`) — the answer is cached in `predicate_cardinality` and gates everything downstream, since a multi-valued predicate cannot contradict by definition. Stage B then asks, per candidate pair of a single-valued predicate, whether two objects sharing a subject really denote different things (e.g. "München" vs. "Munich" does not). Both stages dispatch to Vistierie the same way the document-separator agent does (`POST /agents/{name}/run` with a `completion_webhook`), and both are throttled by a shared hard ceiling — `hivemem.contradiction.max-runs-per-day` (default 4) dispatched runs per UTC day — because the Vistierie backend shares a rate-limit window with interactive work.
+
+**Freshness is never the judge's call.** Neither judge is asked which fact is current, and neither sees a timestamp; `ContradictionWinnerSelector` decides that afterwards in plain deterministic Java (newest `valid_from`, then newest `ingested_at`, then higher confidence). This split is deliberate: delegating "which fact wins" to a model scores far below a deterministic comparator on the MemoryAgentBench FactConsolidation benchmark (arXiv:2606.01435). Confirmed pairs land as `pending` in `fact_contradictions` for human review via `resolve_contradiction`; resolution runs through the existing op-logged `kg_invalidate` path so multi-master sync stays correct.
+
+`model_purpose = "contradiction_judge"` and `model_purpose = "predicate_cardinality"` each require their own Vistierie routing rule, or their runs fail with "no routing rule" — the same requirement `model_purpose = "separator"` has (see [Consumption](consumption.md#known-limitations-and-assumptions)). This is Vistierie-side configuration, not something HiveMem enforces.
+
+`hivemem.contradiction.enabled=true` requires `hivemem.queen.enabled=true` AND a non-blank `hivemem.queen.contradiction-webhook-token`: `ContradictionStartupGate` fails startup otherwise, because the judge agents are registered by the Queen bootstrap (which the Queen being off would skip) and the completion webhooks are rejected with 401 both while the Queen is off and while that token is blank (its default). The two judge agents (`contradiction-judge`, `predicate-cardinality-judge`) are themselves only registered by the Queen bootstrap when `hivemem.contradiction.enabled=true` — unlike the Bee/Queen/Separator/Archivist agents, which register whenever the Queen is on regardless of this flag.
+
+A separate component, `ContradictionReconcileSweep`, recovers dispatched jobs whose Vistierie callback never arrives (crash, dropped webhook, …): it runs on `reconcile-interval` and reclaims any job stuck past `stale-threshold` so a lost callback cannot silently stall a predicate or pair forever.
+
+Configuration (`hivemem.contradiction.*`):
+
+| Property | Env var | Default | Description |
+|---|---|---|---|
+| `enabled` | `HIVEMEM_CONTRADICTION_ENABLED` | `false` | Master switch for the whole sweep. |
+| `sweep-interval` | `HIVEMEM_CONTRADICTION_SWEEP_INTERVAL` | `PT1H` | How often the sweep ticks. |
+| `reconcile-interval` | `HIVEMEM_CONTRADICTION_RECONCILE_INTERVAL` | `PT5M` | How often stale dispatched jobs are recovered. |
+| `batch-size` | `HIVEMEM_CONTRADICTION_BATCH_SIZE` | `25` | Candidate pairs per Stage-B run. |
+| `max-runs-per-day` | `HIVEMEM_CONTRADICTION_MAX_RUNS_PER_DAY` | `4` | Hard ceiling on dispatched runs per UTC day, shared by both stages. |
+| `stale-threshold` | `HIVEMEM_CONTRADICTION_STALE_THRESHOLD` | `PT10M` | A dispatched job with no callback for this long is considered crashed. |
+| `max-attempts` | `HIVEMEM_CONTRADICTION_MAX_ATTEMPTS` | `3` | Dispatches a single item may receive before it is parked as deferred. |
+| `max-pairs-per-group` | `HIVEMEM_CONTRADICTION_MAX_PAIRS_PER_GROUP` | `3` | Cap on pairs contributed by one `(subject, predicate)` group per batch, so one large group cannot monopolize the daily quota. |
+| `cardinality-batch-size` | `HIVEMEM_CONTRADICTION_CARDINALITY_BATCH_SIZE` | `10` | Predicates judged per Stage-A run. |
+| `cardinality-samples` | `HIVEMEM_CONTRADICTION_CARDINALITY_SAMPLES` | `3` | Sample objects sent per predicate in the Stage-A payload. |
+
+New `hivemem.queen.*` key added by this feature:
+
+| Property | Env var | Default | Description |
+|---|---|---|---|
+| `contradiction-webhook-token` | `HIVEMEM_QUEEN_CONTRADICTION_WEBHOOK_TOKEN` | `""` | Bearer token HiveMem expects Vistierie to present on both `POST /vistierie/contradiction/done` and `POST /vistierie/cardinality/done`. Must be set when contradiction detection + queen are both enabled. |
+
 ## Language / i18n
 
 The UI is bilingual (German + English), German-first. The startup default language

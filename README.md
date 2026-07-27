@@ -130,7 +130,7 @@ for details on every 🟡 / 🔴 row.
 | [Auto-Inject Hook (Claude Code)](documentation/hook/) | ✅ Stable | 6-stage filter pipeline, Bearer-token auth |
 | [Full Instance Portability](documentation/backup.md) | ✅ Stable | one-command tar.gz of Postgres + attachments + identity |
 | [OAuth Custom Connector](documentation/oauth.md) | ✅ Stable | RFC 8414 / 9728 discovery, PKCE; Claude.ai, ChatGPT, and Grok supported (Gemini not — no custom MCP connectors from Google) |
-| Temporal Knowledge Graph | 🟡 Partial | bi-temporal facts and multi-hop traversal ship; **automatic contradiction detection is not yet implemented** |
+| Temporal Knowledge Graph | 🟡 Partial | bi-temporal facts and multi-hop traversal ship; automatic contradiction detection (throttled two-stage Vistierie sweep, `resolve_contradiction`, deterministic freshness) is implemented end-to-end but **not yet verified against a live Vistierie run**; gated off by default (`hivemem.contradiction.enabled=false`) |
 | Privacy by Realm — model routing | 🟡 Partial | data segregation by realm works; **per-realm enforcement of "stays on local models" is not yet wired into the LLM call path** |
 | Queen + Bees periodic agent | 🟡 Partial | Queen + isolated-cell-Bee run on Vistierie's agent runtime (cron, subagent dispatch, run/cost audit, kill switch); proposals land as `pending` tunnels via the approval workflow. An admin-only Queen-log UI (`/queen`) shows runs + event timelines and the proposal approval queue. **Still missing: preference UI, further Bee types.** |
 | [Consumption folder — auto document separation](documentation/consumption.md) | ✅ Stable | Drop a stack of mixed scans into a network folder; HiveMem ingests off a bounded worker pool, OCRs each page (auto-oriented), and uses a Vistierie LLM agent to split by content — no separator/barcode sheets. High-confidence splits → `committed`, low-confidence → `pending`. The HiveMem→Vistierie run contract is reconciled; live in production. Reassembly of non-contiguous/shuffled pages is a separate roadmap item. |
@@ -144,7 +144,7 @@ for details on every 🟡 / 🔴 row.
 | [Getting Started](documentation/getting-started.md) | Prerequisites, embedding service, token creation, connect to Claude |
 | [The Structure](documentation/structure.md) | Realms, signals, topics, cells, tunnels — the knowledge hierarchy |
 | [Architecture](documentation/architecture.md) | System diagram, data model, security matrix |
-| [Tools](documentation/tools.md) | All 48 MCP tools, the parallel REST attachment API, search signals, progressive summarization |
+| [Tools](documentation/tools.md) | All 48 MCP tools (51 with `hivemem.contradiction.enabled=true`), the parallel REST attachment API, search signals, progressive summarization |
 | [Authentication](documentation/auth.md) | Roles, token management, security details |
 | [OAuth + Custom Connector](documentation/oauth.md) | Add HiveMem as a Claude.ai / ChatGPT / Grok Custom Connector |
 | [Backup + Portability](documentation/backup.md) | Export and restore entire instances, disaster recovery, cloning |

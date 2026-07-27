@@ -1,6 +1,7 @@
 package com.hivemem.queen;
 
 import com.hivemem.consumption.SeparationApplier;
+import com.hivemem.contradiction.ContradictionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -32,9 +33,14 @@ class VistierieWebhookControllerTest {
         p.setEnabled(true);
         p.setWebhookToken("wt");
         p.setCompletionWebhookToken("cwt");
+        p.setContradictionWebhookToken("ctok");
         ObjectProvider<SeparationApplier> noApplier = mock(ObjectProvider.class);
         when(noApplier.getIfAvailable()).thenReturn(null);
-        mvc = MockMvcBuilders.standaloneSetup(new VistierieWebhookController(p, service, noApplier)).build();
+        ObjectProvider<ContradictionService> noContradictionService = mock(ObjectProvider.class);
+        when(noContradictionService.getIfAvailable()).thenReturn(null);
+        mvc = MockMvcBuilders.standaloneSetup(
+                        new VistierieWebhookController(p, service, noApplier, noContradictionService))
+                .build();
     }
 
     @Test
@@ -101,5 +107,104 @@ class VistierieWebhookControllerTest {
                         .content("{\"run_id\":\"r1\",\"tool_name\":\"read_cell\",\"input\":{\"cell_id\":\"c1\"}}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.output.id").value("c1"));
+    }
+
+    @Test
+    void rejectsBadContradictionToken() throws Exception {
+        mvc.perform(post("/vistierie/contradiction/done")
+                        .header("Authorization", "Bearer wrong")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"run_id\":\"r1\",\"status\":\"done\",\"output\":{\"verdicts\":[]}}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void rejectsMissingTokenOnContradictionDone() throws Exception {
+        mvc.perform(post("/vistierie/contradiction/done")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"run_id\":\"r1\",\"status\":\"done\",\"output\":{\"verdicts\":[]}}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void rejectsBadCardinalityToken() throws Exception {
+        mvc.perform(post("/vistierie/cardinality/done")
+                        .header("Authorization", "Bearer wrong")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"run_id\":\"r1\",\"status\":\"done\",\"output\":{\"verdicts\":[]}}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void rejectsMissingTokenOnCardinalityDone() throws Exception {
+        mvc.perform(post("/vistierie/cardinality/done")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"run_id\":\"r1\",\"status\":\"done\",\"output\":{\"verdicts\":[]}}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void aMissingBeanAnswersTwoHundredNotFiveOhThreeOnContradictionDone() throws Exception {
+        mvc.perform(post("/vistierie/contradiction/done")
+                        .header("Authorization", "Bearer ctok")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"run_id\":\"r1\",\"status\":\"done\",\"output\":{\"verdicts\":[]}}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void aMissingBeanAnswersTwoHundredNotFiveOhThreeOnCardinalityDone() throws Exception {
+        mvc.perform(post("/vistierie/cardinality/done")
+                        .header("Authorization", "Bearer ctok")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"run_id\":\"r1\",\"status\":\"done\",\"output\":{\"verdicts\":[]}}"))
+                .andExpect(status().isOk());
+    }
+
+    /**
+     * A missing {@code run_id} must be rejected as a bad request — but only on the enabled path
+     * (a valid token, a present {@code ContradictionService} bean). Using the shared {@code mvc}
+     * (whose {@code ObjectProvider} always returns {@code null}) would pin the missing-bean 200
+     * branch instead, since that check runs before the null-{@code run_id} check — these two tests
+     * build their own MockMvc with a present bean so the 400 they assert is the real one.
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    void rejectsMissingRunIdOnContradictionDone() throws Exception {
+        QueenProperties p = new QueenProperties();
+        p.setEnabled(true);
+        p.setContradictionWebhookToken("ctok");
+        ObjectProvider<SeparationApplier> noApplier = mock(ObjectProvider.class);
+        ObjectProvider<ContradictionService> withContradictionService = mock(ObjectProvider.class);
+        when(withContradictionService.getIfAvailable()).thenReturn(mock(ContradictionService.class));
+        MockMvc enabledMvc = MockMvcBuilders.standaloneSetup(
+                        new VistierieWebhookController(p, service, noApplier, withContradictionService))
+                .build();
+
+        enabledMvc.perform(post("/vistierie/contradiction/done")
+                        .header("Authorization", "Bearer ctok")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"done\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void rejectsMissingRunIdOnCardinalityDone() throws Exception {
+        QueenProperties p = new QueenProperties();
+        p.setEnabled(true);
+        p.setContradictionWebhookToken("ctok");
+        ObjectProvider<SeparationApplier> noApplier = mock(ObjectProvider.class);
+        ObjectProvider<ContradictionService> withContradictionService = mock(ObjectProvider.class);
+        when(withContradictionService.getIfAvailable()).thenReturn(mock(ContradictionService.class));
+        MockMvc enabledMvc = MockMvcBuilders.standaloneSetup(
+                        new VistierieWebhookController(p, service, noApplier, withContradictionService))
+                .build();
+
+        enabledMvc.perform(post("/vistierie/cardinality/done")
+                        .header("Authorization", "Bearer ctok")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"done\"}"))
+                .andExpect(status().isBadRequest());
     }
 }
