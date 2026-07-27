@@ -54,7 +54,9 @@ CREATE TABLE fact_contradictions (
     job_id           UUID REFERENCES contradiction_jobs(id),
     -- in_flight -> pending (judge confirmed) | not_contradictory (cleared) | retryable (job failed)
     -- retryable -> in_flight (re-reserved) | deferred (max attempts);  deferred -> retryable (human requeue)
-    -- pending -> resolved (human picked a winner) | dismissed (multi-valued);  in_flight/retryable -> superseded (cleanup)
+    -- pending -> resolved (human picked a winner) | dismissed (multi-valued) | superseded (a referenced
+    --   fact went inactive before review, see ContradictionRepository#autoCloseInactive)
+    -- in_flight/retryable -> superseded (cleanup, e.g. predicate flipped multi-valued)
     status           TEXT NOT NULL DEFAULT 'in_flight'
                      CHECK (status IN ('in_flight','retryable','pending','resolved',
                                        'dismissed','superseded','not_contradictory',

@@ -130,6 +130,7 @@ public class ContradictionService {
             return;
         }
 
+        List<UUID> dispatched = pairs.inFlightIdsOfJob(job.id());
         for (PairVerdicts.Verdict v : verdicts) {
             if (v == null) {
                 // A malformed "verdicts": [null] deserializes to a list containing a null element
@@ -140,6 +141,10 @@ public class ContradictionService {
                 // instead of being handled now.
                 log.warn("Contradiction pair job {} (run {}) received a null verdict element; skipping it",
                         job.id(), runId);
+                continue;
+            }
+            if (!dispatched.contains(v.pair_id())) {
+                log.info("Verdict for pair {} ignored: not dispatched by job {}", v.pair_id(), job.id());
                 continue;
             }
             boolean applied = pairs.recordVerdict(v.pair_id(), v.contradiction(), v.confidence(), v.rationale());
@@ -259,7 +264,7 @@ public class ContradictionService {
 
         return switch (keep) {
             case "both" -> resolveBoth(id, pair);
-            case "requeue" -> resolveRequeue(id);
+            case "requeue" -> resolveRequeue(id, pair);
             case "fact_a" -> resolveWinner(id, pair.factA(), pair.factB(), "fact_a");
             case "fact_b" -> resolveWinner(id, pair.factB(), pair.factA(), "fact_b");
             default -> throw new IllegalArgumentException("Unknown keep value: " + keep);
@@ -278,7 +283,26 @@ public class ContradictionService {
         return result;
     }
 
-    private Map<String, Object> resolveRequeue(UUID id) {
+    /**
+     * Refuses to requeue a pair whose predicate is now known {@code multi_valued} — by a judge
+     * verdict ({@link #applyCardinalityVerdicts}) or a human override ({@link #setCardinality})
+     * arriving after this pair was originally dispatched. Both of those paths already supersede a
+     * predicate's still-open ({@code in_flight}/{@code retryable}) rows the moment the verdict
+     * lands, but a {@code deferred} pair sits outside that sweep by design (a human must still be
+     * able to inspect it), so a stale {@code deferred} row can outlive the predicate's cardinality
+     * flip. Re-dispatching it anyway would send the judge a pair for a predicate its own prompt
+     * assumes is single-valued — a premise this call now knows is false. {@code keep=both} is the
+     * correct way to close such a pair instead.
+     */
+    private Map<String, Object> resolveRequeue(UUID id, ContradictionRepository.Pair pair) {
+        boolean knownMultiValued = cardinality.list(pair.predicate()).stream()
+                .anyMatch(row -> "multi_valued".equals(row.cardinality()));
+        if (knownMultiValued) {
+            throw new IllegalStateException(
+                    "Contradiction pair " + id + "'s predicate '" + pair.predicate() + "' is known "
+                            + "multi_valued; requeueing it would re-dispatch a pair the judge's own "
+                            + "prompt assumes is single-valued. Use keep='both' to dismiss it instead.");
+        }
         requireWon(id, pairs.requeue(id));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", id.toString());

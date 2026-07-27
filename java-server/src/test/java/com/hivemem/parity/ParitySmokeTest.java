@@ -69,6 +69,7 @@ class ParitySmokeTest {
         // wrongly report them as phantom entries.
         registry.add("hivemem.contradiction.enabled", () -> "true");
         registry.add("hivemem.queen.enabled", () -> "true");
+        registry.add("hivemem.queen.contradiction-webhook-token", () -> "test-contradiction-webhook-token");
     }
 
     private final ToolPermissionService toolPermissionService = new ToolPermissionService();

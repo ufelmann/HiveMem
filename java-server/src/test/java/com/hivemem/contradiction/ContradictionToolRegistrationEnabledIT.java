@@ -22,6 +22,7 @@ class ContradictionToolRegistrationEnabledIT extends ContradictionITSupport {
     static void enableContradiction(DynamicPropertyRegistry r) {
         r.add("hivemem.contradiction.enabled", () -> "true");
         r.add("hivemem.queen.enabled", () -> "true");
+        r.add("hivemem.queen.contradiction-webhook-token", () -> "test-contradiction-webhook-token");
     }
 
     @Test

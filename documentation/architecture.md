@@ -403,7 +403,7 @@ On a Vistierie outage, both tools degrade gracefully: `queen_runs` returns `{ite
 
 `model_purpose = "contradiction_judge"` and `model_purpose = "predicate_cardinality"` each require their own Vistierie routing rule, or their runs fail with "no routing rule" — the same requirement `model_purpose = "separator"` has (see [Consumption](consumption.md#known-limitations-and-assumptions)). This is Vistierie-side configuration, not something HiveMem enforces.
 
-`hivemem.contradiction.enabled=true` requires `hivemem.queen.enabled=true`: `ContradictionStartupGate` fails startup otherwise, because the judge agents are registered by the Queen bootstrap and the completion webhooks are rejected with 401 while the Queen is off.
+`hivemem.contradiction.enabled=true` requires `hivemem.queen.enabled=true` AND a non-blank `hivemem.queen.contradiction-webhook-token`: `ContradictionStartupGate` fails startup otherwise, because the judge agents are registered by the Queen bootstrap (which the Queen being off would skip) and the completion webhooks are rejected with 401 both while the Queen is off and while that token is blank (its default). The two judge agents (`contradiction-judge`, `predicate-cardinality-judge`) are themselves only registered by the Queen bootstrap when `hivemem.contradiction.enabled=true` — unlike the Bee/Queen/Separator/Archivist agents, which register whenever the Queen is on regardless of this flag.
 
 A separate component, `ContradictionReconcileSweep`, recovers dispatched jobs whose Vistierie callback never arrives (crash, dropped webhook, …): it runs on `reconcile-interval` and reclaims any job stuck past `stale-threshold` so a lost callback cannot silently stall a predicate or pair forever.
 

@@ -36,6 +36,7 @@ class ContradictionServiceIT extends ContradictionITSupport {
     static void serviceProps(DynamicPropertyRegistry r) {
         r.add("hivemem.contradiction.enabled", () -> "true");
         r.add("hivemem.queen.enabled", () -> "true");
+        r.add("hivemem.queen.contradiction-webhook-token", () -> "test-contradiction-webhook-token");
     }
 
     // ---- resolve: fact_a / fact_b -------------------------------------------------------
@@ -111,6 +112,30 @@ class ContradictionServiceIT extends ContradictionITSupport {
         Record row = dsl.fetchOne("SELECT status, attempts FROM fact_contradictions WHERE id = ?", pairId);
         assertThat(row.get("status", String.class)).isEqualTo("retryable");
         assertThat(row.get("attempts", Integer.class)).isEqualTo(0);
+    }
+
+    /**
+     * A predicate flips {@code multi_valued} (by a judge verdict or a human override) after this
+     * particular pair was dispatched and landed on {@code deferred}; that predicate's other still-open
+     * rows would already have been superseded, but a {@code deferred} row deliberately sits outside
+     * that sweep so a human can still inspect it. Requeueing it anyway would re-dispatch a pair for a
+     * predicate the judge's own prompt assumes is single-valued — the guard must reject this and
+     * leave the pair exactly as it was.
+     */
+    @Test
+    void requeueingADeferredPairForAKnownMultiValuedPredicateIsRejectedAndTouchesNothing() {
+        UUID factA = insertFact("gary", "key_term_deferred", "hiking");
+        UUID factB = insertFact("gary", "key_term_deferred", "cycling");
+        UUID pairId = insertPair(factA, factB, "gary", "key_term_deferred", "deferred");
+        dsl.execute("UPDATE fact_contradictions SET attempts = 3 WHERE id = ?", pairId);
+        service.setCardinality("key_term_deferred", "multi_valued", "obviously repeated key terms");
+
+        assertThatThrownBy(() -> service.resolve(pairId, "requeue", null))
+                .isInstanceOf(IllegalStateException.class);
+
+        Record row = dsl.fetchOne("SELECT status, attempts FROM fact_contradictions WHERE id = ?", pairId);
+        assertThat(row.get("status", String.class)).isEqualTo("deferred");
+        assertThat(row.get("attempts", Integer.class)).isEqualTo(3);
     }
 
     // ---- resolve: status guard -------------------------------------------------------------
@@ -241,6 +266,40 @@ class ContradictionServiceIT extends ContradictionITSupport {
         assertThat(output.getOut() + output.getErr())
                 .contains("run-failed")
                 .contains("status='error'");
+    }
+
+    /**
+     * The pair named in the verdict was reserved by a DIFFERENT job (still legitimately in_flight
+     * there), not by the job this callback answers. Without the inFlightIdsOfJob(jobId)-membership
+     * guard, recordVerdict's own SQL has no notion of "which job" and would happily write it anyway
+     * — corrupting the other job's still-open row. A pair id with no row at all would pass this same
+     * assertion for the wrong reason (recordVerdict simply finds no matching row), so the fixture
+     * deliberately gives the pair a real, live in_flight row under a job that must stay untouched.
+     * Mirrors {@link #cardinalityVerdictForAPredicateNotDispatchedByThisJobIsIgnored}.
+     */
+    @Test
+    void pairVerdictForAPairNotDispatchedByThisJobIsIgnored() {
+        UUID otherJob = jobs.create(UUID.randomUUID(), "pairs", 1);
+        UUID otherFactA = insertFact("zack", "lives_in", "berlin");
+        UUID otherFactB = insertFact("zack", "lives_in", "hamburg");
+        UUID otherPair = pairs.reserve(List.of(candidateOf("zack", "lives_in", otherFactA, otherFactB)), otherJob)
+                .get(0);
+
+        UUID job = jobs.create(UUID.randomUUID(), "pairs", 1);
+        jobs.attachRunId(job, "run-pair-ignore");
+        UUID ownFactA = insertFact("yolanda", "lives_in", "koeln");
+        UUID ownFactB = insertFact("yolanda", "lives_in", "bonn");
+        UUID ownPair = pairs.reserve(List.of(candidateOf("yolanda", "lives_in", ownFactA, ownFactB)), job).get(0);
+
+        service.applyPairVerdicts("run-pair-ignore", "done", List.of(
+                new PairVerdicts.Verdict(otherPair, true, 0.9, "should be ignored - wrong job")));
+
+        Record other = dsl.fetchOne("SELECT status, job_id FROM fact_contradictions WHERE id = ?", otherPair);
+        assertThat(other.get("status", String.class)).isEqualTo("in_flight");
+        assertThat(other.get("job_id", UUID.class)).isEqualTo(otherJob);
+        // The job's own dispatched-but-unanswered pair must still follow the attempt rule.
+        assertThat(pairStatus(ownPair)).isEqualTo("retryable");
+        assertThat(jobStatus(job)).isEqualTo("done");
     }
 
     /**

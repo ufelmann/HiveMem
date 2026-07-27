@@ -34,6 +34,7 @@ class ContradictionReconcileSweepIT extends ContradictionITSupport {
     static void props(DynamicPropertyRegistry r) {
         r.add("hivemem.contradiction.enabled", () -> "true");
         r.add("hivemem.queen.enabled", () -> "true");
+        r.add("hivemem.queen.contradiction-webhook-token", () -> "test-contradiction-webhook-token");
         r.add("hivemem.contradiction.max-attempts", () -> "3");
         r.add("hivemem.contradiction.stale-threshold", () -> "10m");
     }

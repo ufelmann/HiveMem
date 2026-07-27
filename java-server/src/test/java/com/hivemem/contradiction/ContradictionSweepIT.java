@@ -50,6 +50,7 @@ class ContradictionSweepIT extends ContradictionITSupport {
     static void sweepProps(DynamicPropertyRegistry r) {
         r.add("hivemem.contradiction.enabled", () -> "true");
         r.add("hivemem.queen.enabled", () -> "true");
+        r.add("hivemem.queen.contradiction-webhook-token", () -> "test-contradiction-webhook-token");
         r.add("hivemem.contradiction.batch-size", () -> "3");
         r.add("hivemem.contradiction.cardinality-batch-size", () -> "2");
         r.add("hivemem.contradiction.max-runs-per-day", () -> "4");

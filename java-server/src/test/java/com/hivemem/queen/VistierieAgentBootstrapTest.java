@@ -1,5 +1,6 @@
 package com.hivemem.queen;
 
+import com.hivemem.contradiction.ContradictionProperties;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 
@@ -22,10 +23,16 @@ class VistierieAgentBootstrapTest {
         return p;
     }
 
+    private ContradictionProperties contradictionProps(boolean enabled) {
+        ContradictionProperties p = new ContradictionProperties();
+        p.setEnabled(enabled);
+        return p;
+    }
+
     @Test
     void registersBeeBeforeQueen() {
         VistierieAgentClient client = mock(VistierieAgentClient.class);
-        new VistierieAgentBootstrap(enabledProps(), client).run(null);
+        new VistierieAgentBootstrap(enabledProps(), contradictionProps(false), client).run(null);
         InOrder order = inOrder(client);
         order.verify(client).upsertAgent(eq("isolated-cell-bee"), any());
         order.verify(client).upsertAgent(eq("queen"), any());
@@ -35,7 +42,7 @@ class VistierieAgentBootstrapTest {
     void disabledDoesNothing() {
         VistierieAgentClient client = mock(VistierieAgentClient.class);
         QueenProperties disabled = new QueenProperties(); // enabled=false
-        new VistierieAgentBootstrap(disabled, client).run(null);
+        new VistierieAgentBootstrap(disabled, contradictionProps(false), client).run(null);
         verifyNoInteractions(client);
     }
 
@@ -45,8 +52,35 @@ class VistierieAgentBootstrapTest {
         doThrow(new RuntimeException("connect refused"))
                 .when(client).upsertAgent(eq("isolated-cell-bee"), any());
         // must not throw
-        new VistierieAgentBootstrap(enabledProps(), client).run(null);
+        new VistierieAgentBootstrap(enabledProps(), contradictionProps(false), client).run(null);
         // queen never attempted because bee failed; bootstrap swallowed the error
         verify(client, never()).upsertAgent(eq("queen"), any());
+    }
+
+    /**
+     * Today's actual production state: queen on, contradiction off, no completion webhook token
+     * configured for the judges. The two judge agents must not be registered — registering them
+     * unconditionally would upsert agents carrying a blank {@code completion_webhook_token} on
+     * every single boot.
+     */
+    @Test
+    void judgeAgentsAreNotRegisteredWhenContradictionIsDisabled() {
+        VistierieAgentClient client = mock(VistierieAgentClient.class);
+        new VistierieAgentBootstrap(enabledProps(), contradictionProps(false), client).run(null);
+
+        verify(client, never()).upsertAgent(eq("contradiction-judge"), any());
+        verify(client, never()).upsertAgent(eq("predicate-cardinality-judge"), any());
+        // the always-on agents still register
+        verify(client).upsertAgent(eq("isolated-cell-bee"), any());
+        verify(client).upsertAgent(eq("queen"), any());
+    }
+
+    @Test
+    void judgeAgentsAreRegisteredWhenContradictionIsEnabled() {
+        VistierieAgentClient client = mock(VistierieAgentClient.class);
+        new VistierieAgentBootstrap(enabledProps(), contradictionProps(true), client).run(null);
+
+        verify(client).upsertAgent(eq("contradiction-judge"), any());
+        verify(client).upsertAgent(eq("predicate-cardinality-judge"), any());
     }
 }

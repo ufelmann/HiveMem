@@ -283,10 +283,17 @@ public class ContradictionRepository {
 
     /**
      * One {@code fact_contradictions} row, as needed by {@link ContradictionService#resolve}. Only
-     * {@code factA}/{@code factB}/{@code predicate}/{@code status} are read there today;
-     * {@code subject}, {@code suggestedKeep}, {@code rationale}, {@code judgeConfidence} and {@code
-     * detectedAt} are carried for Task 14's resolve response (echoing back what a human was looking
-     * at when they decided), not dead fields.
+     * {@code factA}/{@code factB}/{@code predicate}/{@code status} are actually read there today
+     * ({@code predicate} only by {@link ContradictionService#resolveBoth}'s hint text) — {@code
+     * subject}, {@code suggestedKeep}, {@code rationale}, {@code judgeConfidence} and {@code
+     * detectedAt} are currently unused by {@code resolve()}. They are kept on this record because
+     * {@link #findById} already selects the whole row and mapping only a subset would buy nothing;
+     * they are not, despite an earlier claim in this Javadoc, echoed anywhere in the {@code
+     * resolve_contradiction} response today (see {@link ContradictionService#resolveWinner}/{@link
+     * ContradictionService#resolveBoth}/{@link ContradictionService#resolveRequeue} — none of them
+     * put these fields in their result maps). If a future task wants the resolve response to show a
+     * human what they were looking at when they decided, these fields are exactly the data for it —
+     * but that is not implemented yet.
      */
     public record Pair(UUID id, UUID factA, UUID factB, String subject, String predicate, String status,
             UUID suggestedKeep, String rationale, Double judgeConfidence, OffsetDateTime detectedAt) {}
