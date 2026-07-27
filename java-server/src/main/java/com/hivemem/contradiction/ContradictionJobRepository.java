@@ -72,6 +72,39 @@ public class ContradictionJobRepository {
         return updated == 1;
     }
 
+    /**
+     * Atomically reclaim a job for {@link ContradictionReconcileSweep}, whether it is still {@code
+     * awaiting} (never picked up at all) or stuck {@code processing} (a previous {@link #claim} —
+     * by this same sweep on an earlier tick, or eventually a webhook — that never reached a
+     * terminal write, most likely because the JVM died in between). {@link #claim} alone cannot
+     * recover the second case: it only matches {@code status='awaiting'}, so a job already {@code
+     * processing} would fail it forever, and {@link #findStale} would keep re-offering the same
+     * unrecoverable row on every tick.
+     *
+     * <p>The staleness check is repeated here, not just relied on from {@link #findStale}'s
+     * earlier read: this is a single atomic UPDATE that re-evaluates {@code updated_at} at the
+     * moment of the write, not against a snapshot that may already be out of date. That is what
+     * keeps this safe to use on a {@code processing} row a webhook might legitimately still be
+     * working on — {@link #markDone} and {@link #markFailed} both bump {@code updated_at} when
+     * they write, so a webhook that finishes (or even fails over) between the sweep's {@link
+     * #findStale} read and this call will have already moved the row out of the window this WHERE
+     * clause checks, and this reclaim simply fails as "no longer stale" rather than stealing a live
+     * job. The remaining edge case — a webhook still working the same row, for longer than {@code
+     * olderThan}, without ever touching it again until it finishes — is accepted as out of scope:
+     * job payloads are small (tens of items), so a genuine completion is expected to take seconds,
+     * not the ten-plus minutes {@code olderThan} is set to in production.
+     *
+     * @return true iff this caller reclaimed the job (either transition, still stale at write time)
+     */
+    public boolean reclaimStale(UUID jobId, Duration olderThan) {
+        int updated = dsl.execute(
+                "UPDATE contradiction_jobs SET status='processing', updated_at=now() "
+                        + "WHERE id=? AND status IN ('awaiting', 'processing') "
+                        + "AND updated_at < now() - (? * interval '1 second')",
+                jobId, olderThan.toSeconds());
+        return updated == 1;
+    }
+
     public Optional<Job> findByRunId(String runId) {
         if (runId == null) return Optional.empty();
         Record r = dsl.fetchOne("""

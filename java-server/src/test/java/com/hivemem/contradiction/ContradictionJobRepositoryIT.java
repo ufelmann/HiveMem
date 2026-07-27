@@ -96,6 +96,43 @@ class ContradictionJobRepositoryIT extends ContradictionITSupport {
         assertThat(jobs.countToday()).isZero();
     }
 
+    @Test
+    void reclaimStaleReclaimsAnAgedAwaitingJob() {
+        UUID id = jobs.create(UUID.randomUUID(), "pairs", 1);
+        age(id);
+
+        assertThat(jobs.reclaimStale(id, Duration.ofMinutes(10))).isTrue();
+        assertThat(jobs.claim(id)).isFalse(); // already processing now
+    }
+
+    @Test
+    void reclaimStaleReclaimsAnAgedProcessingJob() {
+        UUID id = jobs.create(UUID.randomUUID(), "pairs", 1);
+        jobs.claim(id);
+        age(id);
+
+        assertThat(jobs.reclaimStale(id, Duration.ofMinutes(10))).isTrue();
+    }
+
+    @Test
+    void reclaimStaleRefusesAFreshJobRegardlessOfStatus() {
+        UUID awaiting = jobs.create(UUID.randomUUID(), "pairs", 1);
+        UUID processing = jobs.create(UUID.randomUUID(), "pairs", 1);
+        jobs.claim(processing);
+
+        assertThat(jobs.reclaimStale(awaiting, Duration.ofMinutes(10))).isFalse();
+        assertThat(jobs.reclaimStale(processing, Duration.ofMinutes(10))).isFalse();
+    }
+
+    @Test
+    void reclaimStaleRefusesATerminalJob() {
+        UUID id = jobs.create(UUID.randomUUID(), "pairs", 1);
+        assertThat(jobs.markFailed(id)).isTrue();
+        age(id);
+
+        assertThat(jobs.reclaimStale(id, Duration.ofMinutes(10))).isFalse();
+    }
+
     private void age(UUID jobId) {
         dsl.execute("UPDATE contradiction_jobs SET updated_at = now() - interval '1 hour' WHERE id = ?",
                 jobId);
