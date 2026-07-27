@@ -205,6 +205,47 @@ class PredicateCardinalityRepositoryIT extends ContradictionITSupport {
         assertThat(untouched.get("job_id", UUID.class)).isEqualTo(job1);
     }
 
+    /**
+     * Backs the {@code predicate_cardinality} MCP tool's list mode. Exact-match filter (not
+     * ILIKE), mirroring {@code ContradictionRepository.list}'s {@code subject} filter — a
+     * predicate name is an identifier, not a search term.
+     */
+    @Test
+    void listReturnsAllRowsOrderedByPredicateWhenNoFilterGiven() {
+        predicates.setByHuman("lives_in", "single_valued", "one home at a time");
+        dsl.execute("INSERT INTO predicate_cardinality (predicate, cardinality, status, decided_by, decided_at) "
+                + "VALUES ('key_term', 'multi_valued', 'decided', 'judge', now())");
+
+        List<PredicateCardinalityRepository.CardinalityRow> rows = predicates.list(null);
+
+        assertThat(rows).extracting(PredicateCardinalityRepository.CardinalityRow::predicate)
+                .containsExactly("key_term", "lives_in");
+    }
+
+    @Test
+    void listFiltersByExactPredicateMatch() {
+        predicates.setByHuman("lives_in", "single_valued", "one home at a time");
+        predicates.setByHuman("lives_in_extra", "multi_valued", "unrelated");
+
+        List<PredicateCardinalityRepository.CardinalityRow> rows = predicates.list("lives_in");
+
+        assertThat(rows).hasSize(1);
+        PredicateCardinalityRepository.CardinalityRow row = rows.get(0);
+        assertThat(row.predicate()).isEqualTo("lives_in");
+        assertThat(row.cardinality()).isEqualTo("single_valued");
+        assertThat(row.status()).isEqualTo("decided");
+        assertThat(row.decidedBy()).isEqualTo("human");
+        assertThat(row.rationale()).isEqualTo("one home at a time");
+        assertThat(row.decidedAt()).isNotNull();
+    }
+
+    @Test
+    void listReturnsEmptyWhenNoPredicateMatches() {
+        predicates.setByHuman("lives_in", "single_valued", "one home at a time");
+
+        assertThat(predicates.list("not_a_real_predicate")).isEmpty();
+    }
+
     private UUID createJob() {
         return dsl.fetchOne("""
                 INSERT INTO contradiction_jobs (correlation_id, kind, item_count)

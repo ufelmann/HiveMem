@@ -1,5 +1,6 @@
 package com.hivemem.contradiction;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -239,6 +240,41 @@ public class PredicateCardinalityRepository {
                 LIMIT ?
                 """, predicate, predicate, samples);
         return toStrings(rows, "object");
+    }
+
+    /** One row of {@link #list}. */
+    public record CardinalityRow(String predicate, String cardinality, String status, int attempts,
+            Double confidence, String decidedBy, OffsetDateTime decidedAt, String rationale) {
+    }
+
+    /**
+     * All verdicts, or exactly one predicate's, for the {@code predicate_cardinality} MCP tool's
+     * list mode. {@code predicate} is an exact match (not ILIKE) when given — a predicate name is
+     * an identifier, not a search term, mirroring {@link ContradictionRepository#list}'s {@code
+     * subject} filter.
+     */
+    public List<CardinalityRow> list(String predicate) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT predicate, cardinality, status, attempts, confidence, decided_by, decided_at, rationale
+                FROM predicate_cardinality
+                """);
+        List<Object> params = new ArrayList<>();
+        if (predicate != null) {
+            sql.append("WHERE predicate = ?\n");
+            params.add(predicate);
+        }
+        sql.append("ORDER BY predicate\n");
+
+        var rows = dsl.fetch(sql.toString(), params.toArray());
+        List<CardinalityRow> out = new ArrayList<>();
+        for (Record r : rows) {
+            out.add(new CardinalityRow(
+                    r.get("predicate", String.class), r.get("cardinality", String.class),
+                    r.get("status", String.class), r.get("attempts", Integer.class),
+                    r.get("confidence", Double.class), r.get("decided_by", String.class),
+                    r.get("decided_at", OffsetDateTime.class), r.get("rationale", String.class)));
+        }
+        return out;
     }
 
     /** The Stage-B gate: predicates confirmed single-valued, and only those. */

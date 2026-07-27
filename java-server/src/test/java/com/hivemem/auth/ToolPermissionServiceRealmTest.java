@@ -68,6 +68,12 @@ class ToolPermissionServiceRealmTest {
     @Test void searchKgGlobalAllowed() throws Exception {
         assertThat(svc.realmDenial(scoped(), "search_kg", args("{}"))).isEmpty();
     }
+    @Test void contradictionsGlobalAllowed() throws Exception {
+        // contradictions carries no realm of its own to filter a scoped token on — it belongs in
+        // READ_GLOBAL_TOOLS alongside search_kg/time_machine/wake_up, not behind the fail-closed
+        // READ_DENY_WHEN_SCOPED default.
+        assertThat(svc.realmDenial(scoped(), "contradictions", args("{}"))).isEmpty();
+    }
     @Test void listDrilldownForeignRealmDenied() throws Exception {
         assertThat(svc.realmDenial(scoped(), "list", args("{\"realm\":\"personal\"}"))).isPresent();
     }

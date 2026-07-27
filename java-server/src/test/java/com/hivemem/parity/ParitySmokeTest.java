@@ -63,6 +63,12 @@ class ParitySmokeTest {
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("spring.datasource.driver-class-name", POSTGRES::getDriverClassName);
+        // The three contradiction ToolHandler beans are @ConditionalOnProperty on this flag (and,
+        // transitively via ContradictionStartupGate, require hivemem.queen.enabled too). Without
+        // both, those beans never register and everyAllowListedNameHasARegisteredToolHandler would
+        // wrongly report them as phantom entries.
+        registry.add("hivemem.contradiction.enabled", () -> "true");
+        registry.add("hivemem.queen.enabled", () -> "true");
     }
 
     private final ToolPermissionService toolPermissionService = new ToolPermissionService();
@@ -73,12 +79,13 @@ class ParitySmokeTest {
     @Test
     void adminPermissionSetContainsFullExpectedToolCount() {
         assertThat(toolPermissionService.allowedTools(AuthRole.ADMIN))
-                .hasSize(48)
+                .hasSize(51)
                 .contains("search", "add_cell", "approve_pending",
                         "health", "reclassify", "reject_cell", "queen_runs", "queen_run_detail",
                         "upload_attachment", "list_attachments", "get_attachment_info",
                         "facet_count", "saved_searches",
-                        "manage_tags", "kg_alias", "entity_overview")
+                        "manage_tags", "kg_alias", "entity_overview",
+                        "contradictions", "resolve_contradiction", "predicate_cardinality")
                 .doesNotContain("hivemem_check_duplicate", "hivemem_check_contradiction",
                         "add_peer", "remove_peer", "list_peers");
     }
@@ -86,13 +93,13 @@ class ParitySmokeTest {
     @Test
     void writerPermissionSetContainsReadAndWriteToolsButNoAdminTools() {
         assertThat(toolPermissionService.allowedTools(AuthRole.WRITER))
-                .hasSize(43)
+                .hasSize(44)
                 .contains("search", "add_cell", "revise_cell", "reclassify",
                         "upload_attachment", "list_attachments", "get_attachment_info",
                         "facet_count", "saved_searches",
-                        "manage_tags", "kg_alias")
+                        "manage_tags", "kg_alias", "contradictions")
                 .doesNotContain("health", "approve_pending", "hivemem_check_duplicate",
-                        "hivemem_check_contradiction");
+                        "hivemem_check_contradiction", "resolve_contradiction", "predicate_cardinality");
     }
 
     /**

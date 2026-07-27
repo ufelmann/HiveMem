@@ -391,4 +391,26 @@ public class ContradictionService {
         }
         return out;
     }
+
+    /**
+     * Verdicts for the {@code predicate_cardinality} MCP tool's list mode: all of them, or exactly
+     * one predicate's when {@code predicate} is given. See {@link PredicateCardinalityRepository#list}
+     * for the exact-match filter rationale.
+     */
+    public List<Map<String, Object>> listCardinality(String predicate) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (PredicateCardinalityRepository.CardinalityRow r : cardinality.list(predicate)) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("predicate", r.predicate());
+            row.put("cardinality", r.cardinality());
+            row.put("status", r.status());
+            row.put("attempts", r.attempts());
+            row.put("confidence", r.confidence());
+            row.put("decided_by", r.decidedBy());
+            row.put("decided_at", r.decidedAt());
+            row.put("rationale", r.rationale());
+            out.add(row);
+        }
+        return out;
+    }
 }

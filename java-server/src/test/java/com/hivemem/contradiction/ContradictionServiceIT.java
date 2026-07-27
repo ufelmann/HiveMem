@@ -167,6 +167,27 @@ class ContradictionServiceIT extends ContradictionITSupport {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    /**
+     * Exercises {@link ContradictionService#resolve}'s own {@code default -> throw} arm — a
+     * guard that is separate from, and was previously untested alongside,
+     * {@code ResolveContradictionToolHandler}'s handler-level {@code keep} enum check. Neither
+     * guard's test proves anything about the other: the handler test never reaches the service
+     * (it throws first), and this one calls the service directly, bypassing the handler entirely.
+     */
+    @Test
+    void resolveRejectsAnUnknownKeepValue() {
+        UUID factA = insertFact("oscar", "lives_in", "berlin");
+        UUID factB = insertFact("oscar", "lives_in", "hamburg");
+        UUID pairId = insertPair(factA, factB, "oscar", "lives_in", "pending");
+
+        assertThatThrownBy(() -> service.resolve(pairId, "fact_c", null))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(pairStatus(pairId)).isEqualTo("pending");
+        assertThat(countOpsLog("kg_invalidate", factA)).isZero();
+        assertThat(countOpsLog("kg_invalidate", factB)).isZero();
+    }
+
     // ---- applyPairVerdicts -----------------------------------------------------------------
 
     /**
