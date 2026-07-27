@@ -23,8 +23,11 @@ class VistierieWebhookControllerArchivistTest {
         props.setWebhookToken("secret");
         @SuppressWarnings("unchecked")
         ObjectProvider<com.hivemem.consumption.SeparationApplier> sep = mock(ObjectProvider.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<com.hivemem.contradiction.ContradictionService> contradictionService =
+                mock(ObjectProvider.class);
         mvc = MockMvcBuilders.standaloneSetup(
-                new VistierieWebhookController(props, service, sep)).build();
+                new VistierieWebhookController(props, service, sep, contradictionService)).build();
     }
 
     @Test
