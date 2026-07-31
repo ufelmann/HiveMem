@@ -1,6 +1,6 @@
 # Pinned to the toolchain versions CI tests against (Node 20, JDK 26) — keep in
 # sync with .github/workflows/ci.yml when bumping.
-FROM node:20-alpine AS ui-build
+FROM node:25-alpine AS ui-build
 
 WORKDIR /ui
 COPY knowledge-ui/package.json knowledge-ui/package-lock.json ./
