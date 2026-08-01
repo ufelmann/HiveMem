@@ -265,6 +265,22 @@ class EmbeddingMigrationIntegrationTest {
     }
 
     @Test
+    void dropsEveryVectorIndexOnCells_notJustTheKnownName() {
+        dslContext.execute("CREATE INDEX idx_legacy_embedding ON cells USING hnsw "
+                + "((embedding::vector(384)) vector_cosine_ops)");
+
+        stateRepository.dropVectorIndexes("cells");
+
+        Integer remaining = dslContext.fetchOne(
+                "SELECT count(*)::int FROM pg_index i "
+              + "JOIN pg_class c ON c.oid = i.indexrelid "
+              + "JOIN pg_am a ON a.oid = c.relam "
+              + "WHERE a.amname IN ('hnsw','ivfflat') AND i.indrelid = 'cells'::regclass")
+            .get(0, Integer.class);
+        assertThat(remaining).isEqualTo(0);
+    }
+
+    @Test
     void rankedSearchFunctionExistsWithActiveDimension() {
         int dim = embeddingMigrationService.getCurrentDimension();
         Float[] zeros = new Float[dim];

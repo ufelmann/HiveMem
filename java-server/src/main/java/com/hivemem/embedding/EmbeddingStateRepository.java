@@ -3,6 +3,8 @@ package com.hivemem.embedding;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 import org.jooq.impl.DSL;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
 import javax.sql.DataSource;
@@ -16,6 +18,8 @@ import java.util.UUID;
 
 @Repository
 public class EmbeddingStateRepository {
+
+    private static final Logger log = LoggerFactory.getLogger(EmbeddingStateRepository.class);
 
     private final DSLContext dslContext;
     private final DataSource dataSource;
@@ -142,8 +146,28 @@ public class EmbeddingStateRepository {
                 embeddingArray, factId);
     }
 
+    /** Drops every hnsw/ivfflat index on <table>.embedding, whatever it is called.
+     *  These are expression indexes (indkey = 0), so the column name lives only in
+     *  indexprs — a pg_attribute join finds nothing. Production carries a stale
+     *  idx_drawers_embedding from the drawer→cell rename that no migration knows about. */
+    public void dropVectorIndexes(String table) {
+        List<String> names = dslContext.fetch(
+                "SELECT c.relname FROM pg_index i "
+              + "JOIN pg_class c ON c.oid = i.indexrelid "
+              + "JOIN pg_am a ON a.oid = c.relam "
+              + "WHERE a.amname IN ('hnsw','ivfflat') AND i.indrelid = ?::regclass "
+              + "  AND (pg_get_expr(i.indexprs, i.indrelid) LIKE '%embedding%' "
+              + "       OR i.indexprs IS NULL)",
+                table)
+            .getValues(0, String.class);
+        for (String name : names) {
+            log.info("Dropping vector index {} on {}", name, table);
+            dslContext.execute("DROP INDEX IF EXISTS " + name);
+        }
+    }
+
     public void dropEmbeddingIndex() {
-        dslContext.execute("DROP INDEX IF EXISTS idx_cells_embedding");
+        dropVectorIndexes("cells");
     }
 
     public void createEmbeddingIndex(int dimension) {
@@ -153,7 +177,7 @@ public class EmbeddingStateRepository {
     }
 
     public void dropFactsEmbeddingIndex() {
-        dslContext.execute("DROP INDEX IF EXISTS idx_facts_embedding");
+        dropVectorIndexes("facts");
     }
 
     public void createFactsEmbeddingIndex(int dimension) {
