@@ -144,8 +144,11 @@ class EmbeddingMigrationServiceUnitTest {
         when(repo.loadStoredInfo())
                 .thenReturn(Optional.of(new EmbeddingInfo("old-model", 384)));
 
-        assertThatThrownBy(() -> service.run(null)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> service.run(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("unusable dimension: 4096");
 
+        verify(repo, never()).loadStoredInfo();
         verify(repo, never()).dropEmbeddingIndex();
         verify(repo, never()).dropFactsEmbeddingIndex();
     }
@@ -156,8 +159,11 @@ class EmbeddingMigrationServiceUnitTest {
         when(repo.loadStoredInfo())
                 .thenReturn(Optional.of(new EmbeddingInfo("old-model", 384)));
 
-        assertThatThrownBy(() -> service.run(null)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> service.run(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("unusable dimension: 0");
 
+        verify(repo, never()).loadStoredInfo();
         verify(repo, never()).dropEmbeddingIndex();
         verify(repo, never()).dropFactsEmbeddingIndex();
     }
@@ -168,9 +174,49 @@ class EmbeddingMigrationServiceUnitTest {
         when(repo.loadStoredInfo())
                 .thenReturn(Optional.of(new EmbeddingInfo("old-model", 384)));
 
-        assertThatThrownBy(() -> service.run(null)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> service.run(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("unusable dimension: -1");
 
+        verify(repo, never()).loadStoredInfo();
         verify(repo, never()).dropEmbeddingIndex();
         verify(repo, never()).dropFactsEmbeddingIndex();
+    }
+
+    @Test
+    void abortsOnFirstRun_whenDimensionExceedsPgvectorLimit() {
+        when(client.getInfo()).thenReturn(new EmbeddingInfo("some-model/mrl4096", 4096));
+        when(repo.loadStoredInfo()).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.run(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("unusable dimension");
+
+        verify(repo, never()).saveInfo(any());
+        verify(repo, never()).createEmbeddingIndex(anyInt());
+        verify(repo, never()).createFactsEmbeddingIndex(anyInt());
+    }
+
+    @Test
+    void allowsDimensionAtThePgvectorLimit() {
+        EmbeddingInfo info = new EmbeddingInfo("boundary-model", 2000);
+        when(client.getInfo()).thenReturn(info);
+        when(repo.loadStoredInfo()).thenReturn(Optional.empty());
+
+        service.run(null);
+
+        verify(repo).createEmbeddingIndex(2000);
+    }
+
+    @Test
+    void abortsJustPastThePgvectorLimit() {
+        when(client.getInfo()).thenReturn(new EmbeddingInfo("boundary-model", 2001));
+        when(repo.loadStoredInfo()).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.run(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("unusable dimension: 2001");
+
+        verify(repo, never()).createEmbeddingIndex(anyInt());
     }
 }
