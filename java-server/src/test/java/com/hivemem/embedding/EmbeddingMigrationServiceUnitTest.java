@@ -7,6 +7,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
@@ -122,7 +123,7 @@ class EmbeddingMigrationServiceUnitTest {
 
         verify(repo, never()).dropEmbeddingIndex();
         verify(repo, never()).countCellsWithContent();
-        verify(repo, never()).fetchCellBatch(any(), anyInt(), anyInt());
+        verify(repo, never()).fetchCellBatch(any(), anyInt(), anyInt(), anyBoolean());
         // After failure, the active flag should be reset
         assertThat(service.isReencodingActive()).isFalse();
     }

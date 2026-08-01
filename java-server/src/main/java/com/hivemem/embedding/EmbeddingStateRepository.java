@@ -71,32 +71,47 @@ public class EmbeddingStateRepository {
 
     public int countCellsWithContent() {
         Record row = dslContext.fetchOne(
-                "SELECT count(*) AS cnt FROM cells WHERE content IS NOT NULL AND status = 'committed'");
+                "SELECT count(*) AS cnt FROM cells WHERE content IS NOT NULL");
         return row == null ? 0 : row.get("cnt", Number.class).intValue();
     }
 
     /**
      * Keyset-paginated batch of cells still needing re-encoding to {@code targetDimension}: id
      * strictly greater than {@code afterId} (null on the first call), and either no embedding yet
-     * or an embedding whose dimension doesn't match the target. Unlike {@code ORDER BY created_at
-     * LIMIT ? OFFSET ?}, this is immune to concurrent {@code UPDATE}s rewriting rows between page
-     * fetches: {@code created_at} is non-unique and each batch's write shifts what OFFSET N means,
-     * which could silently skip a row and leave it at the old (now-invalid) dimension, breaking
-     * the HNSW index cast on the model this method serves. The {@code id > ?} cursor guarantees
-     * every row is visited exactly once per full scan regardless of embedding writes elsewhere,
-     * and the dimension predicate makes a restarted (crash-resumed) scan skip rows already fixed.
+     * or an embedding whose dimension doesn't match the target (or {@code forceAll}, which drops
+     * that dimension check entirely — see {@code forceAll}'s javadoc). Unlike {@code ORDER BY
+     * created_at LIMIT ? OFFSET ?}, this is immune to concurrent {@code UPDATE}s rewriting rows
+     * between page fetches: {@code created_at} is non-unique and each batch's write shifts what
+     * OFFSET N means, which could silently skip a row and leave it at the old (now-invalid)
+     * dimension, breaking the HNSW index cast on the model this method serves. The {@code id > ?}
+     * cursor guarantees every row is visited exactly once per full scan regardless of embedding
+     * writes elsewhere, and the dimension predicate (when active) makes a restarted (crash-resumed)
+     * scan skip rows already fixed.
+     *
+     * <p>The batch deliberately covers every status, not just {@code committed}: the HNSW index
+     * built at the end of the migration is non-partial (covers the whole table), so a pending or
+     * rejected row left at the old dimension would break the {@code CREATE INDEX ...
+     * ((embedding::vector(newDim)))} cast just as surely as a committed one.
+     *
+     * @param forceAll when true, drops the {@code embedding IS NULL OR vector_dims(embedding) <>
+     *     ?} predicate and selects every row regardless of its current embedding dimension. This is
+     *     required when the embedding identity (model string) changes but the dimension does not:
+     *     the dimension predicate would otherwise match zero rows, so the migration would report
+     *     success having re-encoded nothing. The trade-off: this predicate also doubles as
+     *     crash-resume (a restarted scan normally skips rows already fixed), so a forceAll pass is
+     *     NOT resumable — a crash mid-pass means the whole pass replays from the start.
      */
-    public List<CellRow> fetchCellBatch(UUID afterId, int targetDimension, int batchSize) {
+    public List<CellRow> fetchCellBatch(UUID afterId, int targetDimension, int batchSize, boolean forceAll) {
         return dslContext.fetch("""
-                SELECT id, content, summary FROM cells
-                WHERE content IS NOT NULL AND status = 'committed'
+                SELECT id, content, summary, status FROM cells
+                WHERE content IS NOT NULL
                   AND (? ::uuid IS NULL OR id > ?)
-                  AND (embedding IS NULL OR vector_dims(embedding) <> ?)
+                  AND (? OR embedding IS NULL OR vector_dims(embedding) <> ?)
                 ORDER BY id ASC
                 LIMIT ?
-                """, afterId, afterId, targetDimension, batchSize)
+                """, afterId, afterId, forceAll, targetDimension, batchSize)
                 .map(r -> new CellRow(r.get("id", UUID.class), r.get("content", String.class),
-                        r.get("summary", String.class)));
+                        r.get("summary", String.class), r.get("status", String.class)));
     }
 
     public void updateEmbedding(UUID cellId, List<Float> embedding) {
@@ -118,23 +133,30 @@ public class EmbeddingStateRepository {
                 + "WHERE id = ?", cellId);
     }
 
+    /** Clears the vector without tagging. For non-committed rows: a surviving
+     *  stale-dimension vector breaks the non-partial index build, but the tag would be
+     *  inert — SummarizerRepository.findCellsNeedingSummary filters status='committed'. */
+    public void clearEmbedding(UUID id) {
+        dslContext.execute("UPDATE cells SET embedding = NULL WHERE id = ?", id);
+    }
+
     public int countFactsCommitted() {
         Record row = dslContext.fetchOne(
-                "SELECT count(*) AS cnt FROM facts WHERE status = 'committed'");
+                "SELECT count(*) AS cnt FROM facts");
         return row == null ? 0 : row.get("cnt", Number.class).intValue();
     }
 
     /** Keyset-paginated batch of facts still needing re-encoding to {@code targetDimension}.
-     *  See {@link #fetchCellBatch} for why this replaces OFFSET pagination. */
-    public List<FactRow> fetchFactBatch(UUID afterId, int targetDimension, int batchSize) {
+     *  See {@link #fetchCellBatch} for why this replaces OFFSET pagination, and for what
+     *  {@code forceAll} does and its crash-resume trade-off. */
+    public List<FactRow> fetchFactBatch(UUID afterId, int targetDimension, int batchSize, boolean forceAll) {
         return dslContext.fetch("""
                 SELECT id, subject, predicate, "object" FROM facts
-                WHERE status = 'committed'
-                  AND (? ::uuid IS NULL OR id > ?)
-                  AND (embedding IS NULL OR vector_dims(embedding) <> ?)
+                WHERE (? ::uuid IS NULL OR id > ?)
+                  AND (? OR embedding IS NULL OR vector_dims(embedding) <> ?)
                 ORDER BY id ASC
                 LIMIT ?
-                """, afterId, afterId, targetDimension, batchSize)
+                """, afterId, afterId, forceAll, targetDimension, batchSize)
                 .map(r -> new FactRow(r.get("id", UUID.class), r.get("subject", String.class),
                         r.get("predicate", String.class), r.get("object", String.class)));
     }
@@ -287,7 +309,7 @@ public class EmbeddingStateRepository {
                 """, key, content, tokenCount);
     }
 
-    public record CellRow(UUID id, String content, String summary) {
+    public record CellRow(UUID id, String content, String summary, String status) {
     }
 
     public record FactRow(UUID id, String subject, String predicate, String object) {

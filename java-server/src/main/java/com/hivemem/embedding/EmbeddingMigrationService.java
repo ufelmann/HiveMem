@@ -157,6 +157,14 @@ public class EmbeddingMigrationService implements ApplicationRunner {
         try {
             runBackup();
 
+            // The branch that leads here is reached only when model or dimension differs
+            // (see the early-return above for the matching case), so equal dimensions mean
+            // the identity string changed and no row would be selected by the dimension
+            // predicate. forceAll drops that predicate so the pass still re-encodes
+            // everything; see fetchCellBatch's javadoc for the crash-resume trade-off this
+            // implies.
+            boolean forceAll = from.dimension() == to.dimension();
+
             // total is informational only (progress reporting) — loop termination below is
             // driven exclusively by an empty batch, never by this precomputed count, since a
             // count taken before the loop starts cannot account for the id-keyset predicate's
@@ -172,7 +180,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
             java.util.UUID afterCellId = null;
             while (true) {
                 List<EmbeddingStateRepository.CellRow> batch =
-                        stateRepository.fetchCellBatch(afterCellId, to.dimension(), BATCH_SIZE);
+                        stateRepository.fetchCellBatch(afterCellId, to.dimension(), BATCH_SIZE, forceAll);
                 if (batch.isEmpty()) {
                     break;
                 }
@@ -181,9 +189,15 @@ public class EmbeddingMigrationService implements ApplicationRunner {
                     if (embedding == null) {
                         // encodeForCell returns null by contract for long content without a
                         // summary. Clear the old-model vector (it would break the new HNSW index
-                        // cast) and keep needs_summary so the summarizer fills it in later —
-                        // do NOT abort the whole migration and brick the startup.
-                        stateRepository.clearEmbeddingAndTagNeedsSummary(row.id());
+                        // cast) and, for committed rows, keep needs_summary so the summarizer
+                        // fills it in later. Non-committed rows skip the tag: it would be inert
+                        // since SummarizerRepository.findCellsNeedingSummary only looks at
+                        // committed rows. Do NOT abort the whole migration and brick the startup.
+                        if ("committed".equals(row.status())) {
+                            stateRepository.clearEmbeddingAndTagNeedsSummary(row.id());
+                        } else {
+                            stateRepository.clearEmbedding(row.id());
+                        }
                         continue;
                     }
                     stateRepository.updateEmbedding(row.id(), embedding);
@@ -207,7 +221,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
             java.util.UUID afterFactId = null;
             while (true) {
                 List<EmbeddingStateRepository.FactRow> batch =
-                        stateRepository.fetchFactBatch(afterFactId, to.dimension(), BATCH_SIZE);
+                        stateRepository.fetchFactBatch(afterFactId, to.dimension(), BATCH_SIZE, forceAll);
                 if (batch.isEmpty()) {
                     break;
                 }
