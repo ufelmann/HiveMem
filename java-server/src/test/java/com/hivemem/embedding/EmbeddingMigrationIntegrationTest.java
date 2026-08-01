@@ -268,6 +268,12 @@ class EmbeddingMigrationIntegrationTest {
     void dropsEveryVectorIndexOnCells_notJustTheKnownName() {
         dslContext.execute("CREATE INDEX idx_legacy_embedding ON cells USING hnsw "
                 + "((embedding::vector(384)) vector_cosine_ops)");
+        // Pin the scope: a vector index on a different table, and a non-vector index on the
+        // same table, must both survive — otherwise an implementation that ignores the
+        // `table` argument, or drops every vector index in the database, or drops every
+        // index regardless of am, would pass this test identically.
+        stateRepository.createFactsEmbeddingIndex(1024);
+        dslContext.execute("CREATE INDEX idx_cells_realm_btree ON cells (realm)");
 
         stateRepository.dropVectorIndexes("cells");
 
@@ -278,6 +284,16 @@ class EmbeddingMigrationIntegrationTest {
               + "WHERE a.amname IN ('hnsw','ivfflat') AND i.indrelid = 'cells'::regclass")
             .get(0, Integer.class);
         assertThat(remaining).isEqualTo(0);
+
+        Integer factsIndexCount = dslContext.fetchOne(
+                "SELECT COUNT(*) FROM pg_indexes WHERE tablename = 'facts' AND indexname = 'idx_facts_embedding'")
+                .get(0, Integer.class);
+        assertThat(factsIndexCount).isEqualTo(1);
+
+        Integer btreeIndexCount = dslContext.fetchOne(
+                "SELECT COUNT(*) FROM pg_indexes WHERE tablename = 'cells' AND indexname = 'idx_cells_realm_btree'")
+                .get(0, Integer.class);
+        assertThat(btreeIndexCount).isEqualTo(1);
     }
 
     @Test

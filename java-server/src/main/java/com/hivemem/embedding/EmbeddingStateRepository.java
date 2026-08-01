@@ -162,7 +162,10 @@ public class EmbeddingStateRepository {
             .getValues(0, String.class);
         for (String name : names) {
             log.info("Dropping vector index {} on {}", name, table);
-            dslContext.execute("DROP INDEX IF EXISTS " + name);
+            // Quoted via DSL.name(): relname is the unquoted catalog spelling, and a raw
+            // string concat would down-fold a mixed-case name to lowercase, silently miss
+            // it (no IF EXISTS to hide behind), and leave the stale index in place.
+            dslContext.dropIndex(DSL.name(name)).execute();
         }
     }
 
