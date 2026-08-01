@@ -77,6 +77,14 @@ public class EmbeddingMigrationService implements ApplicationRunner {
 
         log.info("Embedding service reports: model={}, dimension={}", currentInfo.model(), currentInfo.dimension());
 
+        // pgvector's HNSW index caps at 2000 dimensions. Validate BEFORE anything
+        // destructive: past this point we drop indexes and rewrite every vector.
+        int dim = currentInfo.dimension();
+        if (dim <= 0 || dim > 2000) {
+            throw new IllegalStateException("Embedding service reports an unusable dimension: " + dim
+                    + " (must be 1..2000 for a pgvector HNSW index). Refusing to migrate.");
+        }
+
         Optional<EmbeddingInfo> storedInfo = stateRepository.loadStoredInfo();
 
         if (storedInfo.isEmpty()) {

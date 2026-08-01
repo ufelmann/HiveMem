@@ -137,4 +137,40 @@ class EmbeddingMigrationServiceUnitTest {
         assertThatThrownBy(() -> service.run(null)).isInstanceOf(IllegalStateException.class);
         verify(repo, times(1)).tryAdvisoryLock(anyLong());
     }
+
+    @Test
+    void abortsBeforeDroppingIndex_whenDimensionExceedsPgvectorLimit() {
+        when(client.getInfo()).thenReturn(new EmbeddingInfo("some-model/mrl4096", 4096));
+        when(repo.loadStoredInfo())
+                .thenReturn(Optional.of(new EmbeddingInfo("old-model", 384)));
+
+        assertThatThrownBy(() -> service.run(null)).isInstanceOf(IllegalStateException.class);
+
+        verify(repo, never()).dropEmbeddingIndex();
+        verify(repo, never()).dropFactsEmbeddingIndex();
+    }
+
+    @Test
+    void abortsBeforeDroppingIndex_whenDimensionIsZero() {
+        when(client.getInfo()).thenReturn(new EmbeddingInfo("broken-model", 0));
+        when(repo.loadStoredInfo())
+                .thenReturn(Optional.of(new EmbeddingInfo("old-model", 384)));
+
+        assertThatThrownBy(() -> service.run(null)).isInstanceOf(IllegalStateException.class);
+
+        verify(repo, never()).dropEmbeddingIndex();
+        verify(repo, never()).dropFactsEmbeddingIndex();
+    }
+
+    @Test
+    void abortsBeforeDroppingIndex_whenDimensionIsNegative() {
+        when(client.getInfo()).thenReturn(new EmbeddingInfo("broken-model", -1));
+        when(repo.loadStoredInfo())
+                .thenReturn(Optional.of(new EmbeddingInfo("old-model", 384)));
+
+        assertThatThrownBy(() -> service.run(null)).isInstanceOf(IllegalStateException.class);
+
+        verify(repo, never()).dropEmbeddingIndex();
+        verify(repo, never()).dropFactsEmbeddingIndex();
+    }
 }
