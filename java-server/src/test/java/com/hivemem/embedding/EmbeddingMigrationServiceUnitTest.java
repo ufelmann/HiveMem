@@ -2,7 +2,9 @@ package com.hivemem.embedding;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -10,6 +12,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -219,5 +222,72 @@ class EmbeddingMigrationServiceUnitTest {
                 .hasMessageContaining("unusable dimension: 2001");
 
         verify(repo, never()).createEmbeddingIndex(anyInt());
+    }
+
+    /**
+     * Exercises the Step-5 wiring inside {@link EmbeddingMigrationService#reencode}: unlike every
+     * other test in this class, {@code tryAdvisoryLock} returns true here so the reencode body
+     * actually runs. The real {@code hivemem-backup} process is swapped out via the package-private
+     * backup-runner seam so the test doesn't exec a binary.
+     */
+    @Test
+    void reencodeWiring_sameDimensionIdentityChangeForcesFullPassAndSplitsClearByStatus() {
+        EmbeddingMigrationService reencodingService =
+                new EmbeddingMigrationService(client, repo, 10, 0, () -> { });
+
+        // Same dimension (1024 -> 1024), different model: an identity-only change. The plain
+        // dimension predicate would select zero rows for this case, so forceAll must be true.
+        when(client.getInfo()).thenReturn(new EmbeddingInfo("new-model", 1024));
+        when(repo.loadStoredInfo()).thenReturn(Optional.of(new EmbeddingInfo("old-model", 1024)));
+        when(repo.tryAdvisoryLock(anyLong())).thenReturn(true);
+        when(repo.loadProgress()).thenReturn(Optional.empty());
+
+        UUID committedId = UUID.randomUUID();
+        UUID pendingId = UUID.randomUUID();
+        EmbeddingStateRepository.CellRow committedRow =
+                new EmbeddingStateRepository.CellRow(committedId, "content", null, "committed");
+        EmbeddingStateRepository.CellRow pendingRow =
+                new EmbeddingStateRepository.CellRow(pendingId, "content", null, "pending");
+        when(repo.fetchCellBatch(any(), eq(1024), anyInt(), eq(true)))
+                .thenReturn(List.of(committedRow, pendingRow), List.of());
+        // encodeForCell returning null drives both rows into the clear-branch under test.
+        when(client.encodeForCell(any(), any())).thenReturn(null);
+        when(repo.fetchFactBatch(any(), anyInt(), anyInt(), anyBoolean())).thenReturn(List.of());
+
+        reencodingService.run(null);
+
+        // Called twice: once returning the two rows above, once returning an empty batch to
+        // terminate the keyset-pagination loop. Both calls must carry forceAll=true.
+        verify(repo, times(2)).fetchCellBatch(any(), eq(1024), anyInt(), eq(true));
+        verify(repo).clearEmbeddingAndTagNeedsSummary(committedId);
+        verify(repo).clearEmbedding(pendingId);
+        verify(repo, never()).clearEmbedding(committedId);
+        verify(repo, never()).clearEmbeddingAndTagNeedsSummary(pendingId);
+    }
+
+    /**
+     * A crashed pass leaves a progress row behind (clearProgress() only runs on success). If the
+     * operator then switches to a same-dimension model before the next boot, {@code from.dimension()
+     * != to.dimension()} would otherwise be true (stored info was never updated by the crashed
+     * pass either), so the plain dimension check alone would wrongly skip rows already written at
+     * the crashed pass's intermediate dimension. The leftover progress row must force a full pass
+     * regardless of what the dimension comparison says.
+     */
+    @Test
+    void forceAllAlsoTriggersOnALeftoverProgressRow_evenWhenDimensionsDiffer() {
+        EmbeddingMigrationService reencodingService =
+                new EmbeddingMigrationService(client, repo, 10, 0, () -> { });
+
+        when(client.getInfo()).thenReturn(new EmbeddingInfo("model-c", 1024));
+        when(repo.loadStoredInfo()).thenReturn(Optional.of(new EmbeddingInfo("model-a", 384)));
+        when(repo.tryAdvisoryLock(anyLong())).thenReturn(true);
+        when(repo.loadProgress()).thenReturn(Optional.of("50/100"));
+        when(repo.fetchCellBatch(any(), anyInt(), anyInt(), anyBoolean())).thenReturn(List.of());
+        when(repo.fetchFactBatch(any(), anyInt(), anyInt(), anyBoolean())).thenReturn(List.of());
+
+        reencodingService.run(null);
+
+        verify(repo).fetchCellBatch(any(), eq(1024), anyInt(), eq(true));
+        verify(repo).fetchFactBatch(any(), eq(1024), anyInt(), eq(true));
     }
 }

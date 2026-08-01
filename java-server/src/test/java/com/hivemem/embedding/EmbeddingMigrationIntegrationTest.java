@@ -220,6 +220,20 @@ class EmbeddingMigrationIntegrationTest {
     }
 
     @Test
+    void reencodesNonCommittedFacts_soTheNonPartialIndexCanBeBuilt() {
+        // The default HNSW index is bound to dimension 1024 (test-model); drop it so a
+        // 384-dim insert below doesn't trip the expression-index cast.
+        stateRepository.dropFactsEmbeddingIndex();
+        UUID pending = insertFact("pending", "subj-pending", "pred", "obj", dim384Vector());
+        UUID rejected = insertFact("rejected", "subj-rejected", "pred", "obj", dim384Vector());
+
+        var batch = stateRepository.fetchFactBatch(null, 1024, 100, false);
+
+        assertThat(batch.stream().anyMatch(r -> r.id().equals(pending))).isTrue();
+        assertThat(batch.stream().anyMatch(r -> r.id().equals(rejected))).isTrue();
+    }
+
+    @Test
     void updateEmbeddingWritesNewVector() {
         // Drop the HNSW index so that we can update with a different dimension
         // (this mirrors the production flow: index is dropped before re-encoding)
@@ -360,6 +374,15 @@ class EmbeddingMigrationIntegrationTest {
         Float[] v = new Float[384];
         java.util.Arrays.fill(v, 0.1f);
         return v;
+    }
+
+    private UUID insertFact(String status, String subject, String predicate, String object, Float[] embedding) {
+        UUID id = UUID.randomUUID();
+        dslContext.execute("""
+                INSERT INTO facts (id, subject, predicate, "object", embedding, status, created_by, valid_from)
+                VALUES (?, ?, ?, ?, ?::vector, ?, 'test', now())
+                """, id, subject, predicate, object, embedding, status);
+        return id;
     }
 
     private JsonNode callTool(String token, String toolName, Map<String, Object> arguments) throws Exception {

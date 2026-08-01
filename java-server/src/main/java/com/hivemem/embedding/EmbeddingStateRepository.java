@@ -140,7 +140,7 @@ public class EmbeddingStateRepository {
         dslContext.execute("UPDATE cells SET embedding = NULL WHERE id = ?", id);
     }
 
-    public int countFactsCommitted() {
+    public int countFacts() {
         Record row = dslContext.fetchOne(
                 "SELECT count(*) AS cnt FROM facts");
         return row == null ? 0 : row.get("cnt", Number.class).intValue();

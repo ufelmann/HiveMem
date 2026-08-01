@@ -33,6 +33,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
     private final EmbeddingStateRepository stateRepository;
     private final int startupRetryAttempts;
     private final long startupRetryBackoffMs;
+    private final Runnable backupRunner;
     private final AtomicBoolean reencodingActive = new AtomicBoolean(false);
 
     @Autowired
@@ -43,10 +44,18 @@ public class EmbeddingMigrationService implements ApplicationRunner {
     /** Test seam: allows a small attempt count / zero backoff so retry tests run fast. */
     EmbeddingMigrationService(EmbeddingClient embeddingClient, EmbeddingStateRepository stateRepository,
                               int startupRetryAttempts, long startupRetryBackoffMs) {
+        this(embeddingClient, stateRepository, startupRetryAttempts, startupRetryBackoffMs, null);
+    }
+
+    /** Test seam: allows a stub backup runner so tests that drive {@link #reencode} don't exec
+     *  the real {@code hivemem-backup} binary. {@code null} keeps the production behavior. */
+    EmbeddingMigrationService(EmbeddingClient embeddingClient, EmbeddingStateRepository stateRepository,
+                              int startupRetryAttempts, long startupRetryBackoffMs, Runnable backupRunner) {
         this.embeddingClient = embeddingClient;
         this.stateRepository = stateRepository;
         this.startupRetryAttempts = Math.max(1, startupRetryAttempts);
         this.startupRetryBackoffMs = Math.max(0, startupRetryBackoffMs);
+        this.backupRunner = backupRunner != null ? backupRunner : this::runBackupProcess;
     }
 
     public boolean isReencodingActive() {
@@ -155,7 +164,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
         }
 
         try {
-            runBackup();
+            backupRunner.run();
 
             // The branch that leads here is reached only when model or dimension differs
             // (see the early-return above for the matching case), so equal dimensions mean
@@ -163,7 +172,17 @@ public class EmbeddingMigrationService implements ApplicationRunner {
             // predicate. forceAll drops that predicate so the pass still re-encodes
             // everything; see fetchCellBatch's javadoc for the crash-resume trade-off this
             // implies.
-            boolean forceAll = from.dimension() == to.dimension();
+            //
+            // A leftover progress row also forces a full pass: clearProgress() only runs on
+            // a clean success, so a row surviving into this run means a previous pass crashed
+            // partway through. If that crashed pass had already written some rows at an
+            // intermediate dimension (e.g. A(384d) -> B(1024d) crashes, operator then points
+            // at C(1024d)), "from" here compares stored (still A/384, since saveInfo() also
+            // only runs on success) against current (C/1024) — different dimensions, so the
+            // plain dimension predicate would treat every B-generation 1024d row as already
+            // correct and skip it, leaving B and C vectors mixed in one index. Forcing a full
+            // pass whenever a progress row exists closes that gap.
+            boolean forceAll = from.dimension() == to.dimension() || stateRepository.loadProgress().isPresent();
 
             // total is informational only (progress reporting) — loop termination below is
             // driven exclusively by an empty batch, never by this precomputed count, since a
@@ -211,7 +230,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
             stateRepository.createEmbeddingIndex(to.dimension());
             log.info("Recreated HNSW index");
 
-            int totalFacts = stateRepository.countFactsCommitted();
+            int totalFacts = stateRepository.countFacts();
             log.info("Reencoding {} facts: {} → {}", totalFacts, from.model(), to.model());
 
             stateRepository.dropFactsEmbeddingIndex();
@@ -249,7 +268,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
         }
     }
 
-    private void runBackup() {
+    private void runBackupProcess() {
         log.info("Running pre-reencoding backup...");
         try {
             ProcessBuilder pb = new ProcessBuilder("hivemem-backup");
