@@ -18,7 +18,8 @@ class EmbeddingBackfillServiceTest {
         EmbeddingClient client = mock(EmbeddingClient.class);
         UUID id = UUID.randomUUID();
 
-        when(repo.findCellsMissingEmbedding(50)).thenReturn(List.of(id));
+        when(client.maxChars()).thenReturn(8000);
+        when(repo.findCellsMissingEmbedding(8000, 50)).thenReturn(List.of(id));
         when(repo.findSnapshot(id)).thenReturn(Optional.of(new EmbeddingBackfillRepository.Snapshot("text", null)));
         when(client.encodeForCell("text", null)).thenReturn(List.of(0.1f, 0.2f));
 
@@ -34,7 +35,8 @@ class EmbeddingBackfillServiceTest {
         EmbeddingClient client = mock(EmbeddingClient.class);
         UUID id = UUID.randomUUID();
 
-        when(repo.findCellsMissingEmbedding(50)).thenReturn(List.of(id));
+        when(client.maxChars()).thenReturn(8000);
+        when(repo.findCellsMissingEmbedding(8000, 50)).thenReturn(List.of(id));
         when(repo.findSnapshot(id)).thenReturn(Optional.of(new EmbeddingBackfillRepository.Snapshot("text", null)));
         when(client.encodeForCell(any(), any())).thenThrow(new EmbeddingUnavailableException("down", null));
 
