@@ -11,10 +11,18 @@ function unavailableIngestQueue(): IngestQueue {
   return {
     failedFiles: [],
     degradedBatches: [],
+    stalledRows: [],
     reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
     stateCounts: {},
     unavailable: true,
   }
+}
+
+/** Marker for a section whose call rejected, so refresh() can tell "loaded nothing" from
+ *  "could not load" without letting the first failure abandon the other two sections. */
+const FAILED = Symbol('failed')
+function tolerate<T>(p: Promise<T>): Promise<T | typeof FAILED> {
+  return p.catch(() => FAILED)
 }
 
 export const useQueenStore = defineStore('queen', {
@@ -38,20 +46,34 @@ export const useQueenStore = defineStore('queen', {
       this.loading = true
       try {
         const api = useApi()
-        // Started in parallel with the other two calls, but its failure is caught locally so a
-        // consumption_queue error can't reject the outer Promise.all and blank the runs/pending
-        // sections that loaded fine — it degrades to its own "unavailable" state instead.
-        const ingestPromise = api.call<IngestQueue>('consumption_queue').catch(() => unavailableIngestQueue())
-        const [list, pending] = await Promise.all([
-          api.call<QueenRunList>('queen_runs'),
-          api.call<PendingApproval[]>('pending_approvals'),
+        // Every section is tolerated individually, in BOTH directions: a Vistierie outage
+        // (queen_runs) must not blank the ingest queue, and a consumption_queue error must not
+        // blank the runs. Awaiting one call before assigning another's result — which is what
+        // the previous `await Promise.all([...]); this.ingestQueue = await ingestPromise` did —
+        // makes the isolation one-way and leaves ingestQueue null, so QueenRoute renders no
+        // ingest section at all, not even the "unavailable" notice.
+        const [list, pending, ingest] = await Promise.all([
+          tolerate(api.call<QueenRunList>('queen_runs')),
+          tolerate(api.call<PendingApproval[]>('pending_approvals')),
+          tolerate(api.call<IngestQueue>('consumption_queue')),
         ])
-        this.runs = list.items
-        this.total = list.total
-        this.costAvailable = list.costAvailable
-        this.unavailable = !!list.unavailable
-        this.pending = pending.filter(p => p.created_by === 'queen')
-        this.ingestQueue = await ingestPromise
+        if (list !== FAILED) {
+          this.runs = list.items
+          this.total = list.total
+          this.costAvailable = list.costAvailable
+          this.unavailable = !!list.unavailable
+        } else {
+          // Same visible outcome the backend produces for a Vistierie outage.
+          this.runs = []
+          this.total = 0
+          this.costAvailable = false
+          this.unavailable = true
+        }
+        if (pending !== FAILED) this.pending = pending.filter(p => p.created_by === 'queen')
+        this.ingestQueue = ingest === FAILED ? unavailableIngestQueue() : ingest
+        // The per-section state above is already assigned and rendered; the throw only drives
+        // QueenRoute's generic "could not load" notice, which must still appear.
+        if (list === FAILED || pending === FAILED) throw new Error('queen refresh partially failed')
       } finally {
         this.loading = false
       }
@@ -79,7 +101,9 @@ export const useQueenStore = defineStore('queen', {
       const api = useApi()
       const res = await api.call<{ sha256: string; restaged: boolean; error?: string }>(
         'consumption_retry', { sha256 })
-      if (res.restaged) await this.refresh()
+      // The retry itself succeeded; a refresh that partially fails afterwards must not turn that
+      // into an error toast, so its rejection is swallowed here.
+      if (res.restaged) await this.refresh().catch(() => {})
       return res
     },
   },

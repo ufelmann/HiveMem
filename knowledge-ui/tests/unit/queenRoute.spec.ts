@@ -76,6 +76,25 @@ describe('QueenRoute (restyled)', () => {
       expect(section.findAll('.ingest-row').length).toBeGreaterThanOrEqual(2)
     })
 
+    it('renders stalled rows with their state and a retry button', async () => {
+      const w = await mountIngestReady()
+      const section = w.find('.q-ingest')
+      // A row stuck in 'staged'/'processing' past the stale threshold used to exist only as an
+      // anonymous integer in stateCounts — no filename, nothing to click.
+      expect(section.text()).toContain('Hängengebliebene Dateien')
+      expect(section.text()).toContain('scan-0003.pdf')
+      expect(section.text()).toContain('processing')
+      expect(section.findAll('.ingest-row').length).toBeGreaterThanOrEqual(3)
+      expect(section.findAll('.ingest-retry').length).toBeGreaterThanOrEqual(3)
+    })
+
+    it('renders the non-terminal ledger states in the per-state census', async () => {
+      const w = await mountIngestReady()
+      const chips = w.findAll('.ingest-state-chip').map(c => c.text())
+      expect(chips.join(' ')).toContain('staged')
+      expect(chips.join(' ')).toContain('processing')
+    })
+
     it('shows "nothing to review" for a healthy empty queue, with no rows', async () => {
       localStorage.setItem('hivemem_mock_ingest_scenario', 'empty')
       resetApi()

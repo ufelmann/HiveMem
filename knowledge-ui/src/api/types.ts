@@ -221,6 +221,17 @@ export interface IngestDegradedBatch {
   updatedAt: string
 }
 
+/** One row from `consumption_queue`'s stalledRows list — mirrors
+ *  ConsumptionFileRepository.StalledRow. A file that neither finished nor failed: still
+ *  `staged` or `processing` past the recovery stale threshold. */
+export interface IngestStalledRow {
+  sha256: string
+  filename: string
+  state: string
+  updatedAt: string
+  ageSeconds: number
+}
+
 /** Reconciliation counters, cumulative since process start — mirrors
  *  ConsumptionRecoverySweep.Reconciliation. Field names match the backend record exactly:
  *  no `doneLeftovers` (that name never existed on the backend). */
@@ -237,6 +248,7 @@ export interface IngestReconciliation {
 export interface IngestQueue {
   failedFiles: IngestFailedFile[]
   degradedBatches: IngestDegradedBatch[]
+  stalledRows: IngestStalledRow[]
   reconciliation: IngestReconciliation
   stateCounts: Record<string, number>
   unavailable?: boolean

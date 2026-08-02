@@ -15,6 +15,11 @@ let timer: number | null = null
 function fmtCost(micros: number | null) { return micros == null ? '—' : `$${(micros / 1_000_000).toFixed(4)}` }
 function fmtDuration(ms: number | null) { return ms == null ? '—' : `${(ms / 1000).toFixed(1)}s` }
 function fmtTime(iso: string | null) { return iso ? new Date(iso).toLocaleString() : '—' }
+function fmtAge(seconds: number) {
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`
+  if (seconds < 86_400) return `${(seconds / 3600).toFixed(1)}h`
+  return `${(seconds / 86_400).toFixed(1)}d`
+}
 
 const STATUS: Record<string, { label: string; color: string }> = {
   done: { label: 'done', color: 'var(--good)' },
@@ -44,8 +49,9 @@ function propTitle(desc: string | null): string {
 const sumCost = computed(() =>
   store.costAvailable ? store.runs.reduce((s, r) => s + (r.costMicros ?? 0), 0) : null)
 const detailRun = computed(() => store.selectedRun?.run as Record<string, any> | undefined)
-// Queue depth per ledger state — the one number an operator wants at a glance when 5000
-// documents are in flight. Sorted descending so the biggest pile of work leads.
+// Row counts per ledger state. countsByState() has no WHERE clause, so `done` grows
+// monotonically and reads 5000 after a bulk run — this is an all-time census of the ledger,
+// NOT a queue depth, and the label says so. Sorted descending so the biggest group leads.
 const ingestStateCounts = computed(() =>
   Object.entries(store.ingestQueue?.stateCounts ?? {}).sort((a, b) => b[1] - a[1]))
 
@@ -70,7 +76,12 @@ async function decide(id: string, approved: boolean) {
 async function onRetry(sha256: string) {
   try {
     const res = await store.retryIngest(sha256)
-    if (!res.restaged) {
+    if (res.restaged) {
+      // The ledger row is untouched until the next poll re-hashes the file (~15-25 s), so the
+      // immediate refresh() still shows this row. Without this toast a second click looks like
+      // the only feedback, and it reports an error that contradicts the first, successful retry.
+      ui.pushToast('success', t('queen.ingest.retryQueued'))
+    } else {
       ui.pushToast('error', res.error ? t('queen.ingest.retryFailedReason', { error: res.error }) : t('queen.ingest.retryFailed'))
     }
   } catch {
@@ -223,6 +234,17 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
               <span class="q-mono">{{ b.degradedPages }} / {{ b.totalPages }}</span>
               <span class="q-mono">{{ fmtTime(b.updatedAt) }}</span>
               <button class="btn ghost ingest-retry" @click="onRetry(b.sha256)">{{ t('queen.ingest.retry') }}</button>
+            </div>
+          </div>
+
+          <div class="section-label">{{ t('queen.ingest.stalledRows') }}</div>
+          <p v-if="!store.ingestQueue.stalledRows.length" class="q-empty">{{ t('queen.ingest.none') }}</p>
+          <div v-else class="ingest-table">
+            <div v-for="s in store.ingestQueue.stalledRows" :key="s.sha256" class="ingest-row">
+              <span class="ingest-file">{{ s.filename }}</span>
+              <span class="q-mono">{{ s.state }}</span>
+              <span class="q-mono">{{ fmtAge(s.ageSeconds) }}</span>
+              <button class="btn ghost ingest-retry" @click="onRetry(s.sha256)">{{ t('queen.ingest.retry') }}</button>
             </div>
           </div>
         </template>

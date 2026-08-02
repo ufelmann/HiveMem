@@ -24,7 +24,7 @@ describe('queen store — ingest queue', () => {
     mockRefreshCalls({
       failedFiles: [{ sha256: 'aaaa0001', filename: 'scan-0001.pdf', state: 'failed', attempts: 2,
         lastError: 'page count 240 exceeds max-pages 200' }],
-      degradedBatches: [],
+      degradedBatches: [], stalledRows: [],
       reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
       stateCounts: { done: 20, failed: 1 },
     })
@@ -37,7 +37,7 @@ describe('queen store — ingest queue', () => {
 
   it('marks the unavailable state distinctly from a healthy empty queue', async () => {
     mockRefreshCalls({
-      failedFiles: [], degradedBatches: [],
+      failedFiles: [], degradedBatches: [], stalledRows: [],
       reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
       stateCounts: {}, unavailable: true,
     })
@@ -51,7 +51,7 @@ describe('queen store — ingest queue', () => {
     mockRefreshCalls({
       failedFiles: [{ sha256: 'aaaa0001', filename: 'scan-0001.pdf', state: 'failed', attempts: 2,
         lastError: 'page count 240 exceeds max-pages 200' }],
-      degradedBatches: [],
+      degradedBatches: [], stalledRows: [],
       reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
       stateCounts: { done: 20, failed: 1 },
     })
@@ -88,5 +88,74 @@ describe('queen store — ingest queue', () => {
     expect(store.ingestQueue).not.toBeNull()
     expect(store.ingestQueue!.unavailable).toBe(true)
     expect(store.ingestQueue!.failedFiles).toEqual([])
+  })
+
+  it('a queen_runs failure does not take the ingest queue down with it', async () => {
+    // The other direction of the same isolation. A Vistierie outage is the ordinary reason
+    // queen_runs rejects, and it used to leave ingestQueue null — so QueenRoute rendered no
+    // ingest section at all, not even the unavailable notice.
+    call.mockImplementation(async (tool: string) => {
+      if (tool === 'queen_runs') throw new Error('vistierie unreachable')
+      if (tool === 'pending_approvals') return []
+      if (tool === 'consumption_queue') {
+        return {
+          failedFiles: [{ sha256: 'aaaa0001', filename: 'scan-0001.pdf', state: 'failed',
+            attempts: 2, lastError: 'page count 240 exceeds max-pages 200' }],
+          degradedBatches: [], stalledRows: [],
+          reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
+          stateCounts: { done: 20, failed: 1 },
+        }
+      }
+      throw new Error(`unexpected tool: ${tool}`)
+    })
+    const store = useQueenStore()
+    await expect(store.refresh()).rejects.toThrow()
+
+    // The ingest queue loaded fine and must be readable.
+    expect(store.ingestQueue).not.toBeNull()
+    expect(store.ingestQueue!.unavailable).toBeFalsy()
+    expect(store.ingestQueue!.failedFiles[0].filename).toBe('scan-0001.pdf')
+    // The queen section degrades to the same shape a backend-reported outage produces.
+    expect(store.unavailable).toBe(true)
+    expect(store.runs).toEqual([])
+  })
+
+  it('a pending_approvals failure leaves runs and the ingest queue intact', async () => {
+    call.mockImplementation(async (tool: string) => {
+      if (tool === 'queen_runs') {
+        return { items: [{ id: 'r1', agent: 'queen', trigger: null, status: 'done', startedAt: null,
+          finishedAt: null, durationMs: null, llmCalls: null, costMicros: null }], total: 1, costAvailable: false }
+      }
+      if (tool === 'pending_approvals') throw new Error('approvals unavailable')
+      if (tool === 'consumption_queue') {
+        return {
+          failedFiles: [], degradedBatches: [], stalledRows: [],
+          reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
+          stateCounts: {},
+        }
+      }
+      throw new Error(`unexpected tool: ${tool}`)
+    })
+    const store = useQueenStore()
+    await expect(store.refresh()).rejects.toThrow()
+
+    expect(store.runs).toHaveLength(1)
+    expect(store.ingestQueue).not.toBeNull()
+    expect(store.ingestQueue!.unavailable).toBeFalsy()
+  })
+
+  it('exposes stalled rows so a file that neither finished nor failed can be acted on', async () => {
+    mockRefreshCalls({
+      failedFiles: [], degradedBatches: [],
+      stalledRows: [{ sha256: 'cccc0003', filename: 'scan-0003.pdf', state: 'processing',
+        updatedAt: '2026-08-02T08:30:00Z', ageSeconds: 5400 }],
+      reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
+      stateCounts: { processing: 1 },
+    })
+    const store = useQueenStore()
+    await store.refresh()
+    expect(store.ingestQueue!.stalledRows).toHaveLength(1)
+    expect(store.ingestQueue!.stalledRows[0].state).toBe('processing')
+    expect(store.ingestQueue!.stalledRows[0].ageSeconds).toBe(5400)
   })
 })

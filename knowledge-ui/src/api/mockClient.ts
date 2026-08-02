@@ -539,14 +539,14 @@ export class MockApiClient implements ApiClient {
       // Mirrors ConsumptionQueueToolHandler.unavailable() field for field, so a UI test can
       // exercise the "pipeline disabled" branch without a real backend.
       return {
-        failedFiles: [], degradedBatches: [],
+        failedFiles: [], degradedBatches: [], stalledRows: [],
         reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
         stateCounts: {}, unavailable: true,
       }
     }
     if (this.config.ingestScenario === 'empty') {
       return {
-        failedFiles: [], degradedBatches: [],
+        failedFiles: [], degradedBatches: [], stalledRows: [],
         reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
         stateCounts: {},
       }
@@ -560,8 +560,14 @@ export class MockApiClient implements ApiClient {
         { sha256: 'bbbb0002', filename: 'scan-0002.pdf', totalPages: 40, degradedPages: 3,
           updatedAt: '2026-08-02T10:00:00Z' },
       ],
+      stalledRows: [
+        { sha256: 'cccc0003', filename: 'scan-0003.pdf', state: 'processing',
+          updatedAt: '2026-08-02T08:30:00Z', ageSeconds: 5400 },
+      ],
       reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
-      stateCounts: { done: 20, failed: 1 },
+      // Includes the two non-terminal states, so the fixture exercises the model the
+      // staged→processing→done/failed ledger actually produces, not just its endpoints.
+      stateCounts: { done: 20, processing: 2, staged: 3, failed: 1 },
     }
   }
 
