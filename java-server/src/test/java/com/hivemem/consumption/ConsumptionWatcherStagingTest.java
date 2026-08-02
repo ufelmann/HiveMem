@@ -85,4 +85,50 @@ class ConsumptionWatcherStagingTest {
         verify(repo).stage(eq(expectedHash), anyString());
         verify(service).processStaged(any(Path.class), eq(expectedHash));
     }
+
+    /** The point of writing the ledger row first: if anything goes wrong between the insert and the
+     *  move, the file must still be sitting in the watch root — never half-way to processing/ with
+     *  no row, and never lost. A later poll then ingests it normally.
+     *
+     *  <p>The failure is simulated by making {@code processing/} a regular FILE, so
+     *  {@code Files.createDirectories} inside the mover throws exactly where a crash would have hit. */
+    @Test
+    void aFailureBetweenInsertAndMoveLeavesTheFileInTheWatchRootForTheNextPoll() throws Exception {
+        byte[] content = "synthetic-pdf-bytes".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        Path scan = root.resolve("scan.pdf");
+        Files.write(scan, content);
+        String expectedHash = ConsumptionService.sha256(content);
+
+        // Blocks the move: the mover cannot create processing/ because a file already occupies it.
+        Path blocker = root.resolve("processing");
+        Files.writeString(blocker, "not a directory");
+
+        ConsumptionProperties props = new ConsumptionProperties();
+        props.setDir(root.toString());
+        props.setEnabled(true);
+        props.setStableSeconds(0);
+
+        ConsumptionService service = mock(ConsumptionService.class);
+        ConsumptionFileRepository repo = mock(ConsumptionFileRepository.class);
+        Clock clock = Clock.fixed(Instant.now().plusSeconds(3600), ZoneOffset.UTC);
+        ConsumptionWatcher watcher =
+                new ConsumptionWatcher(props, service, (Runnable r) -> r.run(), clock, repo);
+
+        watcher.poll();
+        watcher.poll();   // stages the row, then fails to move
+
+        verify(repo).stage(eq(expectedHash), eq("scan.pdf"));
+        verify(service, never()).processStaged(any(Path.class), anyString());
+        assertTrue(Files.exists(scan),
+                "a failure after the ledger insert must leave the file in the watch root");
+
+        // Recovery: the obstruction is gone, so the next stable poll ingests the file normally.
+        Files.delete(blocker);
+        watcher.poll();
+        watcher.poll();
+
+        verify(service).processStaged(any(Path.class), eq(expectedHash));
+        assertFalse(Files.exists(scan), "the retried poll must move the file out of the watch root");
+        assertTrue(Files.isRegularFile(root.resolve("processing").resolve("scan.pdf")));
+    }
 }

@@ -20,7 +20,8 @@ import org.springframework.stereotype.Component;
 /** Re-stages files the pipeline can no longer see: crash-stranded files in processing/ (ledger row
  *  still 'processing' past the stale threshold) and failed/ files still under the retry limit.
  *  Matching files are moved back to the watch root so the next poll re-ingests them. Content-based
- *  dedup makes re-runs safe. Runs on a schedule AND once at startup (post-restart recovery). */
+ *  dedup makes re-runs safe. Runs on a schedule AND once at startup (post-restart recovery) —
+ *  the two runs treat 'staged' rows differently on purpose, see {@link #recover(boolean)}. */
 @Component
 @ConditionalOnProperty(name = "hivemem.consumption.enabled", havingValue = "true")
 public class ConsumptionRecoverySweep implements ApplicationRunner {
@@ -54,10 +55,39 @@ public class ConsumptionRecoverySweep implements ApplicationRunner {
 
     public Reconciliation lastReconciliation() { return last; }
 
-    @Override public void run(ApplicationArguments args) { recover(); }
+    /** Startup run: the executor queue is empty by construction, so a 'staged' row here cannot be
+     *  merely queued — it is genuinely stranded and must be re-staged. */
+    @Override public void run(ApplicationArguments args) { recover(true); }
 
+    /** Scheduled run: workers may be busy and the queue may be deep, so a 'staged' row is almost
+     *  always simply waiting its turn. See {@link #recover(boolean)}. */
     @Scheduled(fixedRateString = "#{@consumptionProperties.recoveryInterval.toMillis()}")
-    public void recover() {
+    public void recover() { recover(false); }
+
+    /**
+     * @param startup {@code true} only for the {@link ApplicationRunner} run at boot.
+     *
+     * <p>The two callers deliberately treat {@code staged} rows differently, and the asymmetry is
+     * not arbitrary:
+     *
+     * <ul>
+     *   <li>A {@code processing} row has a live heartbeat ({@code ConsumptionService} and
+     *       {@code ReassemblyOrchestrator} bump {@code updated_at} once per page), so a stale one
+     *       really does mean a dead worker. Both callers re-stage it.
+     *   <li>A {@code staged} row means "registered, not yet started". During normal operation it is
+     *       almost always just QUEUED on the bounded consumption executor: nothing bumps
+     *       {@code updated_at} while a task merely waits, and a deep queue can take longer to drain
+     *       than the stale threshold. Re-staging such a row makes the next poll submit a SECOND task
+     *       for the same file — {@code processStaged} has no idempotency guard, so both would run,
+     *       double the vision cost, and let the loser's failed move degrade the whole batch into one
+     *       extra {@code pending} document on top of the correctly split ones. The scheduled sweep
+     *       therefore leaves {@code staged} rows alone.
+     *   <li>The one case where a {@code staged} row IS stranded is a process death between
+     *       {@code stage()} and dispatch. After a restart the executor queue is empty, so at startup
+     *       "stale and staged" is unambiguous — hence the startup run does re-stage them.
+     * </ul>
+     */
+    void recover(boolean startup) {
         if (!running.compareAndSet(false, true)) {
             log.debug("Recovery sweep already running; skipping this trigger");
             return;
@@ -65,6 +95,11 @@ public class ConsumptionRecoverySweep implements ApplicationRunner {
         try {
             int stale = (int) props.getRecoveryStaleThreshold().toSeconds();
             var staleRows = repo.findStaleProcessing(stale, 500);
+            if (!startup) {
+                staleRows = staleRows.stream()
+                        .filter(r -> !"staged".equals(r.state()))
+                        .toList();
+            }
 
             // Must run BEFORE reStage moves anything: only here does "no physical file in
             // processing/" genuinely mean the row has no data. Once reStage has moved a row's
@@ -106,13 +141,22 @@ public class ConsumptionRecoverySweep implements ApplicationRunner {
 
     /** A stale row whose physical file is already gone before any move happens is a row without
      *  data — mark it missing (failed + retry budget exhausted) so it stops being selected every
-     *  sweep, and count it so the operator learns about it. */
+     *  sweep, and count it so the operator learns about it.
+     *
+     *  <p>Which directory counts as "has a file" depends on the row's state. A {@code processing}
+     *  row's file lives in {@code processing/}. A {@code staged} row's canonical location is the
+     *  WATCH ROOT: {@code ConsumptionWatcher} writes the ledger row BEFORE moving the file out, so a
+     *  crash in between — the very scenario staging exists to survive — leaves the file exactly
+     *  where the poll found it. Resolving such a row against {@code processing/} only would call it
+     *  "no physical file", set a false {@code last_error}, permanently exhaust its retry budget and
+     *  count a non-divergence. */
     private int markRowsWithoutFile(List<ConsumptionFileRepository.Row> staleRows) {
         Path processingDir = root.resolve(ConsumptionFileMover.PROCESSING);
         int missing = 0;
         for (var r : staleRows) {
-            Path f = processingDir.resolve(r.filename());
-            if (!Files.isRegularFile(f)) {
+            boolean present = Files.isRegularFile(processingDir.resolve(r.filename()))
+                    || ("staged".equals(r.state()) && Files.isRegularFile(root.resolve(r.filename())));
+            if (!present) {
                 repo.markMissing(r.sha256(), props.getFailedRetryLimit());
                 missing++;
                 log.warn("Reconciliation marked {} failed: row is stale and has no physical file",

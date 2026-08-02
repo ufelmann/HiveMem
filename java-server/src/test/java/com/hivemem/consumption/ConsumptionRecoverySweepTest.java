@@ -169,6 +169,95 @@ class ConsumptionRecoverySweepTest {
                 "cumulative counter stays zero when nothing new diverges");
     }
 
+    /** C1: a 'staged' row is almost always simply QUEUED on the bounded consumption executor —
+     *  nothing bumps updated_at while a task waits its turn, so a deep queue makes it look stale.
+     *  Re-staging it from the SCHEDULED sweep makes the next poll submit a second task for a file
+     *  that is still queued, and both then run. The scheduled sweep must leave it alone. */
+    @Test
+    void scheduledSweepDoesNotRestageAStagedRowStillSittingInProcessing() throws Exception {
+        Files.writeString(tempRoot.resolve("processing").resolve("queued.pdf"), "queued");
+        when(repo.findStaleProcessing(anyInt(), anyInt()))
+                .thenReturn(List.of(new ConsumptionFileRepository.Row(
+                        "sha-queued", "queued.pdf", "staged", 0, null)));
+        // The row exists, so reconcile() must not treat the file as a row-less orphan either.
+        when(repo.knownFilenames(anyCollection())).thenReturn(Set.of("queued.pdf"));
+
+        sweep.recover();
+
+        assertTrue(Files.exists(tempRoot.resolve("processing").resolve("queued.pdf")),
+                "a queued 'staged' row's file must stay in processing/");
+        assertFalse(Files.exists(tempRoot.resolve("queued.pdf")),
+                "the scheduled sweep must not move a 'staged' row back to the watch root");
+        verify(repo, never()).markMissing(eq("sha-queued"), anyInt());
+        assertEquals(0, sweep.lastReconciliation().rowsWithoutFile());
+    }
+
+    /** The counterpart of the rule above: after a process death the executor queue is empty by
+     *  construction, so at STARTUP a stale 'staged' row is genuinely stranded and must be recovered. */
+    @Test
+    void startupSweepDoesRestageTheSameStagedRow() throws Exception {
+        Files.writeString(tempRoot.resolve("processing").resolve("queued.pdf"), "queued");
+        when(repo.findStaleProcessing(anyInt(), anyInt()))
+                .thenReturn(List.of(new ConsumptionFileRepository.Row(
+                        "sha-queued", "queued.pdf", "staged", 0, null)));
+
+        sweep.run(null);   // ApplicationRunner entry point == the startup sweep
+
+        assertTrue(Files.exists(tempRoot.resolve("queued.pdf")),
+                "the startup sweep must re-stage a stranded 'staged' row");
+        assertFalse(Files.exists(tempRoot.resolve("processing").resolve("queued.pdf")));
+        verify(repo).touch("sha-queued");
+    }
+
+    /** A stale 'processing' row has a live heartbeat, so staleness really does mean a dead worker:
+     *  BOTH callers must re-stage it. */
+    @Test
+    void staleProcessingRowIsRestagedByBothCallers() throws Exception {
+        sweep.recover();
+        assertTrue(Files.exists(tempRoot.resolve("stale.pdf")),
+                "the scheduled sweep must re-stage a stale 'processing' row");
+
+        Files.writeString(tempRoot.resolve("processing").resolve("stale.pdf"), "stale-again");
+        sweep.run(null);
+        assertTrue(Files.exists(tempRoot.resolve("stale.pdf")));
+        assertFalse(Files.exists(tempRoot.resolve("processing").resolve("stale.pdf")),
+                "the startup sweep must re-stage a stale 'processing' row too");
+    }
+
+    /** I1: a 'staged' row's canonical location is the WATCH ROOT — the ledger row is written before
+     *  the move, so a crash in between leaves the file there. Resolving it against processing/ only
+     *  would call it "no physical file", set a false last_error and exhaust the retry budget for a
+     *  file that is sitting right where the next poll will find it. */
+    @Test
+    void stagedRowWhoseFileIsStillInTheWatchRootIsNotMarkedMissing() throws Exception {
+        Files.writeString(tempRoot.resolve("crashed.pdf"), "crashed-before-move");
+        when(repo.findStaleProcessing(anyInt(), anyInt()))
+                .thenReturn(List.of(new ConsumptionFileRepository.Row(
+                        "sha-crashed", "crashed.pdf", "staged", 0, null)));
+
+        sweep.run(null);   // startup is the caller that looks at 'staged' rows at all
+
+        verify(repo, never()).markMissing(eq("sha-crashed"), anyInt());
+        assertEquals(0, sweep.lastReconciliation().rowsWithoutFile(),
+                "a file waiting in the watch root is not a divergence");
+        assertTrue(Files.exists(tempRoot.resolve("crashed.pdf")),
+                "the file must be left in the watch root for the next poll");
+    }
+
+    /** ...but a 'staged' row with no file in processing/ AND none in the watch root really is a row
+     *  without data, and must still be marked missing. */
+    @Test
+    void stagedRowWithNoFileAnywhereIsStillMarkedMissing() throws Exception {
+        when(repo.findStaleProcessing(anyInt(), anyInt()))
+                .thenReturn(List.of(new ConsumptionFileRepository.Row(
+                        "sha-vanished", "vanished.pdf", "staged", 0, null)));
+
+        sweep.run(null);
+
+        verify(repo).markMissing(eq("sha-vanished"), eq(3));
+        assertEquals(1, sweep.lastReconciliation().rowsWithoutFile());
+    }
+
     /** A file in processing/ whose ledger row is 'failed' is misplaced: the retry loop only looks
      *  in failed/, so it is invisible to reStage until this sweep relocates it there. Safe unlike
      *  the 'done' case — no consumption_jobs row owns a failed batch. */

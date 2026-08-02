@@ -153,7 +153,7 @@ public class ReassemblyOrchestrator {
                 moveToFailedTracked(staged, hash, fileRepo);
                 return;
             }
-            mover.moveToProcessed(staged);
+            moveToProcessedTracked(staged, hash, fileRepo);
             if (fileRepo != null) fileRepo.markDone(hash);
             log.info("Reassembled {} into {} documents", originalName, parts.size());
         } catch (Exception e) {
@@ -179,13 +179,25 @@ public class ReassemblyOrchestrator {
             log.error("Degrade ingest failed for {}: {}", originalName, e.toString());
         }
         if (ingested) {
-            try { mover.moveToProcessed(staged); }
+            try { moveToProcessedTracked(staged, hash, fileRepo); }
             catch (Exception e) { log.warn("Could not move {} to processed/: {}", originalName, e.toString()); }
             // Batch was salvaged as one pending doc — terminal, not stranded
             if (fileRepo != null) fileRepo.markDone(hash);
         } else {
             if (fileRepo != null) fileRepo.markFailed(hash, "degrade-to-pending ingest failed");
             moveToFailedTracked(staged, hash, fileRepo);
+        }
+    }
+
+    /** Move to processed/ and persist the (possibly collision-suffixed) landed filename, so a later
+     *  {@code consumption_retry} — which resolves {@code processed/<row.filename>} for exactly the
+     *  degraded batches this class flags — finds the file that actually landed. Throws like the
+     *  bare move it replaces, so the caller's error handling is unchanged. */
+    private void moveToProcessedTracked(Path staged, String hash, ConsumptionFileRepository fileRepo)
+            throws java.io.IOException {
+        Path dest = mover.moveToProcessed(staged);
+        if (fileRepo != null && hash != null && dest != null) {
+            fileRepo.updateFilename(hash, dest.getFileName().toString());
         }
     }
 

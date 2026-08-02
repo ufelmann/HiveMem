@@ -95,6 +95,12 @@ public class ConsumptionService implements SeparationApplier {
      *  failed/. */
     public void processStaged(Path staged, String sha256) {
         String filename = staged.getFileName().toString();
+        // Flip the row to 'processing' BEFORE the first read. Two reasons: the row must stop looking
+        // "registered, not yet started" the moment a worker actually starts (the recovery sweep
+        // distinguishes the two states), and startProcessing is the only place `attempts` grows — a
+        // file whose very first read throws (corrupt/truncated PDF) would otherwise be re-staged and
+        // re-read forever without ever burning a retry.
+        if (fileRepo != null) fileRepo.startProcessing(sha256, filename);
         byte[] bytes;
         int pageCount;
         boolean splittable;
@@ -105,11 +111,14 @@ public class ConsumptionService implements SeparationApplier {
                     && PDF.matcher(filename).matches()
                     && pageCount > 1;
         } catch (Exception e) {
+            // The hash is known here, so the ledger row can be closed out properly: without the
+            // markFailed the row would stay 'processing' while the file sits in failed/, invisible
+            // to findRetriableFailed and therefore never retried.
             log.warn("Consumption read failed for {}: {}", filename, e.toString());
-            tryMoveFailed(staged);
+            if (fileRepo != null) fileRepo.markFailed(sha256, e.toString());
+            tryMoveFailed(staged, sha256);
             return;
         }
-        if (fileRepo != null) fileRepo.startProcessing(sha256, filename);
         if (props.isReassemblyEnabled() && reassembly != null
                 && PDF.matcher(filename).matches() && pageCount > 1) {
             // Content-based reassembly takes precedence over contiguous separation when enabled.
@@ -121,7 +130,7 @@ public class ConsumptionService implements SeparationApplier {
             separateStaged(staged, filename, bytes, pageCount, sha256);
         } else {
             try {
-                ingestSingle(staged, filename, bytes);
+                ingestSingle(staged, filename, bytes, sha256);
                 if (fileRepo != null) fileRepo.markDone(sha256);
             } catch (Exception e) {
                 log.warn("Consumption ingest failed for {}: {}", filename, e.toString());
@@ -147,15 +156,26 @@ public class ConsumptionService implements SeparationApplier {
         }
     }
 
-    private void ingestSingle(Path file, String filename, byte[] bytes) throws Exception {
+    private void ingestSingle(Path file, String filename, byte[] bytes, String hash) throws Exception {
         String mime = URLConnection.guessContentTypeFromName(filename);
         if (mime == null) mime = "application/octet-stream";
         try (InputStream in = new ByteArrayInputStream(bytes)) {
             attachments.ingest(in, filename, mime, props.getRealm(), null, null, null,
                     "consumption", "committed", "consumption:");
         }
-        mover.moveToProcessed(file);
+        moveToProcessedTracked(file, hash);
         log.info("Consumed {} -> committed cell in realm {}", filename, props.getRealm());
+    }
+
+    /** Move to processed/ and persist the landed filename, exactly as the failed/ paths do.
+     *  {@link ConsumptionFileMover#moveToRoot} appends a -1/-2 suffix on collision, so a row whose
+     *  file landed under a suffixed name would otherwise be unreachable: {@code ConsumptionRetryService}
+     *  resolves {@code processed/<row.filename>} and would answer {@code restaged:false}. */
+    private void moveToProcessedTracked(Path file, String hash) throws IOException {
+        Path dest = mover.moveToProcessed(file);
+        if (fileRepo != null && hash != null && dest != null) {
+            fileRepo.updateFilename(hash, dest.getFileName().toString());
+        }
     }
 
     /**
@@ -283,7 +303,9 @@ public class ConsumptionService implements SeparationApplier {
             // Mark done BEFORE the move: sub-docs are already ingested, so a move failure must not
             // flip the job to 'failed'. The source path is now the processing/ staged path.
             jobs.markDone(job.correlationId());
-            tryMoveProcessedTolerant(Path.of(job.sourcePath()));
+            // The S3 object was uploaded from the very bytes the ledger row was keyed on, so
+            // sha256(pdf) IS that row's hash — no re-read of the staged file needed.
+            tryMoveProcessedTolerant(Path.of(job.sourcePath()), sha256(pdf));
             log.info("Applied separation run {} (job {}): {} documents",
                     runId, job.correlationId(), parts.size());
         } catch (Exception e) {
@@ -329,8 +351,8 @@ public class ConsumptionService implements SeparationApplier {
     }
 
     /** Move a (staged) source to processed/ but never fail the caller on a move error — the work is done. */
-    private void tryMoveProcessedTolerant(Path file) {
-        try { mover.moveToProcessed(file); }
+    private void tryMoveProcessedTolerant(Path file, String hash) {
+        try { moveToProcessedTracked(file, hash); }
         catch (Exception io) { log.warn("Could not move {} to processed/: {}", file, io.toString()); }
     }
 }
