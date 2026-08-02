@@ -36,7 +36,9 @@ public class ConsumptionQueueToolHandler implements ToolHandler {
 
     @Override public String description() {
         return "Scan ingest review queue (admin-only): failed files, batches that lost vision "
-                + "metadata, and filesystem/ledger divergences found by the last reconciliation.";
+                + "metadata, and filesystem/ledger divergences found by reconciliation. The "
+                + "reconciliation counters are cumulative since process start, not just the last "
+                + "sweep.";
     }
 
     @Override public Map<String, Object> inputSchema() {
@@ -48,10 +50,27 @@ public class ConsumptionQueueToolHandler implements ToolHandler {
     @Override public Object call(AuthPrincipal principal, JsonNode arguments) {
         ConsumptionQueueService service = serviceProvider.getIfAvailable();
         if (service == null) {
-            return Map.of("files", java.util.List.of(), "degradedBatches", java.util.List.of(),
-                    "reconciliation", Map.of(), "stateCounts", Map.of(), "unavailable", true);
+            return unavailable();
         }
         Integer limit = WriteArgumentParser.optionalInteger(arguments, "limit");
         return service.queue(limit == null ? 50 : Math.min(Math.max(limit, 1), 200));
+    }
+
+    /**
+     * Same key names and shape as {@link ConsumptionQueueService.Queue} (jOOQ's Jackson
+     * serialization of that record), just all-empty/zero — a UI that destructures
+     * {@code failedFiles}/{@code reconciliation.orphansRestaged} etc. must get empty collections
+     * and zero counters here, not a differently-named field that resolves to {@code undefined}.
+     */
+    private static Map<String, Object> unavailable() {
+        return Map.of(
+                "failedFiles", java.util.List.of(),
+                "degradedBatches", java.util.List.of(),
+                "reconciliation", Map.of(
+                        "orphansRestaged", 0,
+                        "rowsWithoutFile", 0,
+                        "misplacedFailed", 0),
+                "stateCounts", Map.of(),
+                "unavailable", true);
     }
 }

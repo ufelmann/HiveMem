@@ -1,38 +1,50 @@
 package com.hivemem.tools.admin;
 
 import com.hivemem.auth.AuthPrincipal;
-import com.hivemem.consumption.ConsumptionFileRepository;
+import com.hivemem.consumption.ConsumptionProperties;
+import com.hivemem.consumption.ConsumptionRetryService;
 import com.hivemem.mcp.ToolHandler;
 import com.hivemem.mcp.ToolInputSchema;
 import com.hivemem.write.WriteArgumentParser;
+import java.util.HashMap;
 import java.util.Map;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 
-/** Re-stage one consumed file by content hash. Resetting the row to 'staged' is what makes the
- *  file eligible again: sha256 is UNIQUE, so without the reset a re-fed identical scan keeps its
- *  old terminal state and is skipped forever.
+/**
+ * Re-stage one consumed file by content hash: locate the physical file in {@code failed/} or
+ * {@code processing/} and move it back to the watch root (mirrors
+ * {@link com.hivemem.consumption.ConsumptionRecoverySweep#recover}). Content-based dedup (sha256
+ * is UNIQUE) makes a re-run safe once {@code ConsumptionWatcher} re-hashes and re-stages it.
  *
- *  <p>{@link ConsumptionFileRepository} is an unconditional {@code @Repository} (the
- *  {@code consumption_file} table exists regardless of {@code hivemem.consumption.enabled}), so
- *  unlike {@code ConsumptionQueueToolHandler} this handler needs no availability guard — it is
- *  injected directly, the same way every other admin tool handler in this package is. */
+ * <p>{@link ConsumptionRetryService} and {@link ConsumptionProperties} are both unconditional
+ * beans (unlike {@code ConsumptionQueueService}), so no {@code ObjectProvider} guard is needed for
+ * Spring wiring here. But {@code ConsumptionWatcher} itself IS
+ * {@code @ConditionalOnProperty(hivemem.consumption.enabled)} — if the pipeline is off, nothing
+ * will ever pick the file back up from the watch root, so moving it there would silently strand
+ * it. This handler checks {@link ConsumptionProperties#isEnabled()} before attempting a move and
+ * returns the same "unavailable" shape as an unknown-hash miss instead.
+ */
 @Component
 @Order(23)
 public class ConsumptionRetryToolHandler implements ToolHandler {
 
-    private final ConsumptionFileRepository repo;
+    private final ConsumptionRetryService service;
+    private final ConsumptionProperties props;
 
-    public ConsumptionRetryToolHandler(ConsumptionFileRepository repo) {
-        this.repo = repo;
+    public ConsumptionRetryToolHandler(ConsumptionRetryService service, ConsumptionProperties props) {
+        this.service = service;
+        this.props = props;
     }
 
     @Override public String name() { return "consumption_retry"; }
 
     @Override public String description() {
         return "Re-stage a consumed scan file by its sha256 so the pipeline ingests it again "
-                + "(admin-only). Content-based dedup makes a re-run safe.";
+                + "(admin-only): moves the physical file from failed/ or processing/ back to the "
+                + "watch root without touching the ledger row — the next poll re-hashes it and "
+                + "resets the row itself. Content-based dedup makes a re-run safe.";
     }
 
     @Override public Map<String, Object> inputSchema() {
@@ -43,11 +55,16 @@ public class ConsumptionRetryToolHandler implements ToolHandler {
 
     @Override public Object call(AuthPrincipal principal, JsonNode arguments) {
         String sha256 = WriteArgumentParser.requiredText(arguments, "sha256");
-        var row = repo.findByHash(sha256);
-        if (row.isEmpty()) {
-            return Map.of("sha256", sha256, "restaged", false, "error", "unknown sha256");
+        if (!props.isEnabled()) {
+            return Map.of("sha256", sha256, "restaged", false, "error", "consumption disabled");
         }
-        repo.stage(sha256, row.get().filename());
-        return Map.of("sha256", sha256, "restaged", true);
+        ConsumptionRetryService.Result result = service.retry(sha256);
+        Map<String, Object> out = new HashMap<>();
+        out.put("sha256", result.sha256());
+        out.put("restaged", result.restaged());
+        if (result.error() != null) {
+            out.put("error", result.error());
+        }
+        return out;
     }
 }
