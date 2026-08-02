@@ -1,6 +1,7 @@
 package com.hivemem.sync;
 
 import com.hivemem.embedding.EmbeddingClient;
+import com.hivemem.summarize.NeedsSummaryDecider;
 import tools.jackson.databind.JsonNode;
 import org.jooq.DSLContext;
 import org.slf4j.Logger;
@@ -112,12 +113,17 @@ public class OpReplayer {
         }
         String content = text(p, "content");
         String summary = text(p, "summary");
-        // encodeForCell returns null by contract for long content without a summary: mirror the
-        // local write path — insert with NULL embedding and tag needs_summary instead of NPEing.
+        // encodeForCell returns null by contract for content beyond the backend's maxChars()
+        // without a summary: mirror the local write path — insert with NULL embedding instead
+        // of NPEing. needs_summary is a separate question (enrichment, threshold 500 chars) and
+        // must not be inferred from embeddability (the cap, up to 8000 chars on Ollama): ask
+        // NeedsSummaryDecider, like WriteToolService and AttachmentService do.
         List<Float> embedding = embeddingClient.encodeForCell(content, summary);
         Float[] embArr = embedding == null ? null : embedding.toArray(Float[]::new);
         String[] tags = arrayField(p, "tags");
-        if (embArr == null) tags = appendIfMissing(tags, "needs_summary");
+        if (NeedsSummaryDecider.needsSummary(content, summary)) {
+            tags = appendIfMissing(tags, "needs_summary");
+        }
         String[] keyPoints = arrayField(p, "key_points");
         OffsetDateTime validFrom = p.hasNonNull("valid_from")
                 ? OffsetDateTime.parse(p.get("valid_from").asText()) : null;
@@ -152,7 +158,8 @@ public class OpReplayer {
         }
         String newContent = text(p, "new_content");
         String newSummary = text(p, "new_summary");
-        // Same null-embedding contract as replayAddCell: NULL vector + needs_summary tag.
+        // Same null-embedding contract as replayAddCell: NULL vector when beyond maxChars() and
+        // no summary. needs_summary is decided independently below, via the decider.
         List<Float> embedding = embeddingClient.encodeForCell(newContent, newSummary);
         Float[] embArr = embedding == null ? null : embedding.toArray(Float[]::new);
         String status = textOrDefault(p, "status", "committed");
@@ -167,7 +174,8 @@ public class OpReplayer {
                 ? text(p, "new_insight") : meta.get("insight", String.class);
         String[] mergedTags = mergeTags(meta.get("tags", String[].class),
                 p.hasNonNull("new_tags") ? arrayField(p, "new_tags") : null);
-        String[] tags = embArr == null ? appendIfMissing(mergedTags, "needs_summary") : mergedTags;
+        String[] tags = NeedsSummaryDecider.needsSummary(newContent, newSummary)
+                ? appendIfMissing(mergedTags, "needs_summary") : mergedTags;
 
         dsl.transaction(ctx -> {
             var tx = ctx.dsl();
