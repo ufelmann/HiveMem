@@ -1,7 +1,12 @@
 package com.hivemem.consumption;
 
+import java.io.IOException;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -32,17 +37,29 @@ public class ConsumptionRecoverySweep implements ApplicationRunner {
         this.mover = new ConsumptionFileMover(root);
     }
 
+    /** What the last reconciliation found. Read by consumption_queue so divergences become
+     *  visible instead of merely repaired — the 2026-07-19 failure was not that something broke,
+     *  it was that nobody could find out. */
+    public record Reconciliation(int orphansRestaged, int doneLeftovers, int rowsWithoutFile) {}
+
+    private volatile Reconciliation last = new Reconciliation(0, 0, 0);
+
+    public Reconciliation lastReconciliation() { return last; }
+
     @Override public void run(ApplicationArguments args) { recover(); }
 
     @Scheduled(fixedRateString = "#{@consumptionProperties.recoveryInterval.toMillis()}")
     public void recover() {
         int stale = (int) props.getRecoveryStaleThreshold().toSeconds();
-        for (var r : repo.findStaleProcessing(stale, 500)) {
-            reStage(root.resolve(ConsumptionFileMover.PROCESSING).resolve(r.filename()), r, "stale-processing");
+        var staleRows = repo.findStaleProcessing(stale, 500);
+        for (var r : staleRows) {
+            Path f = root.resolve(ConsumptionFileMover.PROCESSING).resolve(r.filename());
+            reStage(f, r, "stale-processing");
         }
         for (var r : repo.findRetriableFailed(props.getFailedRetryLimit(), 500)) {
             reStage(root.resolve(ConsumptionFileMover.FAILED).resolve(r.filename()), r, "retry-failed");
         }
+        last = reconcile(staleRows);
     }
 
     private void reStage(Path file, ConsumptionFileRepository.Row r, String why) {
@@ -54,5 +71,54 @@ public class ConsumptionRecoverySweep implements ApplicationRunner {
         } catch (Exception e) {
             log.warn("Recovery could not re-stage {}: {}", r.filename(), e.toString());
         }
+    }
+
+    /** Compares processing/ against the ledger in BOTH directions. The ledger-driven loop above
+     *  cannot see a file with no row; this can. */
+    private Reconciliation reconcile(List<ConsumptionFileRepository.Row> staleRows) {
+        Path processingDir = root.resolve(ConsumptionFileMover.PROCESSING);
+        List<Path> files = new ArrayList<>();
+        try (DirectoryStream<Path> s = Files.newDirectoryStream(processingDir)) {
+            for (Path p : s) if (Files.isRegularFile(p)) files.add(p);
+        } catch (IOException e) {
+            log.warn("Reconciliation could not list {}: {}", processingDir, e.toString());
+            return last;
+        }
+        List<String> names = new ArrayList<>();
+        for (Path p : files) names.add(p.getFileName().toString());
+        Map<String, ConsumptionFileRepository.Row> rows = repo.findByFilenames(names);
+
+        int orphans = 0;
+        int leftovers = 0;
+        for (Path p : files) {
+            ConsumptionFileRepository.Row row = rows.get(p.getFileName().toString());
+            try {
+                if (row == null) {
+                    mover.moveToRoot(p);
+                    orphans++;
+                    log.warn("Reconciliation re-staged {}: file in processing/ with no ledger row",
+                            p.getFileName());
+                } else if ("done".equals(row.state())) {
+                    mover.moveToProcessed(p);
+                    leftovers++;
+                    log.info("Reconciliation moved {} to processed/: ledger says done",
+                            p.getFileName());
+                }
+            } catch (IOException e) {
+                log.warn("Reconciliation could not move {}: {}", p.getFileName(), e.toString());
+            }
+        }
+
+        int missing = 0;
+        for (var r : staleRows) {
+            Path f = processingDir.resolve(r.filename());
+            if (!Files.isRegularFile(f)) {
+                repo.markFailed(r.sha256(), "no physical file in processing/");
+                missing++;
+                log.warn("Reconciliation marked {} failed: row is stale and has no physical file",
+                        r.filename());
+            }
+        }
+        return new Reconciliation(orphans, leftovers, missing);
     }
 }

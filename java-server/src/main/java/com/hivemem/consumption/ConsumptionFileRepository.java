@@ -1,7 +1,10 @@
 package com.hivemem.consumption;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.jooq.DSLContext;
 import org.jooq.Record;
@@ -110,6 +113,19 @@ public class ConsumptionFileRepository {
                 """, maxAttempts, limit);
         List<Row> out = new ArrayList<>();
         for (Record r : rows) out.add(map(r));
+        return out;
+    }
+
+    /** Rows for the given on-disk filenames, keyed by filename. Used by the reconciliation sweep to
+     *  decide what a physical file in processing/ actually is. */
+    public Map<String, Row> findByFilenames(Collection<String> filenames) {
+        if (filenames.isEmpty()) return Map.of();
+        var rows = dsl.fetch(
+                "SELECT sha256, filename, state, attempts, last_error FROM consumption_file "
+                        + "WHERE filename = ANY(?)",
+                (Object) filenames.toArray(new String[0]));
+        Map<String, Row> out = new HashMap<>();
+        for (Record r : rows) out.put(r.get("filename", String.class), map(r));
         return out;
     }
 
