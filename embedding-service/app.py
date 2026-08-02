@@ -3,7 +3,8 @@ import os
 import threading
 from http.server import ThreadingHTTPServer
 
-from app_onnx import Handler, INFO
+import backend
+from server import Handler
 
 # Hard cap on concurrent handler threads. With HTTP/1.1 keep-alive a thread stays
 # bound to its connection, so the cap must comfortably exceed the Java client's
@@ -34,7 +35,7 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
 
 
 if __name__ == "__main__":
-    print("[bootstrap] /info =", json.dumps(INFO, indent=2), flush=True)
+    print("[bootstrap] /info =", json.dumps(backend.info(), indent=2), flush=True)
     print("Embedding service listening on port 80", flush=True)
     # Threading server: the previous single-threaded HTTPServer served one request at a time,
     # so a burst (e.g. several sub-document embeds during one separation apply + the OCR backfill)
