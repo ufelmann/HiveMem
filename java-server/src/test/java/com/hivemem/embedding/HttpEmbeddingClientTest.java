@@ -81,4 +81,57 @@ class HttpEmbeddingClientTest {
         assertThat(output).contains("Embedding call failed").contains("application/octet-stream");
         server.verify();
     }
+
+    private HttpEmbeddingClient stubInfo(String json) {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        HttpEmbeddingClient client = new HttpEmbeddingClient(
+                builder,
+                new EmbeddingProperties(java.net.URI.create("https://embeddings.local"), java.time.Duration.ofSeconds(2)),
+                false);
+        server.expect(requestTo("https://embeddings.local/info"))
+                .andExpect(method(org.springframework.http.HttpMethod.GET))
+                .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
+        return client;
+    }
+
+    @Test
+    void bindsMaxCharsFromSnakeCaseJson() {
+        HttpEmbeddingClient client = stubInfo(
+                InfoStub.json("m/mrl1024/t2560/contentfirst", 1024, 8000));
+        assertThat(client.maxChars()).isEqualTo(8000);
+    }
+
+    @Test
+    void rejectsInfoWithoutMaxChars_asVersionSkew() {
+        HttpEmbeddingClient client = stubInfo("{\"model\":\"m\",\"dimension\":1024}");
+        // Assert the MESSAGE, not just the class: getInfo() throws IllegalStateException
+        // for several unrelated reasons, so a class-only assertion passes for the wrong one.
+        assertThatThrownBy(client::getInfo)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("max_chars");
+    }
+
+    @Test
+    void maxCharsFallsBackInsteadOfThrowing_whenRefreshFails() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        HttpEmbeddingClient client = new HttpEmbeddingClient(
+                builder,
+                new EmbeddingProperties(java.net.URI.create("https://embeddings.local"), java.time.Duration.ofSeconds(2)),
+                false);
+
+        server.expect(requestTo("https://embeddings.local/info"))
+                .andExpect(method(org.springframework.http.HttpMethod.GET))
+                .andRespond(withSuccess(InfoStub.json("m", 1024, 8000), MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://embeddings.local/info"))
+                .andExpect(method(org.springframework.http.HttpMethod.GET))
+                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators
+                        .withServerError());
+
+        client.getInfo();
+        client.invalidateCaches();
+
+        assertThat(client.maxChars()).isEqualTo(8000);
+    }
 }

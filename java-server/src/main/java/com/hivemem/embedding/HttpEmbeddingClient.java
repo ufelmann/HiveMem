@@ -1,5 +1,6 @@
 package com.hivemem.embedding;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.slf4j.Logger;
@@ -32,6 +33,10 @@ public class HttpEmbeddingClient implements EmbeddingClient {
     private final Cache<String, List<Float>> vectorCache;
     /** Cached /info result serving {@link #dimension()} without an HTTP hop per caller. */
     private volatile EmbeddingInfo cachedInfo;
+    /** Deliberately NOT cleared by invalidateCaches(): this is a backend property, not a
+     *  per-migration one, and encodeForCell runs on the request path where getInfo() has
+     *  neither retry nor EmbeddingUnavailableException wrapping. */
+    private volatile int cachedMaxChars = -1;
 
     @Autowired
     public HttpEmbeddingClient(RestClient.Builder builder, EmbeddingProperties properties) {
@@ -65,7 +70,20 @@ public class HttpEmbeddingClient implements EmbeddingClient {
         if (response == null || response.model() == null) {
             throw new IllegalStateException("Embedding service /info returned invalid response");
         }
+        if (response.model().isBlank()) {
+            throw new IllegalStateException("Embedding service returned no model name");
+        }
+        if (response.dimension() <= 0) {
+            throw new IllegalStateException("Embedding service returned dimension " + response.dimension());
+        }
+        int maxChars = response.maxChars() != null ? response.maxChars() : 0;
+        if (maxChars <= 0) {
+            throw new IllegalStateException(
+                    "Embedding service returned no usable max_chars — the sidecar is older than this "
+                  + "server. Deploy both images together.");
+        }
         this.expectedDimension = response.dimension();
+        this.cachedMaxChars = maxChars;
         EmbeddingInfo info = new EmbeddingInfo(response.model(), response.dimension());
         this.cachedInfo = info;
         return info;
@@ -82,6 +100,20 @@ public class HttpEmbeddingClient implements EmbeddingClient {
     public void invalidateCaches() {
         cachedInfo = null;
         vectorCache.invalidateAll();
+    }
+
+    /** Deliberately NOT cleared by invalidateCaches(): this is a backend property, not a
+     *  per-migration one, and encodeForCell runs on the request path where getInfo() has
+     *  neither retry nor EmbeddingUnavailableException wrapping. */
+    @Override
+    public int maxChars() {
+        if (cachedMaxChars > 0) return cachedMaxChars;
+        try {
+            return getInfo() != null ? cachedMaxChars : CONTENT_EMBED_MAX_CHARS;
+        } catch (Exception e) {
+            log.warn("max_chars refresh failed, using {}: {}", CONTENT_EMBED_MAX_CHARS, e.getMessage());
+            return CONTENT_EMBED_MAX_CHARS;
+        }
     }
 
     @Override
@@ -188,7 +220,11 @@ public class HttpEmbeddingClient implements EmbeddingClient {
         return sb.toString();
     }
 
-    record InfoResponse(String model, int dimension) {
+    /** maxChars is boxed (not int) so a missing/absent max_chars in the JSON — the exact
+     *  version-skew case this endpoint must reject — binds to null instead of making Jackson
+     *  throw before the {@code getInfo()} validation below gets a chance to produce a clear
+     *  "deploy both images together" message. */
+    record InfoResponse(String model, int dimension, @JsonProperty("max_chars") Integer maxChars) {
     }
 
     record EmbeddingResponse(List<Float> vector, String model, Integer dimension) {

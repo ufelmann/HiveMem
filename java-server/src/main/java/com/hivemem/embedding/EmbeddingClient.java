@@ -46,4 +46,12 @@ public interface EmbeddingClient {
     /** Drop any cached vectors/model info (e.g. after an embedding-model migration). */
     default void invalidateCaches() {
     }
+
+    /** Longest content this backend can embed meaningfully, from /info.
+     *  The default is the historical ONNX value; real implementors override it.
+     *  (Mockito mocks return 0 regardless of this default — they are safe only
+     *  because every mock-based test stubs encodeForCell directly.) */
+    default int maxChars() {
+        return CONTENT_EMBED_MAX_CHARS;
+    }
 }
