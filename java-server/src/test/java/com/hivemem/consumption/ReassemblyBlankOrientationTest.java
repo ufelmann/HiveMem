@@ -84,7 +84,7 @@ class ReassemblyBlankOrientationTest {
                 .thenAnswer(inv -> new PageOrienter.PageOrientation(inv.getArgument(1), 0, false, 0.9));
         when(extractor.extract(anyString(), anyInt(), any()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
-                        "S", null, null, "letter", null, "p", false));
+                        "S", null, null, "letter", null, "p", false, false));
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1, 2)));
 
         stubPages(rasterizer, List.of(png(true), png(false)));
@@ -120,7 +120,7 @@ class ReassemblyBlankOrientationTest {
                 .thenAnswer(inv -> new PageOrienter.PageOrientation(inv.getArgument(1), 0, false, 0.9));
         when(extractor.extract(anyString(), anyInt(), any()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
-                        "S", null, null, "letter", null, "p", false));
+                        "S", null, null, "letter", null, "p", false, false));
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1)));
 
         stubPages(rasterizer, List.of(png(false)));
@@ -152,7 +152,7 @@ class ReassemblyBlankOrientationTest {
                 .thenReturn(new PageOrienter.PageOrientation(1, 180, false, 0.99));
         when(extractor.extract(anyString(), anyInt(), any()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
-                        "S", null, null, "letter", null, "p", false));
+                        "S", null, null, "letter", null, "p", false, false));
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1)));
 
         stubPages(rasterizer, List.of(png(true)));
@@ -190,7 +190,7 @@ class ReassemblyBlankOrientationTest {
         });
         when(extractor.extract(anyString(), anyInt(), any()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
-                        "S", null, null, "letter", null, "p", false));
+                        "S", null, null, "letter", null, "p", false, false));
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1, 2)));
 
         stubPages(rasterizer, List.of(png(true), png(true)));

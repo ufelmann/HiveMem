@@ -75,6 +75,7 @@ public class ReassemblyOrchestrator {
             Set<Integer> blank = new HashSet<>();
             List<PageMetadataExtractor.PageMetadata> meta = new ArrayList<>();
             int[] pageTotal = {0};
+            int[] degraded = {0};
 
             // One pass: render, orient, extract, pixel-check, discard. Nothing but the small
             // per-page records survives the iteration, so heap use no longer scales with batch size.
@@ -94,6 +95,7 @@ public class ReassemblyOrchestrator {
                                 extractor.extract(props.getRealm(), pageNo, upright);
                         if (m.blank()) blank.add(pageNo);
                         meta.add(m);
+                        if (m.degraded()) degraded[0]++;
 
                         if (props.isBlankFilterEnabled()
                                 && BlankPageDetector.isNearWhite(png, props.getBlankWhiteFraction())) {
@@ -105,6 +107,13 @@ public class ReassemblyOrchestrator {
                     });
 
             int pageTotalCount = pageTotal[0];
+            if (hash != null && fileRepo != null) {
+                fileRepo.recordPageStats(hash, pageTotalCount, degraded[0]);
+            }
+            if (degraded[0] > 0) {
+                log.warn("{}: {} of {} page(s) lost their vision metadata — boundaries may be wrong",
+                        originalName, degraded[0], pageTotalCount);
+            }
             List<DocGroup> groups = assembler.assemble(props.getRealm(), meta);
             List<PageReassembler.ResultDoc> docs = reassembler.toDocuments(groups, pageTotalCount);
 

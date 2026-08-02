@@ -114,6 +114,12 @@ public class ConsumptionFileRepository {
                 filename, sha256);
     }
 
+    /** Record how many pages a batch had and how many of them lost their vision metadata. */
+    public void recordPageStats(String sha256, int totalPages, int degradedPages) {
+        dsl.execute("UPDATE consumption_file SET total_pages = ?, degraded_pages = ?, "
+                + "updated_at = now() WHERE sha256 = ?", totalPages, degradedPages, sha256);
+    }
+
     /** Returns rows in 'failed' state that have not yet exhausted their retry budget. */
     public List<Row> findRetriableFailed(int maxAttempts, int limit) {
         var rows = dsl.fetch("""

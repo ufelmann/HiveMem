@@ -61,7 +61,7 @@ class ReassemblyPartialFailureTest {
         PageMetadataExtractor extractor = mock(PageMetadataExtractor.class);
         when(extractor.extract(anyString(), anyInt(), any()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
-                        "S", null, null, "letter", null, "p", false));
+                        "S", null, null, "letter", null, "p", false, false));
         return extractor;
     }
 

@@ -16,7 +16,8 @@ public class PageMetadataExtractor {
 
     /** What pass 3 needs to assemble mailings. All String fields nullable. */
     public record PageMetadata(int page, String sender, String date, String pageLabel,
-                               String docType, String reference, String summary, boolean blank) {}
+                               String docType, String reference, String summary, boolean blank,
+                               boolean degraded) {}
 
     static final String PROMPT = """
             This is ONE page of a scanned German letter/document batch. Read it and extract:
@@ -58,11 +59,12 @@ public class PageMetadataExtractor {
                         n.path("doc_type").asString(null),
                         n.path("reference").asString(null),
                         n.path("summary").asString(null),
-                        n.path("blank").asBoolean(false));
+                        n.path("blank").asBoolean(false),
+                        false);
             } catch (Exception e) {
                 log.warn("Metadata attempt {}/2 failed for page {}: {}", attempt, page, e.toString());
             }
         }
-        return new PageMetadata(page, null, null, null, null, null, null, false);
+        return new PageMetadata(page, null, null, null, null, null, null, false, true);
     }
 }

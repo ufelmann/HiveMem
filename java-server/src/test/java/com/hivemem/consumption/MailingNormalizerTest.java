@@ -11,15 +11,15 @@ class MailingNormalizerTest {
 
     /** Non-blank page with a printed label and no sender/date. */
     private static PageMetadata labelled(int page, String label) {
-        return new PageMetadata(page, null, null, label, "letter", null, "a page", false);
+        return new PageMetadata(page, null, null, label, "letter", null, "a page", false, false);
     }
 
     private static PageMetadata blank(int page) {
-        return new PageMetadata(page, null, null, null, "blank", null, "empty", true);
+        return new PageMetadata(page, null, null, null, "blank", null, "empty", true, false);
     }
 
     private static PageMetadata plain(int page) {
-        return new PageMetadata(page, null, null, null, "letter", null, "a page", false);
+        return new PageMetadata(page, null, null, null, "letter", null, "a page", false, false);
     }
 
     private static DocGroup group(String id, double confidence, int... pages) {
@@ -30,12 +30,12 @@ class MailingNormalizerTest {
     }
 
     private static PageMetadata letter(int page, String sender, String date) {
-        return new PageMetadata(page, sender, date, null, "letter", null, "a letter", false);
+        return new PageMetadata(page, sender, date, null, "letter", null, "a letter", false, false);
     }
 
     private static PageMetadata withLabel(PageMetadata m, String label) {
         return new PageMetadata(m.page(), m.sender(), m.date(), label, m.docType(), m.reference(),
-                m.summary(), m.blank());
+                m.summary(), m.blank(), m.degraded());
     }
 
     @Test
@@ -78,7 +78,7 @@ class MailingNormalizerTest {
         // Blank pages never take part in a label family anywhere - not in ordering, not in the
         // merge insertion rule. Returning null here is the single place that guarantees it.
         PageMetadata blankWithFooterLabel =
-                new PageMetadata(1, null, null, "Seite 2 von 2", "blank", null, "empty", true);
+                new PageMetadata(1, null, null, "Seite 2 von 2", "blank", null, "empty", true, false);
         assertThat(MailingNormalizer.label(blankWithFooterLabel)).isNull();
     }
 
@@ -149,7 +149,7 @@ class MailingNormalizerTest {
     void movesBlankPagesToTheEndAndIgnoresTheirLabels() {
         DocGroup g = group("m", 0.9, 9, 7, 8);
         List<DocGroup> out = new MailingNormalizer().normalize(List.of(g), List.of(
-                new PageMetadata(9, null, null, "Seite 1 von 2", "blank", null, "empty", true),
+                new PageMetadata(9, null, null, "Seite 1 von 2", "blank", null, "empty", true, false),
                 labelled(7, "Seite 2 von 2"), labelled(8, "Seite 1 von 2")));
         // the blank's label does not join the family; pages 7+8 form a complete 1..2 and sort
         assertThat(out.get(0).pages).containsExactly(8, 7, 9);
@@ -238,7 +238,7 @@ class MailingNormalizerTest {
                 letter(9, "Finanzamt", " Stand 01.01.2025"),         // leading blank
                 letter(10, "Finanzamt", "Stand: 01.01.2025"),        // colon variant
                 letter(11, "Finanzamt", "stand 01.01.2025"),         // lowercase variant
-                new PageMetadata(12, "Finanzamt", "05.09.2025", null, "blank", null, "x", true)));
+                new PageMetadata(12, "Finanzamt", "05.09.2025", null, "blank", null, "x", true, false)));
         for (int page = 1; page <= 12; page++) {
             DocGroup g = group("m", 0.9, page);
             assertThat(MailingNormalizer.anchorKey(g, meta)).as("page " + page).isNull();
@@ -285,9 +285,9 @@ class MailingNormalizerTest {
         DocGroup b = group("b", 0.4, 2);
         List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
                 new PageMetadata(1, "Finanzamt Musterstadt", "05.09.2025", null, "Bescheid",
-                        "12/345/67890", "page one", false),
+                        "12/345/67890", "page one", false, false),
                 new PageMetadata(2, "FINANZAMT  MUSTERSTADT", "05.09.2025", null, "Bescheid",
-                        "12/345/6789O", "page two", false)));
+                        "12/345/6789O", "page two", false, false)));
         assertThat(out).hasSize(1);
         assertThat(out.get(0).id).isEqualTo("a");
         assertThat(out.get(0).descriptor).isEqualTo("a descriptor");
