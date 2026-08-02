@@ -42,9 +42,17 @@ class OllamaBackendTest(unittest.TestCase):
         # load_ollama_failing() is unwound here, regardless of which test ran.
         self.addCleanup(mock.patch.stopall)
 
-    def load_module(self, env):
+    def load_module(self, env, skip_bootstrap=True):
+        # These unit tests exercise bootstrap(), embed() etc. as individual
+        # functions and call bootstrap() explicitly where they need it, so
+        # importing must not trigger the module's own auto-bootstrap (which
+        # needs urlopen stubbed *before* import -- see load_module_bootstrapping
+        # below for the test that exercises that real wiring instead).
+        full_env = dict(env)
+        if skip_bootstrap:
+            full_env.setdefault("EMBEDDING_SKIP_BOOTSTRAP", "1")
         sys.modules.pop(MODULE_NAME, None)
-        with mock.patch.dict(_ENV, env, clear=False):
+        with mock.patch.dict(_ENV, full_env, clear=False):
             spec = importlib.util.spec_from_file_location(MODULE_NAME, MODULE_PATH)
             module = importlib.util.module_from_spec(spec)
             sys.modules[MODULE_NAME] = module
@@ -143,6 +151,51 @@ class OllamaBackendTest(unittest.TestCase):
         mod = self.load_ollama_failing(urllib.error.URLError("connection refused"))
         with self.assertRaises(urllib.error.URLError):
             mod.embed("x", mode="document")
+
+
+class OllamaAutoBootstrapTest(unittest.TestCase):
+    """Closes the wiring gap: nothing in app.py/server.py/backend.py ever calls
+    bootstrap() explicitly -- backend.py only rebinds the symbol -- so the
+    ollama backend must self-bootstrap on import, the same way backend_onnx.py
+    does behind its SKIP_BOOTSTRAP guard. A test that calls bootstrap() itself
+    (as every test above does) cannot catch a missing call site; it has to go
+    through backend.py's real import path, exactly like app.py's `import
+    backend` does.
+    """
+
+    BACKEND_MODULE_NAME = "backend"
+    OLLAMA_MODULE_NAME = "backend_ollama"
+    BACKEND_MODULE_PATH = Path(__file__).with_name("backend.py")
+
+    def setUp(self):
+        self.addCleanup(mock.patch.stopall)
+        for name in (self.BACKEND_MODULE_NAME, self.OLLAMA_MODULE_NAME):
+            sys.modules.pop(name, None)
+            self.addCleanup(sys.modules.pop, name, None)
+
+    def load_backend_through_selection(self, fake_vector):
+        def fake_urlopen(req, timeout=120):
+            if req.full_url.endswith("/api/tags"):
+                return _FakeResponse({})
+            return _FakeResponse({"embeddings": [fake_vector]})
+
+        # Stubbed *before* the import below, because the import is what
+        # triggers bootstrap() -- unlike the tests above, EMBEDDING_SKIP_BOOTSTRAP
+        # is deliberately left unset here.
+        mock.patch.object(urllib.request, "urlopen", fake_urlopen).start()
+        env = {"EMBEDDING_BACKEND": "ollama", "EMBEDDING_DIMS": "2"}
+        with mock.patch.dict(_ENV, env, clear=False):
+            spec = importlib.util.spec_from_file_location(
+                self.BACKEND_MODULE_NAME, self.BACKEND_MODULE_PATH)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[self.BACKEND_MODULE_NAME] = module
+            spec.loader.exec_module(module)
+        return module
+
+    def test_selecting_ollama_backend_bootstraps_on_import(self):
+        mod = self.load_backend_through_selection(fake_vector=[1.0, 0.0])
+        self.assertNotEqual(mod.info()["model"], "")
+        self.assertEqual(mod.info()["max_chars"], 8000)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@ DIMS = int(os.environ.get("EMBEDDING_DIMS", "1024"))
 MAX_TOKENS = int(os.environ.get("EMBEDDING_MAX_TOKENS", "2560"))
 KEEP_ALIVE = os.environ.get("EMBEDDING_KEEP_ALIVE", "5m")
 MAX_CHARS = int(os.environ.get("EMBEDDING_MAX_CHARS", "8000"))
+SKIP_BOOTSTRAP = os.environ.get("EMBEDDING_SKIP_BOOTSTRAP") == "1"
 
 QUERY_PREFIX = ("Instruct: Given a search query, retrieve relevant passages "
                 "that answer the query\nQuery: ")
@@ -101,3 +102,14 @@ def info():
 def health():
     _get("/api/tags")                            # liveness only -- an embed would
     return {"status": "ok", "model": INFO["model"]}   # refresh keep_alive forever
+
+
+# Mirrors backend_onnx.py: bootstrap at import time, not on first request. app.py
+# imports `backend`, which imports this module, before the HTTP server starts
+# listening -- so this runs to completion (or the process exits) before any request
+# can arrive. If Ollama is unreachable the import fails, the container exits, and
+# Docker restarts it; the Java client already retries /info with backoff to ride out
+# a slow-starting Ollama. EMBEDDING_SKIP_BOOTSTRAP=1 keeps the test seam that lets
+# tests load this module without a live server.
+if not SKIP_BOOTSTRAP:
+    bootstrap()
