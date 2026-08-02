@@ -117,14 +117,27 @@ class OllamaBackendTest(unittest.TestCase):
         mod.bootstrap()
 
         def fail_if_embed(req, timeout=120):
-            body = json.loads(req.data.decode())
             self.assertEqual(req.full_url, "http://hivemem-ollama:11434/api/tags")
-            self.assertNotIn("input", body)
+            self.assertIsNone(req.data)
             return _FakeResponse({})
 
         mock.patch.object(urllib.request, "urlopen", fail_if_embed).start()
         result = mod.health()
         self.assertEqual(result["status"], "ok")
+
+    def test_health_uses_get_not_post(self):
+        # Ollama's real /api/tags accepts GET (200) but rejects POST with
+        # 405 Method Not Allowed. Pinning only the path would pass whichever
+        # HTTP method health() used; pin the verb itself.
+        mod = self.load_ollama(dims=2, fake_vector=[1.0, 0.0])
+        mod.bootstrap()
+
+        def assert_get(req, timeout=120):
+            self.assertEqual(req.get_method(), "GET")
+            return _FakeResponse({})
+
+        mock.patch.object(urllib.request, "urlopen", assert_get).start()
+        mod.health()
 
     def test_transport_error_propagates(self):
         mod = self.load_ollama_failing(urllib.error.URLError("connection refused"))

@@ -48,6 +48,15 @@ def _post(payload, path="/api/embed", timeout=120):
         return json.loads(r.read())
 
 
+def _get(path, timeout=10):
+    # No `data=` -- urllib.request.Request defaults to GET when the body is
+    # omitted. Ollama's /api/tags rejects POST with 405 Method Not Allowed,
+    # so this must stay a real GET, not _post() with an empty payload.
+    req = urllib.request.Request(OLLAMA_URL + path)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())
+
+
 def _raw_embed(text):
     body = _post({
         "model": OLLAMA_MODEL,
@@ -90,5 +99,5 @@ def info():
 
 
 def health():
-    _post({}, path="/api/tags")                 # liveness only -- an embed would
+    _get("/api/tags")                            # liveness only -- an embed would
     return {"status": "ok", "model": INFO["model"]}   # refresh keep_alive forever
