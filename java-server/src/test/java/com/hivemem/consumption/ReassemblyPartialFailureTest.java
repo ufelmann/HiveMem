@@ -181,6 +181,42 @@ class ReassemblyPartialFailureTest {
         verify(fileRepo).markDone("cafebabe");
     }
 
+    /** The degraded-page count computed in the streaming pass must reach the ledger: a later
+     *  review queue is built on total_pages/degraded_pages, so a wrong count here would silently
+     *  under- or over-report. */
+    @Test
+    void recordsPageStatsWithTheDegradedCount() throws Exception {
+        ConsumptionProperties props = new ConsumptionProperties();
+        PdfPageRasterizer rasterizer = mock(PdfPageRasterizer.class);
+        PageOrienter orienter = mockOrienter();
+        PageMetadataExtractor extractor = mock(PageMetadataExtractor.class);
+        // Page 1 extracts fine; page 2 lost its vision metadata.
+        when(extractor.extract(anyString(), anyInt(), any())).thenAnswer(inv -> {
+            int page = inv.getArgument(1);
+            boolean degraded = page == 2;
+            return new PageMetadataExtractor.PageMetadata(page, degraded ? null : "S", null, null,
+                    degraded ? null : "letter", null, degraded ? null : "p", false, degraded);
+        });
+        MailingAssembler assembler = mockAssembler();
+        PageReassembler reassembler = mock(PageReassembler.class);
+        AttachmentService attachments = mock(AttachmentService.class);
+        ConsumptionFileMover mover = mock(ConsumptionFileMover.class);
+        ConsumptionFileRepository fileRepo = mock(ConsumptionFileRepository.class);
+
+        byte[] page = inkPng();
+        stubPages(rasterizer, List.of(page, page));
+        when(reassembler.toDocuments(any(), anyInt())).thenReturn(List.of(
+                new PageReassembler.ResultDoc(List.of(1), "committed"),
+                new PageReassembler.ResultDoc(List.of(2), "committed")));
+
+        Path stagedPath = Path.of("Scan_degraded_count.pdf");
+        ReassemblyOrchestrator orch = new ReassemblyOrchestrator(props, rasterizer, orienter, extractor,
+                assembler, reassembler, new BatchSplitter(), attachments, mover);
+        orch.reassemble(stagedPath, nPagePdf(2), 2, "cafebabe", fileRepo);
+
+        verify(fileRepo).recordPageStats("cafebabe", 2, 1);
+    }
+
     /** When both sub-docs ingest successfully, the batch must go to processed/ (regression guard). */
     @Test
     void allSuccessfulIngestsRoutesToProcessed() throws Exception {

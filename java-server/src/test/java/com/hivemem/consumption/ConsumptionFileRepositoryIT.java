@@ -56,6 +56,18 @@ class ConsumptionFileRepositoryIT extends ConsumptionITSupport {
     }
 
     @Test
+    void recordPageStatsPersistsTotalAndDegradedCounts() {
+        repo.startProcessing("h6", "stats.pdf");
+        repo.recordPageStats("h6", 12, 3);
+
+        var row = dsl.fetchOne(
+                "SELECT total_pages, degraded_pages FROM consumption_file WHERE sha256 = ?", "h6");
+        assertNotNull(row, "expected a row for h6");
+        assertEquals(12, row.get("total_pages", Integer.class));
+        assertEquals(3, row.get("degraded_pages", Integer.class));
+    }
+
+    @Test
     void updateFilenamePersistsMovedName() {
         repo.startProcessing("h4", "orig.pdf");
         repo.updateFilename("h4", "orig-1.pdf");
