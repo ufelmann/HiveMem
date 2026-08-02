@@ -220,7 +220,8 @@ public class SummarizerService {
             if (newId != null) repo.removeNeedsSummaryTag(newId);
             notifyArchivist(targetId);
 
-            // The cell now has its embedding (encodeForCell used the fresh summary). This is the
+            // The cell now has its embedding (encodeForCell used the content, falling back to the
+            // fresh summary only if the content exceeded maxChars()). This is the
             // first point a long scanned doc can be deduped; the service no-ops for non-consumption
             // cells, so manual/agent summaries are unaffected.
             if (dedup != null && newId != null) {

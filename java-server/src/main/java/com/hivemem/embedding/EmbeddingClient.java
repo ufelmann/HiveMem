@@ -14,20 +14,21 @@ public interface EmbeddingClient {
     }
 
     /**
-     * Three-tier embedding for cells:
+     * Content-first embedding for cells:
      * <ul>
-     *   <li>summary present → embed the summary</li>
-     *   <li>summary absent + content ≤ {@link #CONTENT_EMBED_MAX_CHARS} → embed the content</li>
-     *   <li>summary absent + content too long → return {@code null}; caller is expected to
-     *       tag the cell as {@code needs_summary} so a summarizer can fill it in</li>
+     *   <li>content ≤ {@link #maxChars()} → embed the content</li>
+     *   <li>content too long but a summary exists → embed the summary</li>
+     *   <li>neither → {@code null}; the caller tags {@code needs_summary}</li>
      * </ul>
+     * The cap is backend-dependent (500 on ONNX, 8000 on Ollama), so it comes from
+     * {@link #maxChars()}, not from the constant.
      */
     default List<Float> encodeForCell(String content, String summary) {
+        if (content != null && content.length() <= maxChars()) {
+            return encodeDocument(content);
+        }
         if (summary != null && !summary.isBlank()) {
             return encodeDocument(summary);
-        }
-        if (content != null && content.length() <= CONTENT_EMBED_MAX_CHARS) {
-            return encodeDocument(content);
         }
         return null;
     }

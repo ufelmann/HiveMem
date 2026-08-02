@@ -33,4 +33,17 @@ class NeedsSummaryDeciderTest {
         assertTrue(NeedsSummaryDecider.needsSummary("a".repeat(501), null));
         assertFalse(NeedsSummaryDecider.needsSummary("a".repeat(500), null));
     }
+
+    /** Embeddability (max_chars, backend-dependent) and enrichment (500 chars) are
+     *  different questions. An earlier design moved them together, which would have
+     *  stopped tagging needs_summary for the 1101 cells between 500 and 8000 chars —
+     *  and with it key_points, insight, tags and KG fact extraction, since those run
+     *  inside the same summarizer call. This test exists to keep them apart. */
+    @Test
+    void enrichmentThresholdIsIndependentOfTheEmbedCap() {
+        assertEquals(500, NeedsSummaryDecider.DEFAULT_THRESHOLD_CHARS);
+        assertTrue(NeedsSummaryDecider.needsSummary("x".repeat(3000), null),
+                "a 3000-char cell is embeddable on Ollama but still needs enrichment");
+        assertFalse(NeedsSummaryDecider.needsSummary("x".repeat(3000), "a summary"));
+    }
 }
