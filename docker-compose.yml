@@ -31,6 +31,14 @@ services:
   hivemem-embeddings:
     image: ghcr.io/visterion/hivemem-embeddings:main
     container_name: hivemem-embeddings
+    environment:
+      EMBEDDING_BACKEND: ${HIVEMEM_EMBEDDING_BACKEND:-onnx}
+      OLLAMA_URL: http://hivemem-ollama:11434
+      OLLAMA_MODEL: ${HIVEMEM_OLLAMA_MODEL:-qwen3-embedding:8b-q8_0}
+      EMBEDDING_DIMS: "1024"
+      EMBEDDING_MAX_TOKENS: "2560"
+      EMBEDDING_KEEP_ALIVE: "5m"
+      EMBEDDING_MAX_CHARS: "8000"
     volumes:
       - hivemem-embeddings-models:/app/models
     networks:
@@ -47,6 +55,19 @@ services:
     restart: unless-stopped
     # Proxmox LXC: uncomment the next line
     # security_opt: [apparmor=unconfined]
+
+  hivemem-ollama:
+    profiles: [gpu]
+    image: ollama/ollama:rocm
+    container_name: hivemem-ollama
+    devices: ["/dev/kfd", "/dev/dri"]
+    group_add: ["993"]              # host GID of `render`; a name resolves inside the container
+    security_opt: ["seccomp=unconfined"]
+    volumes: [hivemem-ollama-models:/root/.ollama]
+    mem_limit: 12g
+    environment:
+      OLLAMA_KEEP_ALIVE: 5m
+    restart: unless-stopped
 
   hivemem:
     image: ghcr.io/visterion/hivemem:main
@@ -114,4 +135,5 @@ networks:
 volumes:
   hivemem-pgdata:
   hivemem-embeddings-models:
+  hivemem-ollama-models:
   seaweedfs_data:
