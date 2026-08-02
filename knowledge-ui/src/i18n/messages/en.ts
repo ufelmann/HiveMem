@@ -175,6 +175,7 @@ export default {
       title: 'Scan review',
       unavailable: 'Consumption pipeline disabled — the scan queue is unavailable.',
       reconciliation: 'Reconciliation since process start: {orphans} orphaned re-staged, {missing} without file, {misplaced} misplaced',
+      stateCounts: 'Queue depth per state:',
       failedFiles: 'Failed files',
       degradedBatches: 'Batches with missing page metadata',
       retry: 'Re-ingest',

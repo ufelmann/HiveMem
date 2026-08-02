@@ -2,7 +2,13 @@ import { palace as mockPalace } from '../data/mock'
 import type { ApiClient, HiveEvent, Cell, Realm, Signal, Tunnel, Fact, StatusSummary, Reference, SearchResult, DocumentRow, FacetValue, SavedSearch, MediaItem, IngestQueue } from './types'
 import { NO_REALM } from '../composables/realmMeta'
 
-interface MockConfig { latencyMs?: [number, number]; eventInterval?: number }
+// 'populated' (default): one failed file + one degraded batch, like a small backlog.
+// 'empty': consumption pipeline healthy, nothing to review — must render distinctly from
+// 'unavailable': pipeline switched off, all collections empty AND unavailable:true — see
+// ConsumptionQueueToolHandler.unavailable() on the backend, which this mirrors.
+type IngestScenario = 'populated' | 'empty' | 'unavailable'
+
+interface MockConfig { latencyMs?: [number, number]; eventInterval?: number; ingestScenario?: IngestScenario }
 
 type Handler = (args: any) => unknown
 
@@ -39,7 +45,7 @@ export class MockApiClient implements ApiClient {
     // tests time out. Use minimal latency when running inside the test runner.
     const isTest = (import.meta.env as unknown as Record<string, string>).MODE === 'test'
     const defaultLatency: [number, number] = isTest ? [0, 0] : [50, 200]
-    this.config = { latencyMs: defaultLatency, eventInterval: 15000, ...config }
+    this.config = { latencyMs: defaultLatency, eventInterval: 15000, ingestScenario: 'populated', ...config }
     this.handlers = {
       status: () => this.status(),
       wake_up: () => this.wakeUp(),
@@ -529,6 +535,22 @@ export class MockApiClient implements ApiClient {
   // Synthetic ingest-review data only: never a real filename, sender or document title —
   // this repo is public (see CLAUDE.md "Public repo — what must never be committed").
   private consumptionQueue(): IngestQueue {
+    if (this.config.ingestScenario === 'unavailable') {
+      // Mirrors ConsumptionQueueToolHandler.unavailable() field for field, so a UI test can
+      // exercise the "pipeline disabled" branch without a real backend.
+      return {
+        failedFiles: [], degradedBatches: [],
+        reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
+        stateCounts: {}, unavailable: true,
+      }
+    }
+    if (this.config.ingestScenario === 'empty') {
+      return {
+        failedFiles: [], degradedBatches: [],
+        reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
+        stateCounts: {},
+      }
+    }
     return {
       failedFiles: [
         { sha256: 'aaaa0001', filename: 'scan-0001.pdf', state: 'failed', attempts: 2,

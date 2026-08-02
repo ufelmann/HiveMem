@@ -16,7 +16,14 @@ export function useApi(): ApiClient {
     || readEnv('MODE') === 'test'
     || localStorage.getItem('hivemem_mock') === 'true'
   if (forceMock) {
-    client = new MockApiClient()
+    // Dev/test-only scenario switch for the ingest queue mock (see MockApiClient's
+    // IngestScenario): lets a spec force 'empty' or 'unavailable' without a real backend,
+    // exactly like `hivemem_mock` itself forces the mock client on.
+    const ingestScenario = localStorage.getItem('hivemem_mock_ingest_scenario')
+    client = new MockApiClient(
+      ingestScenario === 'empty' || ingestScenario === 'unavailable'
+        ? { ingestScenario }
+        : {})
   } else {
     // VITE_HIVEMEM_TOKEN: dev-only escape hatch for console-less devices (phones), and only
     // in legacy mode — in Access mode /api takes no bearer, so a token in the heap is dead

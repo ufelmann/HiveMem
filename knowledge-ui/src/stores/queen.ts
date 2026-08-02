@@ -2,6 +2,21 @@ import { defineStore } from 'pinia'
 import { useApi } from '../api/useApi'
 import type { QueenRun, QueenRunList, QueenRunDetail, PendingApproval, ArchivistLogEntry, IngestQueue } from '../api/types'
 
+// Same shape ConsumptionQueueToolHandler.unavailable() returns when the consumption pipeline is
+// disabled: empty collections, zero counters, unavailable:true. Reused here as the fallback when
+// the consumption_queue call itself throws (backend restart, network blip, ...), so a runtime
+// failure on the ingest queue renders as its own "unavailable" section instead of taking the
+// whole refresh() down with it.
+function unavailableIngestQueue(): IngestQueue {
+  return {
+    failedFiles: [],
+    degradedBatches: [],
+    reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
+    stateCounts: {},
+    unavailable: true,
+  }
+}
+
 export const useQueenStore = defineStore('queen', {
   state: () => ({
     runs: [] as QueenRun[],
@@ -23,17 +38,20 @@ export const useQueenStore = defineStore('queen', {
       this.loading = true
       try {
         const api = useApi()
-        const [list, pending, ingestQueue] = await Promise.all([
+        // Started in parallel with the other two calls, but its failure is caught locally so a
+        // consumption_queue error can't reject the outer Promise.all and blank the runs/pending
+        // sections that loaded fine — it degrades to its own "unavailable" state instead.
+        const ingestPromise = api.call<IngestQueue>('consumption_queue').catch(() => unavailableIngestQueue())
+        const [list, pending] = await Promise.all([
           api.call<QueenRunList>('queen_runs'),
           api.call<PendingApproval[]>('pending_approvals'),
-          api.call<IngestQueue>('consumption_queue'),
         ])
         this.runs = list.items
         this.total = list.total
         this.costAvailable = list.costAvailable
         this.unavailable = !!list.unavailable
         this.pending = pending.filter(p => p.created_by === 'queen')
-        this.ingestQueue = ingestQueue
+        this.ingestQueue = await ingestPromise
       } finally {
         this.loading = false
       }

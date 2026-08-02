@@ -66,4 +66,27 @@ describe('queen store — ingest queue', () => {
     expect(res.error).toBe('unknown sha256')
     expect(store.ingestQueue!.failedFiles.length).toBe(before)
   })
+
+  it('a consumption_queue failure degrades only the ingest section, not the whole refresh', async () => {
+    call.mockImplementation(async (tool: string) => {
+      if (tool === 'queen_runs') {
+        return { items: [{ id: 'r1', agent: 'queen', trigger: null, status: 'done', startedAt: null,
+          finishedAt: null, durationMs: null, llmCalls: null, costMicros: null }], total: 1, costAvailable: false }
+      }
+      if (tool === 'pending_approvals') return [{ type: 'tunnel', id: 'p1', description: null,
+        realm: null, signal: null, created_by: 'queen', created_at: 't' }]
+      if (tool === 'consumption_queue') throw new Error('backend restarting')
+      throw new Error(`unexpected tool: ${tool}`)
+    })
+    const store = useQueenStore()
+    await store.refresh()
+
+    // Runs and pending approvals loaded fine — a consumption_queue error must not blank them.
+    expect(store.runs).toHaveLength(1)
+    expect(store.pending).toHaveLength(1)
+    // The ingest section degrades to its own unavailable state instead of throwing out of refresh().
+    expect(store.ingestQueue).not.toBeNull()
+    expect(store.ingestQueue!.unavailable).toBe(true)
+    expect(store.ingestQueue!.failedFiles).toEqual([])
+  })
 })

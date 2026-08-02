@@ -44,6 +44,10 @@ function propTitle(desc: string | null): string {
 const sumCost = computed(() =>
   store.costAvailable ? store.runs.reduce((s, r) => s + (r.costMicros ?? 0), 0) : null)
 const detailRun = computed(() => store.selectedRun?.run as Record<string, any> | undefined)
+// Queue depth per ledger state — the one number an operator wants at a glance when 5000
+// documents are in flight. Sorted descending so the biggest pile of work leads.
+const ingestStateCounts = computed(() =>
+  Object.entries(store.ingestQueue?.stateCounts ?? {}).sort((a, b) => b[1] - a[1]))
 
 async function openRun(id: string) {
   try {
@@ -195,6 +199,10 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
               misplaced: store.ingestQueue.reconciliation.misplacedFailed,
             }) }}
           </p>
+          <p v-if="ingestStateCounts.length" class="ingest-states">
+            <span class="ingest-states-label">{{ t('queen.ingest.stateCounts') }}</span>
+            <span v-for="[state, count] in ingestStateCounts" :key="state" class="ingest-state-chip">{{ state }}: {{ count }}</span>
+          </p>
 
           <div class="section-label">{{ t('queen.ingest.failedFiles') }}</div>
           <p v-if="!store.ingestQueue.failedFiles.length" class="q-empty">{{ t('queen.ingest.none') }}</p>
@@ -322,7 +330,10 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 
 .q-ingest { padding:18px 20px; }
 .q-ingest .q-prop-head { margin:0 0 14px; font-weight:600; font-size:14px; }
-.ingest-recon { font-size:12.5px; color:var(--text-2); margin:0 0 16px; }
+.ingest-recon { font-size:12.5px; color:var(--text-2); margin:0 0 8px; }
+.ingest-states { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:12px; margin:0 0 16px; }
+.ingest-states-label { color:var(--text-2); text-transform:uppercase; letter-spacing:.06em; font-size:10.5px; }
+.ingest-state-chip { background:var(--bg-4); color:var(--text-1); border:1px solid var(--line); border-radius:6px; padding:2px 8px; font-family:var(--font-mono); }
 .ingest-table { display:flex; flex-direction:column; gap:0; margin-bottom:18px; }
 .ingest-row { display:flex; align-items:center; gap:14px; padding:10px 0; border-bottom:1px solid var(--line); font-size:13px; }
 .ingest-row:last-child { border-bottom:none; }
