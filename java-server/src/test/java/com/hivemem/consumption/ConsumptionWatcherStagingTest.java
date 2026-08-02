@@ -56,11 +56,15 @@ class ConsumptionWatcherStagingTest {
     }
 
     /** The hash the watcher registers must be the one the service later marks done, or markDone
-     *  updates a row that does not exist and the file stays 'staged' forever. */
+     *  updates a row that does not exist and the file stays 'staged' forever. Asserted against the
+     *  independently-computed SHA-256 of the synthetic content, not just mutual agreement — two
+     *  values that only agree with each other could both be a hardcoded constant. */
     @Test
     void watcherPassesTheSameHashItRegistered() throws Exception {
+        byte[] content = "synthetic-pdf-bytes".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         Path scan = root.resolve("scan.pdf");
-        Files.writeString(scan, "synthetic-pdf-bytes");
+        Files.write(scan, content);
+        String expectedHash = ConsumptionService.sha256(content);
 
         ConsumptionProperties props = new ConsumptionProperties();
         props.setDir(root.toString());
@@ -78,8 +82,7 @@ class ConsumptionWatcherStagingTest {
         watcher.poll();
         watcher.poll();
 
-        var stagedHash = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(repo).stage(stagedHash.capture(), anyString());
-        verify(service).processStaged(any(Path.class), eq(stagedHash.getValue()));
+        verify(repo).stage(eq(expectedHash), anyString());
+        verify(service).processStaged(any(Path.class), eq(expectedHash));
     }
 }

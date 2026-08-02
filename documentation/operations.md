@@ -257,7 +257,7 @@ PDFs larger than `hivemem.consumption.max-pages` (default 200) are moved straigh
 
 The `ConsumptionRecoverySweep` runs at startup and every 5 minutes (configurable). It handles two failure modes without operator action:
 
-- **Crash-stranded files** — files whose ledger row is still `processing` past `hivemem.consumption.recovery-stale-threshold` (default 30 min) are re-staged automatically. This covers files that were mid-ingest when the container was restarted.
+- **Crash-stranded files** — files whose ledger row is still `staged` or `processing` past `hivemem.consumption.recovery-stale-threshold` (default 30 min) are re-staged automatically. `staged` means the row was written but the file was never (or not yet) picked up by a worker — e.g. the process died between the ledger write and the move into `processing/`; `processing` means a worker had started but did not finish. Both cases cover files caught mid-flight when the container was restarted.
 - **Failed files** — files in `failed/` are moved back to the watch root and retried as long as their attempt count is below `hivemem.consumption.failed-retry-limit` (default 3). Files that exhaust the retry limit remain in `failed/` for manual inspection.
 
 ### Embedding backfill
@@ -269,7 +269,8 @@ If the embedding service is unavailable when a cell is committed, the cell is ta
 After a bulk import, check the ledger and the `failed/` directory:
 
 ```sql
--- All files should be 'done'; any 'failed' or 'processing' rows need attention
+-- All files should be 'done'; any 'failed', 'processing' or 'staged' rows need attention
+-- ('staged' = registered in the ledger, not yet picked up by a worker)
 SELECT state, count(*) FROM consumption_file GROUP BY state;
 ```
 

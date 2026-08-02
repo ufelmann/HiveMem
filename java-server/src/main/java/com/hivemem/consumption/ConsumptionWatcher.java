@@ -80,7 +80,10 @@ public class ConsumptionWatcher {
                             if (fileRepo != null) fileRepo.stage(sha256, p.getFileName().toString());
                             Path staged = mover.moveToProcessing(p);
                             executor.execute(() -> service.processStaged(staged, sha256));
-                        } catch (IOException stageErr) {
+                        } catch (Exception stageErr) {
+                            // Catches IOException (read/move) AND unchecked DataAccessException from
+                            // fileRepo.stage(): a DB blip must cost only this file, not silently abort
+                            // the rest of the scan (the file is still in the watch root, unmoved).
                             log.warn("Could not stage {} to processing/: {} (will retry next poll)",
                                     p.getFileName(), stageErr.toString());
                         }

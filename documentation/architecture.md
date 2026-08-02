@@ -511,13 +511,13 @@ The consumption pipeline is designed to tolerate transient failures without data
 
 **Embedding backfill sweep.** `EmbeddingBackfillService` runs on a fixed schedule (default every 5 min) and finds all committed cells tagged `embedding_pending`. Once the embedding service is healthy again it backfills them in configurable batches (default 50 per cycle) and removes the tag. Semantic search is restored automatically — no operator action needed.
 
-**Exactly-once file staging via the `consumption_file` ledger.** Every file the watcher picks up is recorded in the `consumption_file` table with its SHA-256 content hash. State transitions: `processing` → `done` (committed) or `processing` → `failed` (ingest error). The `attempts` counter increments on each try. Content-based dedup (`DocumentDedupService`) means re-queuing an already-committed file is safe — the second ingest is discarded as a duplicate.
+**Exactly-once file staging via the `consumption_file` ledger.** Every file the watcher picks up is recorded in the `consumption_file` table with its SHA-256 content hash, in state `staged`, **before** the file is moved out of the watch root — this closes the window where a crash between the move and the (previously later) ledger write could strand a file that no recovery path could ever find again. State transitions: `staged` (registered, not yet picked up by a worker) → `processing` (a worker has started reading it) → `done` (committed) or `processing` → `failed` (ingest error). The `attempts` counter increments only when a row transitions into `processing`; staging (including re-staging an existing row) never counts as an attempt. Content-based dedup (`DocumentDedupService`) means re-queuing an already-committed file is safe — the second ingest is discarded as a duplicate.
 
 **Reassembly partial-ingest → `failed/`.** When a multi-page PDF is separated into sub-documents by Vistierie and at least one sub-document fails to ingest, the entire batch is moved to `failed/`. Previously, remaining sub-documents would be silently dropped. With the ledger and the retry sweep, the whole batch can be re-attempted safely after the root cause is resolved.
 
 **Recovery sweep.** `ConsumptionRecoverySweep` runs at startup and on a fixed interval (default 5 min) and handles two cases:
 
-- Files crash-stranded in `processing` past the stale threshold (default 30 min) are re-staged — these are files that were mid-ingest when the JVM was killed.
+- Files crash-stranded in `staged` or `processing` past the stale threshold (default 30 min) are re-staged — `processing` rows are files that were mid-ingest when the JVM was killed; `staged` rows are files whose ledger row was written but the move-and-dispatch step never completed.
 - Files in `failed/` with an attempt count below the retry limit (default 3) are moved back to the watch root for re-ingest. Files that exhaust the retry limit remain in `failed/` and require manual inspection.
 
 See the [Bulk import runbook](operations.md#consumption-bulk-import) for operator-facing verification steps and config reference.

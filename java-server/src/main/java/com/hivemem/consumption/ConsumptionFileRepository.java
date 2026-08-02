@@ -36,14 +36,17 @@ public class ConsumptionFileRepository {
      * Register a file BEFORE it is moved out of the watch root. State 'staged' means: known to the
      * ledger, not yet being worked on. Re-staging an existing row resets it — without the reset a
      * re-fed identical scan would keep its 'done' state (sha256 is UNIQUE) and be skipped forever.
+     * Does NOT count as an attempt: {@code attempts} is left untouched on conflict, and inserted as
+     * 0 for a new row. {@link #startProcessing} is the single place {@code attempts} increases —
+     * staging twice before a single real processing pass must not burn two retries out of the
+     * budget {@link #findRetriableFailed} enforces.
      */
     public void stage(String sha256, String filename) {
         dsl.execute("""
                 INSERT INTO consumption_file (sha256, filename, state, attempts)
-                VALUES (?, ?, 'staged', 1)
+                VALUES (?, ?, 'staged', 0)
                 ON CONFLICT (sha256) DO UPDATE
-                  SET attempts   = consumption_file.attempts + 1,
-                      filename   = excluded.filename,
+                  SET filename   = excluded.filename,
                       state      = 'staged',
                       updated_at = now()
                 """, sha256, filename);

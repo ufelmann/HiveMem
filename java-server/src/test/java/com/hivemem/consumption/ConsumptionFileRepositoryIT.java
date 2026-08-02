@@ -79,6 +79,42 @@ class ConsumptionFileRepositoryIT extends ConsumptionITSupport {
     }
 
     @Test
+    void stagingTwiceThenProcessingOnceLeavesAttemptsAtOne() {
+        // Regression for the halved-retry-budget bug: stage() must NOT count as an attempt.
+        // Staging the same hash twice (e.g. re-poll before the move completes, or a re-fed
+        // identical scan) followed by a single real processing pass must leave attempts at 1,
+        // not 2 or 3 — otherwise findRetriableFailed's `attempts < maxAttempts` burns the retry
+        // budget on registrations that never even reached processing.
+        repo.stage("s1", "scan.pdf");
+        repo.stage("s1", "scan.pdf");
+        repo.startProcessing("s1", "scan.pdf");
+
+        var row = repo.findByHash("s1");
+        assertTrue(row.isPresent());
+        assertEquals(1, row.get().attempts(),
+                "stage() must not increment attempts; only startProcessing() may");
+        assertEquals("processing", row.get().state());
+    }
+
+    @Test
+    void stageDoesNotTouchAttemptsOnConflict() {
+        // stage() alone (no processing pass) must leave attempts at 0 for a new row, and
+        // untouched for a re-staged existing row.
+        repo.stage("s2", "scan.pdf");
+        var afterFirstStage = repo.findByHash("s2");
+        assertTrue(afterFirstStage.isPresent());
+        assertEquals(0, afterFirstStage.get().attempts());
+        assertEquals("staged", afterFirstStage.get().state());
+
+        repo.stage("s2", "scan-renamed.pdf");
+        var afterSecondStage = repo.findByHash("s2");
+        assertTrue(afterSecondStage.isPresent());
+        assertEquals(0, afterSecondStage.get().attempts(), "re-staging must not increment attempts");
+        assertEquals("scan-renamed.pdf", afterSecondStage.get().filename());
+        assertEquals("staged", afterSecondStage.get().state());
+    }
+
+    @Test
     void findRetriableFailedRespectsAttemptsLimit() {
         // Row with attempts=1, maxAttempts=3 → should appear
         repo.startProcessing("hr1", "retry.pdf");

@@ -77,11 +77,6 @@ public class ConsumptionService implements SeparationApplier {
         this.fileRepo = fileRepoProvider.getIfAvailable();
     }
 
-    /** Process one already-staged file (the watcher moved it into processing/ first, which makes it
-     *  invisible to the non-recursive poll → exactly-once). PDFs with >1 page (and queen enabled) go
-     *  through batch separation; everything else is a single committed document. Runs on the consumption
-     *  executor, never the @Scheduled poll thread. Location-agnostic: it reads, processes, and moves the
-     *  file to processed/ or failed/. */
     /** Existing entry point: hashes the file itself. Kept for callers and tests that have no hash. */
     public void processStaged(Path staged) {
         try {
@@ -92,7 +87,12 @@ public class ConsumptionService implements SeparationApplier {
         }
     }
 
-    /** Process one already-staged file whose hash the watcher already computed and registered. */
+    /** Process one already-staged file (the watcher moved it into processing/ first, which makes it
+     *  invisible to the non-recursive poll → exactly-once) whose hash the watcher already computed
+     *  and registered. PDFs with >1 page (and queen enabled) go through batch separation; everything
+     *  else is a single committed document. Runs on the consumption executor, never the @Scheduled
+     *  poll thread. Location-agnostic: it reads, processes, and moves the file to processed/ or
+     *  failed/. */
     public void processStaged(Path staged, String sha256) {
         String filename = staged.getFileName().toString();
         byte[] bytes;
