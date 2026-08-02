@@ -179,22 +179,22 @@ public class ConsumptionService implements SeparationApplier {
         UUID correlationId = UUID.randomUUID();
         boolean jobCreated = false;
         try {
-            List<byte[]> pages = rasterizer.rasterize(bytes, ocrProps.getRenderDpi(), props.getMaxPages());
             List<PageDigest> digests = new ArrayList<>();
-            for (int i = 0; i < pages.size(); i++) {
-                String text;
-                try { text = tesseract.ocr(pages.get(i), ocrProps.getLanguages(), ocrProps.getCallTimeoutSeconds()); }
-                catch (Exception ocrErr) { text = ""; }
-                digests.add(digestBuilder.build(i + 1, text));
-                // Heartbeat: a large batch's per-page OCR can outlast the recovery sweep's stale
-                // threshold; bump updated_at so a live run isn't mistaken for a crash and re-staged.
-                if (fileRepo != null) fileRepo.touch(hash);
-            }
+            rasterizer.rasterize(bytes, ocrProps.getRenderDpi(), props.getMaxPages(),
+                    (index, png) -> {
+                        String text;
+                        try { text = tesseract.ocr(png, ocrProps.getLanguages(), ocrProps.getCallTimeoutSeconds()); }
+                        catch (Exception ocrErr) { text = ""; }
+                        digests.add(digestBuilder.build(index + 1, text));
+                        // Heartbeat: a large batch's per-page OCR can outlast the recovery sweep's
+                        // stale threshold; bump updated_at so a live run isn't re-staged mid-run.
+                        if (fileRepo != null) fileRepo.touch(hash);
+                    });
             String s3Key = "consumption/batch-" + correlationId + ".pdf";
             seaweed.uploadBytes(s3Key, bytes, "application/pdf");
             // Create the job (status 'awaiting') BEFORE dispatch so the webhook always finds it.
             jobs.create(correlationId, s3Key, filename, staged.toAbsolutePath().toString(),
-                    pages.size(), props.getRealm());
+                    digests.size(), props.getRealm());
             jobCreated = true;
 
             try {
@@ -216,7 +216,7 @@ public class ConsumptionService implements SeparationApplier {
             }
             // Dispatched batch is tracked by consumption_jobs; mark ledger done to keep it out of recovery sweep.
             if (fileRepo != null) fileRepo.markDone(hash);
-            log.info("Dispatched separation job {} ({} pages) for {}", correlationId, pages.size(), filename);
+            log.info("Dispatched separation job {} ({} pages) for {}", correlationId, digests.size(), filename);
         } catch (Exception e) {
             // OCR/upload/create failure (before a successful dispatch): the batch cannot proceed.
             log.warn("Separation prep failed for {}: {}", filename, e.toString());

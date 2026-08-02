@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -51,6 +52,16 @@ class ReassemblyBlankOrientationTest {
         }
     }
 
+    /** Stubs the streaming overload to hand out {@code pngs} one page at a time, mirroring
+     *  {@link PdfPageRasterizer#rasterize(byte[], int, int, PdfPageRasterizer.PageConsumer)}. */
+    private static void stubPages(PdfPageRasterizer rasterizer, List<byte[]> pngs) throws Exception {
+        doAnswer(inv -> {
+            PdfPageRasterizer.PageConsumer consumer = inv.getArgument(3);
+            for (int i = 0; i < pngs.size(); i++) consumer.accept(i, pngs.get(i));
+            return null;
+        }).when(rasterizer).rasterize(any(), anyInt(), anyInt(), any());
+    }
+
     private static DocGroup group(String id, double confidence, int... pages) {
         DocGroup g = new DocGroup(id, null);
         g.minConfidence = confidence;
@@ -76,7 +87,7 @@ class ReassemblyBlankOrientationTest {
                         "S", null, null, "letter", null, "p", false));
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1, 2)));
 
-        when(rasterizer.rasterize(any(), anyInt(), anyInt())).thenReturn(List.of(png(true), png(false)));
+        stubPages(rasterizer, List.of(png(true), png(false)));
         when(reassembler.toDocuments(any(), eq(2)))
                 .thenReturn(List.of(new PageReassembler.ResultDoc(List.of(1, 2), "committed")));
 
@@ -112,7 +123,7 @@ class ReassemblyBlankOrientationTest {
                         "S", null, null, "letter", null, "p", false));
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1)));
 
-        when(rasterizer.rasterize(any(), anyInt(), anyInt())).thenReturn(List.of(png(false)));
+        stubPages(rasterizer, List.of(png(false)));
         when(reassembler.toDocuments(any(), eq(1)))
                 .thenReturn(List.of(new PageReassembler.ResultDoc(List.of(1), "pending")));
 
@@ -144,7 +155,7 @@ class ReassemblyBlankOrientationTest {
                         "S", null, null, "letter", null, "p", false));
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1)));
 
-        when(rasterizer.rasterize(any(), anyInt(), anyInt())).thenReturn(List.of(png(true)));
+        stubPages(rasterizer, List.of(png(true)));
         when(reassembler.toDocuments(any(), eq(1)))
                 .thenReturn(List.of(new PageReassembler.ResultDoc(List.of(1), "committed")));
 
@@ -182,7 +193,7 @@ class ReassemblyBlankOrientationTest {
                         "S", null, null, "letter", null, "p", false));
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1, 2)));
 
-        when(rasterizer.rasterize(any(), anyInt(), anyInt())).thenReturn(List.of(png(true), png(true)));
+        stubPages(rasterizer, List.of(png(true), png(true)));
         when(reassembler.toDocuments(any(), eq(2)))
                 .thenReturn(List.of(new PageReassembler.ResultDoc(List.of(1, 2), "committed")));
 
