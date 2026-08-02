@@ -211,6 +211,61 @@ extract for one page) rather than one. That still stays well inside the
 recovery sweep's stale threshold, since the touch remains per page rather than
 per batch.
 
+**Memory / page cap.** `max-pages` doubles as a heap guard: the whole batch's
+`pdfBytes` and the assembled `parts` (one PDF per mailing, from
+`BatchSplitter.assemble`) are held in memory for the duration of one
+`ReassemblyOrchestrator.reassemble` call, and up to `worker-threads` batches run
+concurrently. Task 3 made page *rendering* stream one page at a time
+(`PdfPageRasterizer.rasterize` hands each page's PNG to a callback and discards
+it before rendering the next), so the rasterizer's own footprint no longer
+scales with batch size — but that did **not** remove the two things that still
+do: the original `pdfBytes` array and the fully-assembled `parts` list are both
+held whole, for every concurrent batch.
+
+The cap is derived, not guessed, via `ReassemblyHeapProbeIT`
+(`java-server/src/test/java/com/hivemem/consumption/ReassemblyHeapProbeIT.java`,
+run with `./mvnw -Dit.test=ReassemblyHeapProbeIT verify`). It drives a full
+`reassemble(...)` call — not the rasterizer alone — over a synthetic 200-page
+PDF with `PageOrienter`/`PageMetadataExtractor`/`MailingAssembler` mocked (no
+LLM calls) and the real `PageReassembler`/`BatchSplitter`/rasterizer, so the
+`parts` list and per-page metadata accumulation are actually exercised. The
+mocked `MailingAssembler` returns no groups, so every page becomes its own
+1-page document — the worst case for `parts` overhead, since `BatchSplitter`
+pays full per-PDF (fonts/resources/xref) overhead 200 times instead of
+amortising it over a handful of mailings; this deliberately does not
+undercount. Peak used heap (`Runtime.totalMemory() - Runtime.freeMemory()`) is
+sampled after every page and by a 1ms background poller for the whole call
+(to also cover the parts-assembly and ingest phases after the streaming render
+pass returns), against a post-`System.gc()` baseline.
+
+Measured on 2026-08-02 (JDK 26.0.2, `reassembly-render-dpi=150`,
+`blank-filter-enabled=false` so the synthetic blank pages don't get dropped
+before reaching `BatchSplitter`/ingest — see the test for why), 3 runs after
+one unmeasured warm-up run:
+
+| Run | bytes/page |
+|---|---|
+| 1 | 16,950,739 |
+| 2 | 16,878,384 |
+| 3 | 16,876,510 |
+
+All three agree within 0.5% — well inside the ~30% disagreement threshold —
+so the average, **≈16.9 MB/page**, is used. Deriving the cap with the deployed
+values `worker-threads = 4` and `-Xmx4g`:
+
+    capPages = floor( (0.5 × Xmx) / (workerThreads × bytesPerPage) )
+             = floor( (0.5 × 4 GiB) / (4 × 16,901,878) )
+             = floor( 2,147,483,648 / 67,607,512 )
+             = 31 → rounded down to 30
+
+**This measurement says the 2026-08-02 default of 200 is too high, not too
+low.** The previous 500-page setting was reverted for being unsafe (see the
+Task 7 brief); this measurement shows even 200 has no real margin under
+worst-case grouping at `-Xmx4g` with 4 worker threads — the honest number is
+**30**. Applying it is a separate, human deployment decision (this document
+only records the derivation); re-run `ReassemblyHeapProbeIT` and reapply the
+formula above if `-Xmx` or `worker-threads` change.
+
 ### File disposition
 
 | Outcome | Destination |
