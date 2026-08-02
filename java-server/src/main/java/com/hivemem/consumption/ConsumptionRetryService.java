@@ -8,12 +8,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Re-stages one consumed file by content hash, mirroring {@link ConsumptionRecoverySweep#recover}
- * exactly: locate the physical file (checking {@code failed/} first, then {@code processing/}) and
- * move it back to the watch root with {@link ConsumptionFileMover#moveToRoot}. Deliberately does
- * NOT call {@link ConsumptionFileRepository#stage} — {@code ConsumptionWatcher} does that itself
- * once the next poll re-hashes the file, which is the only place that correctly resets a row's
- * state.
+ * Re-stages one consumed file by content hash: locates the physical file (checking
+ * {@code failed/}, then {@code processing/}, then {@code processed/}) and moves it back to the
+ * watch root with {@link ConsumptionFileMover#moveToRoot}. Deliberately does NOT call
+ * {@link ConsumptionFileRepository#stage} — {@code ConsumptionWatcher} does that itself once the
+ * next poll re-hashes the file, which is the only place that correctly resets a row's state.
  *
  * <p>The original version of this class (removed) called {@code stage()} without moving anything.
  * That looked harmless but actively broke the retry path for a 'failed' row: staging it left the
@@ -50,14 +49,22 @@ public class ConsumptionRetryService {
         String filename = row.get().filename();
         Path failed = root.resolve(ConsumptionFileMover.FAILED).resolve(filename);
         Path processing = root.resolve(ConsumptionFileMover.PROCESSING).resolve(filename);
+        // A batch flagged 'degraded' (findDegradedBatches has no state filter) completed analysis
+        // normally, so its file already sits in processed/ — not failed/ or processing/. Retrying
+        // it is exactly what the human-review button in consumption_queue is for: the boundaries
+        // were guessed wrong and re-running the batch is the intended remedy. Duplicate cells from
+        // the re-run are not a concern — DocumentDedupService discards re-scans of already-ingested
+        // content.
+        Path processed = root.resolve(ConsumptionFileMover.PROCESSED).resolve(filename);
         Path source = Files.isRegularFile(failed) ? failed
                 : Files.isRegularFile(processing) ? processing
+                : Files.isRegularFile(processed) ? processed
                 : null;
         if (source == null) {
-            log.warn("consumption_retry found no physical file for {} (sha256={}) in failed/ or "
-                    + "processing/; ledger row left unchanged", filename, sha256);
+            log.warn("consumption_retry found no physical file for {} (sha256={}) in failed/, "
+                    + "processing/ or processed/; ledger row left unchanged", filename, sha256);
             return new Result(sha256, false,
-                    "no physical file for '" + filename + "' in failed/ or processing/");
+                    "no physical file for '" + filename + "' in failed/, processing/ or processed/");
         }
         try {
             mover.moveToRoot(source);

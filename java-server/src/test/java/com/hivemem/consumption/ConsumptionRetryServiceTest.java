@@ -82,6 +82,25 @@ class ConsumptionRetryServiceTest {
     }
 
     @Test
+    void fileInProcessedDirIsMovedToRootAndRowIsNotTouched() throws Exception {
+        // Degraded batches (findDegradedBatches has no state filter) completed normally, so their
+        // file lives in processed/, not failed/ or processing/. The queen-route retry button must
+        // still work for them.
+        Files.createDirectories(tempRoot.resolve("processed"));
+        Files.writeString(tempRoot.resolve("processed").resolve("scan.pdf"), "content");
+        when(repo.findByHash("sha-processed")).thenReturn(Optional.of(
+                new ConsumptionFileRepository.Row("sha-processed", "scan.pdf", "done", 0, null)));
+
+        var result = service.retry("sha-processed");
+
+        assertTrue(result.restaged());
+        assertTrue(Files.exists(tempRoot.resolve("scan.pdf")),
+                "file must be moved to the watch root");
+        assertFalse(Files.exists(tempRoot.resolve("processed").resolve("scan.pdf")));
+        verify(repo, never()).stage(any(), any());
+    }
+
+    @Test
     void noPhysicalFileAnywhereLeavesTheRowUntouched() {
         when(repo.findByHash("sha-gone")).thenReturn(Optional.of(
                 new ConsumptionFileRepository.Row("sha-gone", "gone.pdf", "failed", 3, "boom")));

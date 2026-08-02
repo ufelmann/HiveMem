@@ -13,10 +13,12 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Re-stage one consumed file by content hash: locate the physical file in {@code failed/} or
- * {@code processing/} and move it back to the watch root (mirrors
- * {@link com.hivemem.consumption.ConsumptionRecoverySweep#recover}). Content-based dedup (sha256
- * is UNIQUE) makes a re-run safe once {@code ConsumptionWatcher} re-hashes and re-stages it.
+ * Re-stage one consumed file by content hash: locate the physical file in {@code failed/},
+ * {@code processing/} or {@code processed/} and move it back to the watch root (mirrors
+ * {@link com.hivemem.consumption.ConsumptionRecoverySweep#recover}, extended with the
+ * {@code processed/} case for degraded batches that completed normally). Content-based dedup
+ * (sha256 is UNIQUE) makes a re-run safe once {@code ConsumptionWatcher} re-hashes and re-stages
+ * it.
  *
  * <p>{@link ConsumptionRetryService} and {@link ConsumptionProperties} are both unconditional
  * beans (unlike {@code ConsumptionQueueService}), so no {@code ObjectProvider} guard is needed for
@@ -42,8 +44,8 @@ public class ConsumptionRetryToolHandler implements ToolHandler {
 
     @Override public String description() {
         return "Re-stage a consumed scan file by its sha256 so the pipeline ingests it again "
-                + "(admin-only): moves the physical file from failed/ or processing/ back to the "
-                + "watch root without touching the ledger row — the next poll re-hashes it and "
+                + "(admin-only): moves the physical file from failed/, processing/ or processed/ "
+                + "back to the watch root without touching the ledger row — the next poll re-hashes it and "
                 + "resets the row itself. Content-based dedup makes a re-run safe.";
     }
 
