@@ -284,32 +284,32 @@ two terms are the same order of magnitude):
                 = 2 GiB / 8
                 = 256 MiB per batch
 
-To translate that into an illustrative page count, a synthetic single-page
-PDF was built with an embedded full-page JPEG at 300 DPI with dense
-pixel-level noise (quality 0.75) — a deliberately pessimistic stand-in for a
-real scanned page, chosen to be large rather than representative, and
-**labeled here as an estimate, not a measurement of real scans** (no real scan
-file was available to sample, per this repo's synthetic-fixtures-only rule).
-That page came to **~3.9 MB**. At 256 MiB / 3.9 MB/page ≈ **68 pages**, this
-worst-case estimate is well below the current default of 200. But real
-scanned text documents (mostly white background, sparse dark text/lines)
-JPEG-compress far better than pixel noise — commonly cited scanner output for
-a text page in the low hundreds of KB would instead put the same 256 MiB
-budget in the high hundreds of pages, comfortably above 200. **The honest
-conclusion is that this repository does not have real scan file sizes to
-resolve that range, and the retained-heap data above does not support
-deriving a specific page-count cap at all** — it shows page count is the
-wrong lever. What can be stated with confidence: `pdfBytes` and `parts` are
-both still held whole per concurrent batch (unchanged by Task 3), and a
-disproportionately large single batch (many pages of high-resolution
-photographic scans, e.g. color photos rather than text) is the actual risk,
-not page count on its own. If this needs a hard guarantee rather than an
-estimate, the next step is sampling real (already-consumed, not reproduced
-here) scan file sizes, or adding a file-size guard in
-`ReassemblyOrchestrator` alongside `max-pages` — both are follow-ups, not
-part of this measurement. `max-pages` was not changed by this task; re-run
-`ReassemblyHeapProbeIT` and this derivation if `-Xmx` or `worker-threads`
-change.
+Translating that budget into a page count needs a per-page byte size, and that
+figure is **specific to your scanner**, not to this software: resolution,
+colour mode and compression change it by an order of magnitude. Text
+correspondence at moderate resolution lands in the hundreds of KB per page;
+photographic or colour-heavy originals can reach several MB. A synthetic
+worst case — a full-page 300 DPI JPEG of dense pixel noise at quality 0.75 —
+measures ~3.9 MB/page and is useful only as a pathological upper bound.
+
+Measure your own instead of trusting either end of that range:
+
+```sql
+SELECT count(*) AS files,
+       sum(page_count) AS pages,
+       round(sum(size_bytes)::numeric / sum(page_count) / 1024) AS kb_per_page
+FROM attachments
+WHERE page_count IS NOT NULL;
+```
+
+Then `maxPages = fileSizeCap / bytesPerPage`. At 500 KB/page that is ~525
+pages; at 2 MB/page it is ~128, which is below the shipped default.
+
+**The number to watch when raising `max-pages` is total batch BYTES, not page
+count** — `pdfBytes` and the assembled `parts` are both held whole per
+concurrent batch, so a batch's memory cost follows its file size. Re-measure
+after any scanner settings change, and re-run `ReassemblyHeapProbeIT` plus
+this derivation if `-Xmx` or `worker-threads` change.
 
 ### File disposition
 
