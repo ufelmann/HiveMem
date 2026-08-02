@@ -82,7 +82,18 @@ public class ConsumptionService implements SeparationApplier {
      *  through batch separation; everything else is a single committed document. Runs on the consumption
      *  executor, never the @Scheduled poll thread. Location-agnostic: it reads, processes, and moves the
      *  file to processed/ or failed/. */
+    /** Existing entry point: hashes the file itself. Kept for callers and tests that have no hash. */
     public void processStaged(Path staged) {
+        try {
+            processStaged(staged, sha256(Files.readAllBytes(staged)));
+        } catch (IOException e) {
+            log.warn("Consumption read failed for {}: {}", staged.getFileName(), e.toString());
+            tryMoveFailed(staged);
+        }
+    }
+
+    /** Process one already-staged file whose hash the watcher already computed and registered. */
+    public void processStaged(Path staged, String sha256) {
         String filename = staged.getFileName().toString();
         byte[] bytes;
         int pageCount;
@@ -98,25 +109,24 @@ public class ConsumptionService implements SeparationApplier {
             tryMoveFailed(staged);
             return;
         }
-        String hash = sha256(bytes);
-        if (fileRepo != null) fileRepo.startProcessing(hash, filename);
+        if (fileRepo != null) fileRepo.startProcessing(sha256, filename);
         if (props.isReassemblyEnabled() && reassembly != null
                 && PDF.matcher(filename).matches() && pageCount > 1) {
             // Content-based reassembly takes precedence over contiguous separation when enabled.
             // reassemble() never throws: it owns the staged file's lifecycle and degrades on error.
-            reassembly.reassemble(staged, bytes, pageCount, hash, fileRepo);
+            reassembly.reassemble(staged, bytes, pageCount, sha256, fileRepo);
         } else if (splittable) {
             // The separation branch owns the staged file's lifecycle (moves to failed/ on its own
             // errors, leaves it for reconcile on dispatch failure). It must NOT fall through.
-            separateStaged(staged, filename, bytes, pageCount, hash);
+            separateStaged(staged, filename, bytes, pageCount, sha256);
         } else {
             try {
                 ingestSingle(staged, filename, bytes);
-                if (fileRepo != null) fileRepo.markDone(hash);
+                if (fileRepo != null) fileRepo.markDone(sha256);
             } catch (Exception e) {
                 log.warn("Consumption ingest failed for {}: {}", filename, e.toString());
-                if (fileRepo != null) fileRepo.markFailed(hash, e.toString());
-                tryMoveFailed(staged, hash);
+                if (fileRepo != null) fileRepo.markFailed(sha256, e.toString());
+                tryMoveFailed(staged, sha256);
             }
         }
     }

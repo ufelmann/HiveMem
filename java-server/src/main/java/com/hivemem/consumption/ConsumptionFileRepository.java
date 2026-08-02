@@ -32,6 +32,23 @@ public class ConsumptionFileRepository {
                 """, sha256, filename);
     }
 
+    /**
+     * Register a file BEFORE it is moved out of the watch root. State 'staged' means: known to the
+     * ledger, not yet being worked on. Re-staging an existing row resets it — without the reset a
+     * re-fed identical scan would keep its 'done' state (sha256 is UNIQUE) and be skipped forever.
+     */
+    public void stage(String sha256, String filename) {
+        dsl.execute("""
+                INSERT INTO consumption_file (sha256, filename, state, attempts)
+                VALUES (?, ?, 'staged', 1)
+                ON CONFLICT (sha256) DO UPDATE
+                  SET attempts   = consumption_file.attempts + 1,
+                      filename   = excluded.filename,
+                      state      = 'staged',
+                      updated_at = now()
+                """, sha256, filename);
+    }
+
     public void markDone(String sha256) {
         dsl.execute(
                 "UPDATE consumption_file SET state='done', updated_at=now() WHERE sha256=?",
@@ -51,12 +68,12 @@ public class ConsumptionFileRepository {
         return r == null ? Optional.empty() : Optional.of(map(r));
     }
 
-    /** Returns rows stuck in 'processing' state older than {@code olderThanSeconds}. */
+    /** Returns rows stuck in 'processing' or 'staged' older than {@code olderThanSeconds}. */
     public List<Row> findStaleProcessing(int olderThanSeconds, int limit) {
         var rows = dsl.fetch("""
                 SELECT sha256, filename, state, attempts, last_error
                 FROM consumption_file
-                WHERE state = 'processing'
+                WHERE state IN ('processing', 'staged')
                   AND updated_at < now() - make_interval(secs => ?)
                 ORDER BY updated_at
                 LIMIT ?

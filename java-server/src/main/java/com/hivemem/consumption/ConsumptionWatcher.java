@@ -9,6 +9,7 @@ import java.util.Set;
 import java.util.concurrent.Executor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -27,21 +28,29 @@ public class ConsumptionWatcher {
     private final ConsumptionFileMover mover;
     private final StableFileDetector detector;
     private final Clock clock;
+    private final ConsumptionFileRepository fileRepo;   // may be null (ledger disabled)
 
     @Autowired
     public ConsumptionWatcher(ConsumptionProperties props, ConsumptionService service,
-                              @Qualifier("consumptionExecutor") Executor executor) {
-        this(props, service, executor, Clock.systemUTC());
+                              @Qualifier("consumptionExecutor") Executor executor,
+                              ObjectProvider<ConsumptionFileRepository> fileRepoProvider) {
+        this(props, service, executor, Clock.systemUTC(), fileRepoProvider.getIfAvailable());
     }
 
     ConsumptionWatcher(ConsumptionProperties props, ConsumptionService service,
                        Executor executor, Clock clock) {
+        this(props, service, executor, clock, null);
+    }
+
+    ConsumptionWatcher(ConsumptionProperties props, ConsumptionService service,
+                       Executor executor, Clock clock, ConsumptionFileRepository fileRepo) {
         this.props = props;
         this.service = service;
         this.executor = executor;
         this.mover = new ConsumptionFileMover(Path.of(props.getDir()));
         this.detector = new StableFileDetector(props.getStableSeconds());
         this.clock = clock;
+        this.fileRepo = fileRepo;
     }
 
     @Scheduled(fixedRateString = "#{@consumptionProperties.pollInterval.toMillis()}")
@@ -64,8 +73,13 @@ public class ConsumptionWatcher {
                         // it (exactly-once), then hand off to the bounded executor — the poll thread never
                         // blocks on OCR/dispatch.
                         try {
+                            // Hash and register BEFORE the move. The extra read costs ~40 ms for a
+                            // 40 MB file; a death after the move but before the row exists would
+                            // otherwise strand the file where no recovery path can find it.
+                            String sha256 = ConsumptionService.sha256(Files.readAllBytes(p));
+                            if (fileRepo != null) fileRepo.stage(sha256, p.getFileName().toString());
                             Path staged = mover.moveToProcessing(p);
-                            executor.execute(() -> service.processStaged(staged));
+                            executor.execute(() -> service.processStaged(staged, sha256));
                         } catch (IOException stageErr) {
                             log.warn("Could not stage {} to processing/: {} (will retry next poll)",
                                     p.getFileName(), stageErr.toString());
