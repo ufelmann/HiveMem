@@ -281,7 +281,7 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 | **Approval** | `approve_pending` | `admin` | Commit Change | Yes | Batch approve or reject pending agent writes. |
 | **Agent** | `register_agent`, `list_agents`, `diary_write`, `diary_read` | `admin` | Fleet Management | Yes | Autonomous fleet orchestration. |
 | **References** | `add_reference`, `link_reference`, `reading_list` | `agent` | Metadata | No | Source and citation tracking. |
-| **Admin** | `health`, `queen_runs`, `queen_run_detail` | `admin` | System Management | Yes | DB connection, extensions, counts, disk. `queen_runs`/`queen_run_detail` fetch Queen/Bee run history and event timelines from Vistierie. |
+| **Admin** | `health`, `queen_runs`, `queen_run_detail`, `archivist_log`, `consumption_queue`, `consumption_retry` | `admin` | System Management | Yes | DB connection, extensions, counts, disk. `queen_runs`/`queen_run_detail` fetch Queen/Bee run history and event timelines from Vistierie. `consumption_queue` reports the scan ingest review queue (failed files, degraded batches, stalled rows, reconciliation counters); `consumption_retry` re-stages one scan file by its content hash. |
 
 ## Configuration
 
@@ -301,7 +301,7 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 | `HIVEMEM_EMBEDDING_BACKFILL_INTERVAL_MS` | `300000` | Embedding backfill sweep interval (ms) |
 | `HIVEMEM_EMBEDDING_BACKFILL_BATCH_SIZE` | `50` | Max cells per embedding backfill sweep |
 | `HIVEMEM_CONSUMPTION_RECOVERY_INTERVAL` | `5m` | How often the consumption recovery sweep runs |
-| `HIVEMEM_CONSUMPTION_RECOVERY_STALE_THRESHOLD` | `30m` | Age at which a stalled `processing` ledger entry is re-staged |
+| `HIVEMEM_CONSUMPTION_RECOVERY_STALE_THRESHOLD` | `30m` | Age at which a stalled ledger entry is re-staged. Applies to `processing` rows on every sweep; `staged` rows are re-staged by the startup sweep only (see the recovery-sweep section below) |
 | `HIVEMEM_CONSUMPTION_FAILED_RETRY_LIMIT` | `3` | Max retries for files in `failed/` before they are left permanently |
 | `SERVER_PORT` | `8421` | Port for the MCP server |
 
@@ -511,13 +511,18 @@ The consumption pipeline is designed to tolerate transient failures without data
 
 **Embedding backfill sweep.** `EmbeddingBackfillService` runs on a fixed schedule (default every 5 min) and finds all committed cells tagged `embedding_pending`. Once the embedding service is healthy again it backfills them in configurable batches (default 50 per cycle) and removes the tag. Semantic search is restored automatically — no operator action needed.
 
-**Exactly-once file staging via the `consumption_file` ledger.** Every file the watcher picks up is recorded in the `consumption_file` table with its SHA-256 content hash, in state `staged`, **before** the file is moved out of the watch root — this closes the window where a crash between the move and the (previously later) ledger write could strand a file that no recovery path could ever find again. State transitions: `staged` (registered, not yet picked up by a worker) → `processing` (a worker has started reading it) → `done` (committed) or `processing` → `failed` (ingest error). The `attempts` counter increments only when a row transitions into `processing`; staging (including re-staging an existing row) never counts as an attempt. Content-based dedup (`DocumentDedupService`) means re-queuing an already-committed file is safe — the second ingest is discarded as a duplicate.
+**Exactly-once file staging via the `consumption_file` ledger.** Every file the watcher picks up is recorded in the `consumption_file` table with its SHA-256 content hash, in state `staged`, **before** the file is moved out of the watch root — this closes the window where a crash between the move and the (previously later) ledger write could strand a file that no recovery path could ever find again. State transitions: `staged` (registered, not yet picked up by a worker) → `processing` (a worker has started reading it) → `done` (committed) or `failed` (ingest error). Two edges are easy to miss: `staged → failed` when the recovery sweep finds a stale `staged` row with no physical file anywhere (retry budget exhausted at the same time, since retrying cannot help), and `done → failed` when a separation batch was marked `done` at dispatch and its later `apply` fails — the row is flipped back so the bounded retry owns it instead of leaving a terminal dead end. The `attempts` counter increments only when a row transitions into `processing`; staging (including re-staging an existing row) never counts as an attempt. Content-based dedup (`DocumentDedupService`) means re-queuing an already-committed file is safe — the second ingest is discarded as a duplicate.
 
 **Reassembly partial-ingest → `failed/`.** When a multi-page PDF is separated into sub-documents by Vistierie and at least one sub-document fails to ingest, the entire batch is moved to `failed/`. Previously, remaining sub-documents would be silently dropped. With the ledger and the retry sweep, the whole batch can be re-attempted safely after the root cause is resolved.
 
-**Recovery sweep.** `ConsumptionRecoverySweep` runs at startup and on a fixed interval (default 5 min) and handles two cases:
+**Recovery sweep.** `ConsumptionRecoverySweep` runs at startup and on a fixed interval (default 5 min) and handles three cases:
 
-- Files crash-stranded in `staged` or `processing` past the stale threshold (default 30 min) are re-staged — `processing` rows are files that were mid-ingest when the JVM was killed; `staged` rows are files whose ledger row was written but the move-and-dispatch step never completed.
+- Rows stuck in `processing` past the stale threshold (default 30 min) are re-staged, by **both** the scheduled and the startup run. Such a row was mid-ingest when the JVM was killed: both the single-file and the reassembly path touch `updated_at` once per page as a heartbeat, so staleness here really does mean the worker is gone.
+- Rows stuck in `staged` past the same threshold are re-staged by the **startup run only**. This asymmetry is deliberate. `staged` means "registered, not yet started", and nothing bumps `updated_at` while a task merely waits its turn on the bounded worker executor — so during normal operation a stale `staged` row is usually just queued, and re-staging it would make the next poll submit a *second* task for a file that is still going to be processed by the first. After a restart the executor queue is empty by construction, which is exactly what makes "stale and staged" unambiguous at startup.
 - Files in `failed/` with an attempt count below the retry limit (default 3) are moved back to the watch root for re-ingest. Files that exhaust the retry limit remain in `failed/` and require manual inspection.
+
+A `staged` row is resolved against the **watch root** as well as `processing/` when the sweep checks whether a row still has a physical file: the ledger row is written before the move, so a crash in between leaves the file exactly where the poll found it. Only a row with no file in either location is marked as having no data.
+
+Rows that stall without failing — still `staged` or `processing` past the stale threshold — are also listed by the `consumption_queue` tool (`stalledRows`), with filename, state and age, so an operator can re-stage one explicitly with `consumption_retry` instead of waiting.
 
 See the [Bulk import runbook](operations.md#consumption-bulk-import) for operator-facing verification steps and config reference.

@@ -46,7 +46,8 @@ public class ConsumptionRetryToolHandler implements ToolHandler {
         return "Re-stage a consumed scan file by its sha256 so the pipeline ingests it again "
                 + "(admin-only): moves the physical file from failed/, processing/ or processed/ "
                 + "back to the watch root without touching the ledger row — the next poll re-hashes it and "
-                + "resets the row itself. Content-based dedup makes a re-run safe.";
+                + "re-stages it, resetting state and filename but keeping attempts, last_error and the "
+                + "page-stat columns. Content-based dedup makes a re-run safe.";
     }
 
     @Override public Map<String, Object> inputSchema() {

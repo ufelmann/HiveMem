@@ -190,9 +190,44 @@ consumption executor, never throws to the caller):
    each is ingested with `source = "consumption:"`. The staged source moves to
    `processed/`.
 
-**Degrade-safe.** On any error (vision/completion call fails, JSON unparseable,
-etc.) the whole batch is ingested as a single `pending` document and the source
-is moved to `processed/`. Nothing is lost.
+**Degrade-safe (batch level, "degrade to pending").** On any error
+(vision/completion call fails, JSON unparseable, etc.) the whole batch is ingested
+as a single `pending` document and the source is moved to `processed/`. Nothing is
+lost. Note that this document uses *degraded* in two unrelated senses, and they
+are not interchangeable:
+
+- **degrade to pending** — batch level, described here: reassembly gave up
+  entirely, so no boundaries were applied and one document covers the whole scan.
+- **degraded pages** — page level, described under *Page statistics* below: the
+  batch WAS reassembled, but individual pages contributed no vision metadata to
+  the boundary decision.
+
+**Page statistics — `total_pages` / `degraded_pages`.** A page is *degraded*
+when its metadata extraction failed both attempts and fell back to an all-null
+row. Such a page contributes nothing to the boundary decision, and nothing
+downstream can notice: the assembler scores its own grouping, not the
+completeness of its input, so a batch cut from half-blind input can still report
+high confidence. After the pass completes, `ReassemblyOrchestrator` therefore
+records both counts on the batch's `consumption_file` row (`total_pages`,
+`degraded_pages`, added in V0054).
+
+Both columns stay NULL when the batch never finished a pass — the degrade-to-
+pending path above leaves them unset. NULL means *unknown*, never *clean*: the
+review query requires `total_pages > 0` precisely so a NULL batch cannot pass the
+filter as healthy in either direction. (Such a batch is still visible, as a
+`pending` document in the approval queue.)
+
+`consumption_queue` flags a batch for human review only when **both** conditions
+hold:
+
+- at least **2** degraded pages (`ConsumptionQueueService.MIN_DEGRADED_PAGES`), and
+- more than **2 %** of the batch's pages degraded.
+
+The two conditions guard opposite ends. The percentage keeps a large batch from
+being flagged over a couple of pages; the floor of 2 keeps a small batch from
+being flagged over a single one. A queue that is always full is a queue nobody
+reads, and one degraded page in a hundred is normal wear, not a defect worth an
+operator's attention.
 
 **Operator note — `recovery-stale-threshold` vs. reassembly latency.** The 3-pass
 pipeline makes ~2·N+1 sequential LLM calls per batch, so a very large batch's
@@ -214,11 +249,10 @@ per batch.
 **Memory / batch size.** The whole batch's `pdfBytes` and the assembled `parts`
 (one PDF per mailing, from `BatchSplitter.assemble`) are held in memory for the
 duration of one `ReassemblyOrchestrator.reassemble` call, and up to
-`worker-threads` batches run concurrently. Task 3 made page *rendering* stream
-one page at a time (`PdfPageRasterizer.rasterize` hands each page's PNG to a
-callback and discards it before rendering the next), so the rasterizer's own
-footprint no longer scales with batch size — but that did **not** remove the
-two things that still do: the original `pdfBytes` array and the
+`worker-threads` batches run concurrently. Page *rendering* itself streams:
+`PdfPageRasterizer.rasterize` hands each page's PNG to a callback and discards it
+before rendering the next, so the rasterizer's own footprint does not scale with
+batch size — but two things still do: the original `pdfBytes` array and the
 fully-assembled `parts` list are both held whole, for every concurrent batch.
 
 `ReassemblyHeapProbeIT`
@@ -232,9 +266,10 @@ mocked (no LLM calls) and the real `PdfPageRasterizer`/`PageReassembler`/
 count; that recovered ~16.9 MB/page, which turned out to be almost exactly the
 size of ONE in-flight rendered page image (1240×1754 px at the 150 DPI
 reassembly setting, ~8.7 MB as an `int` raster) — i.e. the cost of one image
-allocated and discarded 200 times, not a per-page *retention* cost. Since
-Task 3 keeps exactly one page image alive at a time, that number was measuring
-garbage-not-yet-collected, not memory the cap would actually need to bound.
+allocated and discarded 200 times, not a per-page *retention* cost. Since the
+streaming rasterizer keeps exactly one page image alive at a time, that number
+was measuring garbage-not-yet-collected, not memory the cap would actually need
+to bound.
 This paragraph reports the corrected measurement: `System.gc()` immediately
 before every reading, so only what is still reachable counts, sampled at three
 checkpoints (after the streaming render/orient/extract pass, after
@@ -261,7 +296,7 @@ each time — but the slope is **≈11.8 KB/page**
 50→100 and 100→200 pairs independently, both within 1% of that figure). That
 is structural overhead only (the synthetic blank-page `pdfBytes` bytes
 themselves, plus the small `PageMetadata` records) — it is NOT image data,
-because Task 3 already keeps image data to O(1). **This means page count by
+because the streaming rasterizer already keeps image data at O(1). **This means page count by
 itself is not the binding constraint any more**, and deriving a page cap from
 this slope would be nearly meaningless: at this rate, `0.5 × 4 GiB /
 (4 workerThreads × 11,805 bytes/page) ≈ 45,500 pages` before hitting the
@@ -274,8 +309,9 @@ also negligible next to real scan data.)
 **The real constraint is batch FILE SIZE, not page count**, because
 `pdfBytes` and `parts` scale with how much actual image data a real scanned
 page carries — and these synthetic fixtures (blank vector A4 pages) carry
-essentially none. Expressed as a file-size budget with the same formula and
-the deployed `worker-threads = 4`, `-Xmx4g`, assuming worst case `parts` total
+essentially none. Expressed as a file-size budget with the same formula, assuming
+`worker-threads = 4` and `-Xmx4g` (the shipped default for `worker-threads` is 2,
+so this is the more conservative of the two) and assuming worst case `parts` total
 size ≈ `pdfBytes` size (the split re-partitions the same page data, so the
 two terms are the same order of magnitude):
 

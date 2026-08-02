@@ -286,7 +286,7 @@ For embedding coverage, count cells with the `embedding_pending` tag — it shou
 | Property | Default | Description |
 |---|---|---|
 | `hivemem.consumption.recovery-interval` | `5m` | How often the recovery sweep runs |
-| `hivemem.consumption.recovery-stale-threshold` | `30m` | How long a `processing` ledger row must be stale before it is re-staged |
+| `hivemem.consumption.recovery-stale-threshold` | `30m` | How long a ledger row must be stale before it is re-staged. A `processing` row qualifies on every sweep; a `staged` row only on the startup sweep, because during normal operation a stale `staged` row is usually just waiting in the worker queue |
 | `hivemem.consumption.failed-retry-limit` | `3` | Max retry attempts for files in `failed/` before they are left there permanently |
 | `hivemem.embedding.timeout` | `30s` | HTTP timeout per embedding request |
 | `hivemem.embedding.max-retries` | `3` | Retry attempts before the embedding request is abandoned |
