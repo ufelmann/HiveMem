@@ -67,7 +67,10 @@ services:
     networks:
       - hivemem-net
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:11434/api/tags"]
+      # The image ships neither curl nor wget; only /usr/bin/ollama is available.
+      # `ollama list` errors with non-zero exit until the daemon answers, providing
+      # liveness semantics without embedding to refresh keep_alive or defeat idle unload.
+      test: ["CMD", "ollama", "list"]
       interval: 15s
       timeout: 10s
       retries: 5
