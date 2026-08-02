@@ -17,22 +17,31 @@ public class ConsumptionQueueService {
 
     private final ConsumptionFileRepository repo;
     private final ConsumptionRecoverySweep sweep;
+    private final ConsumptionProperties props;
 
-    public ConsumptionQueueService(ConsumptionFileRepository repo, ConsumptionRecoverySweep sweep) {
+    public ConsumptionQueueService(ConsumptionFileRepository repo, ConsumptionRecoverySweep sweep,
+                                   ConsumptionProperties props) {
         this.repo = repo;
         this.sweep = sweep;
+        this.props = props;
     }
 
     public Queue queue(int limit) {
+        int staleSeconds = (int) props.getRecoveryStaleThreshold().toSeconds();
         return new Queue(
-                repo.findRetriableFailed(Integer.MAX_VALUE, limit),
+                repo.findFailedNewestFirst(limit),
                 repo.findDegradedBatches(MIN_DEGRADED_PAGES, limit),
+                repo.findStalledRows(staleSeconds, limit),
                 sweep.lastReconciliation(),
                 repo.countsByState());
     }
 
+    /** @param stalledRows rows still 'staged'/'processing' past the recovery stale threshold — work
+     *                     that neither finished nor failed, and which is otherwise invisible except
+     *                     as an anonymous integer in {@code stateCounts}. */
     public record Queue(List<ConsumptionFileRepository.Row> failedFiles,
                         List<ConsumptionFileRepository.DegradedBatch> degradedBatches,
+                        List<ConsumptionFileRepository.StalledRow> stalledRows,
                         ConsumptionRecoverySweep.Reconciliation reconciliation,
                         Map<String, Integer> stateCounts) {}
 }

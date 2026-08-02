@@ -66,6 +66,7 @@ public class ConsumptionQueueToolHandler implements ToolHandler {
         return Map.of(
                 "failedFiles", java.util.List.of(),
                 "degradedBatches", java.util.List.of(),
+                "stalledRows", java.util.List.of(),
                 "reconciliation", Map.of(
                         "orphansRestaged", 0,
                         "rowsWithoutFile", 0,

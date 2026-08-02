@@ -138,6 +138,52 @@ public class ConsumptionFileRepository {
         return out;
     }
 
+    /** All rows in 'failed' state, NEWEST first, for the review queue.
+     *
+     *  <p>Deliberately separate from {@link #findRetriableFailed}, which orders oldest-first because
+     *  the retry sweep must drain its backlog in arrival order. The queue needs the opposite: with
+     *  more failures than {@code limit}, oldest-first would show an operator the 50 oldest rows
+     *  forever and never the ones that just broke. Unlike the sweep's query this one does not filter
+     *  by retry budget — an exhausted row is exactly what a human is meant to look at. */
+    public List<Row> findFailedNewestFirst(int limit) {
+        var rows = dsl.fetch("""
+                SELECT sha256, filename, state, attempts, last_error
+                FROM consumption_file
+                WHERE state = 'failed'
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """, limit);
+        List<Row> out = new ArrayList<>();
+        for (Record r : rows) out.add(map(r));
+        return out;
+    }
+
+    /** Rows still in 'staged' or 'processing' whose {@code updated_at} is older than
+     *  {@code olderThanSeconds} — a batch that stalled rather than failed. Without this the only
+     *  trace of such a row in the review queue is an anonymous integer in {@link #countsByState},
+     *  with no filename to act on, even though {@code ConsumptionRetryService} can re-stage it. */
+    public List<StalledRow> findStalledRows(int olderThanSeconds, int limit) {
+        var rows = dsl.fetch("""
+                SELECT sha256, filename, state, updated_at,
+                       EXTRACT(EPOCH FROM (now() - updated_at))::bigint AS age_seconds
+                FROM consumption_file
+                WHERE state IN ('staged', 'processing')
+                  AND updated_at < now() - make_interval(secs => ?)
+                ORDER BY updated_at
+                LIMIT ?
+                """, olderThanSeconds, limit);
+        List<StalledRow> out = new ArrayList<>();
+        for (Record r : rows) {
+            out.add(new StalledRow(
+                    r.get("sha256", String.class),
+                    r.get("filename", String.class),
+                    r.get("state", String.class),
+                    r.get("updated_at", OffsetDateTime.class).toString(),
+                    ((Number) r.get("age_seconds")).longValue()));
+        }
+        return out;
+    }
+
     /** Which of the given on-disk filenames have at least one ledger row. Used by the
      *  reconciliation sweep to tell a genuine orphan (no row at all) from a file that belongs to
      *  the ledger. Deliberately returns presence only, not a {@code Map<String, Row>}: filename is
@@ -203,4 +249,8 @@ public class ConsumptionFileRepository {
 
     public record DegradedBatch(String sha256, String filename, int totalPages,
                                 int degradedPages, String updatedAt) {}
+
+    /** A row that is neither done nor failed but has stopped moving. */
+    public record StalledRow(String sha256, String filename, String state, String updatedAt,
+                             long ageSeconds) {}
 }
