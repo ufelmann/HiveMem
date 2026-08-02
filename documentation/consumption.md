@@ -211,60 +211,105 @@ extract for one page) rather than one. That still stays well inside the
 recovery sweep's stale threshold, since the touch remains per page rather than
 per batch.
 
-**Memory / page cap.** `max-pages` doubles as a heap guard: the whole batch's
-`pdfBytes` and the assembled `parts` (one PDF per mailing, from
-`BatchSplitter.assemble`) are held in memory for the duration of one
-`ReassemblyOrchestrator.reassemble` call, and up to `worker-threads` batches run
-concurrently. Task 3 made page *rendering* stream one page at a time
-(`PdfPageRasterizer.rasterize` hands each page's PNG to a callback and discards
-it before rendering the next), so the rasterizer's own footprint no longer
-scales with batch size — but that did **not** remove the two things that still
-do: the original `pdfBytes` array and the fully-assembled `parts` list are both
-held whole, for every concurrent batch.
+**Memory / batch size.** The whole batch's `pdfBytes` and the assembled `parts`
+(one PDF per mailing, from `BatchSplitter.assemble`) are held in memory for the
+duration of one `ReassemblyOrchestrator.reassemble` call, and up to
+`worker-threads` batches run concurrently. Task 3 made page *rendering* stream
+one page at a time (`PdfPageRasterizer.rasterize` hands each page's PNG to a
+callback and discards it before rendering the next), so the rasterizer's own
+footprint no longer scales with batch size — but that did **not** remove the
+two things that still do: the original `pdfBytes` array and the
+fully-assembled `parts` list are both held whole, for every concurrent batch.
 
-The cap is derived, not guessed, via `ReassemblyHeapProbeIT`
+`ReassemblyHeapProbeIT`
 (`java-server/src/test/java/com/hivemem/consumption/ReassemblyHeapProbeIT.java`,
-run with `./mvnw -Dit.test=ReassemblyHeapProbeIT verify`). It drives a full
-`reassemble(...)` call — not the rasterizer alone — over a synthetic 200-page
-PDF with `PageOrienter`/`PageMetadataExtractor`/`MailingAssembler` mocked (no
-LLM calls) and the real `PageReassembler`/`BatchSplitter`/rasterizer, so the
-`parts` list and per-page metadata accumulation are actually exercised. The
-mocked `MailingAssembler` returns no groups, so every page becomes its own
-1-page document — the worst case for `parts` overhead, since `BatchSplitter`
-pays full per-PDF (fonts/resources/xref) overhead 200 times instead of
-amortising it over a handful of mailings; this deliberately does not
-undercount. Peak used heap (`Runtime.totalMemory() - Runtime.freeMemory()`) is
-sampled after every page and by a 1ms background poller for the whole call
-(to also cover the parts-assembly and ingest phases after the streaming render
-pass returns), against a post-`System.gc()` baseline.
+run with `./mvnw -Dit.test=ReassemblyHeapProbeIT verify`) measures this
+directly by driving a full `reassemble(...)` call — not the rasterizer alone —
+over synthetic PDFs, with `PageOrienter`/`PageMetadataExtractor`/`MailingAssembler`
+mocked (no LLM calls) and the real `PdfPageRasterizer`/`PageReassembler`/
+`BatchSplitter`. A first version of this probe sampled raw allocation
+(`totalMemory() - freeMemory()` without an intervening GC) and divided by page
+count; that recovered ~16.9 MB/page, which turned out to be almost exactly the
+size of ONE in-flight rendered page image (1240×1754 px at the 150 DPI
+reassembly setting, ~8.7 MB as an `int` raster) — i.e. the cost of one image
+allocated and discarded 200 times, not a per-page *retention* cost. Since
+Task 3 keeps exactly one page image alive at a time, that number was measuring
+garbage-not-yet-collected, not memory the cap would actually need to bound.
+This paragraph reports the corrected measurement: `System.gc()` immediately
+before every reading, so only what is still reachable counts, sampled at three
+checkpoints (after the streaming render/orient/extract pass, after
+`BatchSplitter.assemble` produces `parts`, and at the end of `reassemble`), at
+page counts 50/100/200, under two page→document groupings.
 
 Measured on 2026-08-02 (JDK 26.0.2, `reassembly-render-dpi=150`,
-`blank-filter-enabled=false` so the synthetic blank pages don't get dropped
-before reaching `BatchSplitter`/ingest — see the test for why), 3 runs after
-one unmeasured warm-up run:
+`blank-filter-enabled=false` so the synthetic blank pages reach
+`BatchSplitter`/ingest instead of being dropped — see the test), retained heap
+after `parts` is assembled (bytes, relative to a pre-call `System.gc()`
+baseline), 3 runs per configuration after one unmeasured warm-up run:
 
-| Run | bytes/page |
-|---|---|
-| 1 | 16,950,739 |
-| 2 | 16,878,384 |
-| 3 | 16,876,510 |
+| Pages | Grouping | Run 1 | Run 2 | Run 3 | Avg |
+|---|---|---|---|---|---|
+| 50  | every page its own doc (worst case) | 594,880 | 594,808 | 595,000 | 594,896 |
+| 100 | every page its own doc (worst case) | 1,183,584 | 1,181,048 | 1,182,376 | 1,182,336 |
+| 200 | every page its own doc (worst case) | 2,365,272 | 2,365,160 | 2,366,360 | 2,365,597 |
+| 200 | ~10 pages/doc (realistic duplex batch, 20 docs) | 2,229,760 | 2,228,656 | 2,227,832 | 2,228,749 |
 
-All three agree within 0.5% — well inside the ~30% disagreement threshold —
-so the average, **≈16.9 MB/page**, is used. Deriving the cap with the deployed
-values `worker-threads = 4` and `-Xmx4g`:
+**Retained heap does grow roughly linearly with page count** — 594,896 →
+1,182,336 → 2,365,597 for 50/100/200 pages is within 1% of exactly doubling
+each time — but the slope is **≈11.8 KB/page**
+(`(2,365,597 − 594,896) / (200 − 50) ≈ 11,805 bytes/page`, confirmed by the
+50→100 and 100→200 pairs independently, both within 1% of that figure). That
+is structural overhead only (the synthetic blank-page `pdfBytes` bytes
+themselves, plus the small `PageMetadata` records) — it is NOT image data,
+because Task 3 already keeps image data to O(1). **This means page count by
+itself is not the binding constraint any more**, and deriving a page cap from
+this slope would be nearly meaningless: at this rate, `0.5 × 4 GiB /
+(4 workerThreads × 11,805 bytes/page) ≈ 45,500 pages` before hitting the
+heap budget from structural overhead alone — orders of magnitude above any
+plausible batch. (The grouping shape matters far less than expected too: 200
+one-page documents vs. 20 ten-page documents differ by only ~137 KB, i.e.
+~760 bytes of extra `BatchSplitter` container overhead per extra document —
+also negligible next to real scan data.)
 
-    capPages = floor( (0.5 × Xmx) / (workerThreads × bytesPerPage) )
-             = floor( (0.5 × 4 GiB) / (4 × 16,901,878) )
-             = floor( 2,147,483,648 / 67,607,512 )
-             = 31 → rounded down to 30
+**The real constraint is batch FILE SIZE, not page count**, because
+`pdfBytes` and `parts` scale with how much actual image data a real scanned
+page carries — and these synthetic fixtures (blank vector A4 pages) carry
+essentially none. Expressed as a file-size budget with the same formula and
+the deployed `worker-threads = 4`, `-Xmx4g`, assuming worst case `parts` total
+size ≈ `pdfBytes` size (the split re-partitions the same page data, so the
+two terms are the same order of magnitude):
 
-**This measurement says the 2026-08-02 default of 200 is too high, not too
-low.** The previous 500-page setting was reverted for being unsafe (see the
-Task 7 brief); this measurement shows even 200 has no real margin under
-worst-case grouping at `-Xmx4g` with 4 worker threads — the honest number is
-**30**. Applying it is a separate, human deployment decision (this document
-only records the derivation); re-run `ReassemblyHeapProbeIT` and reapply the
-formula above if `-Xmx` or `worker-threads` change.
+    fileSizeCap = (0.5 × Xmx) / (workerThreads × 2)
+                = (0.5 × 4 GiB) / (4 × 2)
+                = 2 GiB / 8
+                = 256 MiB per batch
+
+To translate that into an illustrative page count, a synthetic single-page
+PDF was built with an embedded full-page JPEG at 300 DPI with dense
+pixel-level noise (quality 0.75) — a deliberately pessimistic stand-in for a
+real scanned page, chosen to be large rather than representative, and
+**labeled here as an estimate, not a measurement of real scans** (no real scan
+file was available to sample, per this repo's synthetic-fixtures-only rule).
+That page came to **~3.9 MB**. At 256 MiB / 3.9 MB/page ≈ **68 pages**, this
+worst-case estimate is well below the current default of 200. But real
+scanned text documents (mostly white background, sparse dark text/lines)
+JPEG-compress far better than pixel noise — commonly cited scanner output for
+a text page in the low hundreds of KB would instead put the same 256 MiB
+budget in the high hundreds of pages, comfortably above 200. **The honest
+conclusion is that this repository does not have real scan file sizes to
+resolve that range, and the retained-heap data above does not support
+deriving a specific page-count cap at all** — it shows page count is the
+wrong lever. What can be stated with confidence: `pdfBytes` and `parts` are
+both still held whole per concurrent batch (unchanged by Task 3), and a
+disproportionately large single batch (many pages of high-resolution
+photographic scans, e.g. color photos rather than text) is the actual risk,
+not page count on its own. If this needs a hard guarantee rather than an
+estimate, the next step is sampling real (already-consumed, not reproduced
+here) scan file sizes, or adding a file-size guard in
+`ReassemblyOrchestrator` alongside `max-pages` — both are follow-ups, not
+part of this measurement. `max-pages` was not changed by this task; re-run
+`ReassemblyHeapProbeIT` and this derivation if `-Xmx` or `worker-threads`
+change.
 
 ### File disposition
 
