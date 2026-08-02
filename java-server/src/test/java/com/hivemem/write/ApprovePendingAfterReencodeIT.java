@@ -72,7 +72,12 @@ class ApprovePendingAfterReencodeIT {
         UUID id = insertCell("pending", "pending content", dim384Vector());
 
         migrationService.run(null); // stub client reports dimension 1024
-        writeToolRepository.approvePending(List.of(id), "committed");
+
+        int updated = writeToolRepository.approvePending(List.of(id), "committed");
+        assertThat(updated).as("approvePending must actually flip the pending row").isEqualTo(1);
+
+        String status = dsl.fetchOne("SELECT status FROM cells WHERE id = ?", id).get("status", String.class);
+        assertThat(status).as("approval must have taken effect").isEqualTo("committed");
 
         Integer dimension = dsl.fetchOne("SELECT vector_dims(embedding) AS d FROM cells WHERE id = ?", id)
                 .get("d", Integer.class);

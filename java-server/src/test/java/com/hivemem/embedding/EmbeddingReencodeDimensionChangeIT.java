@@ -62,20 +62,22 @@ class EmbeddingReencodeDimensionChangeIT {
         dsl.execute("DELETE FROM cells");
         dsl.execute("DELETE FROM identity");
         // V0053 already removed the stale index from real databases; drop whatever the
-        // migrations left behind so this test recreates the production shape from scratch.
+        // migrations left behind — including a stale idx_drawers_embedding this class's own
+        // test creates, so an aborted first run never leaks it into a later @Test — so this
+        // test recreates the production shape from scratch.
         dsl.execute("DROP INDEX IF EXISTS idx_cells_embedding");
         dsl.execute("DROP INDEX IF EXISTS idx_facts_embedding");
+        dsl.execute("DROP INDEX IF EXISTS idx_drawers_embedding");
 
         stateRepository = new EmbeddingStateRepository(dsl, ds);
         // Stored identity: an old model at the old dimension, so run() detects a mismatch
         // against the stub client (below) and takes the reencode path.
         stateRepository.saveInfo(new EmbeddingInfo("old-model", 384));
 
-        // Stub client reports dimension 1024 under a new model name; startup retries are
-        // pointless in-process, and the no-op backup runner keeps the test from exec'ing the
-        // real hivemem-backup binary.
+        // Stub client reports dimension 1024 under a new model name; the no-op backup runner
+        // (via the factory) keeps the test from exec'ing the real hivemem-backup binary.
         EmbeddingClient stubClient = new FixedEmbeddingClient(1024, "new-model");
-        migrationService = new EmbeddingMigrationService(stubClient, stateRepository, 1, 0L, () -> { });
+        migrationService = EmbeddingMigrationServiceTestFactory.withStubBackup(stubClient, stateRepository, () -> { });
     }
 
     @Test
@@ -93,7 +95,8 @@ class EmbeddingReencodeDimensionChangeIT {
                                 + "AND vector_dims(embedding) <> 1024")
                         .into(Integer.class),
                 "no row may keep an old-dimension vector");
-        assertEquals(1, countVectorIndexesOn("cells"), "exactly one index, at the new dimension");
+        assertEquals(1, countVectorIndexesOn("cells"), "exactly one index");
+        assertEquals(1, countVectorIndexesOn1024("cells"), "and it must be built at the new dimension");
         assertFalse(indexExists("idx_drawers_embedding"), "the stale index is gone for good");
     }
 
@@ -103,6 +106,20 @@ class EmbeddingReencodeDimensionChangeIT {
                                 + "JOIN pg_class c ON c.oid = i.indexrelid "
                                 + "JOIN pg_am a ON a.oid = c.relam "
                                 + "WHERE a.amname IN ('hnsw','ivfflat') AND i.indrelid = ?::regclass",
+                        table)
+                .into(Integer.class);
+    }
+
+    /** Counts vector indexes on {@code table} whose definition casts to {@code vector(1024)} —
+     *  proving the surviving index is actually built at the new dimension, not merely that some
+     *  index (possibly still at the old dimension) exists. */
+    private int countVectorIndexesOn1024(String table) {
+        return dsl.fetchOne(
+                        "SELECT count(*)::int FROM pg_index i "
+                                + "JOIN pg_class c ON c.oid = i.indexrelid "
+                                + "JOIN pg_am a ON a.oid = c.relam "
+                                + "WHERE a.amname IN ('hnsw','ivfflat') AND i.indrelid = ?::regclass "
+                                + "  AND pg_get_indexdef(i.indexrelid) LIKE '%vector(1024)%'",
                         table)
                 .into(Integer.class);
     }
