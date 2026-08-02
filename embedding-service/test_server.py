@@ -27,9 +27,10 @@ MODULE_NAME = "embedding_service_server_under_test"
 class FakeBackend:
     """Stand-in for backend.py: switches state only when bootstrap() runs."""
 
-    def __init__(self, before, after=None):
+    def __init__(self, before, after=None, health_error=None):
         self._state = dict(before)
         self._after = dict(after) if after is not None else None
+        self._health_error = health_error
 
     def bootstrap(self):
         if self._after is not None:
@@ -40,6 +41,8 @@ class FakeBackend:
         return dict(self._state)
 
     def health(self):
+        if self._health_error is not None:
+            raise self._health_error
         return {"status": "ok", **self._state}
 
     def embed(self, text, mode="document"):
@@ -155,6 +158,23 @@ class ServerHandlerTest(unittest.TestCase):
         status, body = self.get_with_status(mod, "/does-not-exist")
         self.assertEqual(status, 404)
         self.assertEqual(body, {"error": "not found"})
+
+    def test_health_reports_503_when_backend_is_down(self):
+        # backend.health() (e.g. backend_ollama.py's unguarded /api/tags GET) can
+        # raise when the upstream is unreachable. The handler must catch that and
+        # answer 503 with a JSON body naming the cause, rather than letting the
+        # exception close the connection with no response -- Docker's healthcheck
+        # still goes red, but via status code, not a transport error.
+        mod = load_server(
+            backend=FakeBackend(
+                before={"model": "m", "dimension": 4},
+                health_error=ConnectionRefusedError("connection refused"),
+            )
+        )
+        status, body = self.get_with_status(mod, "/health")
+        self.assertEqual(status, 503)
+        self.assertEqual(body["status"], "error")
+        self.assertIn("connection refused", body["error"])
 
 
 if __name__ == "__main__":

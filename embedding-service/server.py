@@ -46,7 +46,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/info":
             self._respond(200, backend.info())
         elif self.path == "/health":
-            self._respond(200, backend.health())
+            try:
+                self._respond(200, backend.health())
+            except Exception as exc:  # keep the server alive and answer with 503
+                self._respond(503, {"status": "error", "error": str(exc)})
         else:
             self._respond(404, {"error": "not found"})
 
