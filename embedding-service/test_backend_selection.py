@@ -85,6 +85,16 @@ class BackendSelectionTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             module.select_backend({"EMBEDDING_BACKEND": "typo"})
 
+    def test_unknown_backend_fails_the_module_import_itself(self):
+        # Guards against a later edit wrapping the module-level import in
+        # try/except ValueError and silently falling back to backend_onnx --
+        # exactly the fallback the module docstring forbids. select_backend()
+        # raising is not enough on its own; the import at module scope must
+        # propagate that failure instead of swallowing it.
+        with mock.patch.dict(_ENV, {"EMBEDDING_BACKEND": "typo"}, clear=False):
+            with self.assertRaises(ValueError):
+                load_backend_module()
+
 
 if __name__ == "__main__":
     unittest.main()
