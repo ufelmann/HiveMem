@@ -131,4 +131,40 @@ class ConsumptionWatcherStagingTest {
         assertFalse(Files.exists(scan), "the retried poll must move the file out of the watch root");
         assertTrue(Files.isRegularFile(root.resolve("processing").resolve("scan.pdf")));
     }
+
+    /** If processing/ already holds a file named scan.pdf, the mover appends a -1 suffix. The row
+     *  was staged with the PRE-MOVE name; unless the watcher then persists the landed name, the
+     *  ledger says "scan.pdf" while the file is "scan-1.pdf". The recovery sweep resolves files by
+     *  ledger filename, so it would see scan-1.pdf as an orphan with no row and move it back to the
+     *  watch root while it is still queued/running — a duplicate ingestion of the same batch. */
+    @Test
+    void collisionSuffixedNameIsPersistedToTheLedger() throws Exception {
+        byte[] content = "synthetic-pdf-bytes".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        Path scan = root.resolve("scan.pdf");
+        Files.write(scan, content);
+        String expectedHash = ConsumptionService.sha256(content);
+
+        // Occupy the destination name in processing/ so the mover must suffix.
+        Path processingDir = root.resolve("processing");
+        Files.createDirectories(processingDir);
+        Files.writeString(processingDir.resolve("scan.pdf"), "already-there");
+
+        ConsumptionProperties props = new ConsumptionProperties();
+        props.setDir(root.toString());
+        props.setEnabled(true);
+        props.setStableSeconds(0);
+
+        ConsumptionService service = mock(ConsumptionService.class);
+        ConsumptionFileRepository repo = mock(ConsumptionFileRepository.class);
+        Clock clock = Clock.fixed(Instant.now().plusSeconds(3600), ZoneOffset.UTC);
+        ConsumptionWatcher watcher =
+                new ConsumptionWatcher(props, service, (Runnable r) -> r.run(), clock, repo);
+
+        watcher.poll();
+        watcher.poll();
+
+        verify(repo).stage(eq(expectedHash), eq("scan.pdf"));
+        verify(repo).updateFilename(eq(expectedHash), eq("scan-1.pdf"));
+        verify(service).processStaged(any(Path.class), eq(expectedHash));
+    }
 }

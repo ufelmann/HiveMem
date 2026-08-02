@@ -79,6 +79,17 @@ public class ConsumptionWatcher {
                             String sha256 = ConsumptionService.sha256(Files.readAllBytes(p));
                             if (fileRepo != null) fileRepo.stage(sha256, p.getFileName().toString());
                             Path staged = mover.moveToProcessing(p);
+                            // moveToProcessing may append a -1/-2 collision suffix, so the name it
+                            // landed under can differ from the one just staged. Without this update
+                            // the ledger row still says the pre-move name, the recovery sweep finds
+                            // no row for the suffixed on-disk name, misreads the file as an orphan
+                            // with no ledger row, and moves it back to the watch root while it is
+                            // still queued/running on the executor — causing a duplicate ingestion.
+                            // Unconditional write: comparing names first would only save a rare no-op
+                            // UPDATE, and this path is not hot enough to justify the extra branch.
+                            if (fileRepo != null) {
+                                fileRepo.updateFilename(sha256, staged.getFileName().toString());
+                            }
                             executor.execute(() -> service.processStaged(staged, sha256));
                         } catch (Exception stageErr) {
                             // Catches IOException (read/move) AND unchecked DataAccessException from
