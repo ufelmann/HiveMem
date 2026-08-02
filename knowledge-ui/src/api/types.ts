@@ -201,6 +201,47 @@ export interface ArchivistLogEntry {
   new_signal?: string | null
 }
 
+/** One row from `consumption_queue`'s failedFiles list — mirrors
+ *  ConsumptionFileRepository.Row (jOOQ/Jackson record serialization). */
+export interface IngestFailedFile {
+  sha256: string
+  filename: string
+  state: string
+  attempts: number
+  lastError: string | null
+}
+
+/** One row from `consumption_queue`'s degradedBatches list — mirrors
+ *  ConsumptionFileRepository.DegradedBatch. */
+export interface IngestDegradedBatch {
+  sha256: string
+  filename: string
+  totalPages: number
+  degradedPages: number
+  updatedAt: string
+}
+
+/** Reconciliation counters, cumulative since process start — mirrors
+ *  ConsumptionRecoverySweep.Reconciliation. Field names match the backend record exactly:
+ *  no `doneLeftovers` (that name never existed on the backend). */
+export interface IngestReconciliation {
+  orphansRestaged: number
+  rowsWithoutFile: number
+  misplacedFailed: number
+}
+
+/** `consumption_queue` response — mirrors ConsumptionQueueService.Queue. When the
+ *  consumption pipeline is disabled, ConsumptionQueueToolHandler returns this same shape
+ *  with all collections empty/zero and `unavailable: true`, so an off pipeline never reads
+ *  as a healthy empty queue. */
+export interface IngestQueue {
+  failedFiles: IngestFailedFile[]
+  degradedBatches: IngestDegradedBatch[]
+  reconciliation: IngestReconciliation
+  stateCounts: Record<string, number>
+  unavailable?: boolean
+}
+
 export interface SavedSearch {
   id: string
   name: string

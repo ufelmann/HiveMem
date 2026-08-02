@@ -1,5 +1,5 @@
 import { palace as mockPalace } from '../data/mock'
-import type { ApiClient, HiveEvent, Cell, Realm, Signal, Tunnel, Fact, StatusSummary, Reference, SearchResult, DocumentRow, FacetValue, SavedSearch, MediaItem } from './types'
+import type { ApiClient, HiveEvent, Cell, Realm, Signal, Tunnel, Fact, StatusSummary, Reference, SearchResult, DocumentRow, FacetValue, SavedSearch, MediaItem, IngestQueue } from './types'
 import { NO_REALM } from '../composables/realmMeta'
 
 interface MockConfig { latencyMs?: [number, number]; eventInterval?: number }
@@ -57,6 +57,8 @@ export class MockApiClient implements ApiClient {
       approve_pending: () => ({ ok: true }),
       queen_runs: () => this.queenRuns(),
       queen_run_detail: (args: { run_id: string }) => this.queenRunDetail(args),
+      consumption_queue: () => this.consumptionQueue(),
+      consumption_retry: (args: { sha256?: string }) => this.consumptionRetry(args),
       list_agents: () => [],
       diary_read: () => [],
       get_blueprint: () => null,
@@ -522,6 +524,30 @@ export class MockApiClient implements ApiClient {
       { type: 'tunnel', id: 'p-2', description: 'c-99 → c-13 (refines): supersedes the older rename note',
         realm: 'hivemem', signal: null, created_by: 'queen', created_at: '2026-06-02T03:00:14Z' },
     ]
+  }
+
+  // Synthetic ingest-review data only: never a real filename, sender or document title —
+  // this repo is public (see CLAUDE.md "Public repo — what must never be committed").
+  private consumptionQueue(): IngestQueue {
+    return {
+      failedFiles: [
+        { sha256: 'aaaa0001', filename: 'scan-0001.pdf', state: 'failed', attempts: 2,
+          lastError: 'page count 240 exceeds max-pages 200' },
+      ],
+      degradedBatches: [
+        { sha256: 'bbbb0002', filename: 'scan-0002.pdf', totalPages: 40, degradedPages: 3,
+          updatedAt: '2026-08-02T10:00:00Z' },
+      ],
+      reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
+      stateCounts: { done: 20, failed: 1 },
+    }
+  }
+
+  private consumptionRetry(args: { sha256?: string }) {
+    // The mock always misses — there is no real ledger to re-stage against — so the UI's
+    // failure-surfacing path (a retry that visibly did not work) gets exercised, matching
+    // the real handler's "unknown hash" case.
+    return { sha256: String(args.sha256 ?? ''), restaged: false, error: 'unknown sha256' }
   }
 
   private buildMediaSeed(): MediaItem[] {

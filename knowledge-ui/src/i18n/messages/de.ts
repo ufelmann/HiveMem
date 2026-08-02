@@ -171,6 +171,17 @@ export default {
     filed: 'Einsortiert',
     skipped: 'Übersprungen',
     reason: 'Begründung',
+    ingest: {
+      title: 'Scan-Nachkontrolle',
+      unavailable: 'Consumption-Pipeline deaktiviert — die Scan-Warteschlange ist nicht verfügbar.',
+      reconciliation: 'Abgleich seit Prozessstart: {orphans} verwaist wieder eingereiht, {missing} ohne Datei, {misplaced} falsch abgelegt',
+      failedFiles: 'Fehlgeschlagene Dateien',
+      degradedBatches: 'Stapel mit fehlenden Seiten-Metadaten',
+      retry: 'Erneut einlesen',
+      none: 'Nichts zu prüfen',
+      retryFailed: 'Erneutes Einlesen fehlgeschlagen.',
+      retryFailedReason: 'Erneutes Einlesen fehlgeschlagen: {error}',
+    },
   },
   keybindings: {
     hints: 'Cmd+K Suche · Esc zurück · Enter Reader'

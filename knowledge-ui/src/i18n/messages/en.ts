@@ -171,6 +171,17 @@ export default {
     filed: 'Filed',
     skipped: 'Skipped',
     reason: 'Reason',
+    ingest: {
+      title: 'Scan review',
+      unavailable: 'Consumption pipeline disabled — the scan queue is unavailable.',
+      reconciliation: 'Reconciliation since process start: {orphans} orphaned re-staged, {missing} without file, {misplaced} misplaced',
+      failedFiles: 'Failed files',
+      degradedBatches: 'Batches with missing page metadata',
+      retry: 'Re-ingest',
+      none: 'Nothing to review',
+      retryFailed: 'Re-ingest failed.',
+      retryFailedReason: 'Re-ingest failed: {error}',
+    },
   },
   keybindings: {
     hints: 'Cmd+K search · Esc back · Enter reader'

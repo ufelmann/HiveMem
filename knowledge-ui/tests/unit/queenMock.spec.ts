@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { MockApiClient } from '../../src/api/mockClient'
-import type { QueenRunList, QueenRunDetail, PendingApproval } from '../../src/api/types'
+import type { QueenRunList, QueenRunDetail, PendingApproval, IngestQueue } from '../../src/api/types'
 
 describe('MockApiClient queen tools', () => {
   it('returns a run list with costAvailable flag', async () => {
@@ -23,5 +23,22 @@ describe('MockApiClient queen tools', () => {
     const api = new MockApiClient({ latencyMs: [0, 0] })
     const pending = await api.call<PendingApproval[]>('pending_approvals')
     expect(pending.some(p => p.created_by === 'queen')).toBe(true)
+  })
+
+  it('returns an ingest queue with the real reconciliation field names', async () => {
+    const api = new MockApiClient({ latencyMs: [0, 0] })
+    const queue = await api.call<IngestQueue>('consumption_queue')
+    expect(Array.isArray(queue.failedFiles)).toBe(true)
+    expect(Array.isArray(queue.degradedBatches)).toBe(true)
+    expect(queue.reconciliation).toEqual({ orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 })
+    expect(queue.failedFiles[0].filename).toBe('scan-0001.pdf')
+  })
+
+  it('returns restaged:false with an error for consumption_retry against an unknown hash', async () => {
+    const api = new MockApiClient({ latencyMs: [0, 0] })
+    const res = await api.call<{ sha256: string; restaged: boolean; error?: string }>(
+      'consumption_retry', { sha256: 'unknown-hash' })
+    expect(res.restaged).toBe(false)
+    expect(res.error).toBeTruthy()
   })
 })
