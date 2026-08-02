@@ -1,9 +1,12 @@
 package com.hivemem.consumption;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.jooq.DSLContext;
@@ -151,6 +154,42 @@ public class ConsumptionFileRepository {
         return out;
     }
 
+    /** Batches whose degraded page count is at least {@code minDegraded} AND above 2 % of their
+     *  pages. Both conditions must hold: the percentage keeps large batches from being flagged for
+     *  a couple of pages, the floor keeps small batches from being flagged for a single one.
+     *  {@code total_pages > 0} also excludes rows where total_pages/degraded_pages are NULL (the
+     *  {@code degradeToPending} path leaves them unset when a batch dies before analysis) — a NULL
+     *  batch is unknown, not clean, and must not silently pass this filter either way. */
+    public List<DegradedBatch> findDegradedBatches(int minDegraded, int limit) {
+        var rows = dsl.fetch("""
+                SELECT sha256, filename, total_pages, degraded_pages, updated_at
+                FROM consumption_file
+                WHERE degraded_pages >= ?
+                  AND total_pages > 0
+                  AND degraded_pages::numeric / total_pages > 0.02
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """, minDegraded, limit);
+        List<DegradedBatch> out = new ArrayList<>();
+        for (Record r : rows) {
+            out.add(new DegradedBatch(
+                    r.get("sha256", String.class),
+                    r.get("filename", String.class),
+                    (Integer) r.get("total_pages"),
+                    (Integer) r.get("degraded_pages"),
+                    r.get("updated_at", OffsetDateTime.class).toString()));
+        }
+        return out;
+    }
+
+    /** Row counts per ledger state, for the file level of the review queue. */
+    public Map<String, Integer> countsByState() {
+        var rows = dsl.fetch("SELECT state, count(*) AS n FROM consumption_file GROUP BY state");
+        Map<String, Integer> out = new HashMap<>();
+        for (Record r : rows) out.put(r.get("state", String.class), ((Number) r.get("n")).intValue());
+        return out;
+    }
+
     private static Row map(Record r) {
         return new Row(
                 r.get("sha256", String.class),
@@ -161,4 +200,7 @@ public class ConsumptionFileRepository {
     }
 
     public record Row(String sha256, String filename, String state, int attempts, String lastError) {}
+
+    public record DegradedBatch(String sha256, String filename, int totalPages,
+                                int degradedPages, String updatedAt) {}
 }
