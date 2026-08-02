@@ -32,6 +32,54 @@ cd embedding-service
 docker build -t hivemem-embeddings .
 ```
 
+### GPU embedding backend (optional)
+
+The bundled embedding sidecar (`embedding-service/`) ships two backends, selected via
+`EMBEDDING_BACKEND`:
+
+- `onnx` (default) — CPU inference (onnxruntime), embeds up to ~500 characters per cell.
+  Runs on any host, no GPU required — this is what a plain `docker compose up -d` uses.
+- `ollama` — talks to a local Ollama server running a larger embedding model (the default
+  is Qwen3-Embedding-8B), embedding up to ~8000 characters per cell. The integration is
+  provider-neutral: it only depends on Ollama's HTTP API, so a CUDA-based Ollama image
+  works the same way as the ROCm one — swap the image tag in your compose override to
+  match your GPU vendor.
+
+To enable it:
+
+```bash
+export HIVEMEM_EMBEDDING_BACKEND=ollama
+docker compose --profile gpu up -d
+```
+
+The `--profile gpu` flag is required. Without it, the `hivemem-ollama` service is not
+created at all — the embedding sidecar's health check never turns green, and `hivemem`
+(which depends on the sidecar being healthy) never starts. This is deliberate: a
+GPU-less clone that never passes `--profile gpu` is unaffected by the Ollama service
+definition.
+
+Prerequisites:
+- A GPU reachable from the Docker host, with device passthrough configured for the
+  `hivemem-ollama` service (e.g. `/dev/kfd` + `/dev/dri` for ROCm; the NVIDIA Container
+  Toolkit's device options for CUDA)
+- Enough VRAM for the configured model — the default Qwen3-Embedding-8B model at Q8
+  quantization needs on the order of 8-9 GB
+
+Key environment variables for the `hivemem-embeddings` service:
+- `EMBEDDING_BACKEND` — `onnx` (default) or `ollama`
+- `OLLAMA_URL` — base URL of the Ollama server (default `http://hivemem-ollama:11434`)
+- `OLLAMA_MODEL` — model tag to use (default `qwen3-embedding:8b-q8_0`)
+- `EMBEDDING_DIMS` — vector width after Matryoshka (MRL) slicing (default `1024`)
+- `EMBEDDING_MAX_TOKENS` — Ollama's context/truncation cap, `num_ctx` (default `2560`)
+- `EMBEDDING_KEEP_ALIVE` — how long Ollama keeps the model resident after the last
+  request (default `5m`); the model is fully unloaded from VRAM after this idle period
+  and reloads in well under 2 seconds on the next request
+- `EMBEDDING_MAX_CHARS` — character cap advertised to HiveMem via `/info` (default `8000`)
+
+A resident Ollama model does not cost measurable idle GPU power — an idle GPU sits at
+its power/memory-clock floor whether or not a model is loaded — so `EMBEDDING_KEEP_ALIVE`
+is a VRAM/reload-latency trade-off, not a power one.
+
 ## Quick Start
 
 No clone needed. Save this as `docker-compose.yml` and run `docker compose up -d`:

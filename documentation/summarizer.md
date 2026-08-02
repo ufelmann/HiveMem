@@ -1,25 +1,32 @@
 # Auto-Summarizer
 
-HiveMem's auto-summarizer turns long cells into semantically searchable knowledge by
-calling Claude Haiku to produce a curated summary. The summary is what gets embedded —
-so even very long cells (whitepapers, scanned letters, meeting transcripts) become
-findable by meaning, not just by their first 500 characters.
+HiveMem's auto-summarizer turns long cells into richer knowledge by calling Claude Haiku
+to produce key points, an insight, tags, and extracted knowledge-graph facts. It is no
+longer what makes a cell *findable* — that's the embedding's job — but it is what makes
+a cell well-understood.
 
-## Why summaries are necessary
+## Why summaries still matter
 
-The embedding model has a token limit of ~128 tokens (≈ 500 characters). Without a
-summary, long cells are silently truncated by the embedder; the resulting vector
-represents only the first few sentences. That's why HiveMem now embeds the summary
-when one is available, and falls back to the content only for short cells.
+Cells are embedded from their own content, up to the configured embedding backend's
+character cap (`EmbeddingClient.maxChars()` — 500 characters on the default ONNX backend,
+up to 8000 on the optional GPU/Ollama backend; see [architecture](architecture.md#gpu-embedding-backend-optional)
+for the backend options). A summary is the fallback *above* that cap: for content longer
+than the backend can embed, HiveMem embeds the summary instead once one exists, so even a
+whitepaper or a long scanned document stays findable by meaning rather than being silently
+truncated.
 
-For long cells without a summary, the embedding is left NULL and the cell is tagged
-`needs_summary`. The summarizer picks them up automatically.
+Separately from embeddability, any committed cell whose content exceeds
+`summary-threshold-chars` (500 characters, independent of the embedding backend) is tagged
+`needs_summary` so the summarizer enriches it with key points, insight, tags, and fact
+extraction — regardless of whether that content already has a usable embedding. The
+summarizer picks up tagged cells automatically.
 
 ## What gets written
 
 Each successful run persists, on a new revision of the cell:
 
-- `summary` — the embedded 1–2 sentence summary
+- `summary` — a curated 1–2 sentence summary (embedded as a fallback only when the cell's
+  content exceeds the embedding backend's character cap)
 - `key_points`, `insight`, `tags` — the curated metadata the LLM returns
 - `document_type` — the inferred profile type (invoice / contract / other)
 - extracted facts — written to the knowledge graph (see [extraction](extraction.md))

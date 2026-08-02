@@ -225,14 +225,25 @@ The `saved_searches` table persists named filter presets for the Scans explorer 
 
 ### Embedding dependency for OCR'd documents
 
-OCR'd scan documents are typically long, and `EmbeddingClient.encodeForCell` returns `null` for content over 500 characters that has no summary yet. So a long scanned cell gets **no embedding at ingest/OCR time**: `WriteToolService.reviseCell` tags it `needs_summary`, and the scheduled summarizer backfill (every 5 min) generates the summary and only then re-embeds the cell. Short documents (≤500 chars) are embedded immediately at OCR time.
+OCR'd scan documents are typically long. `EmbeddingClient.encodeForCell` embeds a cell's
+content directly whenever it fits within the active embedding backend's `maxChars()` (500
+characters on the default ONNX backend, up to 8000 on the optional Ollama backend — see
+[GPU embedding backend](#gpu-embedding-backend-optional)), and only returns `null` — no
+embedding at ingest/OCR time — for content beyond that cap with no summary yet available. In
+that case `WriteToolService.reviseCell` tags the cell `needs_summary`, and the scheduled
+summarizer backfill (every 5 min) generates the summary and only then re-embeds the cell.
+Documents that fit under the active backend's cap are embedded immediately at OCR time.
 
 ### Content dedup (re-scans)
 
 Content-based dedup runs **after** the cell's embedding exists, so it can rely on pgvector recall:
 
 - **Long documents:** dedup runs in `SummarizerService.summarizeOne`, once the summary has been generated and the cell re-embedded.
-- **Short documents (≤500 chars):** the embedding is available immediately, so dedup runs at OCR time in `OcrService`.
+- **Short documents (≤500 chars):** dedup runs immediately at OCR time in `OcrService`. This
+  gate uses the fixed `NeedsSummaryDecider` threshold (500 characters), not the active
+  embedding backend's `maxChars()` — so on the Ollama backend, a document between 501 and
+  8000 characters already has an embedding at OCR time but is still deferred to the
+  summarizer's dedup pass, the same as a document that has no embedding yet at all.
 
 `DocumentDedupService.findAndDiscardDuplicate` runs a two-stage check against current committed scan cells, and only ever discards cells whose `source` starts with `consumption:`: pgvector cosine recall (`recall-threshold`) then a normalized character-4-gram Jaccard gate (`text-threshold`). A confirmed re-scan (matching a strictly older cell) is soft-deleted, its attachment binary is removed if no other live cell references it, and a `duplicate_of` tunnel links it to the original. The check is best-effort: any error keeps the document. Note: byte-identical re-uploads are already deduped earlier by SHA-256 in `AttachmentService.ingest` — since the dedup fix, a re-upload also seeds the new cell with the existing extraction cell's already-enriched content (OCR/vision output, incl. `subtype_*` tags) instead of re-running the OCR/vision pipeline; this step covers same-content/different-bytes re-scans.
 
@@ -293,6 +304,41 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 | `HIVEMEM_CONSUMPTION_RECOVERY_STALE_THRESHOLD` | `30m` | Age at which a stalled `processing` ledger entry is re-staged |
 | `HIVEMEM_CONSUMPTION_FAILED_RETRY_LIMIT` | `3` | Max retries for files in `failed/` before they are left permanently |
 | `SERVER_PORT` | `8421` | Port for the MCP server |
+
+## GPU embedding backend (optional)
+
+The embedding sidecar (`embedding-service/`) supports two runtime backends behind a common
+`/embeddings` + `/info` HTTP contract, selected by the sidecar's own `EMBEDDING_BACKEND` env
+var:
+
+- `onnx` (default) — CPU inference via onnxruntime. Advertises `max_chars: 500` via `/info`.
+  This is what a plain `docker compose up -d` (no profile) runs; a clone without a GPU is
+  unaffected by the backend that follows.
+- `ollama` — proxies to a local Ollama server running a larger embedding model (default
+  Qwen3-Embedding-8B). Advertises `max_chars: 8000`. Brought up with the compose `gpu`
+  profile: `docker compose --profile gpu up -d`. Without that profile the `hivemem-ollama`
+  service does not exist, so the sidecar's health check never turns green and `hivemem`
+  (which `depends_on: condition: service_healthy` for the sidecar) never starts.
+
+`HttpEmbeddingClient.maxChars()` reads the backend's advertised `max_chars` from `/info` and
+caches it; `EmbeddingClient.encodeForCell` uses that value (not a hardcoded constant) to
+decide whether a cell's content fits, falling back to the summary only when it doesn't. This
+is why the backend choice changes summarizer load in practice, not just embedding quality —
+see [summarizer.md](summarizer.md#why-summaries-still-matter).
+
+The Ollama integration is provider-neutral: it only depends on Ollama's standard HTTP API
+(`/api/embed`, `/api/tags`), so a CUDA-based Ollama image is a drop-in replacement for the
+ROCm one used by default — no code change, only the compose image tag and device passthrough
+differ. Device passthrough (e.g. `/dev/kfd` + `/dev/dri` for ROCm, the NVIDIA Container
+Toolkit for CUDA) and sufficient VRAM for the configured model are host prerequisites, not
+something HiveMem or the sidecar can provide.
+
+The Qwen3 model is Matryoshka-trained (MRL), so the backend slices its native embedding
+vector down to `EMBEDDING_DIMS` (default 1024, since pgvector's HNSW index caps at 2000
+dimensions) and re-normalizes the slice to unit length before returning it — skipping the
+re-normalization would make pgvector's cosine distance silently wrong. Ollama itself enforces
+the input truncation (`truncate: true` + `options.num_ctx`), so the sidecar needs no
+tokenizer of its own for this backend.
 
 ### `ranked_search` PostgreSQL function
 
@@ -455,7 +501,7 @@ The summarizer-dependent endpoints (`backfill-titles`, `backfill-tax-date`) retu
 
 ### Self-healing embedding backfill
 
-On startup, `SummarizeBackfillStartupRunner` tags any live committed cell with `embedding IS NULL AND length(content) > 500` as `needs_summary`. The scheduled summarizer (every 5 min) then summarizes and re-embeds those cells. This restores semantic search for scans that previously missed their embedding (e.g. ingested before the embedding-dependency fix).
+On startup, `SummarizeBackfillStartupRunner` tags any live committed cell with `embedding IS NULL AND length(content) > 500` as `needs_summary`. The scheduled summarizer (every 5 min) then summarizes and re-embeds those cells. This restores semantic search for scans that previously missed their embedding (e.g. ingested before the embedding-dependency fix). A non-committed (e.g. `pending`) cell whose content exceeds the active backend's `maxChars()` has its vector cleared the same way during a model re-encode but is deliberately not tagged `needs_summary` there, since the summarizer only looks at committed cells; it self-heals once committed and picked up by this startup runner on a later boot.
 
 ### Consumption pipeline — error handling & recovery
 
