@@ -4,7 +4,11 @@ import java.util.List;
 
 public interface EmbeddingClient {
 
-    /** Hard cap derived from MiniLM token limit (~128 tokens ≈ 500 chars multilingual). */
+    /**
+     * Fallback char cap used only when a backend's {@code /info} advertises no
+     * {@code max_chars} of its own; see {@link #maxChars()}. Value matches the
+     * ONNX backend's calibrated MiniLM limit (~128 tokens ≈ 500 chars multilingual).
+     */
     int CONTENT_EMBED_MAX_CHARS = 500;
 
     List<Float> encodeDocument(String text);
