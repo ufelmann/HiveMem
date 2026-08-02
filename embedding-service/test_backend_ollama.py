@@ -118,6 +118,28 @@ class OllamaBackendTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "fewer than EMBEDDING_DIMS"):
             self.load_ollama(dims=1024, fake_vector=[1.0, 0.0]).bootstrap()
 
+    def test_bootstrap_identity_encodes_max_chars(self):
+        # EMBEDDING_MAX_CHARS changes which text gets embedded (content vs. summary
+        # fallback) but EmbeddingMigrationService only re-encodes on a model-name or
+        # dimension change (EmbeddingMigrationService.java:111). If MAX_CHARS were
+        # absent from the identity, lowering it and restarting would silently leave
+        # two vector generations in the same index with no error anywhere -- so this
+        # pins that the composite identity string carries the char cap.
+        mod = self.load_module({
+            "EMBEDDING_DIMS": "2",
+            "EMBEDDING_MAX_TOKENS": "2560",
+            "EMBEDDING_KEEP_ALIVE": "5m",
+            "EMBEDDING_MAX_CHARS": "4000",
+        })
+
+        def fake_urlopen(req, timeout=120):
+            return _FakeResponse({"embeddings": [[1.0, 0.0]]})
+
+        mock.patch.object(urllib.request, "urlopen", fake_urlopen).start()
+        info = mod.bootstrap()
+        self.assertEqual(
+            info["model"], f"{mod.OLLAMA_MODEL}/mrl2/t2560/c4000/contentfirst")
+
     def test_health_does_not_embed(self):
         # The compose healthcheck runs every 15s; if health() embedded it
         # would refresh Ollama's keep_alive forever and defeat idle unload.

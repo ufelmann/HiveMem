@@ -125,9 +125,9 @@ class AppOnnxConfigTest(unittest.TestCase):
         self.assertEqual(info["query_prefix"], "Q: ")
         self.assertEqual(info["document_prefix"], "D: ")
         self.assertEqual(info["inputs"], ["attention_mask", "input_ids"])
-        # Identity encodes slicing strategy, token cap and embed-source strategy so
-        # EmbeddingMigrationService re-encodes when any of them changes.
-        self.assertEqual(info["model"], "demo-model/mrl0/t512/contentfirst")
+        # Identity encodes slicing strategy, token cap, char cap and embed-source
+        # strategy so EmbeddingMigrationService re-encodes when any of them changes.
+        self.assertEqual(info["model"], "demo-model/mrl0/t512/c500/contentfirst")
         # Calibrated ONNX value; must stay a literal, not derived from MAX_LENGTH.
         self.assertEqual(info["max_chars"], 500)
 

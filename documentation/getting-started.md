@@ -92,6 +92,13 @@ without a matching `EMBEDDING_MAX_TOKENS` increase reintroduces silent truncatio
 error anywhere — `EMBEDDING_MAX_CHARS` must stay within what `EMBEDDING_MAX_TOKENS` tokens
 can actually hold for your content's language.
 
+`EMBEDDING_MAX_CHARS` is part of the model identity string both backends report via
+`/info` (`c<chars>`, e.g. `.../c8000/contentfirst`), so changing it and restarting
+triggers a full re-encode — the same as changing the model name or dimension. This is
+intentional: the value decides whether a cell's content or its summary gets embedded, so
+a change that were invisible to the identity would leave two vector generations mixed in
+one index with no error anywhere.
+
 A resident Ollama model does not cost measurable idle GPU power — an idle GPU sits at
 its power/memory-clock floor whether or not a model is loaded — so `EMBEDDING_KEEP_ALIVE`
 is a VRAM/reload-latency trade-off, not a power one.

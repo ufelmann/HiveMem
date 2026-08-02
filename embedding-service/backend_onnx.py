@@ -172,7 +172,7 @@ def build_info(model_name, dimension, source, model_dir, onnx_path, tokenizer_pa
     info = {
         # Identity encodes everything that changes the vectors, because
         # EmbeddingMigrationService re-encodes on a model-name or dimension change only.
-        "model": f"{model_name}/mrl0/t{MAX_LENGTH}/contentfirst",
+        "model": f"{model_name}/mrl0/t{MAX_LENGTH}/c500/contentfirst",
         "dimension": dimension,
         # Calibrated ONNX value; deliberately a literal, not derived from MAX_LENGTH.
         "max_chars": 500,

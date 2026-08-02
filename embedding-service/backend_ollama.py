@@ -84,9 +84,9 @@ def bootstrap():
         raise RuntimeError(
             f"{OLLAMA_MODEL} returns {len(probe)} dimensions, fewer than EMBEDDING_DIMS={DIMS}")
     INFO = {
-        # Identity encodes model, slice width, token cap and embed strategy, because
-        # EmbeddingMigrationService re-encodes only when the model name changes.
-        "model": f"{OLLAMA_MODEL}/mrl{DIMS}/t{MAX_TOKENS}/contentfirst",
+        # Identity encodes model, slice width, token cap, char cap and embed strategy,
+        # because EmbeddingMigrationService re-encodes only when the model name changes.
+        "model": f"{OLLAMA_MODEL}/mrl{DIMS}/t{MAX_TOKENS}/c{MAX_CHARS}/contentfirst",
         "dimension": DIMS,
         "max_chars": MAX_CHARS,
         "backend": "ollama",
