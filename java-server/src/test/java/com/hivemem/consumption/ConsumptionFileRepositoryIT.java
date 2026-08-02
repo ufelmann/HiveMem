@@ -3,6 +3,7 @@ package com.hivemem.consumption;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -131,5 +132,33 @@ class ConsumptionFileRepositoryIT extends ConsumptionITSupport {
                 "hr1 (1 attempt < 3) should be retriable");
         assertTrue(retriable.stream().noneMatch(r -> r.sha256().equals("hr2")),
                 "hr2 (3 attempts >= 3) should NOT be retriable");
+    }
+
+    @Test
+    void knownFilenamesReturnsFilenamesWithAtLeastOneRow() {
+        repo.startProcessing("k1", "known1.pdf");
+        repo.startProcessing("k2", "known2.pdf");
+
+        Set<String> known = repo.knownFilenames(List.of("known1.pdf", "known2.pdf", "unknown.pdf"));
+
+        assertEquals(Set.of("known1.pdf", "known2.pdf"), known);
+    }
+
+    @Test
+    void markMissingExhaustsRetryBudgetSoRowStopsBeingRetriable() {
+        // Row starts under the retry limit, so it would normally be retriable.
+        repo.startProcessing("m1", "missing.pdf");
+
+        repo.markMissing("m1", 3);
+
+        var row = repo.findByHash("m1");
+        assertTrue(row.isPresent());
+        assertEquals("failed", row.get().state());
+        assertEquals("no physical file in processing/", row.get().lastError());
+        assertTrue(row.get().attempts() >= 3, "attempts must be raised to at least the retry limit");
+
+        List<ConsumptionFileRepository.Row> retriable = repo.findRetriableFailed(3, 100);
+        assertTrue(retriable.stream().noneMatch(r -> r.sha256().equals("m1")),
+                "a row marked missing must exhaust its retry budget, not just be marked failed");
     }
 }

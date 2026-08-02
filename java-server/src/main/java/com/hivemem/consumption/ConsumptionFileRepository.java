@@ -2,10 +2,10 @@ package com.hivemem.consumption;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 import org.springframework.stereotype.Repository;
@@ -67,6 +67,19 @@ public class ConsumptionFileRepository {
                 lastError, sha256);
     }
 
+    /** Terminal: the row's file is gone, so retrying cannot help. Exhausts the retry budget so
+     *  findRetriableFailed stops selecting it every sweep. */
+    public void markMissing(String sha256, int retryLimit) {
+        dsl.execute("""
+                UPDATE consumption_file
+                SET state = 'failed',
+                    last_error = 'no physical file in processing/',
+                    attempts = GREATEST(attempts, ?),
+                    updated_at = now()
+                WHERE sha256 = ?
+                """, retryLimit, sha256);
+    }
+
     public Optional<Row> findByHash(String sha256) {
         Record r = dsl.fetchOne(
                 "SELECT sha256, filename, state, attempts, last_error FROM consumption_file WHERE sha256=?",
@@ -116,16 +129,19 @@ public class ConsumptionFileRepository {
         return out;
     }
 
-    /** Rows for the given on-disk filenames, keyed by filename. Used by the reconciliation sweep to
-     *  decide what a physical file in processing/ actually is. */
-    public Map<String, Row> findByFilenames(Collection<String> filenames) {
-        if (filenames.isEmpty()) return Map.of();
+    /** Which of the given on-disk filenames have at least one ledger row. Used by the
+     *  reconciliation sweep to tell a genuine orphan (no row at all) from a file that belongs to
+     *  the ledger. Deliberately returns presence only, not a {@code Map<String, Row>}: filename is
+     *  NOT a unique key (the mover appends -1/-2 suffixes on collision, so two different sha256
+     *  rows can legitimately share a filename), so picking "the" row for a name would silently
+     *  discard one of them. */
+    public Set<String> knownFilenames(Collection<String> filenames) {
+        if (filenames.isEmpty()) return Set.of();
         var rows = dsl.fetch(
-                "SELECT sha256, filename, state, attempts, last_error FROM consumption_file "
-                        + "WHERE filename = ANY(?)",
+                "SELECT DISTINCT filename FROM consumption_file WHERE filename = ANY(?)",
                 (Object) filenames.toArray(new String[0]));
-        Map<String, Row> out = new HashMap<>();
-        for (Record r : rows) out.put(r.get("filename", String.class), map(r));
+        Set<String> out = new HashSet<>();
+        for (Record r : rows) out.add(r.get("filename", String.class));
         return out;
     }
 

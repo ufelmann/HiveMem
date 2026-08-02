@@ -8,6 +8,7 @@ import static org.mockito.Mockito.*;
 
 import java.nio.file.*;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -47,7 +48,7 @@ class ConsumptionRecoverySweepTest {
                 .thenReturn(List.of(new ConsumptionFileRepository.Row(
                         "sha-retry", "retry.pdf", "failed", 2, "some error")));
         // dead.pdf is NOT returned (attempts >= limit — the repo's job)
-        when(repo.findByFilenames(anyCollection())).thenReturn(java.util.Map.of());
+        when(repo.knownFilenames(anyCollection())).thenReturn(Set.of());
 
         sweep = new ConsumptionRecoverySweep(props, repo);
     }
@@ -105,51 +106,48 @@ class ConsumptionRecoverySweepTest {
     }
 
     /** The 2026-07-19 incident as a regression test: a file sits in processing/ with NO ledger row
-     *  at all. The old sweep iterated ledger rows only, so it could never see this file. */
+     *  at all. The old sweep iterated ledger rows only, so it could never see this file. Counters
+     *  are cumulative since process start: a second sweep with a fresh orphan must ADD to the
+     *  total, not replace it. */
     @Test
     void orphanWithoutLedgerRowIsRestagedAndCounted() throws Exception {
         Files.writeString(tempRoot.resolve("processing").resolve("orphan.pdf"), "orphan");
-        when(repo.findByFilenames(anyCollection())).thenReturn(java.util.Map.of());
+        when(repo.knownFilenames(anyCollection())).thenReturn(Set.of());
 
         sweep.recover();
 
         assertTrue(Files.exists(tempRoot.resolve("orphan.pdf")),
                 "an orphan without a ledger row must be moved back to the watch root");
         assertEquals(1, sweep.lastReconciliation().orphansRestaged());
-    }
 
-    /** A file left in processing/ whose row already says 'done' is an interrupted move, not work.
-     *  Re-staging it would ingest it a second time; it belongs in processed/. */
-    @Test
-    void leftoverOfADoneRowIsMovedToProcessedNotRestaged() throws Exception {
-        Files.writeString(tempRoot.resolve("processing").resolve("leftover.pdf"), "leftover");
-        when(repo.findByFilenames(anyCollection())).thenReturn(java.util.Map.of(
-                "leftover.pdf",
-                new ConsumptionFileRepository.Row("sha-done", "leftover.pdf", "done", 1, null)));
-
+        Files.writeString(tempRoot.resolve("processing").resolve("orphan2.pdf"), "orphan2");
         sweep.recover();
 
-        assertTrue(Files.exists(tempRoot.resolve("processed").resolve("leftover.pdf")));
-        assertFalse(Files.exists(tempRoot.resolve("leftover.pdf")),
-                "a done leftover must NOT go back into the watch root");
-        assertEquals(1, sweep.lastReconciliation().doneLeftovers());
+        assertEquals(2, sweep.lastReconciliation().orphansRestaged(),
+                "counters are cumulative since process start, not reset each sweep");
     }
 
-    /** A stale row whose physical file is gone is a row without data — mark it failed so it stops
-     *  being selected every sweep, and count it so the operator learns about it. */
+    /** A stale row whose physical file is gone is a row without data — mark it failed AND exhaust
+     *  its retry budget (markMissing), so it stops being selected every sweep, and count it so the
+     *  operator learns about it. Counters are cumulative across sweeps. */
     @Test
     void staleRowWithoutFileIsMarkedFailedAndCounted() throws Exception {
         Files.delete(tempRoot.resolve("processing").resolve("stale.pdf"));
-        when(repo.findByFilenames(anyCollection())).thenReturn(java.util.Map.of());
+        when(repo.knownFilenames(anyCollection())).thenReturn(Set.of());
 
         sweep.recover();
 
-        verify(repo).markFailed(eq("sha-stale"), contains("no physical file"));
+        verify(repo).markMissing(eq("sha-stale"), eq(3));
         assertEquals(1, sweep.lastReconciliation().rowsWithoutFile());
+
+        sweep.recover();
+
+        assertEquals(2, sweep.lastReconciliation().rowsWithoutFile(),
+                "counters are cumulative since process start, not reset each sweep");
     }
 
     /** Regression: a stale-processing row that DOES have a physical file must be re-staged and
-     *  must NEVER be marked failed. The missing-file check must run BEFORE the file is moved,
+     *  must NEVER be marked missing. The missing-file check must run BEFORE the file is moved,
      *  not after — otherwise a successfully recovered row looks indistinguishable from a row
      *  that never had a file at all. */
     @Test
@@ -157,8 +155,36 @@ class ConsumptionRecoverySweepTest {
         sweep.recover();
 
         assertTrue(Files.exists(tempRoot.resolve("stale.pdf")));
-        verify(repo, never()).markFailed(eq("sha-stale"), anyString());
+        verify(repo, never()).markMissing(eq("sha-stale"), anyInt());
         assertEquals(0, sweep.lastReconciliation().rowsWithoutFile(),
                 "a successfully recovered file must not appear as a divergence");
+
+        // A second sweep with the row stale again but its file physically present must still
+        // never mark it missing, and the cumulative counter must remain zero.
+        Files.writeString(tempRoot.resolve("processing").resolve("stale.pdf"), "stale-again");
+        sweep.recover();
+
+        verify(repo, never()).markMissing(eq("sha-stale"), anyInt());
+        assertEquals(0, sweep.lastReconciliation().rowsWithoutFile(),
+                "cumulative counter stays zero when nothing new diverges");
+    }
+
+    /** A file in processing/ whose ledger row is 'failed' is misplaced: the retry loop only looks
+     *  in failed/, so it is invisible to reStage until this sweep relocates it there. Safe unlike
+     *  the 'done' case — no consumption_jobs row owns a failed batch. */
+    @Test
+    void misplacedFailedRowIsMovedToFailedDirAndCounted() throws Exception {
+        Files.writeString(tempRoot.resolve("processing").resolve("misplaced.pdf"), "misplaced");
+        when(repo.knownFilenames(anyCollection())).thenReturn(Set.of("misplaced.pdf"));
+        when(repo.findRetriableFailed(eq(3), anyInt())).thenReturn(List.of(
+                new ConsumptionFileRepository.Row("sha-retry", "retry.pdf", "failed", 2, "some error"),
+                new ConsumptionFileRepository.Row("sha-misplaced", "misplaced.pdf", "failed", 1, "boom")));
+
+        sweep.recover();
+
+        assertTrue(Files.exists(tempRoot.resolve("failed").resolve("misplaced.pdf")),
+                "a failed row's file found in processing/ must be relocated to failed/");
+        assertFalse(Files.exists(tempRoot.resolve("processing").resolve("misplaced.pdf")));
+        assertEquals(1, sweep.lastReconciliation().misplacedFailed());
     }
 }
