@@ -305,6 +305,24 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 | `HIVEMEM_CONSUMPTION_FAILED_RETRY_LIMIT` | `3` | Max retries for files in `failed/` before they are left permanently |
 | `SERVER_PORT` | `8421` | Port for the MCP server |
 
+### `ranked_search` PostgreSQL function
+
+The `ranked_search` stored function powers the `search` tool. It is **not** managed by Flyway; instead it is recreated on every startup by `EmbeddingMigrationService` from an in-code template. This is intentional — the function signature must stay in sync with the embedding vector dimension, which can change between deployments. As of SP-C1 the function accepts the optional parameters `p_tags TEXT[]` (match-ANY array overlap filter) and `p_status TEXT` (filter by cell status, default `committed`).
+
+### Search weights, profiles, and confidence
+
+`search` combines six signals (semantic, keyword, recency, importance, popularity, graph_proximity) into a `score_total`. The weight vector is chosen by the `profile` param — a fixed preset (`balanced` (default) | `semantic` | `recent` | `important` | `keyword`), where `balanced` equals the baseline `hivemem.search.weights` defaults. The legacy per-call `weight_*` params are soft-deprecated but still override individual weights when present.
+
+`confidence_level` is computed **relative to the returned result-set**, not against absolute cutoffs. For each query, the mean and population standard deviation (`sigma`) of the returned hits' `score_total` values are computed once, then each hit is classified: `NONE` if `score_total` is below the absolute floor `hivemem.search.confidence.floor` (default `0.20`) or the result-set has fewer than 2 elements; `HIGH` if `score_total >= mean + sigma`; `LOW` if `score_total < mean`; `MEDIUM` otherwise (including when `sigma == 0` across the above-floor hits). The former absolute `hivemem.search.confidence.high`/`medium`/`low` properties have been removed. Both `score_total` and `confidence_level` are always returned; the five per-signal sub-scores are returned only when the caller passes `include=['scores']`.
+
+### Facts embedding & semantic `search_kg`
+
+`facts` carries a nullable `embedding vector` column (V0037), mirroring the cells lifecycle: `EmbeddingStateRepository.createFactsEmbeddingIndex`/`dropFactsEmbeddingIndex` manage an `idx_facts_embedding` HNSW index (cosine ops) whose dimension is (re)bound at startup by `EmbeddingMigrationService`, and a model/dimension change triggers a full facts re-encode alongside the existing cells re-encode. `active_facts` is a `SELECT *` view, so V0037 dropped and recreated it to carry the new column through.
+
+On write, `WriteToolService.kgAdd`/`reviseFact` embed `subject + " " + predicate + " " + object` via `embeddingClient.encodeDocument(...)` and store the vector; embedding failures are caught and logged, never fail the fact write (the fact is stored with `embedding = NULL`). `EmbeddingBackfillService` runs a parallel facts pass (alongside its existing cells pass) that finds committed, active facts with `embedding IS NULL` and encodes them in the background.
+
+`search_kg` gained an optional `query` param: when present, `ReadToolService.searchKg` embeds it via `encodeQuery` and calls `KgSearchRepository.semanticSearch`, which ranks `active_facts` by cosine distance (`embedding <=> query`) and returns a `score` field (`1 - cosine_distance`) alongside the usual triple fields; the existing `subject`/`predicate`/`object_` ILIKE filters still narrow the semantic result set. If embedding the query fails (or returns `null`), it falls back to the original ILIKE-only `search` path. Calling `search_kg` without `query` is unchanged.
+
 ## GPU embedding backend (optional)
 
 The embedding sidecar (`embedding-service/`) supports two runtime backends behind a common
@@ -339,24 +357,6 @@ dimensions) and re-normalizes the slice to unit length before returning it — s
 re-normalization would make pgvector's cosine distance silently wrong. Ollama itself enforces
 the input truncation (`truncate: true` + `options.num_ctx`), so the sidecar needs no
 tokenizer of its own for this backend.
-
-### `ranked_search` PostgreSQL function
-
-The `ranked_search` stored function powers the `search` tool. It is **not** managed by Flyway; instead it is recreated on every startup by `EmbeddingMigrationService` from an in-code template. This is intentional — the function signature must stay in sync with the embedding vector dimension, which can change between deployments. As of SP-C1 the function accepts the optional parameters `p_tags TEXT[]` (match-ANY array overlap filter) and `p_status TEXT` (filter by cell status, default `committed`).
-
-### Search weights, profiles, and confidence
-
-`search` combines six signals (semantic, keyword, recency, importance, popularity, graph_proximity) into a `score_total`. The weight vector is chosen by the `profile` param — a fixed preset (`balanced` (default) | `semantic` | `recent` | `important` | `keyword`), where `balanced` equals the baseline `hivemem.search.weights` defaults. The legacy per-call `weight_*` params are soft-deprecated but still override individual weights when present.
-
-`confidence_level` is computed **relative to the returned result-set**, not against absolute cutoffs. For each query, the mean and population standard deviation (`sigma`) of the returned hits' `score_total` values are computed once, then each hit is classified: `NONE` if `score_total` is below the absolute floor `hivemem.search.confidence.floor` (default `0.20`) or the result-set has fewer than 2 elements; `HIGH` if `score_total >= mean + sigma`; `LOW` if `score_total < mean`; `MEDIUM` otherwise (including when `sigma == 0` across the above-floor hits). The former absolute `hivemem.search.confidence.high`/`medium`/`low` properties have been removed. Both `score_total` and `confidence_level` are always returned; the five per-signal sub-scores are returned only when the caller passes `include=['scores']`.
-
-### Facts embedding & semantic `search_kg`
-
-`facts` carries a nullable `embedding vector` column (V0037), mirroring the cells lifecycle: `EmbeddingStateRepository.createFactsEmbeddingIndex`/`dropFactsEmbeddingIndex` manage an `idx_facts_embedding` HNSW index (cosine ops) whose dimension is (re)bound at startup by `EmbeddingMigrationService`, and a model/dimension change triggers a full facts re-encode alongside the existing cells re-encode. `active_facts` is a `SELECT *` view, so V0037 dropped and recreated it to carry the new column through.
-
-On write, `WriteToolService.kgAdd`/`reviseFact` embed `subject + " " + predicate + " " + object` via `embeddingClient.encodeDocument(...)` and store the vector; embedding failures are caught and logged, never fail the fact write (the fact is stored with `embedding = NULL`). `EmbeddingBackfillService` runs a parallel facts pass (alongside its existing cells pass) that finds committed, active facts with `embedding IS NULL` and encodes them in the background.
-
-`search_kg` gained an optional `query` param: when present, `ReadToolService.searchKg` embeds it via `encodeQuery` and calls `KgSearchRepository.semanticSearch`, which ranks `active_facts` by cosine distance (`embedding <=> query`) and returns a `score` field (`1 - cosine_distance`) alongside the usual triple fields; the existing `subject`/`predicate`/`object_` ILIKE filters still narrow the semantic result set. If embedding the query fails (or returns `null`), it falls back to the original ILIKE-only `search` path. Calling `search_kg` without `query` is unchanged.
 
 ## Security & Compliance
 

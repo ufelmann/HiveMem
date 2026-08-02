@@ -1,9 +1,10 @@
 # Auto-Summarizer
 
 HiveMem's auto-summarizer turns long cells into richer knowledge by calling Claude Haiku
-to produce key points, an insight, tags, and extracted knowledge-graph facts. It is no
-longer what makes a cell *findable* — that's the embedding's job — but it is what makes
-a cell well-understood.
+to produce key points, an insight, tags, and extracted knowledge-graph facts. For most
+cells it is no longer what makes a cell *findable* — that's the embedding's job — but it
+is what makes a cell well-understood. It's still the precondition for findability in the
+one case below: content longer than the embedding backend can embed.
 
 ## Why summaries still matter
 
@@ -15,11 +16,17 @@ than the backend can embed, HiveMem embeds the summary instead once one exists, 
 whitepaper or a long scanned document stays findable by meaning rather than being silently
 truncated.
 
-Separately from embeddability, any committed cell whose content exceeds
-`summary-threshold-chars` (500 characters, independent of the embedding backend) is tagged
-`needs_summary` so the summarizer enriches it with key points, insight, tags, and fact
-extraction — regardless of whether that content already has a usable embedding. The
-summarizer picks up tagged cells automatically.
+Separately from embeddability, a cell without a summary whose content exceeds the fixed
+`NeedsSummaryDecider` threshold (`DEFAULT_THRESHOLD_CHARS = 500` characters, hardcoded, not
+the `summary-threshold-chars` property below) is tagged `needs_summary` at write time —
+regardless of status (`pending` or `committed`) and regardless of whether that content
+already has a usable embedding — so the summarizer can enrich it with key points, insight,
+tags, and fact extraction. The `summary-threshold-chars` property governs only the one-shot
+startup backfill sweep (see [Enabling](#enabling)), not this write-path tagging; changing it
+does not change the 500-char threshold applied on every `add_cell`/`revise_cell`/sync-replay
+call. The summarizer's own pickup — the scheduled backfill that actually processes tagged
+cells — only looks at `committed` cells; a `pending` cell stays tagged until it is
+committed.
 
 ## What gets written
 
@@ -43,9 +50,15 @@ sharing the same base URL / token as the other Vistierie-backed features):
     HIVEMEM_VISTIERIE_BASE_URL=http://vistierie:8090
     HIVEMEM_VISTIERIE_TOKEN=<tenant token>
 
-That's it. On boot, all existing cells without a summary and with content > 500 chars
-are tagged `needs_summary`. The backfill scheduler picks them up over the next minutes.
-New cells trigger the summarizer within seconds via the AFTER_COMMIT event.
+That's it. On boot, `SummarizeBackfillStartupRunner` tags `needs_summary` on every
+committed, live cell (`valid_until IS NULL`) that has **no embedding at all**
+(`embedding IS NULL`) and content longer than `summary-threshold-chars` (500 by default) —
+this only catches cells that missed embedding entirely, not every long cell. A cell that
+already has an embedding (e.g. any content that fit under the active backend's `maxChars()`
+at write time — up to 8000 characters on the Ollama backend) is not tagged by this sweep,
+even if its content is well over 500 characters. The backfill scheduler picks up tagged
+cells over the next minutes. New cells trigger the summarizer within seconds via the
+AFTER_COMMIT event.
 
 ## Cost model
 
@@ -138,7 +151,7 @@ detail, or `WARN` to quiet the per-call lines during a large backfill batch.
 | `hivemem.summarize.daily-budget-usd` | `1.00` | Hard cost cap per UTC day, **in EUR** — the `usd` in the key is historical (see [Cost model](#cost-model)) |
 | `hivemem.summarize.backfill-interval` | `PT5M` | Documentation only — see note below |
 | `hivemem.summarize.backfill-batch-size` | `10` | Cells per backfill run |
-| `hivemem.summarize.summary-threshold-chars` | `500` | Min content length to trigger needs_summary |
+| `hivemem.summarize.summary-threshold-chars` | `500` | Min content length for the one-shot startup backfill sweep to tag an unembedded cell `needs_summary` (see [Enabling](#enabling)) — does **not** affect write-path tagging, which always uses the hardcoded 500-char `NeedsSummaryDecider` threshold regardless of this property |
 | `hivemem.summarize.max-input-chars` | `8000` | Cap on prompt input length |
 
 To change the actual scheduler interval, set `HIVEMEM_SUMMARIZE_BACKFILL_INTERVAL_MS`
