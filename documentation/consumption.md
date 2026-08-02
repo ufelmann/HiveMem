@@ -202,8 +202,14 @@ that, or `ConsumptionRecoverySweep` can re-stage a still-running batch as
 crash-stranded, causing double-processing. Defaults are safe by a wide margin
 (a 17-page batch ≈ 3 min ≪ 30 min) — but raise the threshold if you raise
 `max-pages` well beyond the default. `ReassemblyOrchestrator` also touches the
-ledger row's `updated_at` between passes as a heartbeat, further reducing the
-risk for in-flight batches.
+ledger row's `updated_at` once per page within its single streaming pass, as a
+heartbeat, further reducing the risk for in-flight batches. This is a change
+from the previous two-pass design, which touched twice per page (once per
+pass): heartbeat frequency halved from 2·N to N touches per batch, so the
+maximum gap between heartbeats is now up to two sequential LLM calls (orient +
+extract for one page) rather than one. That still stays well inside the
+recovery sweep's stale threshold, since the touch remains per page rather than
+per batch.
 
 ### File disposition
 
