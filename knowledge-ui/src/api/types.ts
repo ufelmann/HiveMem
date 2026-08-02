@@ -201,6 +201,59 @@ export interface ArchivistLogEntry {
   new_signal?: string | null
 }
 
+/** One row from `consumption_queue`'s failedFiles list — mirrors
+ *  ConsumptionFileRepository.Row (jOOQ/Jackson record serialization). */
+export interface IngestFailedFile {
+  sha256: string
+  filename: string
+  state: string
+  attempts: number
+  lastError: string | null
+}
+
+/** One row from `consumption_queue`'s degradedBatches list — mirrors
+ *  ConsumptionFileRepository.DegradedBatch. */
+export interface IngestDegradedBatch {
+  sha256: string
+  filename: string
+  totalPages: number
+  degradedPages: number
+  updatedAt: string
+}
+
+/** One row from `consumption_queue`'s stalledRows list — mirrors
+ *  ConsumptionFileRepository.StalledRow. A file that neither finished nor failed: still
+ *  `staged` or `processing` past the recovery stale threshold. */
+export interface IngestStalledRow {
+  sha256: string
+  filename: string
+  state: string
+  updatedAt: string
+  ageSeconds: number
+}
+
+/** Reconciliation counters, cumulative since process start — mirrors
+ *  ConsumptionRecoverySweep.Reconciliation. Field names match the backend record exactly:
+ *  no `doneLeftovers` (that name never existed on the backend). */
+export interface IngestReconciliation {
+  orphansRestaged: number
+  rowsWithoutFile: number
+  misplacedFailed: number
+}
+
+/** `consumption_queue` response — mirrors ConsumptionQueueService.Queue. When the
+ *  consumption pipeline is disabled, ConsumptionQueueToolHandler returns this same shape
+ *  with all collections empty/zero and `unavailable: true`, so an off pipeline never reads
+ *  as a healthy empty queue. */
+export interface IngestQueue {
+  failedFiles: IngestFailedFile[]
+  degradedBatches: IngestDegradedBatch[]
+  stalledRows: IngestStalledRow[]
+  reconciliation: IngestReconciliation
+  stateCounts: Record<string, number>
+  unavailable?: boolean
+}
+
 export interface SavedSearch {
   id: string
   name: string

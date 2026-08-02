@@ -15,6 +15,11 @@ let timer: number | null = null
 function fmtCost(micros: number | null) { return micros == null ? '—' : `$${(micros / 1_000_000).toFixed(4)}` }
 function fmtDuration(ms: number | null) { return ms == null ? '—' : `${(ms / 1000).toFixed(1)}s` }
 function fmtTime(iso: string | null) { return iso ? new Date(iso).toLocaleString() : '—' }
+function fmtAge(seconds: number) {
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`
+  if (seconds < 86_400) return `${(seconds / 3600).toFixed(1)}h`
+  return `${(seconds / 86_400).toFixed(1)}d`
+}
 
 const STATUS: Record<string, { label: string; color: string }> = {
   done: { label: 'done', color: 'var(--good)' },
@@ -44,6 +49,11 @@ function propTitle(desc: string | null): string {
 const sumCost = computed(() =>
   store.costAvailable ? store.runs.reduce((s, r) => s + (r.costMicros ?? 0), 0) : null)
 const detailRun = computed(() => store.selectedRun?.run as Record<string, any> | undefined)
+// Row counts per ledger state. countsByState() has no WHERE clause, so `done` grows
+// monotonically and reads 5000 after a bulk run — this is an all-time census of the ledger,
+// NOT a queue depth, and the label says so. Sorted descending so the biggest group leads.
+const ingestStateCounts = computed(() =>
+  Object.entries(store.ingestQueue?.stateCounts ?? {}).sort((a, b) => b[1] - a[1]))
 
 async function openRun(id: string) {
   try {
@@ -60,6 +70,22 @@ async function decide(id: string, approved: boolean) {
     await store.approve(id, approved)
   } catch {
     ui.pushToast('error', t('common.actionFailed'))
+  }
+}
+
+async function onRetry(sha256: string) {
+  try {
+    const res = await store.retryIngest(sha256)
+    if (res.restaged) {
+      // The ledger row is untouched until the next poll re-hashes the file (~15-25 s), so the
+      // immediate refresh() still shows this row. Without this toast a second click looks like
+      // the only feedback, and it reports an error that contradicts the first, successful retry.
+      ui.pushToast('success', t('queen.ingest.retryQueued'))
+    } else {
+      ui.pushToast('error', res.error ? t('queen.ingest.retryFailedReason', { error: res.error }) : t('queen.ingest.retryFailed'))
+    }
+  } catch {
+    ui.pushToast('error', t('queen.ingest.retryFailed'))
   }
 }
 
@@ -168,6 +194,61 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
           </li>
         </ul>
       </section>
+
+      <section v-if="store.ingestQueue" class="q-card q-ingest">
+        <div class="q-prop-head">
+          <HmIcon name="reader" />
+          <span>{{ t('queen.ingest.title') }}</span>
+        </div>
+
+        <div v-if="store.ingestQueue.unavailable" class="notice">{{ t('queen.ingest.unavailable') }}</div>
+        <template v-else>
+          <p class="ingest-recon">
+            {{ t('queen.ingest.reconciliation', {
+              orphans: store.ingestQueue.reconciliation.orphansRestaged,
+              missing: store.ingestQueue.reconciliation.rowsWithoutFile,
+              misplaced: store.ingestQueue.reconciliation.misplacedFailed,
+            }) }}
+          </p>
+          <p v-if="ingestStateCounts.length" class="ingest-states">
+            <span class="ingest-states-label">{{ t('queen.ingest.stateCounts') }}</span>
+            <span v-for="[state, count] in ingestStateCounts" :key="state" class="ingest-state-chip">{{ state }}: {{ count }}</span>
+          </p>
+
+          <div class="section-label">{{ t('queen.ingest.failedFiles') }}</div>
+          <p v-if="!store.ingestQueue.failedFiles.length" class="q-empty">{{ t('queen.ingest.none') }}</p>
+          <div v-else class="ingest-table">
+            <div v-for="f in store.ingestQueue.failedFiles" :key="f.sha256" class="ingest-row">
+              <span class="ingest-file">{{ f.filename }}</span>
+              <span class="q-mono">{{ f.attempts }}</span>
+              <span class="ingest-err">{{ f.lastError ?? '—' }}</span>
+              <button class="btn ghost ingest-retry" @click="onRetry(f.sha256)">{{ t('queen.ingest.retry') }}</button>
+            </div>
+          </div>
+
+          <div class="section-label">{{ t('queen.ingest.degradedBatches') }}</div>
+          <p v-if="!store.ingestQueue.degradedBatches.length" class="q-empty">{{ t('queen.ingest.none') }}</p>
+          <div v-else class="ingest-table">
+            <div v-for="b in store.ingestQueue.degradedBatches" :key="b.sha256" class="ingest-row">
+              <span class="ingest-file">{{ b.filename }}</span>
+              <span class="q-mono">{{ b.degradedPages }} / {{ b.totalPages }}</span>
+              <span class="q-mono">{{ fmtTime(b.updatedAt) }}</span>
+              <button class="btn ghost ingest-retry" @click="onRetry(b.sha256)">{{ t('queen.ingest.retry') }}</button>
+            </div>
+          </div>
+
+          <div class="section-label">{{ t('queen.ingest.stalledRows') }}</div>
+          <p v-if="!store.ingestQueue.stalledRows.length" class="q-empty">{{ t('queen.ingest.none') }}</p>
+          <div v-else class="ingest-table">
+            <div v-for="s in store.ingestQueue.stalledRows" :key="s.sha256" class="ingest-row">
+              <span class="ingest-file">{{ s.filename }}</span>
+              <span class="q-mono">{{ s.state }}</span>
+              <span class="q-mono">{{ fmtAge(s.ageSeconds) }}</span>
+              <button class="btn ghost ingest-retry" @click="onRetry(s.sha256)">{{ t('queen.ingest.retry') }}</button>
+            </div>
+          </div>
+        </template>
+      </section>
     </div>
 
     <div v-if="detailOpen" class="q-detail-backdrop" @click="closeDetail">
@@ -268,4 +349,17 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .alog-cell:hover { color:var(--honey); }
 .alog-move { color:var(--text-1); font-size:12.5px; }
 .alog-reason { color:var(--text-2); font-size:12.5px; margin-left:auto; max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+.q-ingest { padding:18px 20px; }
+.q-ingest .q-prop-head { margin:0 0 14px; font-weight:600; font-size:14px; }
+.ingest-recon { font-size:12.5px; color:var(--text-2); margin:0 0 8px; }
+.ingest-states { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:12px; margin:0 0 16px; }
+.ingest-states-label { color:var(--text-2); text-transform:uppercase; letter-spacing:.06em; font-size:10.5px; }
+.ingest-state-chip { background:var(--bg-4); color:var(--text-1); border:1px solid var(--line); border-radius:6px; padding:2px 8px; font-family:var(--font-mono); }
+.ingest-table { display:flex; flex-direction:column; gap:0; margin-bottom:18px; }
+.ingest-row { display:flex; align-items:center; gap:14px; padding:10px 0; border-bottom:1px solid var(--line); font-size:13px; }
+.ingest-row:last-child { border-bottom:none; }
+.ingest-file { flex:1; min-width:0; font-weight:500; color:var(--text-0); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ingest-err { flex:2; min-width:0; color:var(--danger); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ingest-retry { flex:none; padding:6px 12px; font-size:12px; }
 </style>

@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -60,7 +61,7 @@ class ReassemblyPartialFailureTest {
         PageMetadataExtractor extractor = mock(PageMetadataExtractor.class);
         when(extractor.extract(anyString(), anyInt(), any()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
-                        "S", null, null, "letter", null, "p", false));
+                        "S", null, null, "letter", null, "p", false, false));
         return extractor;
     }
 
@@ -68,6 +69,16 @@ class ReassemblyPartialFailureTest {
         MailingAssembler assembler = mock(MailingAssembler.class);
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of());
         return assembler;
+    }
+
+    /** Stubs the streaming overload to hand out {@code pngs} one page at a time, mirroring
+     *  {@link PdfPageRasterizer#rasterize(byte[], int, int, PdfPageRasterizer.PageConsumer)}. */
+    private static void stubPages(PdfPageRasterizer rasterizer, List<byte[]> pngs) throws Exception {
+        doAnswer(inv -> {
+            PdfPageRasterizer.PageConsumer consumer = inv.getArgument(3);
+            for (int i = 0; i < pngs.size(); i++) consumer.accept(i, pngs.get(i));
+            return null;
+        }).when(rasterizer).rasterize(any(), anyInt(), anyInt(), any());
     }
 
     /** When the first sub-doc ingests successfully but the second throws, the whole batch must be
@@ -85,7 +96,7 @@ class ReassemblyPartialFailureTest {
 
         // Two pages, both with ink (non-blank)
         byte[] page = inkPng();
-        when(rasterizer.rasterize(any(), anyInt(), anyInt())).thenReturn(List.of(page, page));
+        stubPages(rasterizer, List.of(page, page));
         // Two documents: page 1 → doc 1, page 2 → doc 2
         when(reassembler.toDocuments(any(), anyInt())).thenReturn(List.of(
                 new PageReassembler.ResultDoc(List.of(1), "committed"),
@@ -120,8 +131,8 @@ class ReassemblyPartialFailureTest {
         ConsumptionFileRepository fileRepo = mock(ConsumptionFileRepository.class);
 
         // Make rasterizer throw to force the degrade path
-        when(rasterizer.rasterize(any(), anyInt(), anyInt()))
-                .thenThrow(new RuntimeException("rasterizer crashed"));
+        doThrow(new RuntimeException("rasterizer crashed"))
+                .when(rasterizer).rasterize(any(), anyInt(), anyInt(), any());
 
         // Make the degrade attachments.ingest also throw
         doThrow(new RuntimeException("S3 down"))
@@ -139,8 +150,9 @@ class ReassemblyPartialFailureTest {
         verify(fileRepo, never()).markDone(any());
     }
 
-    /** M8: the recovery-sweep heartbeat must fire INSIDE the per-page LLM loops (passes 1+2),
-     *  not just between passes, so a large batch's per-page latency can't trip the stale window. */
+    /** M8: the recovery-sweep heartbeat must fire INSIDE the single per-page streaming loop
+     *  (orientation + extraction merged into one pass, see collapse in ReassemblyOrchestrator),
+     *  not just once at the end, so a large batch's per-page latency can't trip the stale window. */
     @Test
     void heartbeatTouchesLedgerPerPageDuringPasses() throws Exception {
         ConsumptionProperties props = new ConsumptionProperties();
@@ -154,7 +166,7 @@ class ReassemblyPartialFailureTest {
         ConsumptionFileRepository fileRepo = mock(ConsumptionFileRepository.class);
 
         byte[] page = inkPng();
-        when(rasterizer.rasterize(any(), anyInt(), anyInt())).thenReturn(List.of(page, page));
+        stubPages(rasterizer, List.of(page, page));
         when(reassembler.toDocuments(any(), anyInt())).thenReturn(List.of(
                 new PageReassembler.ResultDoc(List.of(1), "committed"),
                 new PageReassembler.ResultDoc(List.of(2), "committed")));
@@ -164,9 +176,45 @@ class ReassemblyPartialFailureTest {
                 assembler, reassembler, new BatchSplitter(), attachments, mover);
         orch.reassemble(stagedPath, nPagePdf(2), 2, "cafebabe", fileRepo);
 
-        // 2 pages x 2 per-page passes = at least 4 heartbeats
-        verify(fileRepo, atLeast(4)).touch("cafebabe");
+        // 2 pages, one heartbeat per page in the single streaming pass = at least 2 heartbeats
+        verify(fileRepo, atLeast(2)).touch("cafebabe");
         verify(fileRepo).markDone("cafebabe");
+    }
+
+    /** The degraded-page count computed in the streaming pass must reach the ledger: a later
+     *  review queue is built on total_pages/degraded_pages, so a wrong count here would silently
+     *  under- or over-report. */
+    @Test
+    void recordsPageStatsWithTheDegradedCount() throws Exception {
+        ConsumptionProperties props = new ConsumptionProperties();
+        PdfPageRasterizer rasterizer = mock(PdfPageRasterizer.class);
+        PageOrienter orienter = mockOrienter();
+        PageMetadataExtractor extractor = mock(PageMetadataExtractor.class);
+        // Page 1 extracts fine; page 2 lost its vision metadata.
+        when(extractor.extract(anyString(), anyInt(), any())).thenAnswer(inv -> {
+            int page = inv.getArgument(1);
+            boolean degraded = page == 2;
+            return new PageMetadataExtractor.PageMetadata(page, degraded ? null : "S", null, null,
+                    degraded ? null : "letter", null, degraded ? null : "p", false, degraded);
+        });
+        MailingAssembler assembler = mockAssembler();
+        PageReassembler reassembler = mock(PageReassembler.class);
+        AttachmentService attachments = mock(AttachmentService.class);
+        ConsumptionFileMover mover = mock(ConsumptionFileMover.class);
+        ConsumptionFileRepository fileRepo = mock(ConsumptionFileRepository.class);
+
+        byte[] page = inkPng();
+        stubPages(rasterizer, List.of(page, page));
+        when(reassembler.toDocuments(any(), anyInt())).thenReturn(List.of(
+                new PageReassembler.ResultDoc(List.of(1), "committed"),
+                new PageReassembler.ResultDoc(List.of(2), "committed")));
+
+        Path stagedPath = Path.of("Scan_degraded_count.pdf");
+        ReassemblyOrchestrator orch = new ReassemblyOrchestrator(props, rasterizer, orienter, extractor,
+                assembler, reassembler, new BatchSplitter(), attachments, mover);
+        orch.reassemble(stagedPath, nPagePdf(2), 2, "cafebabe", fileRepo);
+
+        verify(fileRepo).recordPageStats("cafebabe", 2, 1);
     }
 
     /** When both sub-docs ingest successfully, the batch must go to processed/ (regression guard). */
@@ -182,7 +230,7 @@ class ReassemblyPartialFailureTest {
         ConsumptionFileMover mover = mock(ConsumptionFileMover.class);
 
         byte[] page = inkPng();
-        when(rasterizer.rasterize(any(), anyInt(), anyInt())).thenReturn(List.of(page, page));
+        stubPages(rasterizer, List.of(page, page));
         when(reassembler.toDocuments(any(), anyInt())).thenReturn(List.of(
                 new PageReassembler.ResultDoc(List.of(1), "committed"),
                 new PageReassembler.ResultDoc(List.of(2), "committed")));

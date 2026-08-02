@@ -56,4 +56,54 @@ class PageMetadataExtractorTest {
         assertFalse(m.blank());
         verify(vm, times(2)).group(anyString(), anyString(), anyList());
     }
+
+    /** A page whose metadata could not be extracted must say so. Without this flag the null-row is
+     *  indistinguishable from a genuinely empty page, and the batch looks healthy. */
+    @Test
+    void twoFailedAttemptsProduceADegradedRow() {
+        VisionMultiClient vision = mock(VisionMultiClient.class);
+        when(vision.group(anyString(), anyString(), anyList()))
+                .thenReturn("I don't have permission to read the image file.");
+
+        var meta = new PageMetadataExtractor(vision).extract("documents", 7, new byte[]{1, 2, 3});
+
+        assertTrue(meta.degraded(), "a null-row must be marked degraded");
+        assertEquals(7, meta.page());
+    }
+
+    @Test
+    void aParsedRowIsNotDegraded() {
+        VisionMultiClient vision = mock(VisionMultiClient.class);
+        when(vision.group(anyString(), anyString(), anyList()))
+                .thenReturn("{\"sender\":\"SYNTHETIC INSURER\",\"blank\":false}");
+
+        var meta = new PageMetadataExtractor(vision).extract("documents", 3, new byte[]{1});
+
+        assertFalse(meta.degraded());
+    }
+
+    /** A reply that parses but carries nothing (e.g. {@code {}}) is just as useless to assembly as
+     *  an exception: every identifying field is null and the page was not classified blank. */
+    @Test
+    void anEmptyParsedReplyIsDegraded() {
+        VisionMultiClient vision = mock(VisionMultiClient.class);
+        when(vision.group(anyString(), anyString(), anyList())).thenReturn("{}");
+
+        var meta = new PageMetadataExtractor(vision).extract("documents", 5, new byte[]{1});
+
+        assertTrue(meta.degraded(), "an all-null successful parse must still be flagged degraded");
+    }
+
+    /** A genuinely blank page is a successful classification, not a failure to extract anything —
+     *  it must never be conflated with degraded. */
+    @Test
+    void aBlankPageReplyIsNotDegraded() {
+        VisionMultiClient vision = mock(VisionMultiClient.class);
+        when(vision.group(anyString(), anyString(), anyList())).thenReturn("{\"blank\":true}");
+
+        var meta = new PageMetadataExtractor(vision).extract("documents", 6, new byte[]{1});
+
+        assertTrue(meta.blank());
+        assertFalse(meta.degraded());
+    }
 }

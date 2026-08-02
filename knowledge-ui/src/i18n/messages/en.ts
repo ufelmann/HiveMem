@@ -171,6 +171,20 @@ export default {
     filed: 'Filed',
     skipped: 'Skipped',
     reason: 'Reason',
+    ingest: {
+      title: 'Scan review',
+      unavailable: 'Consumption pipeline disabled — the scan queue is unavailable.',
+      reconciliation: 'Reconciliation since process start: {orphans} orphaned re-staged, {missing} without file, {misplaced} misplaced',
+      stateCounts: 'Ledger rows per state (all time):',
+      failedFiles: 'Failed files',
+      degradedBatches: 'Batches with missing page metadata',
+      stalledRows: 'Stalled files (no progress past the stale threshold)',
+      retry: 'Re-ingest',
+      none: 'Nothing to review',
+      retryFailed: 'Re-ingest failed.',
+      retryFailedReason: 'Re-ingest failed: {error}',
+      retryQueued: 'File re-queued — the entry disappears on the next poll.',
+    },
   },
   keybindings: {
     hints: 'Cmd+K search · Esc back · Enter reader'

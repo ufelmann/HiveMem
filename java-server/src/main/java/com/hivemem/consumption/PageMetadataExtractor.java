@@ -14,9 +14,15 @@ public class PageMetadataExtractor {
 
     private static final Logger log = LoggerFactory.getLogger(PageMetadataExtractor.class);
 
-    /** What pass 3 needs to assemble mailings. All String fields nullable. */
+    /** What pass 3 needs to assemble mailings. All String fields nullable.
+     *  {@code degraded} means this page contributed no usable metadata to assembly: either both
+     *  vision attempts threw, or the reply parsed but every identifying field came back null while
+     *  the page was not classified blank (an empty {@code {}} reply, for example). A genuinely
+     *  blank page ({@code blank=true} with the rest null) is a successful classification and is
+     *  never degraded. */
     public record PageMetadata(int page, String sender, String date, String pageLabel,
-                               String docType, String reference, String summary, boolean blank) {}
+                               String docType, String reference, String summary, boolean blank,
+                               boolean degraded) {}
 
     static final String PROMPT = """
             This is ONE page of a scanned German letter/document batch. Read it and extract:
@@ -51,18 +57,21 @@ public class PageMetadataExtractor {
         for (int attempt = 1; attempt <= 2; attempt++) {
             try {
                 JsonNode n = LlmJson.parseObject(vision.group(realm, PROMPT, images));
-                return new PageMetadata(page,
-                        n.path("sender").asString(null),
-                        n.path("date").asString(null),
-                        n.path("page_label").asString(null),
-                        n.path("doc_type").asString(null),
-                        n.path("reference").asString(null),
-                        n.path("summary").asString(null),
-                        n.path("blank").asBoolean(false));
+                String sender = n.path("sender").asString(null);
+                String date = n.path("date").asString(null);
+                String pageLabel = n.path("page_label").asString(null);
+                String docType = n.path("doc_type").asString(null);
+                String reference = n.path("reference").asString(null);
+                String summary = n.path("summary").asString(null);
+                boolean blank = n.path("blank").asBoolean(false);
+                boolean degraded = !blank && sender == null && date == null && pageLabel == null
+                        && docType == null && reference == null && summary == null;
+                return new PageMetadata(page, sender, date, pageLabel, docType, reference, summary,
+                        blank, degraded);
             } catch (Exception e) {
                 log.warn("Metadata attempt {}/2 failed for page {}: {}", attempt, page, e.toString());
             }
         }
-        return new PageMetadata(page, null, null, null, null, null, null, false);
+        return new PageMetadata(page, null, null, null, null, null, null, false, true);
     }
 }

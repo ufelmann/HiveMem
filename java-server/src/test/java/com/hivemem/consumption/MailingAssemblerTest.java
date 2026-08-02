@@ -13,7 +13,7 @@ class MailingAssemblerTest {
 
     private static PageMetadataExtractor.PageMetadata meta(int page, String sender, String date) {
         return new PageMetadataExtractor.PageMetadata(page, sender, date, null, "letter", null,
-                "a page", false);
+                "a page", false, false);
     }
 
     @Test
@@ -42,7 +42,7 @@ class MailingAssemblerTest {
                 .thenReturn("[{\"mailing\":\"m\",\"description\":\"d\",\"confidence\":1.0,\"pages\":[1]}]");
         new MailingAssembler(cc).assemble("documents", List.of(
                 new PageMetadataExtractor.PageMetadata(1, "BEV", null, null, "letter",
-                        "Vertrags-Nr 1509275", "Confirmation letter.", false)));
+                        "Vertrags-Nr 1509275", "Confirmation letter.", false, false)));
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
         verify(cc).complete(anyString(), prompt.capture());
         // matches the validated row format: nulls rendered as None, strings single-quoted
@@ -58,7 +58,7 @@ class MailingAssemblerTest {
                 .thenReturn("[{\"mailing\":\"m\",\"description\":\"d\",\"confidence\":1.0,\"pages\":[1]}]");
         new MailingAssembler(cc).assemble("documents", List.of(
                 new PageMetadataExtractor.PageMetadata(1, "BEV", null, null, "letter",
-                        null, "line one\nline two\r\nline three", false)));
+                        null, "line one\nline two\r\nline three", false, false)));
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
         verify(cc).complete(anyString(), prompt.capture());
         String rowsSection = prompt.getValue();
@@ -76,9 +76,9 @@ class MailingAssemblerTest {
                   "pages":[2]}]""");
         List<DocGroup> groups = new MailingAssembler(cc).assemble("documents", List.of(
                 new PageMetadataExtractor.PageMetadata(1, "Finanzamt Musterstadt", "05.09.2025",
-                        null, "Bescheid", "12/345/67890", "page one", false),
+                        null, "Bescheid", "12/345/67890", "page one", false, false),
                 new PageMetadataExtractor.PageMetadata(2, "Finanzamt Musterstadt", "05.09.2025",
-                        null, "Bescheid", "12/345/6789O", "page two", false)));
+                        null, "Bescheid", "12/345/6789O", "page two", false, false)));
         // same sender + issue date: the prompt forbids two such mailings, the normalizer enforces it
         assertEquals(1, groups.size());
         assertEquals(List.of(1, 2), groups.get(0).pages);

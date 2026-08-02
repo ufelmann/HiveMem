@@ -68,7 +68,7 @@ Each token has one of four roles. The role controls which tools the client sees 
 
 | Role | Visible tools | Write behavior | Can approve? |
 |---|---|---|---|
-| `admin` | All 47 | `status: committed` | Yes |
+| `admin` | All 50 | `status: committed` | Yes |
 | `writer` | 43 (no admin tools) | `status: committed` | No |
 | `reader` | 23 (read only) | Can't write | No |
 | `agent` | 43 (same as writer) | `status: pending` | No |

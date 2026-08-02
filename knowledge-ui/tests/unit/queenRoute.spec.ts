@@ -18,11 +18,20 @@ async function mountReady() {
   return w
 }
 
+async function mountIngestReady() {
+  const w = await mountReady()
+  for (let i = 0; i < 60 && !w.find('.q-ingest').exists(); i++) {
+    await new Promise(r => setTimeout(r, 25)); await flushPromises()
+  }
+  return w
+}
+
 describe('QueenRoute (restyled)', () => {
   beforeEach(() => {
     i18n.global.locale.value = 'de'
     setActivePinia(createPinia())
     localStorage.setItem('hivemem_mock', 'true')
+    localStorage.removeItem('hivemem_mock_ingest_scenario')
     resetApi()
   })
 
@@ -55,5 +64,58 @@ describe('QueenRoute (restyled)', () => {
     const ov = w.find('.q-detail')
     expect(ov.exists()).toBe(true)
     expect(ov.text()).toContain('Surveyed')
+  })
+
+  describe('ingest queue section', () => {
+    it('renders failed files and degraded batches when the queue is populated', async () => {
+      const w = await mountIngestReady()
+      const section = w.find('.q-ingest')
+      expect(section.exists()).toBe(true)
+      expect(section.text()).toContain('scan-0001.pdf')
+      expect(section.find('.notice').exists()).toBe(false)
+      expect(section.findAll('.ingest-row').length).toBeGreaterThanOrEqual(2)
+    })
+
+    it('renders stalled rows with their state and a retry button', async () => {
+      const w = await mountIngestReady()
+      const section = w.find('.q-ingest')
+      // A row stuck in 'staged'/'processing' past the stale threshold used to exist only as an
+      // anonymous integer in stateCounts — no filename, nothing to click.
+      expect(section.text()).toContain('Hängengebliebene Dateien')
+      expect(section.text()).toContain('scan-0003.pdf')
+      expect(section.text()).toContain('processing')
+      expect(section.findAll('.ingest-row').length).toBeGreaterThanOrEqual(3)
+      expect(section.findAll('.ingest-retry').length).toBeGreaterThanOrEqual(3)
+    })
+
+    it('renders the non-terminal ledger states in the per-state census', async () => {
+      const w = await mountIngestReady()
+      const chips = w.findAll('.ingest-state-chip').map(c => c.text())
+      expect(chips.join(' ')).toContain('staged')
+      expect(chips.join(' ')).toContain('processing')
+    })
+
+    it('shows "nothing to review" for a healthy empty queue, with no rows', async () => {
+      localStorage.setItem('hivemem_mock_ingest_scenario', 'empty')
+      resetApi()
+      const w = await mountIngestReady()
+      const section = w.find('.q-ingest')
+      expect(section.exists()).toBe(true)
+      expect(section.find('.notice').exists()).toBe(false)
+      expect(section.findAll('.ingest-row').length).toBe(0)
+      expect(section.text()).toContain('Nichts zu prüfen')
+    })
+
+    it('shows the distinct unavailable notice and renders no tables when disabled', async () => {
+      localStorage.setItem('hivemem_mock_ingest_scenario', 'unavailable')
+      resetApi()
+      const w = await mountIngestReady()
+      const section = w.find('.q-ingest')
+      expect(section.exists()).toBe(true)
+      expect(section.find('.notice').exists()).toBe(true)
+      expect(section.text()).toContain('nicht verfügbar')
+      expect(section.findAll('.ingest-row').length).toBe(0)
+      expect(section.text()).not.toContain('Nichts zu prüfen')
+    })
   })
 })

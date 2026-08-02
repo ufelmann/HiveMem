@@ -80,13 +80,14 @@ class ParitySmokeTest {
     @Test
     void adminPermissionSetContainsFullExpectedToolCount() {
         assertThat(toolPermissionService.allowedTools(AuthRole.ADMIN))
-                .hasSize(51)
+                .hasSize(53)
                 .contains("search", "add_cell", "approve_pending",
                         "health", "reclassify", "reject_cell", "queen_runs", "queen_run_detail",
                         "upload_attachment", "list_attachments", "get_attachment_info",
                         "facet_count", "saved_searches",
                         "manage_tags", "kg_alias", "entity_overview",
-                        "contradictions", "resolve_contradiction", "predicate_cardinality")
+                        "contradictions", "resolve_contradiction", "predicate_cardinality",
+                        "consumption_queue", "consumption_retry")
                 .doesNotContain("hivemem_check_duplicate", "hivemem_check_contradiction",
                         "add_peer", "remove_peer", "list_peers");
     }

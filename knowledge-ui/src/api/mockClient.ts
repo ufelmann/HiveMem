@@ -1,8 +1,14 @@
 import { palace as mockPalace } from '../data/mock'
-import type { ApiClient, HiveEvent, Cell, Realm, Signal, Tunnel, Fact, StatusSummary, Reference, SearchResult, DocumentRow, FacetValue, SavedSearch, MediaItem } from './types'
+import type { ApiClient, HiveEvent, Cell, Realm, Signal, Tunnel, Fact, StatusSummary, Reference, SearchResult, DocumentRow, FacetValue, SavedSearch, MediaItem, IngestQueue } from './types'
 import { NO_REALM } from '../composables/realmMeta'
 
-interface MockConfig { latencyMs?: [number, number]; eventInterval?: number }
+// 'populated' (default): one failed file + one degraded batch, like a small backlog.
+// 'empty': consumption pipeline healthy, nothing to review — must render distinctly from
+// 'unavailable': pipeline switched off, all collections empty AND unavailable:true — see
+// ConsumptionQueueToolHandler.unavailable() on the backend, which this mirrors.
+type IngestScenario = 'populated' | 'empty' | 'unavailable'
+
+interface MockConfig { latencyMs?: [number, number]; eventInterval?: number; ingestScenario?: IngestScenario }
 
 type Handler = (args: any) => unknown
 
@@ -39,7 +45,7 @@ export class MockApiClient implements ApiClient {
     // tests time out. Use minimal latency when running inside the test runner.
     const isTest = (import.meta.env as unknown as Record<string, string>).MODE === 'test'
     const defaultLatency: [number, number] = isTest ? [0, 0] : [50, 200]
-    this.config = { latencyMs: defaultLatency, eventInterval: 15000, ...config }
+    this.config = { latencyMs: defaultLatency, eventInterval: 15000, ingestScenario: 'populated', ...config }
     this.handlers = {
       status: () => this.status(),
       wake_up: () => this.wakeUp(),
@@ -57,6 +63,8 @@ export class MockApiClient implements ApiClient {
       approve_pending: () => ({ ok: true }),
       queen_runs: () => this.queenRuns(),
       queen_run_detail: (args: { run_id: string }) => this.queenRunDetail(args),
+      consumption_queue: () => this.consumptionQueue(),
+      consumption_retry: (args: { sha256?: string }) => this.consumptionRetry(args),
       list_agents: () => [],
       diary_read: () => [],
       get_blueprint: () => null,
@@ -522,6 +530,52 @@ export class MockApiClient implements ApiClient {
       { type: 'tunnel', id: 'p-2', description: 'c-99 → c-13 (refines): supersedes the older rename note',
         realm: 'hivemem', signal: null, created_by: 'queen', created_at: '2026-06-02T03:00:14Z' },
     ]
+  }
+
+  // Synthetic ingest-review data only: never a real filename, sender or document title —
+  // this repo is public (see CLAUDE.md "Public repo — what must never be committed").
+  private consumptionQueue(): IngestQueue {
+    if (this.config.ingestScenario === 'unavailable') {
+      // Mirrors ConsumptionQueueToolHandler.unavailable() field for field, so a UI test can
+      // exercise the "pipeline disabled" branch without a real backend.
+      return {
+        failedFiles: [], degradedBatches: [], stalledRows: [],
+        reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
+        stateCounts: {}, unavailable: true,
+      }
+    }
+    if (this.config.ingestScenario === 'empty') {
+      return {
+        failedFiles: [], degradedBatches: [], stalledRows: [],
+        reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
+        stateCounts: {},
+      }
+    }
+    return {
+      failedFiles: [
+        { sha256: 'aaaa0001', filename: 'scan-0001.pdf', state: 'failed', attempts: 2,
+          lastError: 'page count 240 exceeds max-pages 200' },
+      ],
+      degradedBatches: [
+        { sha256: 'bbbb0002', filename: 'scan-0002.pdf', totalPages: 40, degradedPages: 3,
+          updatedAt: '2026-08-02T10:00:00Z' },
+      ],
+      stalledRows: [
+        { sha256: 'cccc0003', filename: 'scan-0003.pdf', state: 'processing',
+          updatedAt: '2026-08-02T08:30:00Z', ageSeconds: 5400 },
+      ],
+      reconciliation: { orphansRestaged: 0, rowsWithoutFile: 0, misplacedFailed: 0 },
+      // Includes the two non-terminal states, so the fixture exercises the model the
+      // staged→processing→done/failed ledger actually produces, not just its endpoints.
+      stateCounts: { done: 20, processing: 2, staged: 3, failed: 1 },
+    }
+  }
+
+  private consumptionRetry(args: { sha256?: string }) {
+    // The mock always misses — there is no real ledger to re-stage against — so the UI's
+    // failure-surfacing path (a retry that visibly did not work) gets exercised, matching
+    // the real handler's "unknown hash" case.
+    return { sha256: String(args.sha256 ?? ''), restaged: false, error: 'unknown sha256' }
   }
 
   private buildMediaSeed(): MediaItem[] {

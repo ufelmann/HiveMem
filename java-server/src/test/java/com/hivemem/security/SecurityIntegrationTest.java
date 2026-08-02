@@ -189,7 +189,7 @@ class SecurityIntegrationTest {
         }
 
         @Test
-        void adminSees48Tools() throws Exception {
+        void adminSees50Tools() throws Exception {
             insertToken("admin-user", "admin-token", "admin");
 
             mockMvc.perform(post("/mcp")
@@ -197,7 +197,7 @@ class SecurityIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(TOOLS_LIST_REQUEST))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.result.tools", hasSize(48)));
+                    .andExpect(jsonPath("$.result.tools", hasSize(50)));
         }
     }
 

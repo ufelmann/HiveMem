@@ -171,6 +171,20 @@ export default {
     filed: 'Einsortiert',
     skipped: 'Übersprungen',
     reason: 'Begründung',
+    ingest: {
+      title: 'Scan-Nachkontrolle',
+      unavailable: 'Consumption-Pipeline deaktiviert — die Scan-Warteschlange ist nicht verfügbar.',
+      reconciliation: 'Abgleich seit Prozessstart: {orphans} verwaist wieder eingereiht, {missing} ohne Datei, {misplaced} falsch abgelegt',
+      stateCounts: 'Ledger-Zeilen je Status (gesamt):',
+      failedFiles: 'Fehlgeschlagene Dateien',
+      degradedBatches: 'Stapel mit fehlenden Seiten-Metadaten',
+      stalledRows: 'Hängengebliebene Dateien (kein Fortschritt jenseits der Stale-Schwelle)',
+      retry: 'Erneut einlesen',
+      none: 'Nichts zu prüfen',
+      retryFailed: 'Erneutes Einlesen fehlgeschlagen.',
+      retryFailedReason: 'Erneutes Einlesen fehlgeschlagen: {error}',
+      retryQueued: 'Datei wieder eingereiht — der Eintrag verschwindet beim nächsten Poll.',
+    },
   },
   keybindings: {
     hints: 'Cmd+K Suche · Esc zurück · Enter Reader'

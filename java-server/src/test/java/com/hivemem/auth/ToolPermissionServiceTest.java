@@ -47,14 +47,31 @@ class ToolPermissionServiceTest {
     }
 
     /**
+     * consumption_queue and consumption_retry must be ADMIN-only: the review queue surfaces
+     * failed/degraded scan batches (operational, not tenant data) and the retry tool re-stages a
+     * file by hash — both are operational levers, not something a WRITER/AGENT-role token should
+     * reach.
+     */
+    @Test
+    void consumptionQueueAndRetryAreAdminOnly() {
+        for (String tool : List.of("consumption_queue", "consumption_retry")) {
+            assertThat(svc.isAllowed(AuthRole.READER, tool)).as(tool).isFalse();
+            assertThat(svc.isAllowed(AuthRole.WRITER, tool)).as(tool).isFalse();
+            assertThat(svc.isAllowed(AuthRole.AGENT, tool)).as(tool).isFalse();
+            assertThat(svc.isAllowed(AuthRole.ADMIN, tool)).as(tool).isTrue();
+        }
+    }
+
+    /**
      * Pins the total visible tool count for ADMIN so an accidental bucket move (e.g.
      * resolve_contradiction slipping into WRITE_TOOLS instead of ADMIN_TOOLS, which would not
      * change this count since ADMIN sees the union of both) is caught alongside the more targeted
-     * assertions above. Count derivation: the README's MCP-tool badge was 48 before this task
-     * (documentation/../README.md), and this task adds exactly 3 new tools.
+     * assertions above. Count derivation: the README's MCP-tool badge was 48 before the
+     * contradiction-detection task added 3 new tools (-> 51), and this task adds 2 more
+     * (consumption_queue, consumption_retry) on top of that (-> 53).
      */
     @Test
-    void adminSeesExactlyFiftyOneTools() {
-        assertThat(svc.allowedTools(AuthRole.ADMIN)).hasSize(51);
+    void adminSeesExactlyFiftyThreeTools() {
+        assertThat(svc.allowedTools(AuthRole.ADMIN)).hasSize(53);
     }
 }

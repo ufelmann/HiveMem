@@ -82,7 +82,9 @@ public class ToolPermissionService {
             "queen_run_detail",
             "archivist_log",
             "resolve_contradiction",
-            "predicate_cardinality"
+            "predicate_cardinality",
+            "consumption_queue",
+            "consumption_retry"
     );
 
     private static final Set<String> WRITER_TOOLS = union(READ_TOOLS, WRITE_TOOLS);

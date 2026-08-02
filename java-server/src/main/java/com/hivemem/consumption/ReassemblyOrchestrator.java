@@ -71,51 +71,51 @@ public class ReassemblyOrchestrator {
             return;
         }
         try {
-            List<byte[]> pages = rasterizer.rasterize(pdfBytes, props.getReassemblyRenderDpi(), props.getMaxPages());
-
-            // Pass 1 — per-page orientation + blankness (forced-choice A/B; validated 15/15).
             Map<Integer, Integer> rotations = new HashMap<>();
             Set<Integer> blank = new HashSet<>();
-            List<byte[]> upright = new ArrayList<>(pages);
-            for (int i = 0; i < pages.size(); i++) {
-                int pageNo = i + 1;
-                PageOrienter.PageOrientation o = orienter.orient(props.getRealm(), pageNo, pages.get(i));
-                if (o.rotation() != 0) {
-                    rotations.put(pageNo, o.rotation());
-                    upright.set(i, PageOrienter.rotate180Png(pages.get(i)));
-                }
-                if (o.blank()) blank.add(pageNo);
-                // Heartbeat inside the per-page loop: each orientation costs one (possibly retried)
-                // LLM call, so a single pass over a large batch can outlast the recovery sweep's
-                // stale threshold — bump updated_at per page so a live run can't be mistaken for a
-                // crash-stranded file and re-staged mid-run (see consumption.md reassembly note).
-                if (hash != null && fileRepo != null) fileRepo.touch(hash);
-            }
-
-            // Pass 2 — per-page metadata from the upright renders.
             List<PageMetadataExtractor.PageMetadata> meta = new ArrayList<>();
-            for (int i = 0; i < upright.size(); i++) {
-                PageMetadataExtractor.PageMetadata m =
-                        extractor.extract(props.getRealm(), i + 1, upright.get(i));
-                if (m.blank()) blank.add(m.page());
-                meta.add(m);
-                if (hash != null && fileRepo != null) fileRepo.touch(hash); // heartbeat (see pass 1)
-            }
+            int[] pageTotal = {0};
+            int[] degraded = {0};
 
-            // Pass 3 — text-only mailing assembly (throws on garbage → degrade path).
+            // One pass: render, orient, extract, pixel-check, discard. Nothing but the small
+            // per-page records survives the iteration, so heap use no longer scales with batch size.
+            rasterizer.rasterize(pdfBytes, props.getReassemblyRenderDpi(), props.getMaxPages(),
+                    (index, png) -> {
+                        int pageNo = index + 1;
+                        pageTotal[0] = pageNo;
+                        PageOrienter.PageOrientation o = orienter.orient(props.getRealm(), pageNo, png);
+                        byte[] upright = png;
+                        if (o.rotation() != 0) {
+                            rotations.put(pageNo, o.rotation());
+                            upright = PageOrienter.rotate180Png(png);
+                        }
+                        if (o.blank()) blank.add(pageNo);
+
+                        PageMetadataExtractor.PageMetadata m =
+                                extractor.extract(props.getRealm(), pageNo, upright);
+                        if (m.blank()) blank.add(pageNo);
+                        meta.add(m);
+                        if (m.degraded()) degraded[0]++;
+
+                        if (props.isBlankFilterEnabled()
+                                && BlankPageDetector.isNearWhite(png, props.getBlankWhiteFraction())) {
+                            blank.add(pageNo);
+                        }
+                        // Heartbeat: each page costs up to two LLM calls, so one pass over a large
+                        // batch can outlast the recovery sweep's stale threshold.
+                        if (hash != null && fileRepo != null) fileRepo.touch(hash);
+                    });
+
+            int pageTotalCount = pageTotal[0];
+            if (hash != null && fileRepo != null) {
+                fileRepo.recordPageStats(hash, pageTotalCount, degraded[0]);
+            }
+            if (degraded[0] > 0) {
+                log.warn("{}: {} of {} page(s) lost their vision metadata — boundaries may be wrong",
+                        originalName, degraded[0], pageTotalCount);
+            }
             List<DocGroup> groups = assembler.assemble(props.getRealm(), meta);
-
-            List<PageReassembler.ResultDoc> docs = reassembler.toDocuments(groups, pages.size());
-
-            // Blank-page filtering: union of the LLM signals (passes 1+2, already in `blank`)
-            // and the pixel signal; drop entirely-blank documents so they never become a cell.
-            if (props.isBlankFilterEnabled()) {
-                for (int i = 0; i < pages.size(); i++) {
-                    if (BlankPageDetector.isNearWhite(pages.get(i), props.getBlankWhiteFraction())) {
-                        blank.add(i + 1);
-                    }
-                }
-            }
+            List<PageReassembler.ResultDoc> docs = reassembler.toDocuments(groups, pageTotalCount);
 
             List<PageReassembler.ResultDoc> keptDocs = new ArrayList<>();
             List<List<Integer>> keptGroups = new ArrayList<>();
@@ -130,7 +130,7 @@ public class ReassemblyOrchestrator {
                 log.info("Blank-page filter: dropped {} blank page(s) from {}", blank.size(), originalName);
             }
             if (keptDocs.isEmpty()) {
-                log.info("All {} page(s) of {} were blank — no documents ingested", pages.size(), originalName);
+                log.info("All {} page(s) of {} were blank — no documents ingested", pageTotalCount, originalName);
             }
             List<byte[]> parts = splitter.assemble(pdfBytes, keptGroups, rotations);
             // keptDocs and parts are index-aligned: assemble() skips empty groups, and we already
@@ -153,7 +153,7 @@ public class ReassemblyOrchestrator {
                 moveToFailedTracked(staged, hash, fileRepo);
                 return;
             }
-            mover.moveToProcessed(staged);
+            moveToProcessedTracked(staged, hash, fileRepo);
             if (fileRepo != null) fileRepo.markDone(hash);
             log.info("Reassembled {} into {} documents", originalName, parts.size());
         } catch (Exception e) {
@@ -179,13 +179,25 @@ public class ReassemblyOrchestrator {
             log.error("Degrade ingest failed for {}: {}", originalName, e.toString());
         }
         if (ingested) {
-            try { mover.moveToProcessed(staged); }
+            try { moveToProcessedTracked(staged, hash, fileRepo); }
             catch (Exception e) { log.warn("Could not move {} to processed/: {}", originalName, e.toString()); }
             // Batch was salvaged as one pending doc — terminal, not stranded
             if (fileRepo != null) fileRepo.markDone(hash);
         } else {
             if (fileRepo != null) fileRepo.markFailed(hash, "degrade-to-pending ingest failed");
             moveToFailedTracked(staged, hash, fileRepo);
+        }
+    }
+
+    /** Move to processed/ and persist the (possibly collision-suffixed) landed filename, so a later
+     *  {@code consumption_retry} — which resolves {@code processed/<row.filename>} for exactly the
+     *  degraded batches this class flags — finds the file that actually landed. Throws like the
+     *  bare move it replaces, so the caller's error handling is unchanged. */
+    private void moveToProcessedTracked(Path staged, String hash, ConsumptionFileRepository fileRepo)
+            throws java.io.IOException {
+        Path dest = mover.moveToProcessed(staged);
+        if (fileRepo != null && hash != null && dest != null) {
+            fileRepo.updateFilename(hash, dest.getFileName().toString());
         }
     }
 
