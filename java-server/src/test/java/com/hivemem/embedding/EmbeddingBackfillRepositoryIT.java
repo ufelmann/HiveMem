@@ -63,7 +63,7 @@ class EmbeddingBackfillRepositoryIT {
                 rejectedId);
 
         // findCellsMissingEmbedding should return it
-        List<UUID> missing = repo.findCellsMissingEmbedding(10);
+        List<UUID> missing = repo.findCellsMissingEmbedding(500, 10);
         assertTrue(missing.contains(id), "cell with NULL embedding should be returned");
         assertFalse(missing.contains(rejectedId), "rejected cell must not be returned");
 
@@ -77,7 +77,7 @@ class EmbeddingBackfillRepositoryIT {
         repo.setEmbedding(id, vec);
 
         // Verify embedding is now set
-        List<UUID> stillMissing = repo.findCellsMissingEmbedding(10);
+        List<UUID> stillMissing = repo.findCellsMissingEmbedding(500, 10);
         assertFalse(stillMissing.contains(id), "cell should no longer appear after embedding is set");
 
         // Verify tag was removed
@@ -144,6 +144,41 @@ class EmbeddingBackfillRepositoryIT {
     }
 
     @Test
+    void picksUpTaggedButEmbeddableCells() {
+        EmbeddingBackfillRepository repo = new EmbeddingBackfillRepository(dsl);
+
+        // 3000 chars: over the old 500-char cap, under the new 8000-char cap. Tagged
+        // needs_summary, but that must no longer exclude it — it is embeddable as-is.
+        UUID id = UUID.randomUUID();
+        dsl.execute(
+                "INSERT INTO cells (id, content, embedding, tags, status, created_by, realm, signal, topic, valid_from) "
+                + "VALUES (?, ?, NULL, ARRAY['needs_summary'], 'committed', 'test', 'facts', 'discoveries', 'test', now())",
+                id, "z".repeat(3000));
+
+        List<UUID> found = repo.findCellsMissingEmbedding(8000, 50);
+        assertTrue(found.contains(id), "tagged cells within the cap must still be backfilled");
+    }
+
+    @Test
+    void capParameterGovernsEligibilityNotACompileTimeConstant() {
+        EmbeddingBackfillRepository repo = new EmbeddingBackfillRepository(dsl);
+
+        // 3000 chars, no summary, no tags: excluded when the caller passes the old 500-char
+        // cap, included once the caller passes the write path's 8000-char cap. This proves the
+        // cap actually flows from the parameter, not from a hardcoded constant.
+        UUID id = UUID.randomUUID();
+        dsl.execute(
+                "INSERT INTO cells (id, content, embedding, tags, status, created_by, realm, signal, topic, valid_from) "
+                + "VALUES (?, ?, NULL, ARRAY[]::text[], 'committed', 'test', 'facts', 'discoveries', 'test', now())",
+                id, "z".repeat(3000));
+
+        assertFalse(repo.findCellsMissingEmbedding(500, 50).contains(id),
+                "content over a 500-char cap without a summary must not be returned");
+        assertTrue(repo.findCellsMissingEmbedding(8000, 50).contains(id),
+                "the same content must be returned once the caller passes the 8000-char cap");
+    }
+
+    @Test
     void doesNotReturnSoftDeletedCells() {
         EmbeddingBackfillRepository repo = new EmbeddingBackfillRepository(dsl);
 
@@ -153,7 +188,7 @@ class EmbeddingBackfillRepositoryIT {
                 + "VALUES (?, 'hello', NULL, 'committed', 'test', 'facts', 'discoveries', 'test', now(), now())",
                 id);
 
-        List<UUID> missing = repo.findCellsMissingEmbedding(10);
+        List<UUID> missing = repo.findCellsMissingEmbedding(500, 10);
         assertFalse(missing.contains(id), "soft-deleted (valid_until set) cell must not be returned");
     }
 }

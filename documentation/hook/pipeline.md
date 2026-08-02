@@ -18,7 +18,7 @@ Force-include: prefix prompt with `!mem ` to bypass all skip logic. The `!mem ` 
 
 ## Stage 2 — Embedding + Search
 
-The prompt is embedded via the configured embedding model (`paraphrase-multilingual-MiniLM-L12-v2`) and passed to `ranked_search` — a PostgreSQL function combining six signals. The hook uses its own precision-tuned weight preset (`hivemem.hooks.weights.*`), independent of the UI/`search`-tool weights:
+The prompt is embedded via whichever embedding backend is active — `paraphrase-multilingual-MiniLM-L12-v2` on the default ONNX backend, or the configured Ollama model (e.g. Qwen3-Embedding-8B) on the optional GPU backend, see [architecture.md](../architecture.md#gpu-embedding-backend-optional) — and passed to `ranked_search`, a PostgreSQL function combining six signals. The hook uses its own precision-tuned weight preset (`hivemem.hooks.weights.*`), independent of the UI/`search`-tool weights:
 
 | Signal | Default weight | What it measures |
 |---|---|---|

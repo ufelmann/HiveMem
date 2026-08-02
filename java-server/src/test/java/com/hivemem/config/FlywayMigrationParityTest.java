@@ -38,8 +38,8 @@ class FlywayMigrationParityTest {
         try (SchemaHarness harness = migrateFreshSchema()) {
             assertThat(harness.flyway().info().pending()).isEmpty();
             assertThat(harness.dsl().fetchCount(DSL.table("migration_baseline"))).isEqualTo(1);
-            // V0052 (contradiction detection schema) added by the contradiction branch; bump 47 -> 48.
-            assertThat(harness.dsl().fetchCount(DSL.table("flyway_schema_history"))).isEqualTo(48);
+            // V0053 (drop stale cells embedding index) added by the GPU embedding migration; bump 48 -> 49.
+            assertThat(harness.dsl().fetchCount(DSL.table("flyway_schema_history"))).isEqualTo(49);
         }
     }
 
@@ -47,7 +47,7 @@ class FlywayMigrationParityTest {
     void migrationsAreIdempotentOnSecondRun() throws SQLException {
         try (SchemaHarness harness = migrateFreshSchema()) {
             assertThat(harness.flyway().migrate().migrationsExecuted).isZero();
-            assertThat(harness.dsl().fetchCount(DSL.table("flyway_schema_history"))).isEqualTo(48);
+            assertThat(harness.dsl().fetchCount(DSL.table("flyway_schema_history"))).isEqualTo(49);
         }
     }
 

@@ -115,8 +115,8 @@ public class WriteToolService {
 
         return writeToolRepository.inTransaction(() -> {
             if (dedupeThreshold != null && embedding != null) {
-                // embedding is null when summary is blank/absent AND content exceeds
-                // EmbeddingClient.CONTENT_EMBED_MAX_CHARS — skip the dedupe check in that case
+                // embedding is null when content exceeds EmbeddingClient.maxChars() AND
+                // summary is blank/absent — skip the dedupe check in that case
                 // (the cell is tagged needs_summary below and deduped later once summarized).
                 // Serialize concurrent identical adds so the dedupe check-then-insert cannot race
                 // (mirrors updateBlueprint's pg_advisory_xact_lock pattern).

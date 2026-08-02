@@ -73,7 +73,7 @@ class EmbeddingReencodeKeysetPaginationIT {
         UUID afterId = null;
         int guard = 0;
         while (true) {
-            List<EmbeddingStateRepository.CellRow> batch = repo.fetchCellBatch(afterId, NEW_DIM, 3);
+            List<EmbeddingStateRepository.CellRow> batch = repo.fetchCellBatch(afterId, NEW_DIM, 3, false);
             if (batch.isEmpty()) {
                 break;
             }
@@ -125,7 +125,7 @@ class EmbeddingReencodeKeysetPaginationIT {
         UUID afterId = null;
         int guard = 0;
         while (true) {
-            List<EmbeddingStateRepository.FactRow> batch = repo.fetchFactBatch(afterId, NEW_DIM, 2);
+            List<EmbeddingStateRepository.FactRow> batch = repo.fetchFactBatch(afterId, NEW_DIM, 2, false);
             if (batch.isEmpty()) {
                 break;
             }

@@ -102,9 +102,7 @@ class EmbeddingClientContractTest {
 
         server.expect(requestTo("https://embeddings.local/info"))
                 .andExpect(method(GET))
-                .andRespond(withSuccess("""
-                        {"model":"bge-m3","dimension":1024}
-                        """, MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess(InfoStub.json("bge-m3", 1024, 8000), MediaType.APPLICATION_JSON));
 
         EmbeddingInfo info = client.getInfo();
         assertThat(info.model()).isEqualTo("bge-m3");
@@ -125,9 +123,7 @@ class EmbeddingClientContractTest {
         // Register all expectations before making any calls
         server.expect(requestTo("https://embeddings.local/info"))
                 .andExpect(method(GET))
-                .andRespond(withSuccess("""
-                        {"model":"bge-m3","dimension":3}
-                        """, MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess(InfoStub.json("bge-m3", 3, 8000), MediaType.APPLICATION_JSON));
         server.expect(requestTo("https://embeddings.local/embeddings"))
                 .andExpect(method(POST))
                 .andRespond(withSuccess("""
@@ -153,9 +149,7 @@ class EmbeddingClientContractTest {
         // Register all expectations before making any calls
         server.expect(requestTo("https://embeddings.local/info"))
                 .andExpect(method(GET))
-                .andRespond(withSuccess("""
-                        {"model":"bge-m3","dimension":1024}
-                        """, MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess(InfoStub.json("bge-m3", 1024, 8000), MediaType.APPLICATION_JSON));
         server.expect(requestTo("https://embeddings.local/embeddings"))
                 .andExpect(method(POST))
                 .andRespond(withSuccess("""

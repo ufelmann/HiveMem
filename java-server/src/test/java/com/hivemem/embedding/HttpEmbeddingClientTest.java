@@ -81,4 +81,78 @@ class HttpEmbeddingClientTest {
         assertThat(output).contains("Embedding call failed").contains("application/octet-stream");
         server.verify();
     }
+
+    private record ClientAndServer(HttpEmbeddingClient client, MockRestServiceServer server) {
+    }
+
+    private ClientAndServer newClient() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        HttpEmbeddingClient client = new HttpEmbeddingClient(
+                builder,
+                new EmbeddingProperties(java.net.URI.create("https://embeddings.local"), java.time.Duration.ofSeconds(2)),
+                false);
+        return new ClientAndServer(client, server);
+    }
+
+    private ClientAndServer stubInfo(String json) {
+        ClientAndServer cs = newClient();
+        cs.server().expect(requestTo("https://embeddings.local/info"))
+                .andExpect(method(org.springframework.http.HttpMethod.GET))
+                .andRespond(withSuccess(json, MediaType.APPLICATION_JSON));
+        return cs;
+    }
+
+    @Test
+    void bindsMaxCharsFromSnakeCaseJson() {
+        ClientAndServer cs = stubInfo(
+                InfoStub.json("m/mrl1024/t2560/contentfirst", 1024, 8000));
+        assertThat(cs.client().maxChars()).isEqualTo(8000);
+        cs.server().verify();
+    }
+
+    @Test
+    void rejectsInfoWithoutMaxChars_asVersionSkew() {
+        ClientAndServer cs = stubInfo("{\"model\":\"m\",\"dimension\":1024}");
+        // Assert the MESSAGE, not just the class: getInfo() throws IllegalStateException
+        // for several unrelated reasons, so a class-only assertion passes for the wrong one.
+        assertThatThrownBy(cs.client()::getInfo)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("max_chars");
+        cs.server().verify();
+    }
+
+    /** Pins that invalidateCaches() deliberately does NOT clear cachedMaxChars: after a warm
+     *  getInfo(), maxChars() must keep returning the cached value from the fast path — without
+     *  making a second /info call — even once the rest of the cache (cachedInfo) is cleared. */
+    @Test
+    void maxCharsSurvivesInvalidateCaches_becauseItIsNotAPerMigrationCache() {
+        ClientAndServer cs = newClient();
+        cs.server().expect(requestTo("https://embeddings.local/info"))
+                .andExpect(method(org.springframework.http.HttpMethod.GET))
+                .andRespond(withSuccess(InfoStub.json("m", 1024, 8000), MediaType.APPLICATION_JSON));
+
+        cs.client().getInfo();
+        cs.client().invalidateCaches();
+
+        assertThat(cs.client().maxChars()).isEqualTo(8000);
+        cs.server().verify(); // only the one /info call above — no second HTTP hop
+    }
+
+    /** Cold-cache sibling of the test above: no prior getInfo(), so maxChars() must itself call
+     *  /info. When that call fails (sidecar restarting right after a migration's
+     *  invalidateCaches(), before any getInfo() ever warmed the cache), maxChars() must fall
+     *  back to CONTENT_EMBED_MAX_CHARS rather than propagate — this is the exact path
+     *  encodeForCell relies on never throwing. */
+    @Test
+    void maxCharsFallsBackToDefault_whenColdCacheAndInfoCallFails() {
+        ClientAndServer cs = newClient();
+        cs.server().expect(requestTo("https://embeddings.local/info"))
+                .andExpect(method(org.springframework.http.HttpMethod.GET))
+                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators
+                        .withServerError());
+
+        assertThat(cs.client().maxChars()).isEqualTo(EmbeddingClient.CONTENT_EMBED_MAX_CHARS);
+        cs.server().verify();
+    }
 }

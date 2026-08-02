@@ -34,8 +34,9 @@ class WriteToolServiceAddCellDedupeTest {
         CellSelectorRepository cellSelectorRepository = mock(CellSelectorRepository.class);
         KgEntityRepository kgEntityRepository = mock(KgEntityRepository.class);
 
-        // Contract: encodeForCell returns null when summary is blank/absent AND content
-        // exceeds CONTENT_EMBED_MAX_CHARS (500 chars).
+        // Contract: encodeForCell prefers content when it fits within the backend's maxChars()
+        // (falling back to summary only when content doesn't fit), and returns null only when
+        // content exceeds maxChars() AND summary is blank/absent too.
         when(embedding.encodeForCell(any(), any())).thenReturn(null);
 
         UUID insertedId = UUID.randomUUID();

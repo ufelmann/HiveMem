@@ -33,6 +33,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
     private final EmbeddingStateRepository stateRepository;
     private final int startupRetryAttempts;
     private final long startupRetryBackoffMs;
+    private final Runnable backupRunner;
     private final AtomicBoolean reencodingActive = new AtomicBoolean(false);
 
     @Autowired
@@ -43,10 +44,18 @@ public class EmbeddingMigrationService implements ApplicationRunner {
     /** Test seam: allows a small attempt count / zero backoff so retry tests run fast. */
     EmbeddingMigrationService(EmbeddingClient embeddingClient, EmbeddingStateRepository stateRepository,
                               int startupRetryAttempts, long startupRetryBackoffMs) {
+        this(embeddingClient, stateRepository, startupRetryAttempts, startupRetryBackoffMs, null);
+    }
+
+    /** Test seam: allows a stub backup runner so tests that drive {@link #reencode} don't exec
+     *  the real {@code hivemem-backup} binary. {@code null} keeps the production behavior. */
+    EmbeddingMigrationService(EmbeddingClient embeddingClient, EmbeddingStateRepository stateRepository,
+                              int startupRetryAttempts, long startupRetryBackoffMs, Runnable backupRunner) {
         this.embeddingClient = embeddingClient;
         this.stateRepository = stateRepository;
         this.startupRetryAttempts = Math.max(1, startupRetryAttempts);
         this.startupRetryBackoffMs = Math.max(0, startupRetryBackoffMs);
+        this.backupRunner = backupRunner != null ? backupRunner : this::runBackupProcess;
     }
 
     public boolean isReencodingActive() {
@@ -76,6 +85,14 @@ public class EmbeddingMigrationService implements ApplicationRunner {
         }
 
         log.info("Embedding service reports: model={}, dimension={}", currentInfo.model(), currentInfo.dimension());
+
+        // pgvector's HNSW index caps at 2000 dimensions. Validate BEFORE anything
+        // destructive: past this point we drop indexes and rewrite every vector.
+        int dim = currentInfo.dimension();
+        if (dim <= 0 || dim > 2000) {
+            throw new IllegalStateException("Embedding service reports an unusable dimension: " + dim
+                    + " (must be 1..2000 for a pgvector HNSW index). Refusing to migrate.");
+        }
 
         Optional<EmbeddingInfo> storedInfo = stateRepository.loadStoredInfo();
 
@@ -147,7 +164,25 @@ public class EmbeddingMigrationService implements ApplicationRunner {
         }
 
         try {
-            runBackup();
+            backupRunner.run();
+
+            // The branch that leads here is reached only when model or dimension differs
+            // (see the early-return above for the matching case), so equal dimensions mean
+            // the identity string changed and no row would be selected by the dimension
+            // predicate. forceAll drops that predicate so the pass still re-encodes
+            // everything; see fetchCellBatch's javadoc for the crash-resume trade-off this
+            // implies.
+            //
+            // A leftover progress row also forces a full pass: clearProgress() only runs on
+            // a clean success, so a row surviving into this run means a previous pass crashed
+            // partway through. If that crashed pass had already written some rows at an
+            // intermediate dimension (e.g. A(384d) -> B(1024d) crashes, operator then points
+            // at C(1024d)), "from" here compares stored (still A/384, since saveInfo() also
+            // only runs on success) against current (C/1024) — different dimensions, so the
+            // plain dimension predicate would treat every B-generation 1024d row as already
+            // correct and skip it, leaving B and C vectors mixed in one index. Forcing a full
+            // pass whenever a progress row exists closes that gap.
+            boolean forceAll = from.dimension() == to.dimension() || stateRepository.loadProgress().isPresent();
 
             // total is informational only (progress reporting) — loop termination below is
             // driven exclusively by an empty batch, never by this precomputed count, since a
@@ -164,7 +199,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
             java.util.UUID afterCellId = null;
             while (true) {
                 List<EmbeddingStateRepository.CellRow> batch =
-                        stateRepository.fetchCellBatch(afterCellId, to.dimension(), BATCH_SIZE);
+                        stateRepository.fetchCellBatch(afterCellId, to.dimension(), BATCH_SIZE, forceAll);
                 if (batch.isEmpty()) {
                     break;
                 }
@@ -173,9 +208,15 @@ public class EmbeddingMigrationService implements ApplicationRunner {
                     if (embedding == null) {
                         // encodeForCell returns null by contract for long content without a
                         // summary. Clear the old-model vector (it would break the new HNSW index
-                        // cast) and keep needs_summary so the summarizer fills it in later —
-                        // do NOT abort the whole migration and brick the startup.
-                        stateRepository.clearEmbeddingAndTagNeedsSummary(row.id());
+                        // cast) and, for committed rows, keep needs_summary so the summarizer
+                        // fills it in later. Non-committed rows skip the tag: it would be inert
+                        // since SummarizerRepository.findCellsNeedingSummary only looks at
+                        // committed rows. Do NOT abort the whole migration and brick the startup.
+                        if ("committed".equals(row.status())) {
+                            stateRepository.clearEmbeddingAndTagNeedsSummary(row.id());
+                        } else {
+                            stateRepository.clearEmbedding(row.id());
+                        }
                         continue;
                     }
                     stateRepository.updateEmbedding(row.id(), embedding);
@@ -189,7 +230,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
             stateRepository.createEmbeddingIndex(to.dimension());
             log.info("Recreated HNSW index");
 
-            int totalFacts = stateRepository.countFactsCommitted();
+            int totalFacts = stateRepository.countFacts();
             log.info("Reencoding {} facts: {} → {}", totalFacts, from.model(), to.model());
 
             stateRepository.dropFactsEmbeddingIndex();
@@ -199,7 +240,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
             java.util.UUID afterFactId = null;
             while (true) {
                 List<EmbeddingStateRepository.FactRow> batch =
-                        stateRepository.fetchFactBatch(afterFactId, to.dimension(), BATCH_SIZE);
+                        stateRepository.fetchFactBatch(afterFactId, to.dimension(), BATCH_SIZE, forceAll);
                 if (batch.isEmpty()) {
                     break;
                 }
@@ -227,7 +268,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
         }
     }
 
-    private void runBackup() {
+    private void runBackupProcess() {
         log.info("Running pre-reencoding backup...");
         try {
             ProcessBuilder pb = new ProcessBuilder("hivemem-backup");

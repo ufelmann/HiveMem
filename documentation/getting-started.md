@@ -12,7 +12,11 @@ HiveMem requires an external embedding service. An ONNX-based service is include
 
 The service must expose:
 - `POST /embeddings` — `{"text": "...", "mode": "document"}` → `{"vector": [...], "model": "...", "dimension": N}`
-- `GET /info` — `{"model": "...", "dimension": N}` (used by HiveMem for model change detection)
+- `GET /info` — `{"model": "...", "dimension": N, "max_chars": N}` (used by HiveMem for model
+  change detection and for the content-vs-summary embedding decision). `max_chars` is
+  **mandatory**: HiveMem refuses to start embedding calls against a service that omits it or
+  returns a value ≤ 0 (`IllegalStateException: Embedding service returned no usable
+  max_chars`) — this guards against pointing a server at an older sidecar build.
 
 **Automatic reencoding:** When HiveMem detects a model change at startup (different model name or dimension), it automatically backs up the database, re-encodes all cells, and rebuilds the HNSW index. Search is blocked (503) during reencoding.
 
@@ -31,6 +35,73 @@ To build the embedding service:
 cd embedding-service
 docker build -t hivemem-embeddings .
 ```
+
+### GPU embedding backend (optional)
+
+The bundled embedding sidecar (`embedding-service/`) ships two backends, selected via
+`EMBEDDING_BACKEND`:
+
+- `onnx` (default) — CPU inference (onnxruntime), embeds up to ~500 characters per cell.
+  Runs on any host, no GPU required — this is what a plain `docker compose up -d` uses.
+- `ollama` — talks to a local Ollama server running a larger embedding model (the default
+  is Qwen3-Embedding-8B), embedding up to ~8000 characters per cell. The integration is
+  provider-neutral: it only depends on Ollama's HTTP API, so a CUDA-based Ollama image
+  works the same way as the ROCm one — swap the image tag in your compose override to
+  match your GPU vendor.
+
+To enable it:
+
+```bash
+export HIVEMEM_EMBEDDING_BACKEND=ollama
+docker compose --profile gpu up -d
+```
+
+(`HIVEMEM_EMBEDDING_BACKEND` is the host-side variable; `docker-compose.yml` maps it to the
+sidecar's own `EMBEDDING_BACKEND` env var — set the `HIVEMEM_`-prefixed one, both names refer
+to the same switch.)
+
+The `--profile gpu` flag is required. Without it, the `hivemem-ollama` service is not
+created at all — the embedding sidecar's health check never turns green, and `hivemem`
+(which depends on the sidecar being healthy) never starts. This is deliberate: a
+GPU-less clone that never passes `--profile gpu` is unaffected by the Ollama service
+definition.
+
+Prerequisites:
+- A GPU reachable from the Docker host, with device passthrough configured for the
+  `hivemem-ollama` service (e.g. `/dev/kfd` + `/dev/dri` for ROCm; the NVIDIA Container
+  Toolkit's device options for CUDA)
+- Enough VRAM for the configured model — the default Qwen3-Embedding-8B model at Q8
+  quantization needs on the order of 8-9 GB
+
+Key environment variables for the `hivemem-embeddings` service:
+- `EMBEDDING_BACKEND` — `onnx` (default) or `ollama`
+- `OLLAMA_URL` — base URL of the Ollama server (default `http://hivemem-ollama:11434`)
+- `OLLAMA_MODEL` — model tag to use (default `qwen3-embedding:8b-q8_0`)
+- `EMBEDDING_DIMS` — vector width after Matryoshka (MRL) slicing (default `1024`)
+- `EMBEDDING_MAX_TOKENS` — Ollama's context/truncation cap, `num_ctx` (default `2560`)
+- `EMBEDDING_KEEP_ALIVE` — how long Ollama keeps the model resident after the last
+  request (default `5m`); the model is fully unloaded from VRAM after this idle period
+  and reloads in about 2 seconds on the next request, on the measured hardware
+- `EMBEDDING_MAX_CHARS` — character cap advertised to HiveMem via `/info` (default `8000`)
+
+**`EMBEDDING_MAX_CHARS` and `EMBEDDING_MAX_TOKENS` must be raised together.** Ollama is the
+one that actually truncates — the backend sends `truncate: true` with
+`options.num_ctx = EMBEDDING_MAX_TOKENS`, so anything beyond the token cap is silently cut
+regardless of `EMBEDDING_MAX_CHARS`. Raising `EMBEDDING_MAX_CHARS` alone (e.g. to 16000)
+without a matching `EMBEDDING_MAX_TOKENS` increase reintroduces silent truncation with no
+error anywhere — `EMBEDDING_MAX_CHARS` must stay within what `EMBEDDING_MAX_TOKENS` tokens
+can actually hold for your content's language.
+
+`EMBEDDING_MAX_CHARS` is part of the model identity string both backends report via
+`/info` (`c<chars>`, e.g. `.../c8000/contentfirst`), so changing it and restarting
+triggers a full re-encode — the same as changing the model name or dimension. This is
+intentional: the value decides whether a cell's content or its summary gets embedded, so
+a change that were invisible to the identity would leave two vector generations mixed in
+one index with no error anywhere.
+
+A resident Ollama model does not cost measurable idle GPU power — an idle GPU sits at
+its power/memory-clock floor whether or not a model is loaded — so `EMBEDDING_KEEP_ALIVE`
+is a VRAM/reload-latency trade-off, not a power one.
 
 ## Quick Start
 

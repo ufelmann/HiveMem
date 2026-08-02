@@ -38,7 +38,7 @@ public class EmbeddingBackfillService {
     }
 
     private void backfillCells() {
-        List<UUID> ids = repo.findCellsMissingEmbedding(batchSize);
+        List<UUID> ids = repo.findCellsMissingEmbedding(client.maxChars(), batchSize);
         for (UUID id : ids) {
             try {
                 var snap = repo.findSnapshot(id).orElse(null);

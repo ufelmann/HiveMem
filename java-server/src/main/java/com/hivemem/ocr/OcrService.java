@@ -213,9 +213,12 @@ public class OcrService {
                 UUID newId = UUID.fromString(newIdObj.toString());
                 liveId = newId;
                 repo.removeOcrPendingTag(newId);
-                // Content-based dedup. Long docs have no embedding yet here (it is produced later by
-                // the summarizer, which runs its own dedup pass); only short docs (≤ threshold) are
-                // embedded directly at revise time, so only those can be deduped now.
+                // Content-based dedup. This gate uses the fixed NeedsSummaryDecider threshold (500
+                // chars), not the active embedding backend's maxChars() — so it is conservative, not
+                // exact. On the ONNX backend the two align (both 500), so this correctly selects docs
+                // that already have an embedding here. On the Ollama backend (maxChars up to 8000) a
+                // doc between 501 and maxChars() chars already has an embedding at this point too, but
+                // is still deferred to the summarizer's dedup pass along with truly unembedded docs.
                 if (dedup != null && !NeedsSummaryDecider.needsSummary(content, null)) {
                     dedup.findAndDiscardDuplicate(newId);
                 }

@@ -1,6 +1,7 @@
 package com.hivemem.sync;
 
 import com.hivemem.embedding.EmbeddingClient;
+import com.hivemem.embedding.EmbeddingInfo;
 import com.hivemem.embedding.FixedEmbeddingClient;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,6 +36,33 @@ class OpReplayerIntegrationTest {
     static class TestConfig {
         @Bean @Primary
         EmbeddingClient testEmbeddingClient() { return new FixedEmbeddingClient(); }
+    }
+
+    /**
+     * Delegates to {@link FixedEmbeddingClient} but raises {@link #maxChars()} well above
+     * {@link com.hivemem.summarize.NeedsSummaryDecider}'s 500-char enrichment threshold —
+     * mirroring the Ollama sidecar's 8000-char cap. Used to pull embeddability and
+     * needs_summary tagging apart in a single test, without touching the class-level
+     * {@code testEmbeddingClient} bean that other tests in this file rely on staying at the
+     * historical 500-char default.
+     */
+    private static final class HighCapEmbeddingClient implements EmbeddingClient {
+        private final FixedEmbeddingClient delegate = new FixedEmbeddingClient();
+
+        @Override
+        public List<Float> encodeDocument(String text) {
+            return delegate.encodeDocument(text);
+        }
+
+        @Override
+        public EmbeddingInfo getInfo() {
+            return delegate.getInfo();
+        }
+
+        @Override
+        public int maxChars() {
+            return 8000;
+        }
     }
 
     @Container
@@ -532,8 +561,13 @@ class OpReplayerIntegrationTest {
 
     @Test
     void addCellReplayHandlesNullEmbeddingForLongContentWithoutSummary() {
-        // encodeForCell returns null for content > 500 chars without a summary; replay must
-        // insert with NULL embedding + needs_summary instead of NPEing (and losing the op).
+        // encodeForCell returns null for content > 500 chars without a summary (this test class's
+        // shared EmbeddingClient bean does not override maxChars(), so the embeddability cap here
+        // happens to coincide with the decider's 500-char enrichment threshold). Replay must insert
+        // with NULL embedding, and still tag needs_summary — but via NeedsSummaryDecider, not by
+        // inferring it from the null embedding: see addCellReplayTagsNeedsSummary_forMidLengthCell_
+        // evenThoughItNowHasAnEmbedding below, which uses a higher-cap client to pull those two
+        // questions apart and prove the tag no longer depends on embeddability.
         UUID cellId = UUID.randomUUID();
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("cell_id", cellId.toString());
@@ -548,6 +582,56 @@ class OpReplayerIntegrationTest {
 
         var row = dsl.fetchOne("SELECT embedding IS NULL AS no_emb, tags FROM cells WHERE id = ?", cellId);
         assertThat(row.get("no_emb", Boolean.class)).isTrue();
+        assertThat(row.get("tags", String[].class)).contains("needs_summary");
+    }
+
+    @Test
+    void addCellReplayTagsNeedsSummary_forMidLengthCell_evenThoughItNowHasAnEmbedding() {
+        // With an 8000-char embedding cap (e.g. the Ollama sidecar), a 3000-char cell is well
+        // within maxChars() and gets a real embedding — but it still exceeds the decider's
+        // 500-char enrichment threshold. needs_summary must come from NeedsSummaryDecider, not
+        // from "was an embedding produced": a peer replaying this op, or an instance bootstrapped
+        // by replaying the op log, must still enrich and extract KG facts for this cell.
+        OpReplayer highCapReplayer = new OpReplayer(dsl, new HighCapEmbeddingClient(), syncPeerRepository);
+        UUID cellId = UUID.randomUUID();
+        String content = "y".repeat(3000);
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("cell_id", cellId.toString());
+        payload.put("content", content);
+        payload.put("realm", "eng");
+        payload.put("signal", "facts");
+        payload.put("topic", "t");
+        payload.put("status", "committed");
+
+        OpDto op = new OpDto(95L, UUID.randomUUID(), "add_cell", payload, OffsetDateTime.now());
+        assertThat(highCapReplayer.replay(sourcePeer, op)).isEqualTo(OpReplayer.ReplayResult.REPLAYED);
+
+        var row = dsl.fetchOne("SELECT embedding IS NOT NULL AS has_emb, tags FROM cells WHERE id = ?", cellId);
+        assertThat(row.get("has_emb", Boolean.class)).isTrue();
+        assertThat(row.get("tags", String[].class)).contains("needs_summary");
+    }
+
+    @Test
+    void reviseCellReplayTagsNeedsSummary_forMidLengthCell_evenThoughItNowHasAnEmbedding() {
+        // Same divergence as replayAddCell, exercised through replayReviseCell (the second call
+        // site at OpReplayer.java:170): a mid-length revision gets embedded under the higher cap
+        // but must still be tagged needs_summary via the decider.
+        UUID oldId = insertMinimalCell();
+        UUID newId = UUID.randomUUID();
+        String newContent = "z".repeat(3000);
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("cell_id", oldId.toString());
+        payload.put("new_cell_id", newId.toString());
+        payload.put("new_content", newContent);
+        payload.put("status", "committed");
+
+        OpReplayer highCapReplayer = new OpReplayer(dsl, new HighCapEmbeddingClient(), syncPeerRepository);
+        OpDto op = new OpDto(96L, UUID.randomUUID(), "revise_cell", payload, OffsetDateTime.now());
+        assertThat(highCapReplayer.replay(sourcePeer, op)).isEqualTo(OpReplayer.ReplayResult.REPLAYED);
+
+        var row = dsl.fetchOne("SELECT embedding IS NOT NULL AS has_emb, tags FROM cells WHERE id = ?", newId);
+        assertThat(row.get("has_emb", Boolean.class)).isTrue();
         assertThat(row.get("tags", String[].class)).contains("needs_summary");
     }
 

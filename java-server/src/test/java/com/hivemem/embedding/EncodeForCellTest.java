@@ -16,12 +16,39 @@ class EncodeForCellTest {
         @Override public EmbeddingInfo getInfo() { return new EmbeddingInfo("test", 2); }
     }
 
+    /** Overrides {@link EmbeddingClient#maxChars()} to a non-default value so tests can prove
+     *  {@code encodeForCell} consults {@code maxChars()} itself, not the {@code
+     *  CONTENT_EMBED_MAX_CHARS} constant (which {@link RecordingClient} would otherwise mask,
+     *  since its default happens to equal the constant). */
+    private static class CustomCapClient extends RecordingClient {
+        private final int cap;
+        CustomCapClient(int cap) { this.cap = cap; }
+        @Override public int maxChars() { return cap; }
+    }
+
     @Test
-    void usesSummary_whenProvided() {
+    void usesContent_whenWithinCap_evenIfSummaryPresent() {
         RecordingClient c = new RecordingClient();
-        List<Float> v = c.encodeForCell("very long content...", "the summary");
+        List<Float> v = c.encodeForCell("short content", "the summary");
+        assertEquals("short content", c.lastInput);
+        assertEquals(List.of(0.1f, 0.2f), v);
+    }
+
+    @Test
+    void fallsBackToSummary_whenContentExceedsCap() {
+        RecordingClient c = new RecordingClient();
+        String tooLong = "x".repeat(501);
+        List<Float> v = c.encodeForCell(tooLong, "the summary");
         assertEquals("the summary", c.lastInput);
         assertEquals(List.of(0.1f, 0.2f), v);
+    }
+
+    @Test
+    void returnsNull_whenContentTooLongAndNoSummary() {
+        RecordingClient c = new RecordingClient();
+        c.lastInput = "untouched";
+        assertNull(c.encodeForCell("x".repeat(501), null));
+        assertEquals("untouched", c.lastInput);
     }
 
     @Test
@@ -33,12 +60,39 @@ class EncodeForCellTest {
     }
 
     @Test
-    void returnsNull_whenLongContentAndNoSummary() {
+    void usesSummary_whenContentBlank_evenThoughBlankIsNotNull() {
+        // A blank (but non-null) content must not win over a real summary — encoding "" would
+        // produce a meaningless vector. Guards against a weak `content != null` check that lets
+        // an empty string satisfy the length <= maxChars() branch.
+        RecordingClient c = new RecordingClient();
+        List<Float> v = c.encodeForCell("", "a real summary");
+        assertEquals("a real summary", c.lastInput);
+        assertEquals(List.of(0.1f, 0.2f), v);
+    }
+
+    @Test
+    void usesSummary_whenContentNull() {
+        RecordingClient c = new RecordingClient();
+        List<Float> v = c.encodeForCell(null, "a real summary");
+        assertEquals("a real summary", c.lastInput);
+        assertEquals(List.of(0.1f, 0.2f), v);
+    }
+
+    @Test
+    void returnsNull_whenContentNullAndSummaryNull() {
         RecordingClient c = new RecordingClient();
         c.lastInput = "untouched";
-        List<Float> v = c.encodeForCell("a".repeat(600), null);
-        assertNull(v);
+        assertNull(c.encodeForCell(null, null));
         assertEquals("untouched", c.lastInput);
+    }
+
+    @Test
+    void boundary_contentExactlyAtCapUsesContent() {
+        RecordingClient c = new RecordingClient();
+        String atCap = "x".repeat(500);
+        List<Float> v = c.encodeForCell(atCap, "the summary");
+        assertEquals(atCap, c.lastInput);
+        assertEquals(List.of(0.1f, 0.2f), v);
     }
 
     @Test
@@ -47,5 +101,24 @@ class EncodeForCellTest {
         List<Float> v = c.encodeForCell("short content", "   ");
         assertEquals("short content", c.lastInput);
         assertNotNull(v);
+    }
+
+    @Test
+    void consultsMaxChars_notTheHistoricalConstant_forAHigherCap() {
+        // 8000-char content is far above CONTENT_EMBED_MAX_CHARS (500), but within a
+        // custom, larger maxChars() — content must still win over the summary.
+        CustomCapClient c = new CustomCapClient(8000);
+        String content = "x".repeat(8000);
+        c.encodeForCell(content, "the summary");
+        assertEquals(content, c.lastInput);
+    }
+
+    @Test
+    void consultsMaxChars_notTheHistoricalConstant_forALowerCap() {
+        // This content is well within CONTENT_EMBED_MAX_CHARS (500), but a custom,
+        // smaller maxChars() must still push it into the summary fallback.
+        CustomCapClient c = new CustomCapClient(10);
+        c.encodeForCell("well under the historical 500-char cap", "the summary");
+        assertEquals("the summary", c.lastInput);
     }
 }

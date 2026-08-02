@@ -9,11 +9,11 @@ from pathlib import Path
 from unittest import mock
 
 
-MODULE_PATH = Path(__file__).with_name("app_onnx.py")
+MODULE_PATH = Path(__file__).with_name("backend_onnx.py")
 
 
 def load_module():
-    spec = importlib.util.spec_from_file_location("embedding_service_app_onnx", MODULE_PATH)
+    spec = importlib.util.spec_from_file_location("embedding_service_backend_onnx", MODULE_PATH)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -54,7 +54,7 @@ def stub_modules():
 
 class AppOnnxConfigTest(unittest.TestCase):
     def setUp(self):
-        self.module_name = "embedding_service_app_onnx"
+        self.module_name = "embedding_service_backend_onnx"
         self.env_patch = mock.patch.dict(_ENV, {"EMBEDDING_SKIP_BOOTSTRAP": "1"}, clear=False)
         self.env_patch.start()
         self.modules = mock.patch.dict(sys.modules, stub_modules())
@@ -125,6 +125,11 @@ class AppOnnxConfigTest(unittest.TestCase):
         self.assertEqual(info["query_prefix"], "Q: ")
         self.assertEqual(info["document_prefix"], "D: ")
         self.assertEqual(info["inputs"], ["attention_mask", "input_ids"])
+        # Identity encodes slicing strategy, token cap, char cap and embed-source
+        # strategy so EmbeddingMigrationService re-encodes when any of them changes.
+        self.assertEqual(info["model"], "demo-model/mrl0/t512/c500/contentfirst")
+        # Calibrated ONNX value; must stay a literal, not derived from MAX_LENGTH.
+        self.assertEqual(info["max_chars"], 500)
 
 
 if __name__ == "__main__":

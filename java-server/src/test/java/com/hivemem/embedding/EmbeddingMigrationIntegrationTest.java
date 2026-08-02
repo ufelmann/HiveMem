@@ -182,12 +182,55 @@ class EmbeddingMigrationIntegrationTest {
 
         // Target dimension 999 differs from the drawers' actual (1024) dimension, so the
         // "still needs work" predicate matches all three rows, same as a real reencode.
-        var batch1 = stateRepository.fetchCellBatch(null, 999, 2);
+        var batch1 = stateRepository.fetchCellBatch(null, 999, 2, false);
         assertThat(batch1).hasSize(2);
 
         var afterId = batch1.get(batch1.size() - 1).id();
-        var batch2 = stateRepository.fetchCellBatch(afterId, 999, 2);
+        var batch2 = stateRepository.fetchCellBatch(afterId, 999, 2, false);
         assertThat(batch2).hasSize(1);
+    }
+
+    @Test
+    void reencodesNonCommittedCells_soTheNonPartialIndexCanBeBuilt() {
+        // The default HNSW index is bound to dimension 1024 (test-model); drop it so a
+        // 384-dim insert below doesn't trip the expression-index cast.
+        stateRepository.dropEmbeddingIndex();
+        UUID pending = insertCell("pending", "some pending content", null, dim384Vector());
+        UUID rejected = insertCell("rejected", "some rejected content", null, dim384Vector());
+
+        var batch = stateRepository.fetchCellBatch(null, 1024, 100, false);
+
+        assertThat(batch.stream().anyMatch(r -> r.id().equals(pending))).isTrue();
+        assertThat(batch.stream().anyMatch(r -> r.id().equals(rejected))).isTrue();
+        assertThat(batch.stream().filter(r -> r.id().equals(pending))
+                .findFirst().orElseThrow().status()).isEqualTo("pending");
+    }
+
+    @Test
+    void forceAll_selectsRowsWhoseDimensionAlreadyMatches() {
+        // The default HNSW index is bound to dimension 1024 (test-model); drop it so a
+        // 384-dim insert below doesn't trip the expression-index cast.
+        stateRepository.dropEmbeddingIndex();
+        UUID id = insertCell("committed", "content", null, dim384Vector());
+
+        assertThat(stateRepository.fetchCellBatch(null, 384, 100, false).stream()
+                .noneMatch(r -> r.id().equals(id))).as("without forceAll the row is skipped").isTrue();
+        assertThat(stateRepository.fetchCellBatch(null, 384, 100, true).stream()
+                .anyMatch(r -> r.id().equals(id))).as("with forceAll the row is selected").isTrue();
+    }
+
+    @Test
+    void reencodesNonCommittedFacts_soTheNonPartialIndexCanBeBuilt() {
+        // The default HNSW index is bound to dimension 1024 (test-model); drop it so a
+        // 384-dim insert below doesn't trip the expression-index cast.
+        stateRepository.dropFactsEmbeddingIndex();
+        UUID pending = insertFact("pending", "subj-pending", "pred", "obj", dim384Vector());
+        UUID rejected = insertFact("rejected", "subj-rejected", "pred", "obj", dim384Vector());
+
+        var batch = stateRepository.fetchFactBatch(null, 1024, 100, false);
+
+        assertThat(batch.stream().anyMatch(r -> r.id().equals(pending))).isTrue();
+        assertThat(batch.stream().anyMatch(r -> r.id().equals(rejected))).isTrue();
     }
 
     @Test
@@ -197,7 +240,7 @@ class EmbeddingMigrationIntegrationTest {
         stateRepository.dropEmbeddingIndex();
 
         insertDrawer("embedding update test", "eng", "facts", "infra");
-        var rows = stateRepository.fetchCellBatch(null, 999, 1);
+        var rows = stateRepository.fetchCellBatch(null, 999, 1, false);
         assertThat(rows).hasSize(1);
 
         FixedEmbeddingClient client = new FixedEmbeddingClient(512, "new-model");
@@ -265,6 +308,38 @@ class EmbeddingMigrationIntegrationTest {
     }
 
     @Test
+    void dropsEveryVectorIndexOnCells_notJustTheKnownName() {
+        dslContext.execute("CREATE INDEX idx_legacy_embedding ON cells USING hnsw "
+                + "((embedding::vector(384)) vector_cosine_ops)");
+        // Pin the scope: a vector index on a different table, and a non-vector index on the
+        // same table, must both survive — otherwise an implementation that ignores the
+        // `table` argument, or drops every vector index in the database, or drops every
+        // index regardless of am, would pass this test identically.
+        stateRepository.createFactsEmbeddingIndex(1024);
+        dslContext.execute("CREATE INDEX idx_cells_realm_btree ON cells (realm)");
+
+        stateRepository.dropVectorIndexes("cells");
+
+        Integer remaining = dslContext.fetchOne(
+                "SELECT count(*)::int FROM pg_index i "
+              + "JOIN pg_class c ON c.oid = i.indexrelid "
+              + "JOIN pg_am a ON a.oid = c.relam "
+              + "WHERE a.amname IN ('hnsw','ivfflat') AND i.indrelid = 'cells'::regclass")
+            .get(0, Integer.class);
+        assertThat(remaining).isEqualTo(0);
+
+        Integer factsIndexCount = dslContext.fetchOne(
+                "SELECT COUNT(*) FROM pg_indexes WHERE tablename = 'facts' AND indexname = 'idx_facts_embedding'")
+                .get(0, Integer.class);
+        assertThat(factsIndexCount).isEqualTo(1);
+
+        Integer btreeIndexCount = dslContext.fetchOne(
+                "SELECT COUNT(*) FROM pg_indexes WHERE tablename = 'cells' AND indexname = 'idx_cells_realm_btree'")
+                .get(0, Integer.class);
+        assertThat(btreeIndexCount).isEqualTo(1);
+    }
+
+    @Test
     void rankedSearchFunctionExistsWithActiveDimension() {
         int dim = embeddingMigrationService.getCurrentDimension();
         Float[] zeros = new Float[dim];
@@ -284,6 +359,30 @@ class EmbeddingMigrationIntegrationTest {
                 INSERT INTO cells (id, content, embedding, realm, signal, topic, status, created_by, valid_from)
                 VALUES (?, ?, ?::vector, ?, ?, ?, 'committed', 'test', now())
                 """, UUID.randomUUID(), content, embeddingArray, wing, hall, room);
+    }
+
+    private UUID insertCell(String status, String content, String summary, Float[] embedding) {
+        UUID id = UUID.randomUUID();
+        dslContext.execute("""
+                INSERT INTO cells (id, content, summary, embedding, realm, signal, topic, status, created_by, valid_from)
+                VALUES (?, ?, ?, ?::vector, 'eng', 'facts', 'infra', ?, 'test', now())
+                """, id, content, summary, embedding, status);
+        return id;
+    }
+
+    private static Float[] dim384Vector() {
+        Float[] v = new Float[384];
+        java.util.Arrays.fill(v, 0.1f);
+        return v;
+    }
+
+    private UUID insertFact(String status, String subject, String predicate, String object, Float[] embedding) {
+        UUID id = UUID.randomUUID();
+        dslContext.execute("""
+                INSERT INTO facts (id, subject, predicate, "object", embedding, status, created_by, valid_from)
+                VALUES (?, ?, ?, ?, ?::vector, ?, 'test', now())
+                """, id, subject, predicate, object, embedding, status);
+        return id;
     }
 
     private JsonNode callTool(String token, String toolName, Map<String, Object> arguments) throws Exception {
