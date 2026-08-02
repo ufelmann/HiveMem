@@ -16,15 +16,17 @@ public interface EmbeddingClient {
     /**
      * Content-first embedding for cells:
      * <ul>
-     *   <li>content ≤ {@link #maxChars()} → embed the content</li>
-     *   <li>content too long but a summary exists → embed the summary</li>
+     *   <li>content non-blank and ≤ {@link #maxChars()} → embed the content</li>
+     *   <li>content blank, absent, or too long but a summary exists → embed the summary</li>
      *   <li>neither → {@code null}; the caller tags {@code needs_summary}</li>
      * </ul>
      * The cap is backend-dependent (500 on ONNX, 8000 on Ollama), so it comes from
-     * {@link #maxChars()}, not from the constant.
+     * {@link #maxChars()}, not from the constant. Blank content (e.g. a legacy row with
+     * {@code content = ''}) must not win over a real summary — embedding an empty string
+     * produces a meaningless vector.
      */
     default List<Float> encodeForCell(String content, String summary) {
-        if (content != null && content.length() <= maxChars()) {
+        if (content != null && !content.isBlank() && content.length() <= maxChars()) {
             return encodeDocument(content);
         }
         if (summary != null && !summary.isBlank()) {
