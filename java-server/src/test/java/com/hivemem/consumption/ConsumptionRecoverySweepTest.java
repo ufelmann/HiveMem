@@ -147,4 +147,18 @@ class ConsumptionRecoverySweepTest {
         verify(repo).markFailed(eq("sha-stale"), contains("no physical file"));
         assertEquals(1, sweep.lastReconciliation().rowsWithoutFile());
     }
+
+    /** Regression: a stale-processing row that DOES have a physical file must be re-staged and
+     *  must NEVER be marked failed. The missing-file check must run BEFORE the file is moved,
+     *  not after — otherwise a successfully recovered row looks indistinguishable from a row
+     *  that never had a file at all. */
+    @Test
+    void staleRowWithFileIsRestagedAndNeverMarkedFailed() throws Exception {
+        sweep.recover();
+
+        assertTrue(Files.exists(tempRoot.resolve("stale.pdf")));
+        verify(repo, never()).markFailed(eq("sha-stale"), anyString());
+        assertEquals(0, sweep.lastReconciliation().rowsWithoutFile(),
+                "a successfully recovered file must not appear as a divergence");
+    }
 }

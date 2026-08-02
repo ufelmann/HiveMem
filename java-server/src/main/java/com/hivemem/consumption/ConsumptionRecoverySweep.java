@@ -52,6 +52,12 @@ public class ConsumptionRecoverySweep implements ApplicationRunner {
     public void recover() {
         int stale = (int) props.getRecoveryStaleThreshold().toSeconds();
         var staleRows = repo.findStaleProcessing(stale, 500);
+
+        // Must run BEFORE reStage moves anything: only here does "no physical file in
+        // processing/" genuinely mean the row has no data. Once reStage has moved a row's
+        // file out, its absence means success, not divergence.
+        int missing = markRowsWithoutFile(staleRows);
+
         for (var r : staleRows) {
             Path f = root.resolve(ConsumptionFileMover.PROCESSING).resolve(r.filename());
             reStage(f, r, "stale-processing");
@@ -59,7 +65,10 @@ public class ConsumptionRecoverySweep implements ApplicationRunner {
         for (var r : repo.findRetriableFailed(props.getFailedRetryLimit(), 500)) {
             reStage(root.resolve(ConsumptionFileMover.FAILED).resolve(r.filename()), r, "retry-failed");
         }
-        last = reconcile(staleRows);
+
+        Reconciliation dirReconciliation = reconcile();
+        last = new Reconciliation(
+                dirReconciliation.orphansRestaged(), dirReconciliation.doneLeftovers(), missing);
     }
 
     private void reStage(Path file, ConsumptionFileRepository.Row r, String why) {
@@ -73,16 +82,34 @@ public class ConsumptionRecoverySweep implements ApplicationRunner {
         }
     }
 
+    /** A stale row whose physical file is already gone before any move happens is a row without
+     *  data — mark it failed so it stops being selected every sweep, and count it so the operator
+     *  learns about it. */
+    private int markRowsWithoutFile(List<ConsumptionFileRepository.Row> staleRows) {
+        Path processingDir = root.resolve(ConsumptionFileMover.PROCESSING);
+        int missing = 0;
+        for (var r : staleRows) {
+            Path f = processingDir.resolve(r.filename());
+            if (!Files.isRegularFile(f)) {
+                repo.markFailed(r.sha256(), "no physical file in processing/");
+                missing++;
+                log.warn("Reconciliation marked {} failed: row is stale and has no physical file",
+                        r.filename());
+            }
+        }
+        return missing;
+    }
+
     /** Compares processing/ against the ledger in BOTH directions. The ledger-driven loop above
      *  cannot see a file with no row; this can. */
-    private Reconciliation reconcile(List<ConsumptionFileRepository.Row> staleRows) {
+    private Reconciliation reconcile() {
         Path processingDir = root.resolve(ConsumptionFileMover.PROCESSING);
         List<Path> files = new ArrayList<>();
         try (DirectoryStream<Path> s = Files.newDirectoryStream(processingDir)) {
             for (Path p : s) if (Files.isRegularFile(p)) files.add(p);
         } catch (IOException e) {
             log.warn("Reconciliation could not list {}: {}", processingDir, e.toString());
-            return last;
+            return new Reconciliation(last.orphansRestaged(), last.doneLeftovers(), last.rowsWithoutFile());
         }
         List<String> names = new ArrayList<>();
         for (Path p : files) names.add(p.getFileName().toString());
@@ -109,16 +136,6 @@ public class ConsumptionRecoverySweep implements ApplicationRunner {
             }
         }
 
-        int missing = 0;
-        for (var r : staleRows) {
-            Path f = processingDir.resolve(r.filename());
-            if (!Files.isRegularFile(f)) {
-                repo.markFailed(r.sha256(), "no physical file in processing/");
-                missing++;
-                log.warn("Reconciliation marked {} failed: row is stale and has no physical file",
-                        r.filename());
-            }
-        }
-        return new Reconciliation(orphans, leftovers, missing);
+        return new Reconciliation(orphans, leftovers, 0);
     }
 }
