@@ -214,7 +214,44 @@ class ReassemblyPartialFailureTest {
                 assembler, reassembler, new BatchSplitter(), attachments, mover);
         orch.reassemble(stagedPath, nPagePdf(2), 2, "cafebabe", fileRepo);
 
-        verify(fileRepo).recordPageStats("cafebabe", 2, 1);
+        verify(fileRepo).recordPageStats("cafebabe", 2, 1, 0);
+    }
+
+    /** blank_pages must reach the ledger too: a batch that silently loses half its pages to the
+     *  blank-page filter needs to be as visible as one that lost pages to a degraded extraction.
+     *  One page is voted blank by the extractor (no pixel skip involved here — Task 4 territory),
+     *  so {@code blank.size()} must be 1 and degraded must stay 0. */
+    @Test
+    void recordsPageStatsWithTheBlankCount() throws Exception {
+        ConsumptionProperties props = new ConsumptionProperties();
+        PdfPageRasterizer rasterizer = mock(PdfPageRasterizer.class);
+        PageOrienter orienter = mockOrienter();
+        PageMetadataExtractor extractor = mock(PageMetadataExtractor.class);
+        // Page 1 is ordinary content; page 2 is voted blank by the extractor.
+        when(extractor.extract(anyString(), anyInt(), any())).thenAnswer(inv -> {
+            int page = inv.getArgument(1);
+            boolean blank = page == 2;
+            return new PageMetadataExtractor.PageMetadata(page, "S", null, null,
+                    blank ? "blank" : "letter", null, blank ? "blank page" : "p", blank, false);
+        });
+        MailingAssembler assembler = mockAssembler();
+        PageReassembler reassembler = mock(PageReassembler.class);
+        AttachmentService attachments = mock(AttachmentService.class);
+        ConsumptionFileMover mover = mock(ConsumptionFileMover.class);
+        ConsumptionFileRepository fileRepo = mock(ConsumptionFileRepository.class);
+
+        byte[] page = inkPng();
+        stubPages(rasterizer, List.of(page, page));
+        when(reassembler.toDocuments(any(), anyInt())).thenReturn(List.of(
+                new PageReassembler.ResultDoc(List.of(1), "committed"),
+                new PageReassembler.ResultDoc(List.of(2), "committed")));
+
+        Path stagedPath = Path.of("Scan_blank_count.pdf");
+        ReassemblyOrchestrator orch = new ReassemblyOrchestrator(props, rasterizer, orienter, extractor,
+                assembler, reassembler, new BatchSplitter(), attachments, mover);
+        orch.reassemble(stagedPath, nPagePdf(2), 2, "cafebabe", fileRepo);
+
+        verify(fileRepo).recordPageStats("cafebabe", 2, 0, 1);
     }
 
     /** When both sub-docs ingest successfully, the batch must go to processed/ (regression guard). */

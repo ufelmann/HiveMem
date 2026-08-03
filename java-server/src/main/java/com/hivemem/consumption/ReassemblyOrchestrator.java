@@ -108,7 +108,7 @@ public class ReassemblyOrchestrator {
 
             int pageTotalCount = pageTotal[0];
             if (hash != null && fileRepo != null) {
-                fileRepo.recordPageStats(hash, pageTotalCount, degraded[0]);
+                fileRepo.recordPageStats(hash, pageTotalCount, degraded[0], blank.size());
             }
             if (degraded[0] > 0) {
                 log.warn("{}: {} of {} page(s) lost their vision metadata — boundaries may be wrong",

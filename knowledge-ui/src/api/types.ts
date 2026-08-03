@@ -212,12 +212,15 @@ export interface IngestFailedFile {
 }
 
 /** One row from `consumption_queue`'s degradedBatches list — mirrors
- *  ConsumptionFileRepository.DegradedBatch. */
+ *  ConsumptionFileRepository.DegradedBatch. `blankPages` is nullable: it counts all pages
+ *  recognised as blank (LLM-voted or pixel-skipped) and dropped before assembly, but rows
+ *  recorded before the column existed have no value rather than an invented 0. */
 export interface IngestDegradedBatch {
   sha256: string
   filename: string
   totalPages: number
   degradedPages: number
+  blankPages: number | null
   updatedAt: string
 }
 

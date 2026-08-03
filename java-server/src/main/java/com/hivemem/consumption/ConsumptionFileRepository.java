@@ -117,10 +117,13 @@ public class ConsumptionFileRepository {
                 filename, sha256);
     }
 
-    /** Record how many pages a batch had and how many of them lost their vision metadata. */
-    public void recordPageStats(String sha256, int totalPages, int degradedPages) {
+    /** Record how many pages a batch had, how many of them lost their vision metadata, and how
+     *  many were recognised as blank (LLM-voted, or pixel-skipped by a future filter — see
+     *  {@code blank_pages} in V0055) and dropped before assembly. */
+    public void recordPageStats(String sha256, int totalPages, int degradedPages, int blankPages) {
         dsl.execute("UPDATE consumption_file SET total_pages = ?, degraded_pages = ?, "
-                + "updated_at = now() WHERE sha256 = ?", totalPages, degradedPages, sha256);
+                        + "blank_pages = ?, updated_at = now() WHERE sha256 = ?",
+                totalPages, degradedPages, blankPages, sha256);
     }
 
     /** Returns rows in 'failed' state that have not yet exhausted their retry budget. */
@@ -208,7 +211,7 @@ public class ConsumptionFileRepository {
      *  batch is unknown, not clean, and must not silently pass this filter either way. */
     public List<DegradedBatch> findDegradedBatches(int minDegraded, int limit) {
         var rows = dsl.fetch("""
-                SELECT sha256, filename, total_pages, degraded_pages, updated_at
+                SELECT sha256, filename, total_pages, degraded_pages, blank_pages, updated_at
                 FROM consumption_file
                 WHERE degraded_pages >= ?
                   AND total_pages > 0
@@ -223,6 +226,7 @@ public class ConsumptionFileRepository {
                     r.get("filename", String.class),
                     (Integer) r.get("total_pages"),
                     (Integer) r.get("degraded_pages"),
+                    (Integer) r.get("blank_pages"),
                     r.get("updated_at", OffsetDateTime.class).toString()));
         }
         return out;
@@ -247,8 +251,10 @@ public class ConsumptionFileRepository {
 
     public record Row(String sha256, String filename, String state, int attempts, String lastError) {}
 
+    /** @param blankPages all pages recognised as blank (LLM-voted, pixel-skipped, or both) and
+     *                    dropped before assembly; nullable for rows recorded before V0055. */
     public record DegradedBatch(String sha256, String filename, int totalPages,
-                                int degradedPages, String updatedAt) {}
+                                int degradedPages, Integer blankPages, String updatedAt) {}
 
     /** A row that is neither done nor failed but has stopped moving. */
     public record StalledRow(String sha256, String filename, String state, String updatedAt,

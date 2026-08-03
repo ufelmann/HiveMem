@@ -232,6 +232,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
             <div v-for="b in store.ingestQueue.degradedBatches" :key="b.sha256" class="ingest-row">
               <span class="ingest-file">{{ b.filename }}</span>
               <span class="q-mono">{{ b.degradedPages }} / {{ b.totalPages }}</span>
+              <span class="q-mono" :title="t('queen.ingest.blankPages')">{{ b.blankPages ?? '—' }} {{ t('queen.ingest.blankPagesShort') }}</span>
               <span class="q-mono">{{ fmtTime(b.updatedAt) }}</span>
               <button class="btn ghost ingest-retry" @click="onRetry(b.sha256)">{{ t('queen.ingest.retry') }}</button>
             </div>

@@ -178,6 +178,8 @@ export default {
       stateCounts: 'Ledger rows per state (all time):',
       failedFiles: 'Failed files',
       degradedBatches: 'Batches with missing page metadata',
+      blankPages: 'Pages recognised as blank and dropped before assembly',
+      blankPagesShort: 'blank',
       stalledRows: 'Stalled files (no progress past the stale threshold)',
       retry: 'Re-ingest',
       none: 'Nothing to review',

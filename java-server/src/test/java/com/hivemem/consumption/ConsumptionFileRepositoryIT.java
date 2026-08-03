@@ -79,15 +79,41 @@ class ConsumptionFileRepositoryIT extends ConsumptionITSupport {
     }
 
     @Test
-    void recordPageStatsPersistsTotalAndDegradedCounts() {
+    void recordPageStatsPersistsTotalDegradedAndBlankCounts() {
         repo.startProcessing("h6", "stats.pdf");
-        repo.recordPageStats("h6", 12, 3);
+        repo.recordPageStats("h6", 12, 3, 2);
 
         var row = dsl.fetchOne(
-                "SELECT total_pages, degraded_pages FROM consumption_file WHERE sha256 = ?", "h6");
+                "SELECT total_pages, degraded_pages, blank_pages FROM consumption_file WHERE sha256 = ?", "h6");
         assertNotNull(row, "expected a row for h6");
         assertEquals(12, row.get("total_pages", Integer.class));
         assertEquals(3, row.get("degraded_pages", Integer.class));
+        assertEquals(2, row.get("blank_pages", Integer.class));
+    }
+
+    /** blank_pages is nullable: a row that predates V0055 (or was never given page stats at all)
+     *  must not have an invented value — the twelve pre-existing rows must stay NULL, not 0. */
+    @Test
+    void blankPagesIsNullUntilRecorded() {
+        repo.startProcessing("h6n", "no-stats-yet.pdf");
+
+        var row = dsl.fetchOne(
+                "SELECT blank_pages FROM consumption_file WHERE sha256 = ?", "h6n");
+        assertNotNull(row, "expected a row for h6n");
+        assertNull(row.get("blank_pages", Integer.class));
+    }
+
+    /** findDegradedBatches must surface blank_pages alongside total/degraded so the review queue
+     *  can show a batch that lost pages to the blank filter, not just to failed extraction. */
+    @Test
+    void findDegradedBatchesIncludesBlankPageCount() {
+        repo.startProcessing("h7", "degraded-with-blanks.pdf");
+        repo.recordPageStats("h7", 20, 2, 5);
+
+        List<ConsumptionFileRepository.DegradedBatch> batches = repo.findDegradedBatches(2, 50);
+
+        assertEquals(1, batches.size());
+        assertEquals(5, batches.get(0).blankPages());
     }
 
     @Test

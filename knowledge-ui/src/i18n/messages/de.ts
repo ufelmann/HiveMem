@@ -178,6 +178,8 @@ export default {
       stateCounts: 'Ledger-Zeilen je Status (gesamt):',
       failedFiles: 'Fehlgeschlagene Dateien',
       degradedBatches: 'Stapel mit fehlenden Seiten-Metadaten',
+      blankPages: 'Als leer erkannte und vor der Zusammenführung verworfene Seiten',
+      blankPagesShort: 'leer',
       stalledRows: 'Hängengebliebene Dateien (kein Fortschritt jenseits der Stale-Schwelle)',
       retry: 'Erneut einlesen',
       none: 'Nichts zu prüfen',
