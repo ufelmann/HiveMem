@@ -3,6 +3,7 @@ package com.hivemem.consumption;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class TextSimilarityTest {
@@ -45,6 +46,25 @@ class TextSimilarityTest {
                 + "Kaution drei Kaltmieten Kuendigungsfrist drei Monate Mietbeginn 01.08.2026";
         double s = TextSimilarity.similarity(INVOICE, b);
         assertTrue(s < 0.85, "expected <0.85, got " + s);
+    }
+
+    @Test
+    void hoistedTargetShinglesMatchTheTwoArgOverload() {
+        // The dedup loop compares one target against up to 2k candidates; recomputing the target's
+        // shingles per candidate is the dominant cost. The hoisted overload must be numerically
+        // identical to the 2-arg one it replaces.
+        String rescan = INVOICE.replace("Umsatzsteuer", "Umsatzsteuei");
+        Set<String> hoisted = TextSimilarity.shingles(TextSimilarity.normalize(INVOICE));
+        assertEquals(TextSimilarity.similarity(INVOICE, rescan),
+                TextSimilarity.similarity(hoisted, rescan), 1e-12);
+        assertEquals(TextSimilarity.similarity(INVOICE, INVOICE),
+                TextSimilarity.similarity(hoisted, INVOICE), 1e-12);
+    }
+
+    @Test
+    void hoistedBlankTargetNeverMatches() {
+        Set<String> blank = TextSimilarity.shingles(TextSimilarity.normalize("[page=1]\n[page=2]"));
+        assertEquals(0.0, TextSimilarity.similarity(blank, INVOICE), 1e-9);
     }
 
     @Test

@@ -4,6 +4,7 @@ import com.hivemem.attachment.AttachmentRepository;
 import com.hivemem.attachment.SeaweedFsClient;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,8 +12,11 @@ import org.springframework.stereotype.Service;
 
 /**
  * Content-based dedup for scanned documents. Runs after OCR has populated a cell's text + embedding.
- * Two stages: pgvector cosine recall (DedupProperties.recallThreshold) then a normalized-text Jaccard
- * gate (textThreshold). On a confirmed duplicate the freshly-OCR'd cell is discarded (soft-deleted),
+ * Two stages: recall, then a normalized-text Jaccard gate (textThreshold). Recall unions two
+ * independent channels — pgvector cosine (DedupProperties.recallThreshold) and a lexical tsv match —
+ * because a document too long to embed carries the vector of its summary, which two independent
+ * summaries of the same scan do not share closely enough for the vector channel alone to see it.
+ * On a confirmed duplicate the freshly-OCR'd cell is discarded (soft-deleted),
  * its attachment binary removed if unreferenced, and a duplicate_of tunnel points to the original.
  * Best-effort: any failure logs and leaves the document untouched.
  */
@@ -50,8 +54,11 @@ public class DocumentDedupService {
 
             List<DocumentDedupRepository.Candidate> candidates =
                     repo.findSimilarOlderCandidates(cellId, props.getRecallThreshold(), props.getCandidateK());
+            // Hoisted out of the loop: with two candidate channels this list holds up to 2k rows and
+            // re-shingling a large document per candidate dominates the whole check.
+            Set<String> targetShingles = TextSimilarity.shingles(TextSimilarity.normalize(targetText));
             for (DocumentDedupRepository.Candidate c : candidates) {
-                if (TextSimilarity.similarity(targetText, c.content()) >= props.getTextThreshold()) {
+                if (TextSimilarity.similarity(targetShingles, c.content()) >= props.getTextThreshold()) {
                     discard(cellId, c.id());
                     return Optional.of(c.id());
                 }

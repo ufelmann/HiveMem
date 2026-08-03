@@ -15,7 +15,7 @@ public final class TextSimilarity {
     private TextSimilarity() {}
 
     /** Lowercase, strip [page=N] markers, collapse to single-spaced word tokens. */
-    static String normalize(String text) {
+    public static String normalize(String text) {
         if (text == null) return "";
         String s = PAGE_MARKER.matcher(text).replaceAll(" ");
         s = s.toLowerCase();
@@ -23,9 +23,13 @@ public final class TextSimilarity {
         return s.trim().replaceAll("\\s+", " ");
     }
 
-    /** Character {@value #NGRAM}-grams of the normalized text (robust to single-char OCR errors).
-     *  Text at most NGRAM chars long yields one shingle (the whole string). */
-    static Set<String> shingles(String normalized) {
+    /**
+     * Character {@value #NGRAM}-grams of an ALREADY {@link #normalize(String) normalized} string
+     * (robust to single-char OCR errors). Text at most NGRAM chars long yields one shingle (the
+     * whole string). Public so a caller comparing one text against many candidates can hoist this
+     * out of the loop and feed the result to {@link #similarity(Set, String)}.
+     */
+    public static Set<String> shingles(String normalized) {
         Set<String> out = new HashSet<>();
         if (normalized.isEmpty()) return out;
         if (normalized.length() <= NGRAM) {
@@ -48,6 +52,16 @@ public final class TextSimilarity {
 
     /** Similarity in [0,1]. Blank/marker-only text never matches (returns 0.0). */
     public static double similarity(String a, String b) {
-        return jaccard(shingles(normalize(a)), shingles(normalize(b)));
+        return similarity(shingles(normalize(a)), b);
+    }
+
+    /**
+     * Similarity in [0,1] against pre-computed shingles of the fixed side of the comparison, i.e.
+     * {@code shingles(normalize(target))}. Dedup compares one target against up to 2k candidates
+     * and re-shingling a large document per candidate dominates that loop, so the target's shingles
+     * are computed once and passed in. Numerically identical to {@link #similarity(String, String)}.
+     */
+    public static double similarity(Set<String> targetShingles, String candidate) {
+        return jaccard(targetShingles, shingles(normalize(candidate)));
     }
 }
