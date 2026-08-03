@@ -32,6 +32,7 @@ class DocumentDedupServiceTest {
     private final UUID target = UUID.randomUUID();
     private final UUID original = UUID.randomUUID();
     private final UUID attId = UUID.randomUUID();
+    private static final OffsetDateTime CANDIDATE_CREATED_AT = OffsetDateTime.parse("2026-05-01T10:00:00Z");
 
     @BeforeEach
     void setUp() {
@@ -55,8 +56,6 @@ class DocumentDedupServiceTest {
         verify(repo, never()).findSimilarOlderCandidates(any(), anyDouble(), anyInt());
         verify(repo, never()).linkAndSoftDelete(any(), any(), any(), any());
     }
-
-    private static final OffsetDateTime CANDIDATE_CREATED_AT = OffsetDateTime.parse("2026-05-01T10:00:00Z");
 
     @Test
     void discardsWhenBothStagesPass() {
@@ -121,13 +120,9 @@ class DocumentDedupServiceTest {
 
     @Test
     void discardsWhenCandidateCosineIsSqlNull() {
-        // A lexically/textually matched candidate whose cosine came back SQL-NULL (e.g. a dimension
-        // mismatch during a re-encode window, or — once the lexical channel exists — a candidate
-        // found only via that channel). Before this fix, Candidate.cosine was a primitive `double`,
-        // so mapping a SQL NULL into it NPE'd inside the repository row mapper; the service's
-        // best-effort catch (findAndDiscardDuplicate's try/catch) swallowed that NPE silently and
-        // the duplicate was kept. Candidate.cosine is now a nullable Double, and the text-similarity
-        // gate never reads it, so a null cosine must not prevent the discard.
+        // Candidate.cosine is nullable because a channel may not compute one (the lexical channel
+        // added in a later task) — the service must discard on the text gate alone. No vector-channel
+        // row can currently produce a NULL cosine; this guards the shape, not an observed occurrence.
         when(repo.findSimilarOlderCandidates(eq(target), anyDouble(), anyInt())).thenReturn(List.of(
                 new DocumentDedupRepository.Candidate(
                         original, "Rechnung 4711 Betrag 199", null, CANDIDATE_CREATED_AT)));

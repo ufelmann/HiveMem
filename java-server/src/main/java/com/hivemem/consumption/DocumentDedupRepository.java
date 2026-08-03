@@ -45,6 +45,8 @@ public class DocumentDedupRepository {
     /**
      * Current committed scan cells whose embedding is within {@code recallThreshold} cosine of the
      * target AND that are strictly older (created_at, id tie-break). Ordered by closeness.
+     * TODO: this javadoc describes the vector channel only; update it once a second (lexical)
+     * channel is merged in here, since the result will then be a union of both.
      */
     public List<Candidate> findSimilarOlderCandidates(UUID cellId, double recallThreshold, int k) {
         return findVectorCandidates(cellId, recallThreshold, k);

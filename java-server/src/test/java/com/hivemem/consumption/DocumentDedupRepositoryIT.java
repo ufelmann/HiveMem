@@ -60,6 +60,7 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
         assertEquals(1, cands.size());
         assertEquals(original, cands.get(0).id());
         assertTrue(cands.get(0).cosine() >= 0.99);
+        assertEquals(t0, cands.get(0).createdAt());
     }
 
     @Test
