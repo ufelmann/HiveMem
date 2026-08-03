@@ -16,6 +16,13 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class DocumentDedupRepository {
 
+    /** Form filter for lexemes usable as a lexical query term: lowercase letters only, long enough
+     *  to carry meaning. Excludes numbers, dates and OCR fragments. */
+    private static final String LEXEME_FORM = "^[a-zäöüß]{6,}$";
+    /** How many of the target's lexemes drive the lexical query. Length is the cheap stand-in for
+     *  rarity here; a per-lexeme document frequency would cost O(lexemes x cells) per document. */
+    private static final int LEXEME_LIMIT = 32;
+
     private final DSLContext dsl;
 
     public DocumentDedupRepository(DSLContext dsl) {
@@ -91,7 +98,8 @@ public class DocumentDedupRepository {
      * nothing to compare against and returns an empty list; it does NOT abort the overall candidate
      * search, and the lexical channel runs regardless.
      */
-    private List<Candidate> findVectorCandidates(UUID cellId, Integer dim, double recallThreshold, int k) {
+    private List<Candidate> findVectorCandidates(
+            UUID cellId, Integer dim, double recallThreshold, int k) {
         // The HNSW index idx_cells_embedding is an expression index on (embedding::vector(dim)); a
         // bare `embedding <=> ...` on the untyped vector column bypasses it and forces a sequential
         // scan (see KgSearchRepository.semanticSearch for the same fix on facts). The cast's typmod
@@ -164,12 +172,6 @@ public class DocumentDedupRepository {
                 + "     THEN 1 - (c.embedding::vector(%1$d) <=> t.embedding::vector(%1$d))\n"
                 + "END").formatted(dim);
     }
-
-    /** Form filter for lexemes usable as a query term: lowercase letters only, reasonably long. */
-    private static final String LEXEME_FORM = "^[a-zäöüß]{6,}$";
-    /** How many of the target's lexemes drive the lexical query. Length is the cheap stand-in for
-     *  rarity here; a per-lexeme document frequency would cost O(lexemes x cells) per document. */
-    private static final int LEXEME_LIMIT = 32;
 
     /**
      * Lexical channel: recall over the generated {@code cells.tsv} column, which is built from the

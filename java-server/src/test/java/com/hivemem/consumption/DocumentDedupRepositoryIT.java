@@ -126,20 +126,25 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
     // "re-scan" so the caller's Jaccard gate would confirm them.
     // ---------------------------------------------------------------------------------------
 
+    /** The OLDER cell of every pair below — and deliberately the SHORTER of the two. */
     private static final String DOC_ORIGINAL =
             "Zusatzvereinbarung zwischen der Beispielfirma Musterbau GmbH und dem Auftragnehmer "
             + "ueber die Erbringung von Beratungsleistungen im Geschaeftsjahr 2026. "
             + "Die Vertragsparteien vereinbaren eine monatliche Verguetung in Hoehe von "
             + "eintausendzweihundert Euro zuzueglich der gesetzlichen Umsatzsteuer. "
-            + "Kuendigungsfrist drei Monate zum Quartalsende, Gerichtsstand ist Musterstadt. "
-            + "Nebenabreden beduerfen der Schriftform, muendliche Zusagen sind unwirksam.";
+            + "Kuendigungsfrist drei Monate zum Quartalsende, Gerichtsstand ist Musterstadt.";
 
     /**
-     * The re-scan: identical except that the ORIGINAL is one token SHORTER (it lacks "unwirksam").
-     * This is the direction that a conjunctive plainto_tsquery would miss — the older cell is not a
-     * lexical superset of the newer one.
+     * The re-scan: the NEWER cell, and the dedup target. It carries tokens the older cell does NOT
+     * have, so the OLDER cell is a strict lexical SUBSET of the target — the asymmetric direction
+     * that fails in production. A conjunctive {@code plainto_tsquery(targetContent)} ANDs every
+     * target lexeme and therefore only matches candidates that are lexical SUPERSETS of the target;
+     * against this pair it finds nothing. Only the OR-ed lexeme query recalls it, which is exactly
+     * what these tests must pin down. Inverting the two texts would make the assertions pass under
+     * a plainto_tsquery reimplementation and guard nothing.
      */
-    private static final String DOC_RESCAN = DOC_ORIGINAL.replace(" sind unwirksam", " sind");
+    private static final String DOC_RESCAN =
+            DOC_ORIGINAL + " Nebenabreden beduerfen zwingend der Schriftform.";
 
     /** Shares vocabulary with the pair above but is a different document. */
     private static final String DOC_DIFFERENT =
@@ -166,6 +171,17 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
         assertEquals(original, cands.get(0).id());
         assertEquals(DOC_ORIGINAL, cands.get(0).content());
         assertEquals(t0, cands.get(0).createdAt());
+
+        // Proof that this pair really is the asymmetric direction, and therefore that the assertion
+        // above is not satisfiable by the conjunctive query the spec rejects: plainto_tsquery ANDs
+        // every lexeme of the target, and the older twin lacks some of them, so it matches nothing.
+        // If this ever passes, the fixture has been inverted and the test guards nothing.
+        long conjunctiveHits = dsl.fetchOne(
+                "SELECT count(*) AS n FROM cells c "
+                + "WHERE c.id = ? AND c.tsv @@ plainto_tsquery('simple', ?)",
+                original, DOC_RESCAN).get("n", Long.class);
+        assertEquals(0L, conjunctiveHits,
+                "fixture is inverted: plainto_tsquery(target) still matches the older twin");
     }
 
     /** A lexical hit whose own embedding is missing must yield cosine = null, not an error. */
@@ -200,7 +216,12 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
         assertNull(cands.get(0).cosine());
     }
 
-    /** Same guards as the vector channel: source, liveness, status, strictly older. */
+    /**
+     * Same guards as the vector channel: source, liveness, status, strictly older. Every row below
+     * is identical in text to the target, so the ONLY reason to exclude one is the filter under
+     * test. The qualifying row is the positive control: without it a channel that returns nothing
+     * at all — or one that was never wired up — would satisfy this test vacuously.
+     */
     @Test
     void lexicalChannelAppliesTheSameFiltersAsTheVectorChannel() {
         DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
@@ -212,11 +233,15 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
         seedCell(DOC_ORIGINAL, VEC_B, "consumption:e", "rejected", t0.minusDays(1));  // rejected
         UUID deleted = seedCell(DOC_ORIGINAL, VEC_B, "consumption:f", "committed", t0.minusDays(1));
         softDelete(deleted);                                                          // not live
+        // Positive control: live, committed, consumption-sourced and strictly older.
+        UUID qualifying = seedCell(DOC_ORIGINAL, VEC_B, "consumption:g", "committed", t0.minusDays(1));
 
         List<DocumentDedupRepository.Candidate> cands =
                 repo.findSimilarOlderCandidates(rescan, 0.92, 10);
 
-        assertTrue(cands.isEmpty(), "expected no candidates, got " + cands);
+        assertEquals(List.of(qualifying), cands.stream().map(
+                DocumentDedupRepository.Candidate::id).toList(),
+                "only the qualifying row may pass the filters, got " + cands);
     }
 
     /** Union of both channels: deduplicated by id and ordered created_at ASC, id ASC. */
@@ -256,13 +281,31 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
         assertEquals(expected, ids);
     }
 
-    /** A target with no qualifying lexemes must simply skip the channel (no to_tsquery('') error). */
+    /**
+     * A target with no qualifying lexemes must skip the channel instead of issuing
+     * {@code to_tsquery('simple', '')}.
+     *
+     * <p>SMOKE TEST, and deliberately labelled as one: the result cannot distinguish the two
+     * implementations. An empty tsquery matches nothing, so a repository that skipped the guard and
+     * ran the query anyway would return the same empty list — it would only differ in emitting a
+     * server NOTICE, which is not observable from here. What this test does prove is the
+     * PRECONDITION (the seeded content really yields zero lexemes passing the form filter) and that
+     * the path is exercised without error. The guard itself is enforced by review, not by SQL.
+     */
     @Test
     void emptyLexemeSetSkipsTheLexicalChannel() {
         DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
         OffsetDateTime t0 = OffsetDateTime.parse("2026-06-12T10:00:00Z");
-        seedCell("4711 88123 2026 EUR", VEC_B, "consumption:a", "committed", t0);
-        UUID rescan = seedCell("4711 88123 2026 EUR", VEC_A, "consumption:b", "committed", t0.plusDays(1));
+        String numbersOnly = "4711 88123 2026 EUR";
+        seedCell(numbersOnly, VEC_B, "consumption:a", "committed", t0);
+        UUID rescan = seedCell(numbersOnly, VEC_A, "consumption:b", "committed", t0.plusDays(1));
+
+        // Precondition, asserted rather than assumed: the same form filter the channel applies
+        // ('^[a-zäöüß]{6,}$') selects nothing from this target's tsv.
+        long lexemes = dsl.fetchOne(
+                "SELECT count(*) AS n FROM cells c, unnest(c.tsv) AS l "
+                + "WHERE c.id = ? AND l.lexeme ~ '^[a-zäöüß]{6,}$'", rescan).get("n", Long.class);
+        assertEquals(0L, lexemes, "test setup must produce an empty lexeme set");
 
         List<DocumentDedupRepository.Candidate> cands =
                 repo.findSimilarOlderCandidates(rescan, 0.92, 10);
