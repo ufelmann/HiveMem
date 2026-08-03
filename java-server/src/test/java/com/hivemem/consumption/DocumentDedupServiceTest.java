@@ -56,10 +56,13 @@ class DocumentDedupServiceTest {
         verify(repo, never()).linkAndSoftDelete(any(), any(), any(), any());
     }
 
+    private static final OffsetDateTime CANDIDATE_CREATED_AT = OffsetDateTime.parse("2026-05-01T10:00:00Z");
+
     @Test
     void discardsWhenBothStagesPass() {
         when(repo.findSimilarOlderCandidates(eq(target), anyDouble(), anyInt())).thenReturn(List.of(
-                new DocumentDedupRepository.Candidate(original, "Rechnung 4711 Betrag 199", 0.99)));
+                new DocumentDedupRepository.Candidate(
+                        original, "Rechnung 4711 Betrag 199", 0.99, CANDIDATE_CREATED_AT)));
         when(repo.findAttachmentKeysForCell(target)).thenReturn(Optional.of(
                 new DocumentDedupRepository.AttachmentKeys(attId, "orig.pdf", "thumb.jpg")));
         when(repo.countOtherLiveCellsForAttachment(attId, target)).thenReturn(0);
@@ -76,7 +79,8 @@ class DocumentDedupServiceTest {
     @Test
     void keepsAttachmentBinaryWhenStillReferenced() {
         when(repo.findSimilarOlderCandidates(eq(target), anyDouble(), anyInt())).thenReturn(List.of(
-                new DocumentDedupRepository.Candidate(original, "Rechnung 4711 Betrag 199", 0.99)));
+                new DocumentDedupRepository.Candidate(
+                        original, "Rechnung 4711 Betrag 199", 0.99, CANDIDATE_CREATED_AT)));
         when(repo.findAttachmentKeysForCell(target)).thenReturn(Optional.of(
                 new DocumentDedupRepository.AttachmentKeys(attId, "orig.pdf", null)));
         when(repo.countOtherLiveCellsForAttachment(attId, target)).thenReturn(1);
@@ -92,7 +96,8 @@ class DocumentDedupServiceTest {
     @Test
     void s3FailureStillSoftDeletesAttachment() {
         when(repo.findSimilarOlderCandidates(eq(target), anyDouble(), anyInt())).thenReturn(List.of(
-                new DocumentDedupRepository.Candidate(original, "Rechnung 4711 Betrag 199", 0.99)));
+                new DocumentDedupRepository.Candidate(
+                        original, "Rechnung 4711 Betrag 199", 0.99, CANDIDATE_CREATED_AT)));
         when(repo.findAttachmentKeysForCell(target)).thenReturn(Optional.of(
                 new DocumentDedupRepository.AttachmentKeys(attId, "orig.pdf", null)));
         when(repo.countOtherLiveCellsForAttachment(attId, target)).thenReturn(0);
@@ -107,10 +112,33 @@ class DocumentDedupServiceTest {
     @Test
     void noDiscardWhenTextGateFails() {
         when(repo.findSimilarOlderCandidates(eq(target), anyDouble(), anyInt())).thenReturn(List.of(
-                new DocumentDedupRepository.Candidate(original, "Mietvertrag Wohnung Kaution", 0.99)));
+                new DocumentDedupRepository.Candidate(
+                        original, "Mietvertrag Wohnung Kaution", 0.99, CANDIDATE_CREATED_AT)));
 
         assertTrue(service.findAndDiscardDuplicate(target).isEmpty());
         verify(repo, never()).linkAndSoftDelete(any(), any(), any(), any());
+    }
+
+    @Test
+    void discardsWhenCandidateCosineIsSqlNull() {
+        // A lexically/textually matched candidate whose cosine came back SQL-NULL (e.g. a dimension
+        // mismatch during a re-encode window, or — once the lexical channel exists — a candidate
+        // found only via that channel). Before this fix, Candidate.cosine was a primitive `double`,
+        // so mapping a SQL NULL into it NPE'd inside the repository row mapper; the service's
+        // best-effort catch (findAndDiscardDuplicate's try/catch) swallowed that NPE silently and
+        // the duplicate was kept. Candidate.cosine is now a nullable Double, and the text-similarity
+        // gate never reads it, so a null cosine must not prevent the discard.
+        when(repo.findSimilarOlderCandidates(eq(target), anyDouble(), anyInt())).thenReturn(List.of(
+                new DocumentDedupRepository.Candidate(
+                        original, "Rechnung 4711 Betrag 199", null, CANDIDATE_CREATED_AT)));
+        when(repo.findAttachmentKeysForCell(target)).thenReturn(Optional.of(
+                new DocumentDedupRepository.AttachmentKeys(attId, "orig.pdf", "thumb.jpg")));
+        when(repo.countOtherLiveCellsForAttachment(attId, target)).thenReturn(0);
+
+        Optional<UUID> result = service.findAndDiscardDuplicate(target);
+
+        assertEquals(Optional.of(original), result);
+        verify(repo).linkAndSoftDelete(eq(target), eq(original), any(), any());
     }
 
     @Test

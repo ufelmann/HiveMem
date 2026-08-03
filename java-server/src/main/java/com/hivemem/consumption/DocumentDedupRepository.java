@@ -20,7 +20,13 @@ public class DocumentDedupRepository {
     }
 
     public record TargetCell(UUID id, String content, String source, OffsetDateTime createdAt) {}
-    public record Candidate(UUID id, String content, double cosine) {}
+    /**
+     * A dedup candidate. {@code cosine} is null when the candidate was found by a channel that
+     * does not compute a vector similarity (e.g. a future lexical channel), or when the vector
+     * comparison itself could not be evaluated for this row — "not comparable", not "dissimilar".
+     * {@code createdAt} drives the cross-channel merge order (oldest wins).
+     */
+    public record Candidate(UUID id, String content, Double cosine, OffsetDateTime createdAt) {}
     public record AttachmentKeys(UUID attachmentId, String s3KeyOriginal, String s3KeyThumbnail) {}
 
     /** The current (live) cell to evaluate, or empty if it is not current/committed. */
@@ -41,6 +47,16 @@ public class DocumentDedupRepository {
      * target AND that are strictly older (created_at, id tie-break). Ordered by closeness.
      */
     public List<Candidate> findSimilarOlderCandidates(UUID cellId, double recallThreshold, int k) {
+        return findVectorCandidates(cellId, recallThreshold, k);
+    }
+
+    /**
+     * Vector channel: pgvector cosine recall against the target's own embedding. Channel-local
+     * short-circuit — if the target has no live embedding dimension, this channel simply has
+     * nothing to compare against and returns an empty list; it does NOT abort the overall
+     * candidate search (a lexical channel, added separately, is unaffected by this guard).
+     */
+    private List<Candidate> findVectorCandidates(UUID cellId, double recallThreshold, int k) {
         // The HNSW index idx_cells_embedding is an expression index on (embedding::vector(dim)); a
         // bare `embedding <=> ...` on the untyped vector column bypasses it and forces a sequential
         // scan (see KgSearchRepository.semanticSearch for the same fix on facts). The cast's typmod
@@ -70,7 +86,10 @@ public class DocumentDedupRepository {
         }
         String sql = ("""
                 WITH target AS (SELECT embedding, created_at FROM cells WHERE id = ? AND valid_until IS NULL)
-                SELECT c.id, c.content, 1 - (c.embedding::vector(%1$d) <=> t.embedding::vector(%1$d)) AS cosine
+                SELECT c.id, c.content, c.created_at,
+                       CASE WHEN c.embedding IS NOT NULL AND vector_dims(c.embedding) = %1$d
+                            THEN 1 - (c.embedding::vector(%1$d) <=> t.embedding::vector(%1$d))
+                       END AS cosine
                 FROM cells c, target t
                 WHERE c.valid_until IS NULL
                   AND c.status = 'committed'
@@ -88,7 +107,8 @@ public class DocumentDedupRepository {
             out.add(new Candidate(
                     r.get("id", UUID.class),
                     r.get("content", String.class),
-                    r.get("cosine", Double.class)));
+                    r.get("cosine", Double.class),
+                    r.get("created_at", OffsetDateTime.class)));
         }
         return out;
     }
