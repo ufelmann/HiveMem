@@ -83,6 +83,23 @@ public class ReassemblyOrchestrator {
                     (index, png) -> {
                         int pageNo = index + 1;
                         pageTotal[0] = pageNo;
+
+                        // Pixel pre-check: an unambiguously blank page (duplex backside) skips both
+                        // vision calls. Gated on the same kill switch as the post-check below — this
+                        // branch is the more dangerous of the two, because it also suppresses the two
+                        // LLM votes that could have contradicted it, so it must not outlive the switch.
+                        // Its threshold is correspondingly stricter (see blankSkipWhiteFraction).
+                        if (props.isBlankFilterEnabled()
+                                && BlankPageDetector.isNearWhite(png, props.getBlankSkipWhiteFraction())) {
+                            blank.add(pageNo);
+                            // Still one meta entry per page: MailingAssembler pairs (n, n+1) sheets off
+                            // this list, so a missing row would shift every following page.
+                            meta.add(new PageMetadataExtractor.PageMetadata(pageNo, null, null, null,
+                                    "blank", null, "blank page (pixel-detected)", true, false));
+                            if (hash != null && fileRepo != null) fileRepo.touch(hash);
+                            return;
+                        }
+
                         PageOrienter.PageOrientation o = orienter.orient(props.getRealm(), pageNo, png);
                         byte[] upright = png;
                         if (o.rotation() != 0) {

@@ -26,6 +26,11 @@ public class ConsumptionProperties {
     private int failedRetryLimit = 3;
     private boolean blankFilterEnabled = true;
     private double blankWhiteFraction = 0.995;
+    // Pre-check threshold: a page this white skips BOTH vision calls, so it is deliberately stricter
+    // than blankWhiteFraction's post-check — no LLM vote can contradict it. Measured at 150 DPI (the
+    // production render DPI) over a duplex sample: the whitest content page reached 0.95353, the
+    // least white blank backside 0.97810. 0.97 sits inside that gap, well clear of content.
+    private double blankSkipWhiteFraction = 0.97;
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean v) { this.enabled = v; }
@@ -65,4 +70,6 @@ public class ConsumptionProperties {
     public void setBlankFilterEnabled(boolean v) { this.blankFilterEnabled = v; }
     public double getBlankWhiteFraction() { return blankWhiteFraction; }
     public void setBlankWhiteFraction(double v) { this.blankWhiteFraction = v; }
+    public double getBlankSkipWhiteFraction() { return blankSkipWhiteFraction; }
+    public void setBlankSkipWhiteFraction(double v) { this.blankSkipWhiteFraction = v; }
 }
