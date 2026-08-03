@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import { nextTick } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import QueenRoute from '../../src/pages/QueenRoute.vue'
 import { resetApi } from '../../src/api/useApi'
 import { i18n } from '../../src/i18n'
+import { useQueenStore } from '../../src/stores/queen'
 
 const opts = { global: { plugins: [i18n], stubs: { HmIcon: true } } }
 
@@ -104,6 +106,37 @@ describe('QueenRoute (restyled)', () => {
       expect(section.find('.notice').exists()).toBe(false)
       expect(section.findAll('.ingest-row').length).toBe(0)
       expect(section.text()).toContain('Nichts zu prüfen')
+    })
+
+    // The blank-page-count span is the only one carrying a `title` attribute (the tooltip),
+    // which lets these two tests target it precisely instead of scanning the whole row's text —
+    // the row's other fields (degradedPages, totalPages) can themselves contain "0" or "3".
+    function blankPagesCell(w: any) {
+      return w.find('.q-ingest .ingest-row span[title]')
+    }
+
+    it('renders a degraded batch\'s blank page count', async () => {
+      const w = await mountIngestReady()
+      const store = useQueenStore()
+      store.ingestQueue!.degradedBatches = [
+        { sha256: 'bbbb0002', filename: 'scan-0002.pdf', totalPages: 40, degradedPages: 3,
+          blankPages: 3, updatedAt: '2026-08-02T10:00:00Z' },
+      ]
+      await nextTick()
+      expect(blankPagesCell(w).text()).toContain('3')
+    })
+
+    it('renders "—" instead of an invented 0 when blankPages is null (row predates V0055)', async () => {
+      const w = await mountIngestReady()
+      const store = useQueenStore()
+      store.ingestQueue!.degradedBatches = [
+        { sha256: 'bbbb0002', filename: 'scan-0002.pdf', totalPages: 40, degradedPages: 3,
+          blankPages: null, updatedAt: '2026-08-02T10:00:00Z' },
+      ]
+      await nextTick()
+      const cell = blankPagesCell(w)
+      expect(cell.text()).toContain('—')
+      expect(cell.text()).not.toContain('0')
     })
 
     it('shows the distinct unavailable notice and renders no tables when disabled', async () => {

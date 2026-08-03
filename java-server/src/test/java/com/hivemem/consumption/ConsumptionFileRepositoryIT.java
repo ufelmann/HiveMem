@@ -92,7 +92,7 @@ class ConsumptionFileRepositoryIT extends ConsumptionITSupport {
     }
 
     /** blank_pages is nullable: a row that predates V0055 (or was never given page stats at all)
-     *  must not have an invented value — the twelve pre-existing rows must stay NULL, not 0. */
+     *  must not have an invented value — rows recorded before V0055 must stay NULL, not 0. */
     @Test
     void blankPagesIsNullUntilRecorded() {
         repo.startProcessing("h6n", "no-stats-yet.pdf");
