@@ -110,10 +110,103 @@ class ConsumptionFileRepositoryIT extends ConsumptionITSupport {
         repo.startProcessing("h7", "degraded-with-blanks.pdf");
         repo.recordPageStats("h7", 20, 2, 5);
 
-        List<ConsumptionFileRepository.DegradedBatch> batches = repo.findDegradedBatches(2, 50);
+        List<ConsumptionFileRepository.DegradedBatch> batches = repo.findDegradedBatches(2, 0.60, 50);
 
         assertEquals(1, batches.size());
         assertEquals(5, batches.get(0).blankPages());
+    }
+
+    /** The real batches that motivated lowering the floor to 1: a single degraded page out of 15
+     *  or 26 total pages, both well above the 2 % ratio branch, must reach the queue. */
+    @Test
+    void findDegradedBatchesSurfacesASingleDegradedPageInA15PageBatch() {
+        repo.startProcessing("prod-15", "batch-15.pdf");
+        repo.recordPageStats("prod-15", 15, 1, 0);
+
+        List<ConsumptionFileRepository.DegradedBatch> batches = repo.findDegradedBatches(1, 0.60, 50);
+
+        assertTrue(batches.stream().anyMatch(b -> b.sha256().equals("prod-15")),
+                "1 degraded page out of 15 must be visible with minDegraded=1");
+    }
+
+    @Test
+    void findDegradedBatchesSurfacesASingleDegradedPageInA26PageBatch() {
+        repo.startProcessing("prod-26", "batch-26.pdf");
+        repo.recordPageStats("prod-26", 26, 1, 0);
+
+        List<ConsumptionFileRepository.DegradedBatch> batches = repo.findDegradedBatches(1, 0.60, 50);
+
+        assertTrue(batches.stream().anyMatch(b -> b.sha256().equals("prod-26")),
+                "1 degraded page out of 26 must be visible with minDegraded=1");
+    }
+
+    /** total_pages = 0 must never divide; a batch that died before analysis stays invisible
+     *  regardless of the degraded floor. */
+    @Test
+    void findDegradedBatchesHidesAZeroTotalPagesRowEvenWithOneDegradedPage() {
+        repo.startProcessing("zero-pages", "zero.pdf");
+        repo.recordPageStats("zero-pages", 0, 1, 0);
+
+        List<ConsumptionFileRepository.DegradedBatch> batches = repo.findDegradedBatches(1, 0.60, 50);
+
+        assertTrue(batches.stream().noneMatch(b -> b.sha256().equals("zero-pages")),
+                "total_pages = 0 must never surface, even with a degraded page recorded");
+    }
+
+    /** A single degraded page out of 100 is 1 % — below the 2 % ratio branch — and must stay
+     *  invisible even though the floor of 1 is satisfied. */
+    @Test
+    void findDegradedBatchesHidesOneDegradedPageOutOf100() {
+        repo.startProcessing("large-batch", "large.pdf");
+        repo.recordPageStats("large-batch", 100, 1, 0);
+
+        List<ConsumptionFileRepository.DegradedBatch> batches = repo.findDegradedBatches(1, 0.60, 50);
+
+        assertTrue(batches.stream().noneMatch(b -> b.sha256().equals("large-batch")),
+                "1 % degraded is below the 2 % ratio floor and must stay invisible");
+    }
+
+    /** Second OR-branch: a batch with zero degraded pages but a blank-page ratio well above ordinary
+     *  duplex (13 of 20 pages, 65 %) must reach the queue — this is the case the blank_pages column
+     *  exists for. */
+    @Test
+    void findDegradedBatchesSurfacesABlankRatioOutlierWithZeroDegradedPages() {
+        repo.startProcessing("blank-outlier", "blank-outlier.pdf");
+        repo.recordPageStats("blank-outlier", 20, 0, 13);
+
+        List<ConsumptionFileRepository.DegradedBatch> batches = repo.findDegradedBatches(1, 0.60, 50);
+
+        assertTrue(batches.stream().anyMatch(b -> b.sha256().equals("blank-outlier")),
+                "13/20 = 0.65 blank ratio must exceed the 0.60 alert threshold");
+    }
+
+    /** Ordinary duplex scanning: half the pages are blank backsides. This must NOT alert — 0.50 is
+     *  below the measured 0.60 threshold, which sits above every observed duplex ratio. */
+    @Test
+    void findDegradedBatchesHidesOrdinaryDuplexBlankRatio() {
+        repo.startProcessing("duplex-normal", "duplex-normal.pdf");
+        repo.recordPageStats("duplex-normal", 20, 0, 10);
+
+        List<ConsumptionFileRepository.DegradedBatch> batches = repo.findDegradedBatches(1, 0.60, 50);
+
+        assertTrue(batches.stream().noneMatch(b -> b.sha256().equals("duplex-normal")),
+                "0.50 is ordinary duplex, at or below the 0.60 alert threshold");
+    }
+
+    /** blank_pages is nullable for pre-V0055 rows. NULL must never divide and must never surface via
+     *  the blank-ratio branch. */
+    @Test
+    void findDegradedBatchesHidesNullBlankPages() {
+        repo.startProcessing("null-blank", "null-blank.pdf");
+        // recordPageStats always sets blank_pages; simulate a pre-V0055 row by updating total_pages
+        // and degraded_pages directly, leaving blank_pages NULL.
+        dsl.execute("UPDATE consumption_file SET total_pages = 20, degraded_pages = 0 WHERE sha256 = ?",
+                "null-blank");
+
+        List<ConsumptionFileRepository.DegradedBatch> batches = repo.findDegradedBatches(1, 0.60, 50);
+
+        assertTrue(batches.stream().noneMatch(b -> b.sha256().equals("null-blank")),
+                "NULL blank_pages must not divide and must not surface");
     }
 
     @Test

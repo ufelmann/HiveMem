@@ -33,6 +33,18 @@ public class ConsumptionProperties {
     // production render DPI) over a duplex sample: the whitest content page reached 0.95353, the
     // least white blank backside 0.97810. 0.97 sits inside that gap, well clear of content.
     private double blankSkipWhiteFraction = 0.97;
+    // Floor for the review queue's degraded-batch filter. 1, not the historical 2: the two real
+    // batches that lost page metadata in prod were 1-of-15 and 1-of-26, both invisible at a floor
+    // of 2. Safe to lower only because the blank-page pre-skip (blankSkipWhiteFraction above)
+    // removed the cause of blank-page-induced degradation — a white page making the model answer
+    // with prose instead of JSON — that a floor of 1 would otherwise have flooded the queue with.
+    private int minDegradedPages = 1;
+    // Second review-queue alert branch, independent of degraded_pages: a batch that loses most of
+    // its pages to the blank-page filter with zero degraded pages is otherwise invisible. Measured,
+    // not guessed — observed per-file blank ratios in ordinary duplex scanning are 0.04 / 0.20 /
+    // 0.47 / 0.50, so 0.30 would flag half of all duplex batches. 0.60 sits above every observed
+    // duplex ratio and only fires once the blank filter itself has gone wrong.
+    private double blankRatioAlert = 0.60;
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean v) { this.enabled = v; }
@@ -74,4 +86,8 @@ public class ConsumptionProperties {
     public void setBlankWhiteFraction(double v) { this.blankWhiteFraction = v; }
     public double getBlankSkipWhiteFraction() { return blankSkipWhiteFraction; }
     public void setBlankSkipWhiteFraction(double v) { this.blankSkipWhiteFraction = v; }
+    public int getMinDegradedPages() { return minDegradedPages; }
+    public void setMinDegradedPages(int v) { this.minDegradedPages = v; }
+    public double getBlankRatioAlert() { return blankRatioAlert; }
+    public void setBlankRatioAlert(double v) { this.blankRatioAlert = v; }
 }

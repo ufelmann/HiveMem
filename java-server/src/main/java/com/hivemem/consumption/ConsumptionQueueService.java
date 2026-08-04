@@ -11,10 +11,6 @@ import org.springframework.stereotype.Service;
 @ConditionalOnProperty(name = "hivemem.consumption.enabled", havingValue = "true")
 public class ConsumptionQueueService {
 
-    /** A batch needs BOTH at least this many degraded pages AND more than 2 % of its pages
-     *  degraded before it is worth a human's attention. See ConsumptionQueueServiceTest. */
-    static final int MIN_DEGRADED_PAGES = 2;
-
     private final ConsumptionFileRepository repo;
     private final ConsumptionRecoverySweep sweep;
     private final ConsumptionProperties props;
@@ -30,7 +26,7 @@ public class ConsumptionQueueService {
         int staleSeconds = (int) props.getRecoveryStaleThreshold().toSeconds();
         return new Queue(
                 repo.findFailedNewestFirst(limit),
-                repo.findDegradedBatches(MIN_DEGRADED_PAGES, limit),
+                repo.findDegradedBatches(props.getMinDegradedPages(), props.getBlankRatioAlert(), limit),
                 repo.findStalledRows(staleSeconds, limit),
                 sweep.lastReconciliation(),
                 repo.countsByState());

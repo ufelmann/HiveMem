@@ -203,22 +203,29 @@ public class ConsumptionFileRepository {
         return out;
     }
 
-    /** Batches whose degraded page count is at least {@code minDegraded} AND above 2 % of their
-     *  pages. Both conditions must hold: the percentage keeps large batches from being flagged for
-     *  a couple of pages, the floor keeps small batches from being flagged for a single one.
+    /** Batches worth a human's attention, via either of two independent branches. A batch needs
+     *  EITHER a degraded page count that is at least {@code minDegraded} AND above 2 % of its pages
+     *  — the percentage keeps large batches from being flagged for a couple of pages, the floor
+     *  keeps a single degraded page in a small batch from being lost in the ratio — OR a blank-page
+     *  ratio above {@code blankRatioAlert}, which surfaces a batch that lost most of its pages to
+     *  the blank-page filter with zero degraded pages, the case {@code blank_pages} exists for.
      *  {@code total_pages > 0} also excludes rows where total_pages/degraded_pages are NULL (the
      *  {@code degradeToPending} path leaves them unset when a batch dies before analysis) — a NULL
-     *  batch is unknown, not clean, and must not silently pass this filter either way. */
-    public List<DegradedBatch> findDegradedBatches(int minDegraded, int limit) {
+     *  batch is unknown, not clean, and must not silently pass this filter either way. {@code
+     *  blank_pages} is nullable for rows recorded before V0055; a NULL numerator makes the division
+     *  NULL, which is never {@code > blankRatioAlert}, so such rows never surface via that branch
+     *  without an explicit NULL check. */
+    public List<DegradedBatch> findDegradedBatches(int minDegraded, double blankRatioAlert, int limit) {
         var rows = dsl.fetch("""
                 SELECT sha256, filename, total_pages, degraded_pages, blank_pages, updated_at
                 FROM consumption_file
-                WHERE degraded_pages >= ?
-                  AND total_pages > 0
-                  AND degraded_pages::numeric / total_pages > 0.02
+                WHERE (degraded_pages >= ?
+                       AND total_pages > 0
+                       AND degraded_pages::numeric / total_pages > 0.02)
+                   OR (total_pages > 0 AND blank_pages::numeric / total_pages > ?)
                 ORDER BY updated_at DESC
                 LIMIT ?
-                """, minDegraded, limit);
+                """, minDegraded, blankRatioAlert, limit);
         List<DegradedBatch> out = new ArrayList<>();
         for (Record r : rows) {
             out.add(new DegradedBatch(
