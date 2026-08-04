@@ -26,10 +26,11 @@ public class ConsumptionProperties {
     private int failedRetryLimit = 3;
     private boolean blankFilterEnabled = true;
     private double blankWhiteFraction = 0.995;
-    // Pre-check threshold: a page this white skips BOTH vision calls, so it is deliberately stricter
-    // than blankWhiteFraction's post-check — no LLM vote can contradict it. Measured at 150 DPI (the
-    // production render DPI) over a duplex sample: the whitest content page reached 0.95353, the
-    // least white blank backside 0.97810. 0.97 sits inside that gap, well clear of content.
+    // Pre-check threshold: a page this white skips the orientation call (a white page has no
+    // orientation) and is handed to the extractor as pixel-blank. Deliberately stricter than
+    // blankWhiteFraction's post-check. Measured at 150 DPI (the production render DPI) over a duplex
+    // sample: the whitest content page reached 0.95353, the least white blank backside 0.97810.
+    // 0.97 sits inside that gap, well clear of content.
     private double blankSkipWhiteFraction = 0.97;
 
     public boolean isEnabled() { return enabled; }

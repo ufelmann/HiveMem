@@ -84,32 +84,27 @@ public class ReassemblyOrchestrator {
                         int pageNo = index + 1;
                         pageTotal[0] = pageNo;
 
-                        // Pixel pre-check: an unambiguously blank page (duplex backside) skips both
-                        // vision calls. Gated on the same kill switch as the post-check below — this
-                        // branch is the more dangerous of the two, because it also suppresses the two
-                        // LLM votes that could have contradicted it, so it must not outlive the switch.
-                        // Its threshold is correspondingly stricter (see blankSkipWhiteFraction).
-                        if (props.isBlankFilterEnabled()
-                                && BlankPageDetector.isNearWhite(png, props.getBlankSkipWhiteFraction())) {
-                            blank.add(pageNo);
-                            // Still one meta entry per page: MailingAssembler pairs (n, n+1) sheets off
-                            // this list, so a missing row would shift every following page.
-                            meta.add(new PageMetadataExtractor.PageMetadata(pageNo, null, null, null,
-                                    "blank", null, "blank page (pixel-detected)", true, false));
-                            if (hash != null && fileRepo != null) fileRepo.touch(hash);
-                            return;
-                        }
+                        // Pixel pre-check: a page this white gets no orientation call — a white page
+                        // has no orientation, so the call is meaningless on it. The metadata call
+                        // still goes out: `blank` is a delete list, and only a model verdict may put
+                        // a page on it. A stamp-only sheet reads as near-white and would otherwise
+                        // vanish without a trace. Gated on the same kill switch as the post-check
+                        // below, and on a stricter threshold (see blankSkipWhiteFraction).
+                        boolean pixelBlank = props.isBlankFilterEnabled()
+                                && BlankPageDetector.isNearWhite(png, props.getBlankSkipWhiteFraction());
 
-                        PageOrienter.PageOrientation o = orienter.orient(props.getRealm(), pageNo, png);
                         byte[] upright = png;
-                        if (o.rotation() != 0) {
-                            rotations.put(pageNo, o.rotation());
-                            upright = PageOrienter.rotate180Png(png);
+                        if (!pixelBlank) {
+                            PageOrienter.PageOrientation o = orienter.orient(props.getRealm(), pageNo, png);
+                            if (o.rotation() != 0) {
+                                rotations.put(pageNo, o.rotation());
+                                upright = PageOrienter.rotate180Png(png);
+                            }
+                            if (o.blank()) blank.add(pageNo);
                         }
-                        if (o.blank()) blank.add(pageNo);
 
                         PageMetadataExtractor.PageMetadata m =
-                                extractor.extract(props.getRealm(), pageNo, upright);
+                                extractor.extract(props.getRealm(), pageNo, upright, pixelBlank);
                         if (m.blank()) blank.add(pageNo);
                         meta.add(m);
                         if (m.degraded()) degraded[0]++;

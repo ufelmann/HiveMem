@@ -1,6 +1,7 @@
 package com.hivemem.consumption;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -82,7 +83,7 @@ class ReassemblyBlankOrientationTest {
 
         when(orienter.orient(anyString(), anyInt(), any()))
                 .thenAnswer(inv -> new PageOrienter.PageOrientation(inv.getArgument(1), 0, false, 0.9));
-        when(extractor.extract(anyString(), anyInt(), any()))
+        when(extractor.extract(anyString(), anyInt(), any(), anyBoolean()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
                         "S", null, null, "letter", null, "p", false, false));
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1, 2)));
@@ -118,7 +119,7 @@ class ReassemblyBlankOrientationTest {
 
         when(orienter.orient(anyString(), anyInt(), any()))
                 .thenAnswer(inv -> new PageOrienter.PageOrientation(inv.getArgument(1), 0, false, 0.9));
-        when(extractor.extract(anyString(), anyInt(), any()))
+        when(extractor.extract(anyString(), anyInt(), any(), anyBoolean()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
                         "S", null, null, "letter", null, "p", false, false));
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1)));
@@ -150,7 +151,7 @@ class ReassemblyBlankOrientationTest {
         // The (single, non-blank) page is detected upside-down → must be rotated 180° in the stored PDF.
         when(orienter.orient(anyString(), anyInt(), any()))
                 .thenReturn(new PageOrienter.PageOrientation(1, 180, false, 0.99));
-        when(extractor.extract(anyString(), anyInt(), any()))
+        when(extractor.extract(anyString(), anyInt(), any(), anyBoolean()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
                         "S", null, null, "letter", null, "p", false, false));
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1)));
@@ -188,7 +189,7 @@ class ReassemblyBlankOrientationTest {
             int page = inv.getArgument(1);
             return new PageOrienter.PageOrientation(page, 0, page == 2, 0.9);
         });
-        when(extractor.extract(anyString(), anyInt(), any()))
+        when(extractor.extract(anyString(), anyInt(), any(), anyBoolean()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
                         "S", null, null, "letter", null, "p", false, false));
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1, 2)));

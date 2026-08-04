@@ -50,8 +50,14 @@ public class PageMetadataExtractor {
     }
 
     /** Extract metadata for one upright page. Never throws: after one retry it returns a null-row
-     *  (sheet pairing in pass 3 still places the page next to its scan neighbors). */
-    public PageMetadata extract(String realm, int page, byte[] uprightPng) {
+     *  (sheet pairing in pass 3 still places the page next to its scan neighbors).
+     *
+     *  @param pixelBlank the page read as near-white before the call. It only matters when BOTH
+     *      attempts fail: on a white page the model sometimes answers with prose instead of JSON,
+     *      and with the pixel finding in hand that is a blank page rather than a degradation. It
+     *      never overrides a reply that did parse — the model's own verdict wins whenever there is
+     *      one, which is what keeps a stamp-only page out of the delete list. */
+    public PageMetadata extract(String realm, int page, byte[] uprightPng, boolean pixelBlank) {
         List<VisionMultiClient.Image> images = List.of(
                 new VisionMultiClient.Image("image/png", Base64.getEncoder().encodeToString(uprightPng)));
         for (int attempt = 1; attempt <= 2; attempt++) {
@@ -71,6 +77,12 @@ public class PageMetadataExtractor {
             } catch (Exception e) {
                 log.warn("Metadata attempt {}/2 failed for page {}: {}", attempt, page, e.toString());
             }
+        }
+        // Both attempts failed. A page the pixels already called near-white is blank, not degraded —
+        // this is exactly the prose-instead-of-JSON reply a white page provokes.
+        if (pixelBlank) {
+            return new PageMetadata(page, null, null, null, "blank", null,
+                    "blank page (no metadata reply, near-white)", true, false);
         }
         return new PageMetadata(page, null, null, null, null, null, null, false, true);
     }

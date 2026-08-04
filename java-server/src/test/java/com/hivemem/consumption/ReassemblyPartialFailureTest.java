@@ -1,6 +1,7 @@
 package com.hivemem.consumption;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -59,7 +60,7 @@ class ReassemblyPartialFailureTest {
 
     private static PageMetadataExtractor mockExtractor() {
         PageMetadataExtractor extractor = mock(PageMetadataExtractor.class);
-        when(extractor.extract(anyString(), anyInt(), any()))
+        when(extractor.extract(anyString(), anyInt(), any(), anyBoolean()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
                         "S", null, null, "letter", null, "p", false, false));
         return extractor;
@@ -191,7 +192,7 @@ class ReassemblyPartialFailureTest {
         PageOrienter orienter = mockOrienter();
         PageMetadataExtractor extractor = mock(PageMetadataExtractor.class);
         // Page 1 extracts fine; page 2 lost its vision metadata.
-        when(extractor.extract(anyString(), anyInt(), any())).thenAnswer(inv -> {
+        when(extractor.extract(anyString(), anyInt(), any(), anyBoolean())).thenAnswer(inv -> {
             int page = inv.getArgument(1);
             boolean degraded = page == 2;
             return new PageMetadataExtractor.PageMetadata(page, degraded ? null : "S", null, null,
@@ -228,7 +229,7 @@ class ReassemblyPartialFailureTest {
         PageOrienter orienter = mockOrienter();
         PageMetadataExtractor extractor = mock(PageMetadataExtractor.class);
         // Page 1 is ordinary content; page 2 is voted blank by the extractor.
-        when(extractor.extract(anyString(), anyInt(), any())).thenAnswer(inv -> {
+        when(extractor.extract(anyString(), anyInt(), any(), anyBoolean())).thenAnswer(inv -> {
             int page = inv.getArgument(1);
             boolean blank = page == 2;
             return new PageMetadataExtractor.PageMetadata(page, "S", null, null,
