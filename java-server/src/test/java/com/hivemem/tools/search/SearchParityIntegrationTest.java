@@ -39,6 +39,7 @@ import java.util.UUID;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -388,6 +389,117 @@ class SearchParityIntegrationTest {
                 .isGreaterThan(results.get(1).path("score_popularity").asDouble());
         assertThat(results.get(0).path("score_total").asDouble())
                 .isEqualTo(results.get(0).path("score_popularity").asDouble());
+    }
+
+    @Test
+    void popularityNormalizesAgainstFixedReferenceInsteadOfObservedMaximum() throws Exception {
+        // Regression guard: score_popularity used to be divided by the observed
+        // MAX(recent_access_count), so a cell with as few as 7 accesses got the
+        // full 1.0 and the full p_weight_popularity=0.15. It is now divided by a
+        // fixed reference of 25, so evidence stays proportionate to itself.
+        UUID sevenHitsCellId = UUID.fromString("00000000-0000-0000-0000-000000000861");
+        UUID twoHitsCellId = UUID.fromString("00000000-0000-0000-0000-000000000862");
+        UUID fortyHitsCellId = UUID.fromString("00000000-0000-0000-0000-000000000863");
+        UUID untouchedCellId = UUID.fromString("00000000-0000-0000-0000-000000000864");
+        OffsetDateTime ts = OffsetDateTime.parse("2026-04-03T13:00:00Z");
+
+        insertDrawer(sevenHitsCellId, "Popularity reference probe seven", "eng", "facts", "pop", 3,
+                "seven hits", "committed", ts);
+        insertDrawer(twoHitsCellId, "Popularity reference probe two", "eng", "facts", "pop", 3,
+                "two hits", "committed", ts);
+        insertDrawer(fortyHitsCellId, "Popularity reference probe forty", "eng", "facts", "pop", 3,
+                "forty hits", "committed", ts);
+        insertDrawer(untouchedCellId, "Popularity reference probe untouched", "eng", "facts", "pop", 3,
+                "untouched", "committed", ts);
+
+        for (int i = 0; i < 7; i++) adminToolService.logAccess(sevenHitsCellId, null, "admin");
+        for (int i = 0; i < 2; i++) adminToolService.logAccess(twoHitsCellId, null, "admin");
+        for (int i = 0; i < 40; i++) adminToolService.logAccess(fortyHitsCellId, null, "admin");
+        adminToolService.refreshPopularity();
+
+        JsonNode results = callTool("writer-token", "search", Map.of(
+                "query", "popularity reference probe",
+                "limit", 10,
+                "include", List.of("scores")
+        ));
+
+        // 7 accesses (of 25) yield 0.28, not 1.0 -- the property whose absence caused the bug.
+        assertThat(scoreOf(results, sevenHitsCellId)).isCloseTo(0.28f, within(1e-4f));
+        // 2 accesses yield 0.08, not 0.2857.
+        assertThat(scoreOf(results, twoHitsCellId)).isCloseTo(0.08f, within(1e-4f));
+        // 40 accesses saturate at the 1.0 cap, not 1.6.
+        assertThat(scoreOf(results, fortyHitsCellId)).isCloseTo(1.0f, within(1e-4f));
+        // No row in cell_popularity at all yields 0.0.
+        assertThat(scoreOf(results, untouchedCellId)).isCloseTo(0.0f, within(1e-4f));
+    }
+
+    @Test
+    void popularityIsZeroWhenCellPopularityViewIsCompletelyEmpty() throws Exception {
+        // With max_pop removed, nothing protects the division from an empty
+        // cell_popularity view except the COALESCE(cp.recent_access_count, 0)
+        // on the LEFT JOIN. This confirms the function still returns rows, and
+        // score_popularity is 0 everywhere, when the view has zero rows at all
+        // (not just zero rows for one cell).
+        UUID cellId = UUID.fromString("00000000-0000-0000-0000-000000000865");
+        insertDrawer(cellId, "Popularity empty view probe", "eng", "facts", "pop", 3,
+                "empty view", "committed", OffsetDateTime.parse("2026-04-03T13:00:00Z"));
+
+        JsonNode results = callTool("writer-token", "search", Map.of(
+                "query", "popularity empty view probe",
+                "limit", 10,
+                "include", List.of("scores")
+        ));
+
+        assertThat(results).isNotEmpty();
+        assertThat(scoreOf(results, cellId)).isCloseTo(0.0f, within(1e-4f));
+    }
+
+    @Test
+    void popularityGapInScoreTotalShrinksWithFixedReference() throws Exception {
+        // The actual regression case: two cells with identical content (so sem,
+        // kw, rec, imp are equal), differing only by access count. Under the old
+        // observed-max normalization the score_total gap between 7 and 2 hits
+        // was 0.107 (default p_weight_popularity=0.15); with the fixed reference
+        // of 25 it must fall to 0.030.
+        UUID sevenHitsCellId = UUID.fromString("00000000-0000-0000-0000-000000000871");
+        UUID twoHitsCellId = UUID.fromString("00000000-0000-0000-0000-000000000872");
+        OffsetDateTime ts = OffsetDateTime.parse("2026-04-03T13:00:00Z");
+
+        insertDrawer(sevenHitsCellId, "Popularity gap probe identical content", "eng", "facts", "pop", 3,
+                "gap probe", "committed", ts);
+        insertDrawer(twoHitsCellId, "Popularity gap probe identical content", "eng", "facts", "pop", 3,
+                "gap probe", "committed", ts);
+
+        for (int i = 0; i < 7; i++) adminToolService.logAccess(sevenHitsCellId, null, "admin");
+        for (int i = 0; i < 2; i++) adminToolService.logAccess(twoHitsCellId, null, "admin");
+        adminToolService.refreshPopularity();
+
+        JsonNode results = callTool("writer-token", "search", Map.of(
+                "query", "popularity gap probe identical content",
+                "limit", 10,
+                "include", List.of("scores")
+        ));
+
+        float gap = totalOf(results, sevenHitsCellId) - totalOf(results, twoHitsCellId);
+        assertThat(gap).isCloseTo(0.030f, within(1e-3f));
+    }
+
+    private float scoreOf(JsonNode results, UUID cellId) {
+        for (JsonNode row : results) {
+            if (row.path("id").asText().equals(cellId.toString())) {
+                return (float) row.path("score_popularity").asDouble();
+            }
+        }
+        throw new AssertionError("cell not found in results: " + cellId);
+    }
+
+    private float totalOf(JsonNode results, UUID cellId) {
+        for (JsonNode row : results) {
+            if (row.path("id").asText().equals(cellId.toString())) {
+                return (float) row.path("score_total").asDouble();
+            }
+        }
+        throw new AssertionError("cell not found in results: " + cellId);
     }
 
     @Test
