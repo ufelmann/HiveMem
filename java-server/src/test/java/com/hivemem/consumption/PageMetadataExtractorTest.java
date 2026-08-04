@@ -14,17 +14,17 @@ class PageMetadataExtractorTest {
     void parsesAllFields() {
         VisionMultiClient vm = mock(VisionMultiClient.class);
         when(vm.group(eq("documents"), anyString(), anyList())).thenReturn("""
-                {"sender":"Vattenfall Europe Sales GmbH","date":"30.12.2019","page_label":"1/3",
-                 "doc_type":"letter","reference":"836 616 772 789","summary":"Order confirmation.",
+                {"sender":"SYNTHETIC ENERGY GmbH","date":"01.01.2000","page_label":"1/3",
+                 "doc_type":"letter","reference":"SYNTHETIC-REF-0001","summary":"Order confirmation.",
                  "blank":false}""");
         PageMetadataExtractor.PageMetadata m =
                 new PageMetadataExtractor(vm).extract("documents", 16, PNG, false);
         assertEquals(16, m.page());
-        assertEquals("Vattenfall Europe Sales GmbH", m.sender());
-        assertEquals("30.12.2019", m.date());
+        assertEquals("SYNTHETIC ENERGY GmbH", m.sender());
+        assertEquals("01.01.2000", m.date());
         assertEquals("1/3", m.pageLabel());
         assertEquals("letter", m.docType());
-        assertEquals("836 616 772 789", m.reference());
+        assertEquals("SYNTHETIC-REF-0001", m.reference());
         assertEquals("Order confirmation.", m.summary());
         assertFalse(m.blank());
         verify(vm).group(eq("documents"), anyString(), argThat(imgs -> imgs.size() == 1));

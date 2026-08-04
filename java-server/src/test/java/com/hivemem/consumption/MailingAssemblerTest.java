@@ -20,16 +20,18 @@ class MailingAssemblerTest {
     void parsesMailingsIntoOrderedDocGroups() {
         CompleteClient cc = mock(CompleteClient.class);
         when(cc.complete(eq("documents"), anyString())).thenReturn("""
-                [{"mailing":"vf","description":"Vattenfall order 30.12.2019","confidence":0.9,
+                [{"mailing":"en","description":"SYNTHETIC ENERGY order 01.01.2000","confidence":0.9,
                   "pages":[16,15,14,12]},
-                 {"mailing":"suez","description":"SUEZ invoice","confidence":0.8,"pages":[17]}]""");
+                 {"mailing":"wa","description":"SYNTHETIC WASTE invoice","confidence":0.8,"pages":[17]}]""");
         List<DocGroup> groups = new MailingAssembler(cc)
-                .assemble("documents", List.of(meta(12, "Vattenfall", null),
-                        meta(14, "Vattenfall", "30.12.2019"), meta(15, "Vattenfall", "30.12.2019"),
-                        meta(16, "Vattenfall", "30.12.2019"), meta(17, "SUEZ", "30.09.2020")));
+                .assemble("documents", List.of(meta(12, "SYNTHETIC ENERGY", null),
+                        meta(14, "SYNTHETIC ENERGY", "01.01.2000"),
+                        meta(15, "SYNTHETIC ENERGY", "01.01.2000"),
+                        meta(16, "SYNTHETIC ENERGY", "01.01.2000"),
+                        meta(17, "SYNTHETIC WASTE", "02.02.2001")));
         assertEquals(2, groups.size());
-        assertEquals("vf", groups.get(0).id);
-        assertEquals("Vattenfall order 30.12.2019", groups.get(0).descriptor);
+        assertEquals("en", groups.get(0).id);
+        assertEquals("SYNTHETIC ENERGY order 01.01.2000", groups.get(0).descriptor);
         assertEquals(List.of(16, 15, 14, 12), groups.get(0).pages); // reading order preserved
         assertEquals(0.9, groups.get(0).minConfidence, 1e-9);
         assertEquals(List.of(17), groups.get(1).pages);
@@ -41,14 +43,14 @@ class MailingAssemblerTest {
         when(cc.complete(anyString(), anyString()))
                 .thenReturn("[{\"mailing\":\"m\",\"description\":\"d\",\"confidence\":1.0,\"pages\":[1]}]");
         new MailingAssembler(cc).assemble("documents", List.of(
-                new PageMetadataExtractor.PageMetadata(1, "BEV", null, null, "letter",
-                        "Vertrags-Nr 1509275", "Confirmation letter.", false, false)));
+                new PageMetadataExtractor.PageMetadata(1, "SYNTHETIC INSURER", null, null, "letter",
+                        "Vertrags-Nr SYNTHETIC-0002", "Confirmation letter.", false, false)));
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
         verify(cc).complete(anyString(), prompt.capture());
         // matches the validated row format: nulls rendered as None, strings single-quoted
         assertTrue(prompt.getValue().contains(
-                "- page 1: sender='BEV', date=None, printed_page_label=None, blank=false, "
-                        + "reference='Vertrags-Nr 1509275', content='letter' - 'Confirmation letter.'"));
+                "- page 1: sender='SYNTHETIC INSURER', date=None, printed_page_label=None, blank=false, "
+                        + "reference='Vertrags-Nr SYNTHETIC-0002', content='letter' - 'Confirmation letter.'"));
     }
 
     @Test
@@ -57,7 +59,7 @@ class MailingAssemblerTest {
         when(cc.complete(anyString(), anyString()))
                 .thenReturn("[{\"mailing\":\"m\",\"description\":\"d\",\"confidence\":1.0,\"pages\":[1]}]");
         new MailingAssembler(cc).assemble("documents", List.of(
-                new PageMetadataExtractor.PageMetadata(1, "BEV", null, null, "letter",
+                new PageMetadataExtractor.PageMetadata(1, "SYNTHETIC INSURER", null, null, "letter",
                         null, "line one\nline two\r\nline three", false, false)));
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
         verify(cc).complete(anyString(), prompt.capture());

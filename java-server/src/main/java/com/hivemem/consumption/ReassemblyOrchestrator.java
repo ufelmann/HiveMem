@@ -84,14 +84,21 @@ public class ReassemblyOrchestrator {
                         int pageNo = index + 1;
                         pageTotal[0] = pageNo;
 
+                        // Decode the page once: the pre-check and the post-check below weigh the same
+                        // white fraction against two thresholds. NaN when the kill switch is off or
+                        // the image cannot be read, which makes every comparison below false.
+                        double whiteFraction = props.isBlankFilterEnabled()
+                                ? BlankPageDetector.whiteFraction(png) : Double.NaN;
+
                         // Pixel pre-check: a page this white gets no orientation call — a white page
                         // has no orientation, so the call is meaningless on it. The metadata call
                         // still goes out: `blank` is a delete list, and only a model verdict may put
                         // a page on it. A stamp-only sheet reads as near-white and would otherwise
-                        // vanish without a trace. Gated on the same kill switch as the post-check
-                        // below, and on a stricter threshold (see blankSkipWhiteFraction).
-                        boolean pixelBlank = props.isBlankFilterEnabled()
-                                && BlankPageDetector.isNearWhite(png, props.getBlankSkipWhiteFraction());
+                        // vanish without a trace. Its threshold is deliberately LOOSER than the
+                        // post-check's 0.995 — a lower whiteness bar, so it fires on a strict
+                        // superset of those pages — precisely because it suppresses only the
+                        // orientation call and never a deletion.
+                        boolean pixelBlank = whiteFraction >= props.getBlankSkipWhiteFraction();
 
                         byte[] upright = png;
                         if (!pixelBlank) {
@@ -109,8 +116,8 @@ public class ReassemblyOrchestrator {
                         meta.add(m);
                         if (m.degraded()) degraded[0]++;
 
-                        if (props.isBlankFilterEnabled()
-                                && BlankPageDetector.isNearWhite(png, props.getBlankWhiteFraction())) {
+                        // Post-check, unchanged: a page this white is dropped whatever the model said.
+                        if (whiteFraction >= props.getBlankWhiteFraction()) {
                             blank.add(pageNo);
                         }
                         // Heartbeat: each page costs up to two LLM calls, so one pass over a large

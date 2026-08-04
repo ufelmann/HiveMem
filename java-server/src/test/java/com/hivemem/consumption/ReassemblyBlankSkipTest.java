@@ -1,12 +1,14 @@
 package com.hivemem.consumption;
 
+import static com.hivemem.consumption.ReassemblyTestSupport.group;
+import static com.hivemem.consumption.ReassemblyTestSupport.nPagePdf;
+import static com.hivemem.consumption.ReassemblyTestSupport.stubPages;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -26,8 +28,6 @@ import java.util.List;
 import javax.imageio.ImageIO;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -91,30 +91,6 @@ class ReassemblyBlankSkipTest {
         g.fillRect(0, 0, 120, 190);
         g.dispose();
         return png(img);
-    }
-
-    private static byte[] nPagePdf(int n) throws Exception {
-        try (PDDocument doc = new PDDocument()) {
-            for (int i = 0; i < n; i++) doc.addPage(new PDPage(PDRectangle.A4));
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            doc.save(baos);
-            return baos.toByteArray();
-        }
-    }
-
-    private static void stubPages(PdfPageRasterizer rasterizer, List<byte[]> pngs) throws Exception {
-        doAnswer(inv -> {
-            PdfPageRasterizer.PageConsumer consumer = inv.getArgument(3);
-            for (int i = 0; i < pngs.size(); i++) consumer.accept(i, pngs.get(i));
-            return null;
-        }).when(rasterizer).rasterize(any(), anyInt(), anyInt(), any());
-    }
-
-    private static DocGroup group(String id, double confidence, int... pages) {
-        DocGroup g = new DocGroup(id, null);
-        g.minConfidence = confidence;
-        for (int p : pages) g.pages.add(p);
-        return g;
     }
 
     /** Everything the orchestrator needs, all mocked; the splitter is real so the emitted PDF is real. */
