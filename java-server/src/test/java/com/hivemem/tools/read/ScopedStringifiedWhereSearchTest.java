@@ -10,8 +10,15 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -76,6 +83,57 @@ class ScopedStringifiedWhereSearchTest {
         assertThatThrownBy(() -> dispatch("{\"query\":\"x\",\"where\":\"not json\"}"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Invalid where");
+        Mockito.verifyNoInteractions(readToolService);
+    }
+
+    /**
+     * H1 regression of the H1 fix: {@code where:"null"} parses to a JSON null, which is "no
+     * filter", not a malformed filter. Classifying it as an unparseable string handed it through
+     * verbatim, the handler read the JSON null as "no where" — and the DB was hit with
+     * {@code realm=null, realmIn=null}: an unscoped cross-realm scan for a scoped token.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"null", "  null  "})
+    void stringifiedJsonNullWhereIsScopedToReadRealms(String where) {
+        dispatch("{\"query\":\"secret\",\"where\":\"" + where + "\"}");
+
+        verify(readToolService).search(
+                eq("secret"), anyInt(), isNull(), isNull(), isNull(), any(),
+                anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble(),
+                isNull(), isNull(), eq(List.of("dracul-research")), anyBoolean());
+    }
+
+    /**
+     * Scope must never widen: whatever the {@code where} looks like, a scoped token may not reach
+     * the DB with neither {@code realm} nor {@code realm_in} set.
+     */
+    @Test
+    void scopedTokenNeverReachesTheDbWithoutARealmPredicate() {
+        dispatch("{\"query\":\"secret\",\"where\":\"null\"}");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> realmIn = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<String> realm = ArgumentCaptor.forClass(String.class);
+        verify(readToolService).search(
+                any(), anyInt(), realm.capture(), isNull(), isNull(), any(),
+                anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble(),
+                isNull(), isNull(), realmIn.capture(), anyBoolean());
+
+        assertThat(realm.getValue() != null || realmIn.getValue() != null)
+                .as("a realm-scoped token must never query the DB without a realm predicate")
+                .isTrue();
+        assertThat(realmIn.getValue()).containsExactly("dracul-research");
+    }
+
+    /**
+     * Everything else that is not a JSON object must keep failing loudly, with zero DB calls —
+     * the H1 fix must not turn these into a silently realm-only query.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"[1,2]", "5", "true", "", "not json at all"})
+    void nonObjectStringifiedWhereStillFailsLoudlyWithNoDbCall(String where) {
+        assertThatThrownBy(() -> dispatch("{\"query\":\"x\",\"where\":\"" + where + "\"}"))
+                .isInstanceOf(IllegalArgumentException.class);
         Mockito.verifyNoInteractions(readToolService);
     }
 }

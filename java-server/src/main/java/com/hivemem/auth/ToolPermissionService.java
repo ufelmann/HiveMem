@@ -152,16 +152,24 @@ public class ToolPermissionService {
             "search", "facet_count", "list_cell_ids");
 
     /**
-     * Per-tool flat filter params that are folded into a {@code where} object when read_realms is
-     * injected (the handlers treat {@code where} and flat params as mutually exclusive, so an
-     * injected {@code where.realm_in} would otherwise collide with a caller-supplied flat filter).
+     * Per-tool flat filter params that are folded into the {@code where} object of a realm-injected
+     * read. Two reasons, both load-bearing:
+     * <ol>
+     *   <li>the handlers treat {@code where} and flat params as mutually exclusive, so an injected
+     *       {@code where.realm_in} would collide with a caller-supplied flat filter;</li>
+     *   <li>{@code list_cell_ids} does not read flat params at all ({@link
+     *       com.hivemem.tools.read.ListCellIdsToolHandler} builds its selector from {@code where}
+     *       only). A flat {@code realm} that is not folded is silently dropped, and the "caller
+     *       pinned a realm, the DB already filters" shortcut below then let a scoped token run an
+     *       unrestricted query whose {@code total} leaked the global cell count (H2).</li>
+     * </ol>
      * {@code query} is folded for facet_count (its {@code where} supports it) but NOT for search
      * (search keeps {@code query} top-level and rejects {@code where.query}).
      */
     private static final Map<String, Set<String>> FLAT_FILTER_KEYS = Map.of(
             "search", Set.of("realm", "signal", "topic", "tags", "status"),
             "facet_count", Set.of("realm", "signal", "topic", "tags", "status", "query"),
-            "list_cell_ids", Set.of());
+            "list_cell_ids", Set.of("realm"));
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -303,9 +311,36 @@ public class ToolPermissionService {
         return null;
     }
 
-    /** True when {@code where} is a string that does not parse to a JSON object. */
+    /**
+     * True when {@code where} is a string that neither parses to a JSON object nor to a JSON null.
+     *
+     * <p>A literal {@code "null"} is deliberately NOT unparseable: it parses to a JSON null, which
+     * every handler reads as "no filter present". Treating it as unparseable handed it through
+     * verbatim without injecting {@code realm_in}, and the DB was then queried with
+     * {@code realm=null, realmIn=null} — a cross-realm scan for a realm-scoped token, whose page
+     * was silently under-filled because the response filter dropped the foreign rows afterwards.
+     * An empty string is not a JSON null (it parses to a missing node) and stays unparseable, so
+     * it keeps failing loudly in the handler.
+     */
     private static boolean whereIsUnparseableString(JsonNode arguments) {
-        return arguments != null && arguments.path("where").isTextual() && whereObject(arguments) == null;
+        if (arguments == null || !arguments.path("where").isTextual()) {
+            return false;
+        }
+        return whereObject(arguments) == null && !whereIsStringifiedJsonNull(arguments);
+    }
+
+    /** True when {@code where} is a string whose JSON value is {@code null} — i.e. "no filter". */
+    private static boolean whereIsStringifiedJsonNull(JsonNode arguments) {
+        if (arguments == null || !arguments.path("where").isTextual()) {
+            return false;
+        }
+        JsonNode where = arguments.path("where");
+        try {
+            JsonNode parsed = MAPPER.readTree(where.asText());
+            return parsed != null && parsed.isNull();
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /** True when the caller has explicitly named any realm (top-level or via where). */
@@ -336,16 +371,18 @@ public class ToolPermissionService {
      * rows (otherwise {@code search}/{@code list_cell_ids} fill their {@code limit} with foreign
      * rows that {@link #filterReadResponse} then drops → under-filled pages). No-op for unscoped.
      *
-     * <p>When the caller already named a realm (guaranteed ⊆ read_realms by the {@code realmDenial}
-     * precheck) the args are left untouched — the DB already restricts to that visible subset.
-     * When no realm is named, {@code where.realm_in = read_realms} is injected, folding any flat
-     * filter params into the {@code where} object to respect the handler's where/flat exclusivity.
-     * {@code list} is not injectable (its single {@code realm} arg selects the enumeration level),
-     * so it relies solely on {@link #filterReadResponse}.
+     * <p>Flat filter params are always folded into the {@code where} object (see
+     * {@link #FLAT_FILTER_KEYS}) — both to respect the handler's where/flat exclusivity and because
+     * {@code list_cell_ids} reads no flat params at all. When the caller then still names a realm
+     * (guaranteed ⊆ read_realms by the {@code realmDenial} precheck) nothing more is injected — the
+     * DB already restricts to that visible subset. Otherwise {@code where.realm_in = read_realms}
+     * is injected. {@code list} is not injectable (its single {@code realm} arg selects the
+     * enumeration level), so it relies solely on {@link #filterReadResponse}.
      *
      * <p>A stringified {@code where} (MCP bridges do this) is parsed into an object first and
      * handed on in that normalized form — the caller's keys are never dropped. A {@code where}
-     * string that is not a JSON object is passed through verbatim so the handler rejects it.
+     * string that is neither an object nor a JSON null is passed through verbatim so the handler
+     * rejects it; a stringified JSON null means "no filter" and is scoped like a missing one.
      */
     public JsonNode rewriteReadArgs(AuthPrincipal principal, String toolName, JsonNode arguments) {
         if (principal == null || principal.readRealms() == null) {
@@ -355,12 +392,13 @@ public class ToolPermissionService {
             return arguments;
         }
         if (whereIsUnparseableString(arguments)) {
-            // A `where` string that is not a JSON object: hand it through verbatim instead of
-            // replacing it with a fresh {realm_in:[...]} node. Rewriting it would silently discard
-            // whatever the caller meant and answer a different question; leaving it makes the
-            // handler reject it loudly ("Invalid where" / "where must be an object"). The scope is
-            // not widened by this — no rows are fetched at all, and filterReadResponse still drops
-            // foreign rows should any handler ever tolerate the malformed value.
+            // A `where` string that is neither a JSON object nor a JSON null: hand it through
+            // verbatim instead of replacing it with a fresh {realm_in:[...]} node. Rewriting it
+            // would silently discard whatever the caller meant and answer a different question;
+            // leaving it makes the handler reject it loudly ("Invalid where" / "where must be an
+            // object"). The scope is not widened by this — the handler throws before any query, so
+            // no rows are fetched, and filterReadResponse still drops foreign rows should any
+            // handler ever tolerate the malformed value.
             return arguments.deepCopy();
         }
         ObjectNode root = (arguments != null && arguments.isObject())
@@ -373,18 +411,26 @@ public class ToolPermissionService {
             // themselves (facet_count, list_cell_ids) see a usable filter.
             root.set("where", parsedWhere);
         }
-        if (namesAnyRealm(root)) {
-            // Caller pinned realm(s); precheck guaranteed they are visible. DB already filters.
-            return root;
-        }
+        // Fold flat filter params into `where` BEFORE deciding whether a realm is already named:
+        // list_cell_ids ignores flat params entirely, so a flat `realm` left in place is dropped by
+        // the handler and the "caller pinned a realm" shortcut below would hand the DB an
+        // unrestricted selector (H2).
         ObjectNode where = parsedWhere != null ? parsedWhere : MAPPER.createObjectNode();
-        // Fold flat filter params into `where` so the injected where.realm_in doesn't collide with
-        // the handler's where/flat mutual-exclusivity check.
+        boolean folded = false;
         for (String key : FLAT_FILTER_KEYS.getOrDefault(toolName, Set.of())) {
             if (root.has(key) && !root.get(key).isNull()) {
                 where.set(key, root.get(key));
                 root.remove(key);
+                folded = true;
             }
+        }
+        if (folded) {
+            root.set("where", where);
+        }
+        if (namesAnyRealm(root)) {
+            // Caller pinned realm(s); precheck guaranteed they are visible, and the realm now sits
+            // in `where`, which every injected read tool actually reads. DB already filters.
+            return root;
         }
         ArrayNode realmIn = MAPPER.createArrayNode();
         for (String realm : principal.readRealms()) {

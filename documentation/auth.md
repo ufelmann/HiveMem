@@ -122,9 +122,16 @@ Within `/mcp`, enforcement differs by tool surface (v1):
   rewritten/filtered to the token's `read_realms`/`write_realms`. The rewrite preserves
   every filter the caller sent: a `where` that arrives as a JSON *string* (some MCP
   bridges stringify object arguments) is parsed first, so its keys survive and the realm
-  scope is applied on top of them. A `where` string that is not a JSON object is passed
-  through unchanged and rejected by the tool with an error — it is never replaced by a
-  realm-only filter, which would silently answer a different question.
+  scope is applied on top of them. The scope always ends up inside the `where` object —
+  flat filter params such as a top-level `realm` are folded into it, because
+  `list_cell_ids` reads `where` only and would otherwise run unrestricted (and report a
+  global `total`). A `where` string that is neither a JSON object nor JSON `null` (for
+  example `"[1,2]"`, `"5"`, `""` or `"not json"`) is passed through unchanged and rejected
+  by the tool with an error before any query runs — it is never replaced by a realm-only
+  filter, which would silently answer a different question. The one exception is the
+  string `"null"`: it *is* a valid JSON value meaning "no filter", so it is treated like a
+  missing `where` and gets the realm scope injected — passing it through instead would let
+  a scoped token reach the database with no realm predicate at all.
 - **Global, not realm-filtered**: the knowledge-graph triple surfaces — `search_kg` and
   `time_machine` — operate across all realms regardless of token scope.
 - **Blocked (403) for scoped tokens in v1**: graph-traversal reads (`traverse`, `history`,

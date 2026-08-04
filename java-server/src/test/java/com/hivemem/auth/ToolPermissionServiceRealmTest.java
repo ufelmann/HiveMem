@@ -314,4 +314,59 @@ class ToolPermissionServiceRealmTest {
         JsonNode a = args("{\"query\":\"x\"}");
         assertThat(svc.rewriteReadArgs(unscoped(), "search", a)).isEqualTo(a);
     }
+
+    // ---- H1: a stringified JSON null `where` is "no filter", not a malformed one ----
+    // Passing it through verbatim made the handlers read it as "no where" and query the DB with
+    // realm=null AND realm_in=null: an unscoped cross-realm scan for a realm-scoped token.
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "search, null", "search, '  null  '",
+            "facet_count, null", "list_cell_ids, null"})
+    void stringifiedJsonNullWhereGetsRealmInInjected(String tool, String where) throws Exception {
+        JsonNode out = svc.rewriteReadArgs(scoped(), tool, args("{\"where\":\"" + where + "\"}"));
+        assertThat(out.path("where").isObject()).isTrue();
+        assertThat(out.path("where").path("realm_in")).hasSize(2);
+    }
+
+    /** An empty `where` string is a missing node, not a JSON null: it stays a loud handler error. */
+    @Test void emptyStringifiedWhereStaysUntouched() throws Exception {
+        JsonNode out = svc.rewriteReadArgs(scoped(), "search", args("{\"where\":\"\"}"));
+        assertThat(out.path("where").isTextual()).isTrue();
+        assertThat(out.path("where").asText()).isEmpty();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"5", "true", "[1,2]", "not json at all"})
+    void stringifiedNonObjectNonNullWhereStaysUntouchedForEveryInjectedTool(String where) throws Exception {
+        for (String tool : java.util.List.of("search", "facet_count", "list_cell_ids")) {
+            JsonNode out = svc.rewriteReadArgs(scoped(), tool, args("{\"where\":\"" + where + "\"}"));
+            assertThat(out.path("where").isTextual()).as(tool).isTrue();
+            assertThat(out.path("where").asText()).as(tool).isEqualTo(where);
+        }
+    }
+
+    // ---- H2: list_cell_ids reads only `where`, so a flat realm must be folded into it ----
+    // Unfolded, the "caller pinned a realm" shortcut handed the DB an unrestricted selector whose
+    // `total` leaked the global cell count past filterReadResponse.
+
+    @Test void listCellIdsFlatRealmIsFoldedIntoWhere() throws Exception {
+        JsonNode out = svc.rewriteReadArgs(scoped(), "list_cell_ids", args("{\"realm\":\"dracul\"}"));
+        assertThat(out.has("realm")).isFalse();
+        assertThat(out.path("where").path("realm").asText()).isEqualTo("dracul");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"search", "facet_count", "list_cell_ids"})
+    void scopedTokenAlwaysCarriesARealmPredicateIntoTheWhereObject(String tool) throws Exception {
+        for (String argsJson : java.util.List.of(
+                "{}", "{\"realm\":\"dracul\"}", "{\"where\":{\"realm\":\"dracul\"}}",
+                "{\"where\":\"null\"}", "{\"where\":{\"signal\":\"facts\"}}")) {
+            JsonNode out = svc.rewriteReadArgs(scoped(), tool, args(argsJson));
+            JsonNode where = out.path("where");
+            assertThat(where.hasNonNull("realm") || where.path("realm_in").isArray())
+                    .as(tool + " " + argsJson)
+                    .isTrue();
+        }
+    }
 }
