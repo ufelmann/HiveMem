@@ -33,7 +33,12 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
 
     private UUID seedCell(String content, String embedding, String source,
                           String status, OffsetDateTime createdAt) {
-        UUID id = UUID.randomUUID();
+        return seedCellWithId(UUID.randomUUID(), content, embedding, source, status, createdAt);
+    }
+
+    /** For the few cases where the id itself is under test and must not be random. */
+    private UUID seedCellWithId(UUID id, String content, String embedding, String source,
+                                String status, OffsetDateTime createdAt) {
         dsl.execute(
                 "INSERT INTO cells (id, content, embedding, source, status, created_at, valid_from) "
                 + "VALUES (?, ?, ?::vector, ?, ?, ?::timestamptz, now())",
@@ -480,25 +485,28 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
      * Equal created_at is explicitly allowed, so the cursor must compare the id as well — otherwise
      * a page boundary that lands inside a same-timestamp run either loops on it or skips it.
      *
-     * <p>The expected order is read back from the page itself rather than computed with
-     * {@code UUID.compareTo}: Java compares the two halves as SIGNED longs, Postgres compares the
-     * 16 bytes unsigned, so the two disagree on roughly half of all pairs. The cursor is produced
-     * and consumed entirely on the Postgres side, so its ordering is the one that counts.
+     * <p>The two ids are fixed rather than random, and chosen so that Java and Postgres agree on
+     * their order: Java's {@code UUID.compareTo} compares the two halves as SIGNED longs while
+     * Postgres compares the 16 bytes unsigned, so for a random pair the two disagree about half the
+     * time. With both high halves zero (hence positive) the orderings coincide, and the expectation
+     * below can be stated outright instead of being read back from the implementation.
      */
     @Test
     void keysetCursorUsesIdAsTieBreakOnEqualCreatedAt() {
         DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
         OffsetDateTime t0 = OffsetDateTime.parse("2026-06-19T10:00:00Z");
-        UUID x = seedCell("Rechnung 2001", VEC_A, "consumption:a", "committed", t0);
-        UUID y = seedCell("Rechnung 2002", VEC_A, "consumption:b", "committed", t0);
+        UUID lower = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID higher = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        seedCellWithId(higher, "Rechnung 2002", VEC_A, "consumption:b", "committed", t0);
+        seedCellWithId(lower, "Rechnung 2001", VEC_A, "consumption:a", "committed", t0);
 
-        DocumentDedupRepository.LiveCell first =
-                repo.findLiveConsumptionCellIdsOldestFirst(null, null, 1).get(0);
-        UUID second = first.id().equals(x) ? y : x;
-
-        assertEquals(t0, first.createdAt(), "precondition: both rows share one created_at");
-        assertEquals(List.of(second),
-                repo.findLiveConsumptionCellIdsOldestFirst(first.createdAt(), first.id(), 10)
-                        .stream().map(DocumentDedupRepository.LiveCell::id).toList());
+        assertEquals(List.of(lower, higher),
+                repo.findLiveConsumptionCellIdsOldestFirst(null, null, 10)
+                        .stream().map(DocumentDedupRepository.LiveCell::id).toList(),
+                "id breaks the tie inside one created_at");
+        assertEquals(List.of(higher),
+                repo.findLiveConsumptionCellIdsOldestFirst(t0, lower, 10)
+                        .stream().map(DocumentDedupRepository.LiveCell::id).toList(),
+                "a cursor inside the same-timestamp run must neither repeat nor skip");
     }
 }

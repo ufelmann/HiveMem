@@ -22,9 +22,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -222,6 +224,43 @@ class AdminControllerTest {
         assertTrue(body.containsKey("after_created_at"));
         assertNull(body.get("after_created_at"));
         assertNull(body.get("after_id"));
+    }
+
+    /**
+     * A half-cursor is the silent-restart trap the keyset was built to avoid, just moved to the
+     * edge: with one half missing the walk would start from the beginning again, report the full
+     * count as remaining, and signal nothing. It must be refused, not interpreted.
+     */
+    @Test
+    void dedupBackfill_rejectsAHalfCursor() {
+        OffsetDateTime cursor = OffsetDateTime.parse("2026-06-01T10:00:00Z");
+        UUID cursorId = UUID.fromString("00000000-0000-0000-0000-0000000000cc");
+
+        var missingId = controller.dedupBackfill(cursor, null, 500, adminRequest());
+        var missingTimestamp = controller.dedupBackfill(null, cursorId, 500, adminRequest());
+
+        assertEquals(HttpStatus.BAD_REQUEST, missingId.getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, missingTimestamp.getStatusCode());
+        verifyNoInteractions(dedup);
+    }
+
+    /**
+     * The contract tells the operator to loop until remaining == 0, so limit must never be a value
+     * that makes the loop spin (0 checks nothing and leaves the cursor untouched) or that reaches
+     * Postgres as LIMIT -1.
+     */
+    @Test
+    void dedupBackfill_clampsTheLimitIntoTheUsableRange() {
+        when(dedup.dedupBackfill(isNull(), isNull(), anyInt()))
+                .thenReturn(new com.hivemem.consumption.DocumentDedupService.BackfillReport(
+                        0, 0, null, null, 0));
+
+        controller.dedupBackfill(null, null, 0, adminRequest());
+        controller.dedupBackfill(null, null, -5, adminRequest());
+        controller.dedupBackfill(null, null, 999_999, adminRequest());
+
+        verify(dedup, times(2)).dedupBackfill(isNull(), isNull(), eq(1));
+        verify(dedup).dedupBackfill(isNull(), isNull(), eq(5000));
     }
 
     @Test

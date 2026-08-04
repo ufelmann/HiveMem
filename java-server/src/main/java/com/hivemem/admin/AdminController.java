@@ -24,6 +24,9 @@ import java.util.UUID;
 @RequestMapping("/admin")
 public class AdminController {
 
+    /** Upper bound for one dedup-backfill page: ~150 ms per cell, so this is already ~12 minutes. */
+    private static final int MAX_BACKFILL_LIMIT = 5000;
+
     private final InstanceConfig instanceConfig;
     private final TokenService tokenService;
     private final com.hivemem.attachment.AttachmentChunkRepairService chunkRepair;
@@ -129,6 +132,14 @@ public class AdminController {
      * per cell. Call without a cursor, then feed {@code after_created_at}/{@code after_id} from the
      * previous response back in until {@code remaining} is zero. A smaller {@code limit} buys
      * shorter responses, not less total work.
+     *
+     * <p>Both halves of the cursor are required together. Half a cursor cannot be honoured — the
+     * keyset compares the pair — so accepting one would silently restart the walk at the beginning
+     * while {@code remaining} reports the full count and nothing marks the reset. That is precisely
+     * the silent non-advance the keyset replaced LIMIT/OFFSET to avoid, so it is refused here
+     * rather than interpreted. {@code limit} is clamped for the same reason: the documented
+     * contract tells the operator to loop until {@code remaining} is zero, and a limit below 1
+     * would never advance the cursor (or reach Postgres as a negative LIMIT).
      */
     @PostMapping("/dedup-backfill")
     public ResponseEntity<?> dedupBackfill(
@@ -138,7 +149,12 @@ public class AdminController {
             @RequestParam(value = "limit", defaultValue = "500") int limit,
             HttpServletRequest request) {
         if (!isAdmin(request)) return forbidden();
-        DocumentDedupService.BackfillReport report = dedup.dedupBackfill(afterCreatedAt, afterId, limit);
+        if ((afterCreatedAt == null) != (afterId == null)) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "after_created_at and after_id must be given together"));
+        }
+        DocumentDedupService.BackfillReport report =
+                dedup.dedupBackfill(afterCreatedAt, afterId, Math.clamp(limit, 1, MAX_BACKFILL_LIMIT));
         // LinkedHashMap, not Map.of: the cursor is null on an exhausted or empty walk, and the
         // caller must see the key with a null value rather than a key that silently vanished.
         Map<String, Object> body = new LinkedHashMap<>();
