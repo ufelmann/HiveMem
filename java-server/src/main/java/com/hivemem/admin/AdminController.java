@@ -9,12 +9,16 @@ import com.hivemem.summarize.SummarizerService;
 import com.hivemem.sync.InstanceConfig;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/admin")
@@ -118,12 +122,33 @@ public class AdminController {
         return ResponseEntity.ok(Map.of("processed", processed));
     }
 
-    /** One-off: deduplicate already-ingested scans (run after embeddings have been backfilled). */
+    /**
+     * One-off: deduplicate already-ingested scans (run after embeddings have been backfilled).
+     *
+     * <p>Resumable and paged, because the walk runs synchronously in this request at roughly 150 ms
+     * per cell. Call without a cursor, then feed {@code after_created_at}/{@code after_id} from the
+     * previous response back in until {@code remaining} is zero. A smaller {@code limit} buys
+     * shorter responses, not less total work.
+     */
     @PostMapping("/dedup-backfill")
-    public ResponseEntity<?> dedupBackfill(HttpServletRequest request) {
+    public ResponseEntity<?> dedupBackfill(
+            @RequestParam(value = "after_created_at", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime afterCreatedAt,
+            @RequestParam(value = "after_id", required = false) UUID afterId,
+            @RequestParam(value = "limit", defaultValue = "500") int limit,
+            HttpServletRequest request) {
         if (!isAdmin(request)) return forbidden();
-        DocumentDedupService.BackfillReport report = dedup.dedupBackfill();
-        return ResponseEntity.ok(Map.of("checked", report.checked(), "discarded", report.discarded()));
+        DocumentDedupService.BackfillReport report = dedup.dedupBackfill(afterCreatedAt, afterId, limit);
+        // LinkedHashMap, not Map.of: the cursor is null on an exhausted or empty walk, and the
+        // caller must see the key with a null value rather than a key that silently vanished.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("checked", report.checked());
+        body.put("discarded", report.discarded());
+        body.put("remaining", report.remaining());
+        body.put("after_created_at",
+                report.lastCreatedAt() == null ? null : report.lastCreatedAt().toString());
+        body.put("after_id", report.lastId() == null ? null : report.lastId().toString());
+        return ResponseEntity.ok(body);
     }
 
     private static boolean isAdmin(HttpServletRequest request) {

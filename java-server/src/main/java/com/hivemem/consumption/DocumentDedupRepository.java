@@ -38,12 +38,22 @@ public class DocumentDedupRepository {
      */
     public record Candidate(UUID id, String content, Double cosine, OffsetDateTime createdAt) {}
     public record AttachmentKeys(UUID attachmentId, String s3KeyOriginal, String s3KeyThumbnail) {}
+    /** One cell of the backfill walk, carrying the keyset cursor it advances. */
+    public record LiveCell(UUID id, OffsetDateTime createdAt) {}
 
-    /** The current (live) cell to evaluate, or empty if it is not current/committed. */
+    /**
+     * Statuses dedup operates on, as targets and as candidates alike. {@code pending} is included
+     * not because it is frequent (it is not) but because of the risk: a not-yet-approved re-scan
+     * must never become the permanent original of a duplicate group. {@code rejected} stays out
+     * everywhere — those cells are not archive content.
+     */
+    private static final String DEDUP_STATUS_FILTER = "status IN ('committed','pending')";
+
+    /** The current (live) cell to evaluate, or empty if it is not current or not in dedup scope. */
     public Optional<TargetCell> findTarget(UUID cellId) {
         Record r = dsl.fetchOne(
                 "SELECT id, content, source, created_at FROM cells "
-                + "WHERE id = ? AND valid_until IS NULL AND status = 'committed'", cellId);
+                + "WHERE id = ? AND valid_until IS NULL AND " + DEDUP_STATUS_FILTER, cellId);
         return r == null ? Optional.empty()
                 : Optional.of(new TargetCell(
                         r.get("id", UUID.class),
@@ -128,7 +138,7 @@ public class DocumentDedupRepository {
                 SELECT c.id, c.content, c.created_at, %2$s AS cosine
                 FROM cells c, target t
                 WHERE c.valid_until IS NULL
-                  AND c.status = 'committed'
+                  AND c.%3$s
                   AND c.source LIKE 'consumption:%%'
                   AND c.embedding IS NOT NULL
                   AND c.id <> ?
@@ -137,7 +147,7 @@ public class DocumentDedupRepository {
                   AND (1 - (c.embedding::vector(%1$d) <=> t.embedding::vector(%1$d))) >= ?
                 ORDER BY c.embedding::vector(%1$d) <=> t.embedding::vector(%1$d)
                 LIMIT ?
-                """).formatted(dim, cosineExpression(dim));
+                """).formatted(dim, cosineExpression(dim), DEDUP_STATUS_FILTER);
         List<Candidate> out = new ArrayList<>();
         for (Record r : dsl.fetch(sql, cellId, cellId, cellId, recallThreshold, k)) {
             out.add(new Candidate(
@@ -209,10 +219,10 @@ public class DocumentDedupRepository {
         // (only when the target actually has one).
         String sql = ("""
                 WITH target AS (SELECT embedding, created_at FROM cells WHERE id = ? AND valid_until IS NULL)
-                SELECT c.id, c.content, c.created_at, %s AS cosine
+                SELECT c.id, c.content, c.created_at, %1$s AS cosine
                 FROM cells c, target t, to_tsquery('simple', ?) q
                 WHERE c.valid_until IS NULL
-                  AND c.status = 'committed'
+                  AND c.%2$s
                   AND c.source LIKE 'consumption:%%'
                   AND c.id <> ?
                   AND (c.created_at < t.created_at
@@ -220,7 +230,7 @@ public class DocumentDedupRepository {
                   AND c.tsv @@ q
                 ORDER BY ts_rank_cd(c.tsv, q) DESC, c.created_at ASC, c.id ASC
                 LIMIT ?
-                """).formatted(cosineExpression(dim));
+                """).formatted(cosineExpression(dim), DEDUP_STATUS_FILTER);
         List<Candidate> out = new ArrayList<>();
         for (Record r : dsl.fetch(sql, cellId, tsquery, cellId, cellId, k)) {
             out.add(new Candidate(
@@ -232,16 +242,51 @@ public class DocumentDedupRepository {
         return out;
     }
 
-    /** All live committed consumption-sourced cell ids, oldest first (id tie-break). */
-    public List<UUID> findLiveConsumptionCellIdsOldestFirst() {
-        List<UUID> ids = new ArrayList<>();
-        for (Record r : dsl.fetch(
-                "SELECT id FROM cells "
-                + "WHERE source LIKE 'consumption:%' AND valid_until IS NULL AND status = 'committed' "
-                + "ORDER BY created_at ASC, id ASC")) {
-            ids.add(r.get("id", UUID.class));
+    /**
+     * One page of live, in-scope, consumption-sourced cells, oldest first (id tie-break), strictly
+     * after the {@code (afterCreatedAt, afterId)} keyset cursor. A null cursor starts at the
+     * beginning.
+     *
+     * <p>A keyset, not a LIMIT and not an OFFSET. A plain LIMIT would never advance: a cell that is
+     * NOT a duplicate is not soft-deleted, so it is still in the result set on the next call and the
+     * same first page comes back forever, while the report cheerfully counts it again. OFFSET fails
+     * for the mirror-image reason — the soft-deletes the walk itself performs shift the window and
+     * skip cells. Comparing {@code (created_at, id)} is immune to both, and matches the total order
+     * this ORDER BY defines.
+     */
+    public List<LiveCell> findLiveConsumptionCellIdsOldestFirst(
+            OffsetDateTime afterCreatedAt, UUID afterId, int limit) {
+        String sql = "SELECT id, created_at FROM cells "
+                + "WHERE source LIKE 'consumption:%' AND valid_until IS NULL AND " + DEDUP_STATUS_FILTER
+                + cursorPredicate(afterCreatedAt, afterId)
+                + " ORDER BY created_at ASC, id ASC LIMIT ?";
+        List<LiveCell> out = new ArrayList<>();
+        for (Record r : dsl.fetch(sql, cursorArgs(afterCreatedAt, afterId, limit))) {
+            out.add(new LiveCell(r.get("id", UUID.class), r.get("created_at", OffsetDateTime.class)));
         }
-        return ids;
+        return out;
+    }
+
+    /** How many live, in-scope consumption cells are still ahead of the given keyset cursor. */
+    public int countLiveConsumptionCellsAfter(OffsetDateTime afterCreatedAt, UUID afterId) {
+        String sql = "SELECT count(*) AS n FROM cells "
+                + "WHERE source LIKE 'consumption:%' AND valid_until IS NULL AND " + DEDUP_STATUS_FILTER
+                + cursorPredicate(afterCreatedAt, afterId);
+        Record r = afterCreatedAt == null || afterId == null
+                ? dsl.fetchOne(sql)
+                : dsl.fetchOne(sql, afterCreatedAt, afterId);
+        return r == null ? 0 : r.get("n", Long.class).intValue();
+    }
+
+    /** Row comparison, or nothing at all when the walk starts without a cursor. */
+    private static String cursorPredicate(OffsetDateTime afterCreatedAt, UUID afterId) {
+        return afterCreatedAt == null || afterId == null
+                ? "" : " AND (created_at, id) > (?::timestamptz, ?::uuid)";
+    }
+
+    private static Object[] cursorArgs(OffsetDateTime afterCreatedAt, UUID afterId, int limit) {
+        return afterCreatedAt == null || afterId == null
+                ? new Object[] {limit} : new Object[] {afterCreatedAt, afterId, limit};
     }
 
     public int softDeleteCell(UUID cellId) {
@@ -255,6 +300,18 @@ public class DocumentDedupRepository {
      * recording why it disappeared, and never leave a {@code duplicate_of} tunnel hanging off a cell
      * that is still live. Attachment/S3 cleanup is deliberately NOT part of this transaction (it is
      * external, ref-count-guarded, and an orphaned binary is harmless next to losing the audit link).
+     *
+     * <p>A discarded cell that was {@code pending} additionally becomes {@code rejected}, in the same
+     * transaction. The {@code pending_approvals} view selects on {@code status = 'pending'} alone,
+     * with no liveness check, and {@code WriteToolRepository.approvePending} does the same — so a
+     * soft-deleted pending cell would otherwise sit in the approval queue forever, and approving it
+     * would produce a committed, soft-deleted, duplicate-linked ghost. Committed cells keep their
+     * status.
+     *
+     * <p>Known limit, pre-existing and deliberately out of scope here: this writes raw SQL and
+     * bypasses the op log that carries changes to peers (the canonical path is
+     * {@code WriteToolService}), so a peer keeps the ghost row. That already holds for
+     * {@code valid_until} and belongs to the sync discussion.
      */
     public void linkAndSoftDelete(UUID duplicateCellId, UUID originalCellId, String note, String createdBy) {
         dsl.transaction(cfg -> {
@@ -264,7 +321,9 @@ public class DocumentDedupRepository {
                     + "VALUES (?, ?, 'duplicate_of', ?, 'committed', ?)",
                     duplicateCellId, originalCellId, note, createdBy);
             tx.execute(
-                    "UPDATE cells SET valid_until = now() WHERE id = ? AND valid_until IS NULL",
+                    "UPDATE cells SET valid_until = now(), "
+                    + "status = CASE WHEN status = 'pending' THEN 'rejected' ELSE status END "
+                    + "WHERE id = ? AND valid_until IS NULL",
                     duplicateCellId);
         });
     }

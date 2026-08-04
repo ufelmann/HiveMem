@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.hivemem.write.WriteToolRepository;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -229,19 +230,21 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
         UUID rescan = seedCell(DOC_RESCAN, VEC_A, "consumption:b", "committed", t0);
         seedCell(DOC_ORIGINAL, VEC_B, "manual:x", "committed", t0.minusDays(1));      // not a scan
         seedCell(DOC_ORIGINAL, VEC_B, "consumption:c", "committed", t0.plusDays(1));  // newer
-        seedCell(DOC_ORIGINAL, VEC_B, "consumption:d", "pending", t0.minusDays(1));   // not committed
         seedCell(DOC_ORIGINAL, VEC_B, "consumption:e", "rejected", t0.minusDays(1));  // rejected
         UUID deleted = seedCell(DOC_ORIGINAL, VEC_B, "consumption:f", "committed", t0.minusDays(1));
         softDelete(deleted);                                                          // not live
-        // Positive control: live, committed, consumption-sourced and strictly older.
+        // Positive controls: live, consumption-sourced, strictly older — one per accepted status.
+        // 'pending' qualifies so that a not-yet-approved re-scan can never become the permanent
+        // original of a group; only 'rejected' is excluded, because it is not archive content.
+        UUID pending = seedCell(DOC_ORIGINAL, VEC_B, "consumption:d", "pending", t0.minusDays(2));
         UUID qualifying = seedCell(DOC_ORIGINAL, VEC_B, "consumption:g", "committed", t0.minusDays(1));
 
         List<DocumentDedupRepository.Candidate> cands =
                 repo.findSimilarOlderCandidates(rescan, 0.92, 10);
 
-        assertEquals(List.of(qualifying), cands.stream().map(
+        assertEquals(List.of(pending, qualifying), cands.stream().map(
                 DocumentDedupRepository.Candidate::id).toList(),
-                "only the qualifying row may pass the filters, got " + cands);
+                "only the qualifying rows may pass the filters, got " + cands);
     }
 
     /** Union of both channels: deduplicated by id and ordered created_at ASC, id ASC. */
@@ -352,11 +355,150 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
                 "the text gate must reject it");
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Status scope: dedup targets AND candidates are 'committed' or 'pending'. 'rejected' stays
+    // out everywhere — those cells are not archive content.
+    // ---------------------------------------------------------------------------------------
+
     @Test
-    void findTargetIgnoresNonCommitted() {
+    void findTargetAcceptsPendingAndRejectsRejected() {
         DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
         OffsetDateTime t0 = OffsetDateTime.parse("2026-06-05T10:00:00Z");
         UUID pending = seedCell("Rechnung 4711", VEC_A, "consumption:p", "pending", t0);
-        assertFalse(repo.findTarget(pending).isPresent(), "pending cell is not a valid dedup target");
+        UUID rejected = seedCell("Rechnung 4711", VEC_A, "consumption:r", "rejected", t0);
+
+        assertTrue(repo.findTarget(pending).isPresent(), "pending cell is a valid dedup target");
+        assertFalse(repo.findTarget(rejected).isPresent(), "rejected cell is never a dedup target");
+    }
+
+    /** Both channels see 'pending' candidates and neither sees 'rejected' ones. */
+    @Test
+    void candidateChannelsIncludePendingAndExcludeRejected() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        OffsetDateTime t0 = OffsetDateTime.parse("2026-06-15T10:00:00Z");
+        UUID pending = seedCell(DOC_ORIGINAL, VEC_A, "consumption:p", "pending", t0.minusDays(2));
+        seedCell(DOC_ORIGINAL, VEC_A, "consumption:r", "rejected", t0.minusDays(1));
+        UUID rescan = seedCell(DOC_RESCAN, VEC_A, "consumption:t", "committed", t0);
+
+        List<DocumentDedupRepository.Candidate> cands =
+                repo.findSimilarOlderCandidates(rescan, 0.92, 10);
+
+        assertEquals(List.of(pending), cands.stream().map(
+                DocumentDedupRepository.Candidate::id).toList(),
+                "pending must be recalled, rejected must not, got " + cands);
+    }
+
+    /**
+     * A discarded 'pending' cell must also become 'rejected'. The pending_approvals view filters on
+     * status alone, with no liveness check (and so does WriteToolRepository.approvePending), so a
+     * soft-deleted pending cell would otherwise sit in the approval queue forever and could be
+     * approved into a committed, soft-deleted, duplicate-linked ghost.
+     */
+    @Test
+    void linkAndSoftDeleteRejectsADiscardedPendingCell() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        OffsetDateTime t0 = OffsetDateTime.parse("2026-06-16T10:00:00Z");
+        UUID original = seedCell(DOC_ORIGINAL, VEC_A, "consumption:a", "committed", t0);
+        UUID dup = seedCell(DOC_RESCAN, VEC_A, "consumption:b", "pending", t0.plusDays(1));
+        assertEquals(1L, pendingApprovalRows(dup), "precondition: the pending cell is queued");
+
+        repo.linkAndSoftDelete(dup, original, "auto-dedup note", "system-dedup");
+
+        assertEquals("rejected", statusOf(dup), "a discarded pending cell must end up rejected");
+        assertEquals(0L, pendingApprovalRows(dup), "it must leave the approval queue");
+        assertEquals(0, new WriteToolRepository(dsl).approvePending(List.of(dup), "committed"),
+                "approving it must be a no-op");
+        assertEquals("rejected", statusOf(dup), "and must not resurrect it as committed");
+    }
+
+    /** A discarded 'committed' cell keeps its status — only pending ones are re-labelled. */
+    @Test
+    void linkAndSoftDeleteKeepsTheStatusOfADiscardedCommittedCell() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        OffsetDateTime t0 = OffsetDateTime.parse("2026-06-17T10:00:00Z");
+        UUID original = seedCell(DOC_ORIGINAL, VEC_A, "consumption:a", "committed", t0);
+        UUID dup = seedCell(DOC_RESCAN, VEC_A, "consumption:b", "committed", t0.plusDays(1));
+
+        repo.linkAndSoftDelete(dup, original, "auto-dedup note", "system-dedup");
+
+        assertEquals("committed", statusOf(dup));
+        assertFalse(repo.findTarget(dup).isPresent(), "still soft-deleted");
+    }
+
+    private String statusOf(UUID id) {
+        return dsl.fetchOne("SELECT status FROM cells WHERE id = ?", id).get("status", String.class);
+    }
+
+    private long pendingApprovalRows(UUID id) {
+        return dsl.fetchOne("SELECT count(*) AS n FROM pending_approvals WHERE id = ?", id)
+                .get("n", Long.class);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Keyset cursor for the backfill walk
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * The page is bounded by (created_at, id) > cursor, never by OFFSET: soft-deletes shift the
+     * window, and a plain LIMIT never advances at all because a non-duplicate cell is not deleted
+     * and therefore reappears in the very same first page.
+     */
+    @Test
+    void liveConsumptionCellsArePagedByKeysetCursor() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        OffsetDateTime t0 = OffsetDateTime.parse("2026-06-18T10:00:00Z");
+        UUID a = seedCell("Rechnung 1001", VEC_A, "consumption:a", "committed", t0);
+        UUID b = seedCell("Rechnung 1002", VEC_A, "consumption:b", "pending", t0.plusMinutes(1));
+        UUID c = seedCell("Rechnung 1003", VEC_A, "consumption:c", "committed", t0.plusMinutes(2));
+        seedCell("Rechnung 1004", VEC_A, "consumption:d", "rejected", t0.plusMinutes(3));
+        seedCell("Rechnung 1005", VEC_A, "manual:x", "committed", t0.plusMinutes(4));
+        UUID deleted = seedCell("Rechnung 1006", VEC_A, "consumption:e", "committed", t0.plusMinutes(5));
+        softDelete(deleted);
+
+        assertEquals(3, repo.countLiveConsumptionCellsAfter(null, null));
+
+        List<DocumentDedupRepository.LiveCell> page1 =
+                repo.findLiveConsumptionCellIdsOldestFirst(null, null, 2);
+        assertEquals(List.of(a, b), page1.stream()
+                .map(DocumentDedupRepository.LiveCell::id).toList());
+        assertEquals(t0, page1.get(0).createdAt());
+
+        DocumentDedupRepository.LiveCell last = page1.get(1);
+        assertEquals(1, repo.countLiveConsumptionCellsAfter(last.createdAt(), last.id()));
+
+        List<DocumentDedupRepository.LiveCell> page2 =
+                repo.findLiveConsumptionCellIdsOldestFirst(last.createdAt(), last.id(), 2);
+        assertEquals(List.of(c), page2.stream()
+                .map(DocumentDedupRepository.LiveCell::id).toList());
+
+        DocumentDedupRepository.LiveCell end = page2.get(0);
+        assertEquals(0, repo.countLiveConsumptionCellsAfter(end.createdAt(), end.id()));
+        assertTrue(repo.findLiveConsumptionCellIdsOldestFirst(end.createdAt(), end.id(), 2).isEmpty());
+    }
+
+    /**
+     * Equal created_at is explicitly allowed, so the cursor must compare the id as well — otherwise
+     * a page boundary that lands inside a same-timestamp run either loops on it or skips it.
+     *
+     * <p>The expected order is read back from the page itself rather than computed with
+     * {@code UUID.compareTo}: Java compares the two halves as SIGNED longs, Postgres compares the
+     * 16 bytes unsigned, so the two disagree on roughly half of all pairs. The cursor is produced
+     * and consumed entirely on the Postgres side, so its ordering is the one that counts.
+     */
+    @Test
+    void keysetCursorUsesIdAsTieBreakOnEqualCreatedAt() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        OffsetDateTime t0 = OffsetDateTime.parse("2026-06-19T10:00:00Z");
+        UUID x = seedCell("Rechnung 2001", VEC_A, "consumption:a", "committed", t0);
+        UUID y = seedCell("Rechnung 2002", VEC_A, "consumption:b", "committed", t0);
+
+        DocumentDedupRepository.LiveCell first =
+                repo.findLiveConsumptionCellIdsOldestFirst(null, null, 1).get(0);
+        UUID second = first.id().equals(x) ? y : x;
+
+        assertEquals(t0, first.createdAt(), "precondition: both rows share one created_at");
+        assertEquals(List.of(second),
+                repo.findLiveConsumptionCellIdsOldestFirst(first.createdAt(), first.id(), 10)
+                        .stream().map(DocumentDedupRepository.LiveCell::id).toList());
     }
 }

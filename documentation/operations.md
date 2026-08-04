@@ -310,12 +310,17 @@ On startup, any live committed cell with a NULL embedding and content longer tha
 
 ### Retro-dedup of existing scans
 
-`POST /admin/dedup-backfill` walks existing live `consumption:`-sourced cells oldest→newest and discards re-scans (same soft-delete + `duplicate_of` tunnel + S3 cleanup as live dedup). Run it **only after embeddings have been backfilled** — give the startup `needs_summary` tagging plus at least one 5-min summarizer cycle to embed the long scans first, otherwise they have no embedding to match on. This is a production write — get explicit authorization before running it.
+`POST /admin/dedup-backfill` walks existing live `consumption:`-sourced cells (status `committed` or `pending`) oldest→newest and discards re-scans (same soft-delete + `duplicate_of` tunnel + S3 cleanup as live dedup; a discarded `pending` cell also becomes `rejected`, so it leaves the approval queue). Run it **only after embeddings have been backfilled** — give the startup `needs_summary` tagging plus at least one 5-min summarizer cycle to embed the long scans first, otherwise they have no embedding to match on. This is a production write — get explicit authorization before running it.
+
+The walk is **paged and resumable**: it runs synchronously in the request at roughly 150 ms per cell, so `limit` (default 500, about 80 s) bounds one call. Feed `after_created_at` / `after_id` from the previous response back in and repeat until `remaining` is 0. The cursor is a keyset over `(created_at, id)` — never page this with an offset or with `limit` alone, both silently fail to advance.
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
-  https://<host>/admin/dedup-backfill
-# → {"checked":N,"discarded":x}
+  "https://<host>/admin/dedup-backfill?limit=500"
+# → {"checked":500,"discarded":3,"remaining":214,
+#    "after_created_at":"2026-07-14T09:12:03Z","after_id":"<uuid>"}
+curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "https://<host>/admin/dedup-backfill?limit=500&after_created_at=2026-07-14T09:12:03Z&after_id=<uuid>"
 ```
 
 ## Queen + Bees on Vistierie (the LXC host)
