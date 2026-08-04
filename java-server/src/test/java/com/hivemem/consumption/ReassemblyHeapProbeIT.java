@@ -2,6 +2,7 @@ package com.hivemem.consumption;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -77,7 +78,7 @@ class ReassemblyHeapProbeIT {
 
     private static PageMetadataExtractor mockExtractor() {
         PageMetadataExtractor extractor = mock(PageMetadataExtractor.class);
-        when(extractor.extract(anyString(), anyInt(), any()))
+        when(extractor.extract(anyString(), anyInt(), any(), anyBoolean()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
                         "S", null, null, "letter", null, "p", false, false));
         return extractor;

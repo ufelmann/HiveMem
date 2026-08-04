@@ -558,7 +558,7 @@ export class MockApiClient implements ApiClient {
       ],
       degradedBatches: [
         { sha256: 'bbbb0002', filename: 'scan-0002.pdf', totalPages: 40, degradedPages: 3,
-          updatedAt: '2026-08-02T10:00:00Z' },
+          blankPages: 1, updatedAt: '2026-08-02T10:00:00Z' },
       ],
       stalledRows: [
         { sha256: 'cccc0003', filename: 'scan-0003.pdf', state: 'processing',

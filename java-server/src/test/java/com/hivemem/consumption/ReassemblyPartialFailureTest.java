@@ -1,12 +1,14 @@
 package com.hivemem.consumption;
 
+import static com.hivemem.consumption.ReassemblyTestSupport.nPagePdf;
+import static com.hivemem.consumption.ReassemblyTestSupport.stubPages;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -23,9 +25,6 @@ import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.List;
 import javax.imageio.ImageIO;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.junit.jupiter.api.Test;
 
 class ReassemblyPartialFailureTest {
@@ -41,15 +40,6 @@ class ReassemblyPartialFailureTest {
         return baos.toByteArray();
     }
 
-    private byte[] nPagePdf(int n) throws Exception {
-        try (PDDocument doc = new PDDocument()) {
-            for (int i = 0; i < n; i++) doc.addPage(new PDPage(PDRectangle.A4));
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            doc.save(baos);
-            return baos.toByteArray();
-        }
-    }
-
     private static PageOrienter mockOrienter() {
         PageOrienter orienter = mock(PageOrienter.class);
         when(orienter.orient(anyString(), anyInt(), any()))
@@ -59,7 +49,7 @@ class ReassemblyPartialFailureTest {
 
     private static PageMetadataExtractor mockExtractor() {
         PageMetadataExtractor extractor = mock(PageMetadataExtractor.class);
-        when(extractor.extract(anyString(), anyInt(), any()))
+        when(extractor.extract(anyString(), anyInt(), any(), anyBoolean()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
                         "S", null, null, "letter", null, "p", false, false));
         return extractor;
@@ -69,16 +59,6 @@ class ReassemblyPartialFailureTest {
         MailingAssembler assembler = mock(MailingAssembler.class);
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of());
         return assembler;
-    }
-
-    /** Stubs the streaming overload to hand out {@code pngs} one page at a time, mirroring
-     *  {@link PdfPageRasterizer#rasterize(byte[], int, int, PdfPageRasterizer.PageConsumer)}. */
-    private static void stubPages(PdfPageRasterizer rasterizer, List<byte[]> pngs) throws Exception {
-        doAnswer(inv -> {
-            PdfPageRasterizer.PageConsumer consumer = inv.getArgument(3);
-            for (int i = 0; i < pngs.size(); i++) consumer.accept(i, pngs.get(i));
-            return null;
-        }).when(rasterizer).rasterize(any(), anyInt(), anyInt(), any());
     }
 
     /** When the first sub-doc ingests successfully but the second throws, the whole batch must be
@@ -191,7 +171,7 @@ class ReassemblyPartialFailureTest {
         PageOrienter orienter = mockOrienter();
         PageMetadataExtractor extractor = mock(PageMetadataExtractor.class);
         // Page 1 extracts fine; page 2 lost its vision metadata.
-        when(extractor.extract(anyString(), anyInt(), any())).thenAnswer(inv -> {
+        when(extractor.extract(anyString(), anyInt(), any(), anyBoolean())).thenAnswer(inv -> {
             int page = inv.getArgument(1);
             boolean degraded = page == 2;
             return new PageMetadataExtractor.PageMetadata(page, degraded ? null : "S", null, null,
@@ -214,7 +194,44 @@ class ReassemblyPartialFailureTest {
                 assembler, reassembler, new BatchSplitter(), attachments, mover);
         orch.reassemble(stagedPath, nPagePdf(2), 2, "cafebabe", fileRepo);
 
-        verify(fileRepo).recordPageStats("cafebabe", 2, 1);
+        verify(fileRepo).recordPageStats("cafebabe", 2, 1, 0);
+    }
+
+    /** blank_pages must reach the ledger too: a batch that silently loses half its pages to the
+     *  blank-page filter needs to be as visible as one that lost pages to a degraded extraction.
+     *  One page is voted blank by the extractor (no pixel skip involved here — Task 4 territory),
+     *  so {@code blank.size()} must be 1 and degraded must stay 0. */
+    @Test
+    void recordsPageStatsWithTheBlankCount() throws Exception {
+        ConsumptionProperties props = new ConsumptionProperties();
+        PdfPageRasterizer rasterizer = mock(PdfPageRasterizer.class);
+        PageOrienter orienter = mockOrienter();
+        PageMetadataExtractor extractor = mock(PageMetadataExtractor.class);
+        // Page 1 is ordinary content; page 2 is voted blank by the extractor.
+        when(extractor.extract(anyString(), anyInt(), any(), anyBoolean())).thenAnswer(inv -> {
+            int page = inv.getArgument(1);
+            boolean blank = page == 2;
+            return new PageMetadataExtractor.PageMetadata(page, "S", null, null,
+                    blank ? "blank" : "letter", null, blank ? "blank page" : "p", blank, false);
+        });
+        MailingAssembler assembler = mockAssembler();
+        PageReassembler reassembler = mock(PageReassembler.class);
+        AttachmentService attachments = mock(AttachmentService.class);
+        ConsumptionFileMover mover = mock(ConsumptionFileMover.class);
+        ConsumptionFileRepository fileRepo = mock(ConsumptionFileRepository.class);
+
+        byte[] page = inkPng();
+        stubPages(rasterizer, List.of(page, page));
+        when(reassembler.toDocuments(any(), anyInt())).thenReturn(List.of(
+                new PageReassembler.ResultDoc(List.of(1), "committed"),
+                new PageReassembler.ResultDoc(List.of(2), "committed")));
+
+        Path stagedPath = Path.of("Scan_blank_count.pdf");
+        ReassemblyOrchestrator orch = new ReassemblyOrchestrator(props, rasterizer, orienter, extractor,
+                assembler, reassembler, new BatchSplitter(), attachments, mover);
+        orch.reassemble(stagedPath, nPagePdf(2), 2, "cafebabe", fileRepo);
+
+        verify(fileRepo).recordPageStats("cafebabe", 2, 0, 1);
     }
 
     /** When both sub-docs ingest successfully, the batch must go to processed/ (regression guard). */

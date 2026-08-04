@@ -1,6 +1,7 @@
 package com.hivemem.consumption;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.*;
 
@@ -10,9 +11,9 @@ import org.junit.jupiter.api.Test;
 
 class ConsumptionQueueServiceTest {
 
-    /** The floor of 2 is deliberate: at the measured rate of 1 degraded page in 93, flagging every
-     *  single one would put most of a 39 000-page run's ~390 batches into the queue, and a queue
-     *  that is always full is a queue nobody reads. */
+    /** The floor is 1 by default (ConsumptionProperties.minDegradedPages): real single-page metadata
+     *  losses were invisible at the historical floor of 2. The blank-ratio branch is the independent
+     *  second signal; both values reach the repository unchanged. */
     private static ConsumptionProperties props() {
         ConsumptionProperties p = new ConsumptionProperties();
         p.setRecoveryStaleThreshold(java.time.Duration.ofMinutes(30));
@@ -20,18 +21,17 @@ class ConsumptionQueueServiceTest {
     }
 
     @Test
-    void aSingleDegradedPageDoesNotReachTheQueue() {
+    void queuePassesTheConfiguredFloorAndBlankRatioToTheRepository() {
         ConsumptionFileRepository repo = mock(ConsumptionFileRepository.class);
-        when(repo.findDegradedBatches(anyInt(), anyInt())).thenReturn(List.of());
+        when(repo.findDegradedBatches(anyInt(), anyDouble(), anyInt())).thenReturn(List.of());
         when(repo.countsByState()).thenReturn(Map.of("done", 20));
         ConsumptionRecoverySweep sweep = mock(ConsumptionRecoverySweep.class);
         when(sweep.lastReconciliation())
                 .thenReturn(new ConsumptionRecoverySweep.Reconciliation(0, 0, 0));
 
-        var queue = new ConsumptionQueueService(repo, sweep, props()).queue(50);
+        new ConsumptionQueueService(repo, sweep, props()).queue(50);
 
-        assertTrue(queue.degradedBatches().isEmpty());
-        verify(repo).findDegradedBatches(2, 50);   // minimum 2 degraded pages
+        verify(repo).findDegradedBatches(1, 0.60, 50);   // default floor 1, default blank ratio alert 0.60
     }
 
     /** M4: the queue must read the newest-first failed list, not {@code findRetriableFailed}'s
@@ -42,7 +42,7 @@ class ConsumptionQueueServiceTest {
         ConsumptionFileRepository repo = mock(ConsumptionFileRepository.class);
         when(repo.findFailedNewestFirst(anyInt())).thenReturn(List.of(
                 new ConsumptionFileRepository.Row("sha-new", "newest.pdf", "failed", 1, "boom")));
-        when(repo.findDegradedBatches(anyInt(), anyInt())).thenReturn(List.of());
+        when(repo.findDegradedBatches(anyInt(), anyDouble(), anyInt())).thenReturn(List.of());
         when(repo.countsByState()).thenReturn(Map.of());
         ConsumptionRecoverySweep sweep = mock(ConsumptionRecoverySweep.class);
         when(sweep.lastReconciliation())
@@ -61,7 +61,7 @@ class ConsumptionQueueServiceTest {
     @Test
     void stalledRowsAreListedUsingTheRecoveryStaleThreshold() {
         ConsumptionFileRepository repo = mock(ConsumptionFileRepository.class);
-        when(repo.findDegradedBatches(anyInt(), anyInt())).thenReturn(List.of());
+        when(repo.findDegradedBatches(anyInt(), anyDouble(), anyInt())).thenReturn(List.of());
         when(repo.findFailedNewestFirst(anyInt())).thenReturn(List.of());
         when(repo.countsByState()).thenReturn(Map.of("processing", 1));
         when(repo.findStalledRows(anyInt(), anyInt())).thenReturn(List.of(
@@ -89,7 +89,7 @@ class ConsumptionQueueServiceTest {
     @Test
     void reconciliationCountersAreExposed() {
         ConsumptionFileRepository repo = mock(ConsumptionFileRepository.class);
-        when(repo.findDegradedBatches(anyInt(), anyInt())).thenReturn(List.of());
+        when(repo.findDegradedBatches(anyInt(), anyDouble(), anyInt())).thenReturn(List.of());
         when(repo.countsByState()).thenReturn(Map.of("failed", 3));
         ConsumptionRecoverySweep sweep = mock(ConsumptionRecoverySweep.class);
         when(sweep.lastReconciliation())

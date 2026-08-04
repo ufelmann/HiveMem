@@ -26,6 +26,25 @@ public class ConsumptionProperties {
     private int failedRetryLimit = 3;
     private boolean blankFilterEnabled = true;
     private double blankWhiteFraction = 0.995;
+    // Pre-check threshold: a page this white skips the orientation call (a white page has no
+    // orientation) and is handed to the extractor as pixel-blank. Deliberately LOOSER than the 0.995
+    // post-check — a lower whiteness bar, so it fires on a strict superset of that check's pages —
+    // because it only suppresses the orientation call, never a deletion. Calibrated on a measured
+    // duplex sample rendered at the production DPI: the value sits in the gap between the whitest
+    // content page and the least white blank backside, well clear of content. See the design doc.
+    private double blankSkipWhiteFraction = 0.97;
+    // Floor for the review queue's degraded-batch filter. 1, not the historical 2: real batches that
+    // lost page metadata lost a single page out of many, which a floor of 2 never surfaced.
+    // Safe to lower only because the blank-page pre-skip (blankSkipWhiteFraction above)
+    // removed the cause of blank-page-induced degradation — a white page making the model answer
+    // with prose instead of JSON — that a floor of 1 would otherwise have flooded the queue with.
+    private int minDegradedPages = 1;
+    // Second review-queue alert branch, independent of degraded_pages: a batch that loses most of
+    // its pages to the blank-page filter with zero degraded pages is otherwise invisible. Calibrated,
+    // not guessed: it sits above every blank ratio observed in ordinary duplex scanning — where a
+    // lower bar such as 0.30 would flag routine duplex batches — so it only fires once the blank
+    // filter itself has gone wrong. See the design doc for the measured sample.
+    private double blankRatioAlert = 0.60;
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean v) { this.enabled = v; }
@@ -65,4 +84,10 @@ public class ConsumptionProperties {
     public void setBlankFilterEnabled(boolean v) { this.blankFilterEnabled = v; }
     public double getBlankWhiteFraction() { return blankWhiteFraction; }
     public void setBlankWhiteFraction(double v) { this.blankWhiteFraction = v; }
+    public double getBlankSkipWhiteFraction() { return blankSkipWhiteFraction; }
+    public void setBlankSkipWhiteFraction(double v) { this.blankSkipWhiteFraction = v; }
+    public int getMinDegradedPages() { return minDegradedPages; }
+    public void setMinDegradedPages(int v) { this.minDegradedPages = v; }
+    public double getBlankRatioAlert() { return blankRatioAlert; }
+    public void setBlankRatioAlert(double v) { this.blankRatioAlert = v; }
 }

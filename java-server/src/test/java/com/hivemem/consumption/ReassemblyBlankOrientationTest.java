@@ -1,11 +1,14 @@
 package com.hivemem.consumption;
 
+import static com.hivemem.consumption.ReassemblyTestSupport.group;
+import static com.hivemem.consumption.ReassemblyTestSupport.nPagePdf;
+import static com.hivemem.consumption.ReassemblyTestSupport.stubPages;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -24,8 +27,6 @@ import java.util.List;
 import javax.imageio.ImageIO;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -43,32 +44,6 @@ class ReassemblyBlankOrientationTest {
         return baos.toByteArray();
     }
 
-    private byte[] nPagePdf(int n) throws Exception {
-        try (PDDocument doc = new PDDocument()) {
-            for (int i = 0; i < n; i++) doc.addPage(new PDPage(PDRectangle.A4));
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            doc.save(baos);
-            return baos.toByteArray();
-        }
-    }
-
-    /** Stubs the streaming overload to hand out {@code pngs} one page at a time, mirroring
-     *  {@link PdfPageRasterizer#rasterize(byte[], int, int, PdfPageRasterizer.PageConsumer)}. */
-    private static void stubPages(PdfPageRasterizer rasterizer, List<byte[]> pngs) throws Exception {
-        doAnswer(inv -> {
-            PdfPageRasterizer.PageConsumer consumer = inv.getArgument(3);
-            for (int i = 0; i < pngs.size(); i++) consumer.accept(i, pngs.get(i));
-            return null;
-        }).when(rasterizer).rasterize(any(), anyInt(), anyInt(), any());
-    }
-
-    private static DocGroup group(String id, double confidence, int... pages) {
-        DocGroup g = new DocGroup(id, null);
-        g.minConfidence = confidence;
-        for (int p : pages) g.pages.add(p);
-        return g;
-    }
-
     @Test
     void blankPageIsDroppedFromDocument() throws Exception {
         ConsumptionProperties props = new ConsumptionProperties();
@@ -82,7 +57,7 @@ class ReassemblyBlankOrientationTest {
 
         when(orienter.orient(anyString(), anyInt(), any()))
                 .thenAnswer(inv -> new PageOrienter.PageOrientation(inv.getArgument(1), 0, false, 0.9));
-        when(extractor.extract(anyString(), anyInt(), any()))
+        when(extractor.extract(anyString(), anyInt(), any(), anyBoolean()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
                         "S", null, null, "letter", null, "p", false, false));
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1, 2)));
@@ -118,7 +93,7 @@ class ReassemblyBlankOrientationTest {
 
         when(orienter.orient(anyString(), anyInt(), any()))
                 .thenAnswer(inv -> new PageOrienter.PageOrientation(inv.getArgument(1), 0, false, 0.9));
-        when(extractor.extract(anyString(), anyInt(), any()))
+        when(extractor.extract(anyString(), anyInt(), any(), anyBoolean()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
                         "S", null, null, "letter", null, "p", false, false));
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1)));
@@ -150,7 +125,7 @@ class ReassemblyBlankOrientationTest {
         // The (single, non-blank) page is detected upside-down → must be rotated 180° in the stored PDF.
         when(orienter.orient(anyString(), anyInt(), any()))
                 .thenReturn(new PageOrienter.PageOrientation(1, 180, false, 0.99));
-        when(extractor.extract(anyString(), anyInt(), any()))
+        when(extractor.extract(anyString(), anyInt(), any(), anyBoolean()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
                         "S", null, null, "letter", null, "p", false, false));
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1)));
@@ -188,7 +163,7 @@ class ReassemblyBlankOrientationTest {
             int page = inv.getArgument(1);
             return new PageOrienter.PageOrientation(page, 0, page == 2, 0.9);
         });
-        when(extractor.extract(anyString(), anyInt(), any()))
+        when(extractor.extract(anyString(), anyInt(), any(), anyBoolean()))
                 .thenAnswer(inv -> new PageMetadataExtractor.PageMetadata(inv.getArgument(1),
                         "S", null, null, "letter", null, "p", false, false));
         when(assembler.assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1, 2)));

@@ -146,14 +146,51 @@ consumption executor, never throws to the caller):
 
 1. **Pass 1 — orientation, per page.** Every page is rendered at
    `reassembly-render-dpi` (default 150 — lower than OCR DPI, to keep the vision
-   payload small). `PageOrienter` shows the model the page twice — original (A)
-   and rotated 180° (B) — and asks it to pick the upright one plus a blank
-   verdict. The winning rotation is baked into the page image via PDF `/Rotate`
-   so everything downstream (and the stored PDF) sees an upright page.
+   payload small). Before the vision call, a cheap pixel pre-check
+   (`blank-filter-enabled` / `blank-skip-white-fraction`) looks at the rendered
+   page's white-pixel fraction: a page this white gets **no orientation call at
+   all** — a blank page has no meaningful orientation, so the call would be
+   spent on nothing. Any page under the threshold is unaffected and always gets
+   the call. For a page that *is* skipped, `PageOrienter` never runs: the page
+   keeps its original rotation, and if it does turn out to carry real content
+   (see the accepted trade-off below), it is stored without rotation
+   correction. For every other page, `PageOrienter` shows the model the page
+   twice — original (A) and rotated 180° (B) — and asks it to pick the upright
+   one plus a blank verdict. The winning rotation is baked into the page image
+   via PDF `/Rotate` so everything downstream (and the stored PDF) sees an
+   upright page.
+
+   **The pixel pre-check never deletes a page by itself.** It only suppresses
+   the orientation call; the metadata call below still runs on every page
+   regardless, and its verdict remains the sole authority that puts a page on
+   the delete list. Its threshold is deliberately looser (fires on more pages)
+   than the post-check described in step 5, precisely because it can only ever
+   save a vision call, never cause a deletion.
+
+   **Accepted trade-off.** A page that is genuinely near-white except for a
+   small mark — a stamp, a signature, a short note — reads as pixel-blank by
+   this check and skips orientation, but is still evaluated (and, if the model
+   finds content on it, kept) by the metadata call in the next pass. Such a
+   page is stored as-is, without rotation correction, and can end up upside
+   down in the archive. A misoriented page is recoverable by re-inspection; a
+   silently deleted one is not — so the design accepts occasional missed
+   rotation in exchange for never letting a pixel measurement alone decide
+   that a page is gone.
 2. **Pass 2 — per-page metadata, on upright images.** `PageMetadataExtractor`
    reads each upright page alone (one image per call — no cross-page labeling
    ambiguity) and extracts sender, date, printed page label, doc type, reference
-   and a one-line summary.
+   and a one-line summary. If both extraction attempts fail to parse (the model
+   occasionally answers a near-white page with prose instead of the expected
+   structured output) *and* the page was pixel-blank per the pre-check above,
+   the page is recorded as **not degraded** — closing the gap where a
+   near-white page whose reply merely failed to parse used to be counted as a
+   metadata loss and flood the review queue. It is **not** recorded as blank:
+   `blank` is the delete list and no model verdict exists in this branch. So
+   during a vision-provider outage, where every page fails both attempts, no
+   page is deleted on a pixel judgement — a genuinely white backside is still
+   caught by the post-check in step 5. The cost is an occasional blank page
+   surviving into the archive, which is the same trade as the missed rotation
+   above: recoverable, unlike a deletion.
 3. **Pass 3 — assembly, text-only.** `MailingAssembler` sends all pages'
    extracted metadata (no images) in a single call and asks the model to group
    pages into mailings, in reading order within each mailing. Grouping is a
@@ -179,9 +216,15 @@ consumption executor, never throws to the caller):
      `1..N`. A mailing that mixes a letter with enclosures is never reordered —
      without a way to tell two printed sequences apart, reordering could splice
      one document into another.
-5. **Blank drop.** A page is dropped if either the pass-1 vision signal *or* the
-   pixel-based detector (`blank-filter-enabled` / `blank-white-fraction`) calls it
-   blank. A mailing whose pages are all blank never becomes a cell.
+5. **Blank drop.** A page is dropped if either of two signals calls it blank: a
+   model verdict — the pass-1 orientation call's blank vote (on pages that got
+   one) or the pass-2 metadata reply's `blank` field — or the pixel-based
+   post-check (`blank-filter-enabled` / `blank-white-fraction`) applied to
+   every page regardless of the pre-check outcome. This post-check is
+   intentionally **stricter** (fires on fewer pages) than the pre-check in step 1 above — the
+   pre-check only ever skips a vision call, while this one drops the page
+   outright, so it is held to a tighter whiteness bar. A mailing whose pages
+   are all blank never becomes a cell.
 6. **Status.** A mailing is `committed` if its minimum confidence ≥
    `reassembly-confidence-threshold` (default **0.5** — aggressive, so most
    mailings commit), otherwise `pending`.
@@ -202,32 +245,50 @@ are not interchangeable:
   batch WAS reassembled, but individual pages contributed no vision metadata to
   the boundary decision.
 
-**Page statistics — `total_pages` / `degraded_pages`.** A page is *degraded*
-when its metadata extraction failed both attempts and fell back to an all-null
-row. Such a page contributes nothing to the boundary decision, and nothing
-downstream can notice: the assembler scores its own grouping, not the
+**Page statistics — `total_pages` / `degraded_pages` / `blank_pages`.** A page is
+*degraded* when its metadata extraction failed both attempts and fell back to an
+all-null row. Such a page contributes nothing to the boundary decision, and
+nothing downstream can notice: the assembler scores its own grouping, not the
 completeness of its input, so a batch cut from half-blind input can still report
 high confidence. After the pass completes, `ReassemblyOrchestrator` therefore
-records both counts on the batch's `consumption_file` row (`total_pages`,
-`degraded_pages`, added in V0054).
+records these counts on the batch's `consumption_file` row: `total_pages` and
+`degraded_pages` (added in V0054), and `blank_pages` (added in V0055).
+`blank_pages` counts every page recognised as blank by *any* of the three
+signals listed under step 5 above — vision-voted and pixel-skipped pages alike —
+so an operator can see when a batch is quietly losing most of its pages to the
+blank-page filter, something that used to be visible only as a log line.
 
-Both columns stay NULL when the batch never finished a pass — the degrade-to-
-pending path above leaves them unset. NULL means *unknown*, never *clean*: the
-review query requires `total_pages > 0` precisely so a NULL batch cannot pass the
-filter as healthy in either direction. (Such a batch is still visible, as a
-`pending` document in the approval queue.)
+All three columns stay NULL when the batch never finished a pass — the
+degrade-to-pending path above leaves them unset. NULL means *unknown*, never
+*clean*: the review query requires `total_pages > 0` precisely so a NULL batch
+cannot pass the filter as healthy in either direction. (Such a batch is still
+visible, as a `pending` document in the approval queue.)
 
-`consumption_queue` flags a batch for human review only when **both** conditions
-hold:
+`consumption_queue` flags a batch for human review when **either** of two
+independent conditions holds:
 
-- at least **2** degraded pages (`ConsumptionQueueService.MIN_DEGRADED_PAGES`), and
-- more than **2 %** of the batch's pages degraded.
+- a degraded-page branch: at least `min-degraded-pages` (configurable, default
+  **1**) degraded pages, **and** more than **2 %** of the batch's pages
+  degraded; or
+- a blank-ratio branch: `blank_pages` / `total_pages` exceeds
+  `blank-ratio-alert` (default **0.60**).
 
-The two conditions guard opposite ends. The percentage keeps a large batch from
-being flagged over a couple of pages; the floor of 2 keeps a small batch from
-being flagged over a single one. A queue that is always full is a queue nobody
-reads, and one degraded page in a hundred is normal wear, not a defect worth an
-operator's attention.
+The degraded-page branch's two conditions guard opposite ends: the percentage
+keeps a large batch from being flagged over a couple of pages, the floor keeps
+a small batch from being flagged over a single one. The floor is deliberately
+configurable rather than fixed, because how low it is safe to set depends on
+how reliably blank pages are kept from producing spurious degradations — see
+the blank-page pre-skip above. The blank-ratio branch exists because
+`blank_pages` would otherwise never reach the queue for a batch with zero
+degraded pages, which is exactly the batch this column was added to surface:
+a batch losing most of its pages to the blank-page filter without a single
+degraded page tripping the first branch. Its threshold sits well above the
+blank-page ratio produced by ordinary duplex scanning (roughly half a
+duplex batch's pages are blank backsides in the common case), so it fires only
+when the blank-page filter itself looks like it has gone wrong, not on routine
+duplex documents. A queue that is always full is a queue nobody reads, and one
+degraded page in a hundred is normal wear, not a defect worth an operator's
+attention.
 
 **Operator note — `recovery-stale-threshold` vs. reassembly latency.** The 3-pass
 pipeline makes ~2·N+1 sequential LLM calls per batch, so a very large batch's
@@ -405,8 +466,11 @@ the initial dispatch and the sweep — the sweep degrades rather than retries.
 | `reassembly-render-dpi` | `HIVEMEM_CONSUMPTION_REASSEMBLY_DPI` | `150` | DPI used to rasterize pages into the vision payload (downscaled vs. OCR DPI to keep requests small). |
 | `reassembly-purpose` | `HIVEMEM_CONSUMPTION_REASSEMBLY_PURPOSE` | `separator` | Vistierie routing purpose for all 3-pass reassembly calls. Needs a routing rule pointing at a vision-capable model (Haiku works; Sonnet for harder visual grouping). |
 | `reassembly-max-tokens` | `HIVEMEM_CONSUMPTION_REASSEMBLY_MAX_TOKENS` | `4096` | Max output tokens for each of the three passes' responses. |
-| `blank-filter-enabled` | `HIVEMEM_CONSUMPTION_BLANK_FILTER_ENABLED` | `true` | Gates ONLY the pixel-based near-white detector (`BlankPageDetector.isNearWhite`). The LLM's own blank verdicts from passes 1 and 2 always apply regardless of this flag; disabling it just stops the additional pixel-based signal from also marking pages blank. A document whose pages are all blank (by either signal) is dropped entirely, so it never becomes a cell. |
-| `blank-white-fraction` | `HIVEMEM_CONSUMPTION_BLANK_WHITE_FRACTION` | `0.995` | Fraction of near-white pixels above which a page is treated as blank. Higher = more conservative (fewer pages dropped). |
+| `blank-filter-enabled` | `HIVEMEM_CONSUMPTION_BLANK_FILTER_ENABLED` | `true` | Master switch for BOTH pixel-based signals: the pre-check that skips a page's orientation call (`blank-skip-white-fraction`) and the post-check that drops a page outright (`blank-white-fraction`). The LLM's own blank verdicts from passes 1 and 2 always apply regardless of this flag; disabling it just stops the pixel-based signals from also acting. A document whose pages are all blank (by any signal) is dropped entirely, so it never becomes a cell. |
+| `blank-white-fraction` | `HIVEMEM_CONSUMPTION_BLANK_WHITE_FRACTION` | `0.995` | Post-check: fraction of near-white pixels above which a page is dropped outright, whatever the model said. Higher = more conservative (fewer pages dropped). |
+| `blank-skip-white-fraction` | `HIVEMEM_CONSUMPTION_BLANK_SKIP_WHITE_FRACTION` | `0.97` | Pre-check: fraction of near-white pixels above which a page's orientation call is skipped (the metadata call still runs and still decides deletion). Deliberately looser than `blank-white-fraction` — it only ever saves a vision call, never causes a deletion, so it can afford to fire on more pages. |
+| `min-degraded-pages` | `HIVEMEM_CONSUMPTION_MIN_DEGRADED_PAGES` | `1` | Floor for the review queue's degraded-page branch (see *Page statistics* above). A batch needs at least this many degraded pages, and more than 2 % of its pages degraded, to be flagged on that branch. |
+| `blank-ratio-alert` | `HIVEMEM_CONSUMPTION_BLANK_RATIO_ALERT` | `0.60` | Threshold for the review queue's blank-ratio branch: a batch is flagged when `blank_pages / total_pages` exceeds this value, independently of `degraded_pages`. |
 
 ### New `hivemem.queen.*` keys added by this feature
 

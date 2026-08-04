@@ -54,7 +54,7 @@ describe('scans store', () => {
   it('search mode requests status all unless a status facet is selected', async () => {
     const s = useScansStore()
     const spy = vi.spyOn(useApi(), 'call')
-    s.query = 'Vattenfall'
+    s.query = 'SYNTHETIC ENERGY'
     const p1 = s.load(); await vi.advanceTimersByTimeAsync(300); await p1
     const searchCall = spy.mock.calls.find(c => c[0] === 'search')
     expect(searchCall?.[1]).toMatchObject({ status: 'all' })

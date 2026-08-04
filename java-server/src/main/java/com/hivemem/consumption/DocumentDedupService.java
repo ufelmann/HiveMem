@@ -2,8 +2,10 @@ package com.hivemem.consumption;
 
 import com.hivemem.attachment.AttachmentRepository;
 import com.hivemem.attachment.SeaweedFsClient;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,8 +13,11 @@ import org.springframework.stereotype.Service;
 
 /**
  * Content-based dedup for scanned documents. Runs after OCR has populated a cell's text + embedding.
- * Two stages: pgvector cosine recall (DedupProperties.recallThreshold) then a normalized-text Jaccard
- * gate (textThreshold). On a confirmed duplicate the freshly-OCR'd cell is discarded (soft-deleted),
+ * Two stages: recall, then a normalized-text Jaccard gate (textThreshold). Recall unions two
+ * independent channels — pgvector cosine (DedupProperties.recallThreshold) and a lexical tsv match —
+ * because a document too long to embed carries the vector of its summary, which two independent
+ * summaries of the same scan do not share closely enough for the vector channel alone to see it.
+ * On a confirmed duplicate the freshly-OCR'd cell is discarded (soft-deleted),
  * its attachment binary removed if unreferenced, and a duplicate_of tunnel points to the original.
  * Best-effort: any failure logs and leaves the document untouched.
  */
@@ -50,8 +55,11 @@ public class DocumentDedupService {
 
             List<DocumentDedupRepository.Candidate> candidates =
                     repo.findSimilarOlderCandidates(cellId, props.getRecallThreshold(), props.getCandidateK());
+            // Hoisted out of the loop: with two candidate channels this list holds up to 2k rows and
+            // re-shingling a large document per candidate dominates the whole check.
+            Set<String> targetShingles = TextSimilarity.shingles(TextSimilarity.normalize(targetText));
             for (DocumentDedupRepository.Candidate c : candidates) {
-                if (TextSimilarity.similarity(targetText, c.content()) >= props.getTextThreshold()) {
+                if (TextSimilarity.similarity(targetShingles, c.content()) >= props.getTextThreshold()) {
                     discard(cellId, c.id());
                     return Optional.of(c.id());
                 }
@@ -63,25 +71,45 @@ public class DocumentDedupService {
         }
     }
 
-    public record BackfillReport(int checked, int discarded) {}
+    /**
+     * Result of one backfill page. {@code lastCreatedAt}/{@code lastId} are the keyset cursor to
+     * hand to the next call — the last cell this page looked at, or the cursor it was given when the
+     * page was empty. {@code remaining} counts the live cells still ahead of that cursor; the caller
+     * repeats until it is zero.
+     */
+    public record BackfillReport(int checked, int discarded,
+                                 OffsetDateTime lastCreatedAt, UUID lastId, int remaining) {}
 
     /**
-     * One-off retro pass: walk live consumption cells oldest→newest and discard any that are
-     * re-scans of a strictly-older cell. Oldest of each duplicate group is kept. Calling
-     * findAndDiscardDuplicate on an already-discarded cell is a safe no-op. Best-effort overall.
+     * One-off retro pass, resumable: walk live consumption cells oldest→newest from the given keyset
+     * cursor and discard any that are re-scans of a strictly-older cell. Oldest of each duplicate
+     * group is kept. Calling findAndDiscardDuplicate on an already-discarded cell is a safe no-op,
+     * so re-running a page is harmless. Best-effort overall.
+     *
+     * <p>Paged rather than unbounded because the whole walk runs synchronously inside one HTTP
+     * request at roughly 150 ms per cell. The cursor is a keyset, not an offset — see
+     * {@link DocumentDedupRepository#findLiveConsumptionCellIdsOldestFirst} for why anything else
+     * silently fails to advance.
      */
-    public BackfillReport dedupBackfill() {
+    public BackfillReport dedupBackfill(OffsetDateTime afterCreatedAt, UUID afterId, int limit) {
         if (!props.isEnabled()) {
             log.info("Dedup backfill skipped: dedup is disabled");
-            return new BackfillReport(0, 0);
+            return new BackfillReport(0, 0, afterCreatedAt, afterId, 0);
         }
-        List<UUID> ids = repo.findLiveConsumptionCellIdsOldestFirst();
+        List<DocumentDedupRepository.LiveCell> page =
+                repo.findLiveConsumptionCellIdsOldestFirst(afterCreatedAt, afterId, limit);
         int discarded = 0;
-        for (UUID id : ids) {
-            if (findAndDiscardDuplicate(id).isPresent()) discarded++;
+        OffsetDateTime lastCreatedAt = afterCreatedAt;
+        UUID lastId = afterId;
+        for (DocumentDedupRepository.LiveCell cell : page) {
+            if (findAndDiscardDuplicate(cell.id()).isPresent()) discarded++;
+            lastCreatedAt = cell.createdAt();
+            lastId = cell.id();
         }
-        log.info("Dedup backfill: checked {} consumption cells, discarded {}", ids.size(), discarded);
-        return new BackfillReport(ids.size(), discarded);
+        int remaining = repo.countLiveConsumptionCellsAfter(lastCreatedAt, lastId);
+        log.info("Dedup backfill: checked {} consumption cells, discarded {}, {} remaining",
+                page.size(), discarded, remaining);
+        return new BackfillReport(page.size(), discarded, lastCreatedAt, lastId, remaining);
     }
 
     private void discard(UUID duplicateCellId, UUID originalCellId) {

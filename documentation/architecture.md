@@ -245,16 +245,32 @@ Content-based dedup runs **after** the cell's embedding exists, so it can rely o
   8000 characters already has an embedding at OCR time but is still deferred to the
   summarizer's dedup pass, the same as a document that has no embedding yet at all.
 
-`DocumentDedupService.findAndDiscardDuplicate` runs a two-stage check against current committed scan cells, and only ever discards cells whose `source` starts with `consumption:`: pgvector cosine recall (`recall-threshold`) then a normalized character-4-gram Jaccard gate (`text-threshold`). A confirmed re-scan (matching a strictly older cell) is soft-deleted, its attachment binary is removed if no other live cell references it, and a `duplicate_of` tunnel links it to the original. The check is best-effort: any error keeps the document. Note: byte-identical re-uploads are already deduped earlier by SHA-256 in `AttachmentService.ingest` — since the dedup fix, a re-upload also seeds the new cell with the existing extraction cell's already-enriched content (OCR/vision output, incl. `subtype_*` tags) instead of re-running the OCR/vision pipeline; this step covers same-content/different-bytes re-scans.
+`DocumentDedupService.findAndDiscardDuplicate` runs a two-stage check against current `committed`/`pending` scan cells, and only ever discards cells whose `source` starts with `consumption:`: candidate recall, then a normalized character-4-gram Jaccard gate (`text-threshold`) that confirms or rejects each candidate. A confirmed re-scan (matching a strictly older cell) is soft-deleted, its attachment binary is removed if no other live cell references it, and a `duplicate_of` tunnel links it to the original; if the discarded cell was still `pending`, it is also flipped to `rejected` so it drops out of the approval queue instead of becoming an approvable ghost. `rejected` cells are never targets or candidates. The check is best-effort: any error keeps the document. Note: byte-identical re-uploads are already deduped earlier by SHA-256 in `AttachmentService.ingest` — since the dedup fix, a re-upload also seeds the new cell with the existing extraction cell's already-enriched content (OCR/vision output, incl. `subtype_*` tags) instead of re-running the OCR/vision pipeline; this step covers same-content/different-bytes re-scans.
+
+**Recall is two independent channels, unioned.** The original channel is pgvector cosine recall
+(`recall-threshold`) against each cell's stored embedding. A second, lexical channel searches the
+same candidate pool by full-text match on the generated `tsv` column, independently of any
+embedding. It exists because the stored embedding is derived from a document's summary once its
+content exceeds the active embedding backend's character cap (see *Embedding backend character
+limits* above) — two independently worded LLM summaries of the same over-length re-scan can land
+far enough apart in vector space that cosine recall never surfaces the pair, even though their
+full OCR text is nearly identical. The lexical channel selects the target cell's longest, most
+distinctive lexemes from its own `tsv` and ranks candidates by full-text relevance against them, so
+it does not depend on the embedding at all and catches exactly the case the vector channel misses.
+Both channels apply the same `source`/status/older-than filters and are each capped at
+`candidate-k`; a candidate found only through the lexical channel carries no cosine score (it is
+omitted rather than defaulted to a misleading value) and is judged on the Jaccard gate alone. The
+two channels' results are merged, deduplicated by cell id, and walked oldest-first, so the oldest
+matching candidate is always preferred as the original regardless of which channel found it.
 
 Configuration (`hivemem.consumption.dedup.*`):
 
 | Property | Default | Purpose |
 |---|---|---|
 | `hivemem.consumption.dedup.enabled` | `true` | Enable content dedup of re-scanned documents |
-| `hivemem.consumption.dedup.recall-threshold` | `0.92` | Cosine floor for HNSW candidate recall |
-| `hivemem.consumption.dedup.text-threshold` | `0.85` | Jaccard floor confirming a duplicate |
-| `hivemem.consumption.dedup.candidate-k` | `10` | Max HNSW candidates checked |
+| `hivemem.consumption.dedup.recall-threshold` | `0.92` | Cosine floor for the vector recall channel |
+| `hivemem.consumption.dedup.text-threshold` | `0.85` | Jaccard floor confirming a duplicate, checked against candidates from either channel |
+| `hivemem.consumption.dedup.candidate-k` | `10` | Max candidates checked per recall channel (vector and lexical each contribute up to this many) |
 
 ### Per-document confidence aggregate
 
@@ -495,7 +511,7 @@ existing documents without re-deploying or re-ingesting files.
 |---|---|---|---|
 | `POST /admin/backfill-titles` | `limit` (default 200) | `titled` | Give already-summarized documents that have no topic/title a short LLM-generated title. |
 | `POST /admin/backfill-tax-date` | `limit` (default 200) | `processed` | Set `valid_from` from an existing stored `document_date` fact and apply the appropriate tax tag (`steuerrelevant` / `tax-relevant`) via a cheap summary-only classifier. Cells without a stored `document_date` fact are **not** re-extracted from full text (too expensive); only the tax tag is backfilled for those. Idempotent: processed cells receive the marker tag `tax_scanned` and are skipped on subsequent runs. |
-| `POST /admin/dedup-backfill` | — | `checked`, `discarded` | Retro-dedup existing scans: walks live `consumption:`-sourced cells oldest→newest and discards re-scans found via `DocumentDedupService`. **Run only after embeddings have been backfilled** — give the startup `needs_summary` tagging plus one cycle of the 5-min summarizer first, otherwise long scans have no embedding to match on. |
+| `POST /admin/dedup-backfill` | `limit` (default 200), `after_created_at`, `after_id` | `checked`, `discarded`, `remaining`, `after_created_at`, `after_id` | Retro-dedup existing scans: walks live `consumption:`-sourced cells with status `committed` or `pending` oldest→newest and discards re-scans found via `DocumentDedupService`. Paged and resumable — the response cursor is a keyset over `(created_at, id)`; repeat with it until `remaining` is 0. Both cursor params must be given together (HTTP 400 otherwise, so a half cursor cannot silently restart the walk); `limit` is clamped to 1…1000. The walk is synchronous, so page size is request duration — loop with the default rather than raising it, since a reverse proxy in front of the application may cut a long request off. **Run only after embeddings have been backfilled** — give the startup `needs_summary` tagging plus one cycle of the 5-min summarizer first, otherwise long scans have no embedding to match on. |
 
 The summarizer-dependent endpoints (`backfill-titles`, `backfill-tax-date`) return HTTP 503 `{"error":"summarizer disabled"}` when the summarizer bean is not available (i.e. `HIVEMEM_VISTIERIE_URL` is unset).
 

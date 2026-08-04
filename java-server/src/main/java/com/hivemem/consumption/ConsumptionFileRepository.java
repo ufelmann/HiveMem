@@ -117,10 +117,13 @@ public class ConsumptionFileRepository {
                 filename, sha256);
     }
 
-    /** Record how many pages a batch had and how many of them lost their vision metadata. */
-    public void recordPageStats(String sha256, int totalPages, int degradedPages) {
+    /** Record how many pages a batch had, how many of them lost their vision metadata, and how
+     *  many were recognised as blank (LLM-voted, or pixel-skipped by a future filter — see
+     *  {@code blank_pages} in V0055) and dropped before assembly. */
+    public void recordPageStats(String sha256, int totalPages, int degradedPages, int blankPages) {
         dsl.execute("UPDATE consumption_file SET total_pages = ?, degraded_pages = ?, "
-                + "updated_at = now() WHERE sha256 = ?", totalPages, degradedPages, sha256);
+                        + "blank_pages = ?, updated_at = now() WHERE sha256 = ?",
+                totalPages, degradedPages, blankPages, sha256);
     }
 
     /** Returns rows in 'failed' state that have not yet exhausted their retry budget. */
@@ -200,22 +203,34 @@ public class ConsumptionFileRepository {
         return out;
     }
 
-    /** Batches whose degraded page count is at least {@code minDegraded} AND above 2 % of their
-     *  pages. Both conditions must hold: the percentage keeps large batches from being flagged for
-     *  a couple of pages, the floor keeps small batches from being flagged for a single one.
+    /** Batches worth a human's attention, via either of two independent branches. A batch needs
+     *  EITHER a degraded page count that is at least {@code minDegraded} AND above 2 % of its pages
+     *  — the percentage keeps large batches from being flagged for a couple of pages, the floor
+     *  keeps a single degraded page in a small batch from being lost in the ratio — OR a blank-page
+     *  ratio above {@code blankRatioAlert}, which surfaces a batch that lost most of its pages to
+     *  the blank-page filter with zero degraded pages, the case {@code blank_pages} exists for.
      *  {@code total_pages > 0} also excludes rows where total_pages/degraded_pages are NULL (the
      *  {@code degradeToPending} path leaves them unset when a batch dies before analysis) — a NULL
-     *  batch is unknown, not clean, and must not silently pass this filter either way. */
-    public List<DegradedBatch> findDegradedBatches(int minDegraded, int limit) {
+     *  batch is unknown, not clean, and must not silently pass this filter either way. {@code
+     *  blank_pages} is nullable for rows recorded before V0055; a NULL numerator makes the division
+     *  NULL, which is never {@code > blankRatioAlert}, so such rows never surface via that branch
+     *  without an explicit NULL check. The blank branch also requires {@code degraded_pages IS NOT
+     *  NULL}: without it, branch A's {@code degraded_pages >= ?} is the only thing that used to
+     *  guarantee a non-NULL value reaching the {@code DegradedBatch} mapper's primitive {@code int}
+     *  fields below — a row with a NULL degraded_pages but a real blank-page ratio would otherwise
+     *  NPE on unboxing. */
+    public List<DegradedBatch> findDegradedBatches(int minDegraded, double blankRatioAlert, int limit) {
         var rows = dsl.fetch("""
-                SELECT sha256, filename, total_pages, degraded_pages, updated_at
+                SELECT sha256, filename, total_pages, degraded_pages, blank_pages, updated_at
                 FROM consumption_file
-                WHERE degraded_pages >= ?
-                  AND total_pages > 0
-                  AND degraded_pages::numeric / total_pages > 0.02
+                WHERE (degraded_pages >= ?
+                       AND total_pages > 0
+                       AND degraded_pages::numeric / total_pages > 0.02)
+                   OR (total_pages > 0 AND degraded_pages IS NOT NULL
+                       AND blank_pages::numeric / total_pages > ?)
                 ORDER BY updated_at DESC
                 LIMIT ?
-                """, minDegraded, limit);
+                """, minDegraded, blankRatioAlert, limit);
         List<DegradedBatch> out = new ArrayList<>();
         for (Record r : rows) {
             out.add(new DegradedBatch(
@@ -223,6 +238,7 @@ public class ConsumptionFileRepository {
                     r.get("filename", String.class),
                     (Integer) r.get("total_pages"),
                     (Integer) r.get("degraded_pages"),
+                    (Integer) r.get("blank_pages"),
                     r.get("updated_at", OffsetDateTime.class).toString()));
         }
         return out;
@@ -247,8 +263,10 @@ public class ConsumptionFileRepository {
 
     public record Row(String sha256, String filename, String state, int attempts, String lastError) {}
 
+    /** @param blankPages all pages recognised as blank (LLM-voted, pixel-skipped, or both) and
+     *                    dropped before assembly; nullable for rows recorded before V0055. */
     public record DegradedBatch(String sha256, String filename, int totalPages,
-                                int degradedPages, String updatedAt) {}
+                                int degradedPages, Integer blankPages, String updatedAt) {}
 
     /** A row that is neither done nor failed but has stopped moving. */
     public record StalledRow(String sha256, String filename, String state, String updatedAt,

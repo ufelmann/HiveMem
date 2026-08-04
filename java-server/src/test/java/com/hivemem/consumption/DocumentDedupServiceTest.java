@@ -32,6 +32,7 @@ class DocumentDedupServiceTest {
     private final UUID target = UUID.randomUUID();
     private final UUID original = UUID.randomUUID();
     private final UUID attId = UUID.randomUUID();
+    private static final OffsetDateTime CANDIDATE_CREATED_AT = OffsetDateTime.parse("2026-05-01T10:00:00Z");
 
     @BeforeEach
     void setUp() {
@@ -59,7 +60,8 @@ class DocumentDedupServiceTest {
     @Test
     void discardsWhenBothStagesPass() {
         when(repo.findSimilarOlderCandidates(eq(target), anyDouble(), anyInt())).thenReturn(List.of(
-                new DocumentDedupRepository.Candidate(original, "Rechnung 4711 Betrag 199", 0.99)));
+                new DocumentDedupRepository.Candidate(
+                        original, "Rechnung 4711 Betrag 199", 0.99, CANDIDATE_CREATED_AT)));
         when(repo.findAttachmentKeysForCell(target)).thenReturn(Optional.of(
                 new DocumentDedupRepository.AttachmentKeys(attId, "orig.pdf", "thumb.jpg")));
         when(repo.countOtherLiveCellsForAttachment(attId, target)).thenReturn(0);
@@ -76,7 +78,8 @@ class DocumentDedupServiceTest {
     @Test
     void keepsAttachmentBinaryWhenStillReferenced() {
         when(repo.findSimilarOlderCandidates(eq(target), anyDouble(), anyInt())).thenReturn(List.of(
-                new DocumentDedupRepository.Candidate(original, "Rechnung 4711 Betrag 199", 0.99)));
+                new DocumentDedupRepository.Candidate(
+                        original, "Rechnung 4711 Betrag 199", 0.99, CANDIDATE_CREATED_AT)));
         when(repo.findAttachmentKeysForCell(target)).thenReturn(Optional.of(
                 new DocumentDedupRepository.AttachmentKeys(attId, "orig.pdf", null)));
         when(repo.countOtherLiveCellsForAttachment(attId, target)).thenReturn(1);
@@ -92,7 +95,8 @@ class DocumentDedupServiceTest {
     @Test
     void s3FailureStillSoftDeletesAttachment() {
         when(repo.findSimilarOlderCandidates(eq(target), anyDouble(), anyInt())).thenReturn(List.of(
-                new DocumentDedupRepository.Candidate(original, "Rechnung 4711 Betrag 199", 0.99)));
+                new DocumentDedupRepository.Candidate(
+                        original, "Rechnung 4711 Betrag 199", 0.99, CANDIDATE_CREATED_AT)));
         when(repo.findAttachmentKeysForCell(target)).thenReturn(Optional.of(
                 new DocumentDedupRepository.AttachmentKeys(attId, "orig.pdf", null)));
         when(repo.countOtherLiveCellsForAttachment(attId, target)).thenReturn(0);
@@ -107,10 +111,84 @@ class DocumentDedupServiceTest {
     @Test
     void noDiscardWhenTextGateFails() {
         when(repo.findSimilarOlderCandidates(eq(target), anyDouble(), anyInt())).thenReturn(List.of(
-                new DocumentDedupRepository.Candidate(original, "Mietvertrag Wohnung Kaution", 0.99)));
+                new DocumentDedupRepository.Candidate(
+                        original, "Mietvertrag Wohnung Kaution", 0.99, CANDIDATE_CREATED_AT)));
 
         assertTrue(service.findAndDiscardDuplicate(target).isEmpty());
         verify(repo, never()).linkAndSoftDelete(any(), any(), any(), any());
+    }
+
+    @Test
+    void discardsWhenCandidateCosineIsSqlNull() {
+        // Candidate.cosine is nullable because a channel may not compute one (the lexical channel
+        // added in a later task) — the service must discard on the text gate alone. No vector-channel
+        // row can currently produce a NULL cosine; this guards the shape, not an observed occurrence.
+        when(repo.findSimilarOlderCandidates(eq(target), anyDouble(), anyInt())).thenReturn(List.of(
+                new DocumentDedupRepository.Candidate(
+                        original, "Rechnung 4711 Betrag 199", null, CANDIDATE_CREATED_AT)));
+        when(repo.findAttachmentKeysForCell(target)).thenReturn(Optional.of(
+                new DocumentDedupRepository.AttachmentKeys(attId, "orig.pdf", "thumb.jpg")));
+        when(repo.countOtherLiveCellsForAttachment(attId, target)).thenReturn(0);
+
+        Optional<UUID> result = service.findAndDiscardDuplicate(target);
+
+        assertEquals(Optional.of(original), result);
+        verify(repo).linkAndSoftDelete(eq(target), eq(original), any(), any());
+    }
+
+    // A synthetic long-ish document and its re-scan. The ORIGINAL is one token SHORTER than the
+    // re-scan — the asymmetric direction that a conjunctive tsquery would miss and that the lexical
+    // channel exists to cover. The service must still confirm and discard.
+    private static final String RESCAN_TEXT =
+            "[page=1] Zusatzvereinbarung zwischen der Beispielfirma Musterbau GmbH und dem "
+            + "Auftragnehmer ueber die Erbringung von Beratungsleistungen im Geschaeftsjahr 2026. "
+            + "Die Vertragsparteien vereinbaren eine monatliche Verguetung in Hoehe von "
+            + "eintausendzweihundert Euro zuzueglich der gesetzlichen Umsatzsteuer. "
+            + "Kuendigungsfrist drei Monate zum Quartalsende, Gerichtsstand ist Musterstadt.";
+    private static final String ORIGINAL_TEXT = RESCAN_TEXT.replace(" ist Musterstadt", "");
+
+    @Test
+    void discardsWhenTheOlderTwinIsOneTokenShorter() {
+        when(repo.findTarget(target)).thenReturn(Optional.of(
+                new DocumentDedupRepository.TargetCell(target, RESCAN_TEXT, "consumption:b",
+                        OffsetDateTime.parse("2026-06-01T10:00:00Z"))));
+        // cosine null: found by the lexical channel only, which is the case this fix is about.
+        when(repo.findSimilarOlderCandidates(eq(target), anyDouble(), anyInt())).thenReturn(List.of(
+                new DocumentDedupRepository.Candidate(original, ORIGINAL_TEXT, null, CANDIDATE_CREATED_AT)));
+
+        assertEquals(Optional.of(original), service.findAndDiscardDuplicate(target));
+        verify(repo).linkAndSoftDelete(eq(target), eq(original), any(), any());
+    }
+
+    @Test
+    void keepsLexicallyOverlappingButDifferentDocument() {
+        String different =
+                "[page=1] Zusatzvereinbarung zwischen der Beispielfirma Musterbau GmbH und dem "
+                + "Auftragnehmer ueber die Rueckgabe des Dienstfahrzeuges nach Beendigung des "
+                + "Arbeitsverhaeltnisses. Das Fahrzeug ist gereinigt und vollgetankt am "
+                + "Betriebsgelaende abzustellen.";
+        when(repo.findTarget(target)).thenReturn(Optional.of(
+                new DocumentDedupRepository.TargetCell(target, RESCAN_TEXT, "consumption:b",
+                        OffsetDateTime.parse("2026-06-01T10:00:00Z"))));
+        when(repo.findSimilarOlderCandidates(eq(target), anyDouble(), anyInt())).thenReturn(List.of(
+                new DocumentDedupRepository.Candidate(original, different, null, CANDIDATE_CREATED_AT)));
+
+        assertTrue(service.findAndDiscardDuplicate(target).isEmpty());
+        verify(repo, never()).linkAndSoftDelete(any(), any(), any(), any());
+    }
+
+    /** The repository hands back a merged, oldest-first list; the service takes the first match. */
+    @Test
+    void takesTheFirstMatchingCandidateOfTheMergedList() {
+        UUID newer = UUID.randomUUID();
+        when(repo.findSimilarOlderCandidates(eq(target), anyDouble(), anyInt())).thenReturn(List.of(
+                new DocumentDedupRepository.Candidate(
+                        original, "Rechnung 4711 Betrag 199", null, CANDIDATE_CREATED_AT),
+                new DocumentDedupRepository.Candidate(
+                        newer, "Rechnung 4711 Betrag 199", 0.99, CANDIDATE_CREATED_AT.plusDays(1))));
+
+        assertEquals(Optional.of(original), service.findAndDiscardDuplicate(target));
+        verify(repo).linkAndSoftDelete(eq(target), eq(original), any(), any());
     }
 
     @Test

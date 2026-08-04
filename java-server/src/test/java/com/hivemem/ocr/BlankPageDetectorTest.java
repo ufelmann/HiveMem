@@ -1,5 +1,6 @@
 package com.hivemem.ocr;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -45,5 +46,27 @@ class BlankPageDetectorTest {
     @Test
     void undecodableBytesAreNotBlank() {
         assertFalse(BlankPageDetector.isNearWhite(new byte[] {1, 2, 3}, 0.995));
+    }
+
+    /** Callers that test one page against two thresholds decode it once and compare the fraction
+     *  themselves, so the fraction has to be reachable and has to agree with {@code isNearWhite}. */
+    @Test
+    void whiteFractionAgreesWithIsNearWhite() throws Exception {
+        byte[] withInk = png(g -> { g.setColor(Color.BLACK); g.fillRect(0, 0, 200, 28); });
+        double f = BlankPageDetector.whiteFraction(withInk);
+        assertTrue(f > 0.85 && f < 0.95, "one tenth of the page inked, got " + f);
+        assertEquals(f >= 0.995, BlankPageDetector.isNearWhite(withInk, 0.995));
+        assertEquals(f >= 0.90, BlankPageDetector.isNearWhite(withInk, 0.90));
+        assertEquals(1.0, BlankPageDetector.whiteFraction(png(g -> {})), 1e-9);
+    }
+
+    /** NaN, not 0.0: an undecodable image must fail every {@code >=} comparison a caller makes, so a
+     *  page is never dropped because its bytes could not be read. */
+    @Test
+    void undecodableBytesHaveNoWhiteFraction() {
+        assertTrue(Double.isNaN(BlankPageDetector.whiteFraction(new byte[] {1, 2, 3})));
+        assertTrue(Double.isNaN(BlankPageDetector.whiteFraction(null)));
+        assertTrue(Double.isNaN(BlankPageDetector.whiteFraction(new byte[0])));
+        assertFalse(BlankPageDetector.whiteFraction(new byte[] {1, 2, 3}) >= 0.0);
     }
 }
