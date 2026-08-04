@@ -11,10 +11,9 @@ import org.junit.jupiter.api.Test;
 
 class ConsumptionQueueServiceTest {
 
-    /** The floor is 1 by default (ConsumptionProperties.minDegradedPages): the two batches that
-     *  actually lost page metadata in prod were 1-of-15 and 1-of-26, both invisible at the historical
-     *  floor of 2. The 2 % ratio branch is what keeps a large run's routine single-page hiccups out
-     *  of the queue instead. */
+    /** The floor is 1 by default (ConsumptionProperties.minDegradedPages): real single-page metadata
+     *  losses were invisible at the historical floor of 2. The blank-ratio branch is the independent
+     *  second signal; both values reach the repository unchanged. */
     private static ConsumptionProperties props() {
         ConsumptionProperties p = new ConsumptionProperties();
         p.setRecoveryStaleThreshold(java.time.Duration.ofMinutes(30));
@@ -22,7 +21,7 @@ class ConsumptionQueueServiceTest {
     }
 
     @Test
-    void aSingleDegradedPageDoesNotReachTheQueue() {
+    void queuePassesTheConfiguredFloorAndBlankRatioToTheRepository() {
         ConsumptionFileRepository repo = mock(ConsumptionFileRepository.class);
         when(repo.findDegradedBatches(anyInt(), anyDouble(), anyInt())).thenReturn(List.of());
         when(repo.countsByState()).thenReturn(Map.of("done", 20));
@@ -30,9 +29,8 @@ class ConsumptionQueueServiceTest {
         when(sweep.lastReconciliation())
                 .thenReturn(new ConsumptionRecoverySweep.Reconciliation(0, 0, 0));
 
-        var queue = new ConsumptionQueueService(repo, sweep, props()).queue(50);
+        new ConsumptionQueueService(repo, sweep, props()).queue(50);
 
-        assertTrue(queue.degradedBatches().isEmpty());
         verify(repo).findDegradedBatches(1, 0.60, 50);   // default floor 1, default blank ratio alert 0.60
     }
 

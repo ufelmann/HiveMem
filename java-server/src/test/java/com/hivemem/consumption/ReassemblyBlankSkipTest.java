@@ -238,6 +238,44 @@ class ReassemblyBlankSkipTest {
         }
     }
 
+    /** Provider outage: every metadata call fails on every page. A pixel-blank page must still not
+     *  be deleted — no page may disappear without a model verdict, and during an outage there is
+     *  none. The 0.995 post-check remains the only pixel-only authority, and a stamp-only page sits
+     *  below it. Uses a REAL extractor over a vision client that always throws, so the both-attempts
+     *  -failed branch is exercised rather than stubbed. */
+    @Test
+    void aPixelBlankPageSurvivesWhenBothExtractAttemptsFail() throws Exception {
+        Rig r = Rig.create();
+        VisionMultiClient vision = mock(VisionMultiClient.class);
+        when(vision.group(anyString(), anyString(), anyList()))
+                .thenThrow(new IllegalStateException("vision provider unavailable"));
+        PageMetadataExtractor realExtractor = new PageMetadataExtractor(vision);
+        ReassemblyOrchestrator orchestrator = new ReassemblyOrchestrator(r.props(), r.rasterizer(),
+                r.orienter(), realExtractor, r.assembler(), r.reassembler(), new BatchSplitter(),
+                r.attachments(), r.mover());
+
+        ConsumptionProperties props = new ConsumptionProperties();
+        Assertions.assertTrue(
+                BlankPageDetector.isNearWhite(stampOnlyPage(), props.getBlankSkipWhiteFraction()),
+                "the page must be pixel-blank, or this test proves nothing");
+        when(r.assembler().assemble(anyString(), anyList())).thenReturn(List.of(group("d", 0.9, 1)));
+        stubPages(r.rasterizer(), List.of(stampOnlyPage()));
+        when(r.reassembler().toDocuments(any(), eq(1)))
+                .thenReturn(List.of(new PageReassembler.ResultDoc(List.of(1), "committed")));
+
+        orchestrator.reassemble(Path.of("Scan_outage.pdf"), nPagePdf(1), 1, "h", r.fileRepo());
+
+        // Neither a blank nor a degraded page: nothing to delete, and nothing to alert on either.
+        verify(r.fileRepo()).recordPageStats("h", 1, 0, 0);
+        ArgumentCaptor<InputStream> pdf = ArgumentCaptor.forClass(InputStream.class);
+        verify(r.attachments(), times(1)).ingest(pdf.capture(), anyString(), eq("application/pdf"),
+                any(), any(), any(), any(), eq("consumption"), anyString(), eq("consumption:"));
+        try (PDDocument ingested = Loader.loadPDF(pdf.getValue().readAllBytes())) {
+            Assertions.assertEquals(1, ingested.getNumberOfPages(),
+                    "a vision outage must not delete a page on a pixel judgement alone");
+        }
+    }
+
     /** The existing 0.995 post-check is untouched and still the last word on a fully white page,
      *  even when the model votes non-blank. */
     @Test

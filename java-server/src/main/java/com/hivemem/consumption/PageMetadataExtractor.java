@@ -54,9 +54,9 @@ public class PageMetadataExtractor {
      *
      *  @param pixelBlank the page read as near-white before the call. It only matters when BOTH
      *      attempts fail: on a white page the model sometimes answers with prose instead of JSON,
-     *      and with the pixel finding in hand that is a blank page rather than a degradation. It
-     *      never overrides a reply that did parse — the model's own verdict wins whenever there is
-     *      one, which is what keeps a stamp-only page out of the delete list. */
+     *      and with the pixel finding in hand that is not a degradation. It never makes the row
+     *      blank — only a model verdict may put a page on the delete list — and it never overrides
+     *      a reply that did parse. Both rules keep a stamp-only page out of the delete list. */
     public PageMetadata extract(String realm, int page, byte[] uprightPng, boolean pixelBlank) {
         List<VisionMultiClient.Image> images = List.of(
                 new VisionMultiClient.Image("image/png", Base64.getEncoder().encodeToString(uprightPng)));
@@ -78,11 +78,19 @@ public class PageMetadataExtractor {
                 log.warn("Metadata attempt {}/2 failed for page {}: {}", attempt, page, e.toString());
             }
         }
-        // Both attempts failed. A page the pixels already called near-white is blank, not degraded —
-        // this is exactly the prose-instead-of-JSON reply a white page provokes.
+        // Both attempts failed. A page the pixels already called near-white is not a degradation —
+        // this is exactly the prose-instead-of-JSON reply a white page provokes — but it is not put
+        // on the delete list either: `blank` deletes, and no model verdict exists here. During a
+        // provider outage every page fails both attempts, and a stamp-only sheet reads whiter than a
+        // real blank backside, so a `blank=true` here would silently drop exactly the page class this
+        // design exists to protect. A genuinely white backside is still caught by the untouched 0.995
+        // post-check in ReassemblyOrchestrator; `degraded=false` still removes the degradation cause
+        // that the lowered queue floor depends on. The cost is an occasional blank page surviving
+        // into the archive — the same trade this design already made: rotated is recoverable,
+        // deleted is not.
         if (pixelBlank) {
             return new PageMetadata(page, null, null, null, "blank", null,
-                    "blank page (no metadata reply, near-white)", true, false);
+                    "blank page (no metadata reply, near-white)", false, false);
         }
         return new PageMetadata(page, null, null, null, null, null, null, false, true);
     }

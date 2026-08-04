@@ -182,9 +182,15 @@ consumption executor, never throws to the caller):
    and a one-line summary. If both extraction attempts fail to parse (the model
    occasionally answers a near-white page with prose instead of the expected
    structured output) *and* the page was pixel-blank per the pre-check above,
-   the page is recorded as blank rather than as degraded — closing the gap
-   where a page that produced no metadata for an unrelated reason used to be
-   miscounted as a parsing failure instead of a blank page.
+   the page is recorded as **not degraded** — closing the gap where a
+   near-white page whose reply merely failed to parse used to be counted as a
+   metadata loss and flood the review queue. It is **not** recorded as blank:
+   `blank` is the delete list and no model verdict exists in this branch. So
+   during a vision-provider outage, where every page fails both attempts, no
+   page is deleted on a pixel judgement — a genuinely white backside is still
+   caught by the post-check in step 5. The cost is an occasional blank page
+   surviving into the archive, which is the same trade as the missed rotation
+   above: recoverable, unlike a deletion.
 3. **Pass 3 — assembly, text-only.** `MailingAssembler` sends all pages'
    extracted metadata (no images) in a single call and asks the model to group
    pages into mailings, in reading order within each mailing. Grouping is a
@@ -210,13 +216,12 @@ consumption executor, never throws to the caller):
      `1..N`. A mailing that mixes a letter with enclosures is never reordered —
      without a way to tell two printed sequences apart, reordering could splice
      one document into another.
-5. **Blank drop.** A page is dropped if any of three signals calls it blank: the
-   pass-1 vision verdict (on pages that got an orientation call), the pass-2
-   fallback described above (a pixel-blank page whose metadata call also
-   failed to parse), or the pixel-based post-check
-   (`blank-filter-enabled` / `blank-white-fraction`) applied to every page
-   regardless of the pre-check outcome. This post-check is intentionally
-   **stricter** (fires on fewer pages) than the pre-check in step 1 above — the
+5. **Blank drop.** A page is dropped if either of two signals calls it blank: a
+   model verdict — the pass-1 orientation call's blank vote (on pages that got
+   one) or the pass-2 metadata reply's `blank` field — or the pixel-based
+   post-check (`blank-filter-enabled` / `blank-white-fraction`) applied to
+   every page regardless of the pre-check outcome. This post-check is
+   intentionally **stricter** (fires on fewer pages) than the pre-check in step 1 above — the
    pre-check only ever skips a vision call, while this one drops the page
    outright, so it is held to a tighter whiteness bar. A mailing whose pages
    are all blank never becomes a cell.

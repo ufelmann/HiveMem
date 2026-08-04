@@ -72,18 +72,21 @@ class PageMetadataExtractorTest {
     }
 
     /** The belt for the prose reply: on a white page the model sometimes answers with prose instead
-     *  of JSON, which fails both attempts. With the pixel finding in hand that is a blank page, not
-     *  a degradation — this was the sole cause of both degraded pages in the verification run. */
+     *  of JSON, which fails both attempts. With the pixel finding in hand that is not a degradation
+     *  — this was the sole cause of both degraded pages in the verification run. It is not blank
+     *  either: blank is a delete list and there is no model verdict here, so during a provider
+     *  outage the page must survive and let the 0.995 post-check have the last word. */
     @Test
-    void twoFailedAttemptsOnAPixelBlankPageAreBlankNotDegraded() {
+    void twoFailedAttemptsOnAPixelBlankPageAreNeitherBlankNorDegraded() {
         VisionMultiClient vision = mock(VisionMultiClient.class);
         when(vision.group(anyString(), anyString(), anyList()))
                 .thenReturn("I need you to provide the file path to the scanned document image.");
 
         var meta = new PageMetadataExtractor(vision).extract("documents", 7, new byte[]{1, 2, 3}, true);
 
-        assertTrue(meta.blank(), "a pixel-blank page whose extraction failed twice is blank");
-        assertFalse(meta.degraded(), "and it is not a degradation");
+        assertFalse(meta.blank(), "no model verdict, so the page must not reach the delete list");
+        assertFalse(meta.degraded(), "and it is not a degradation either");
+        assertEquals("blank", meta.docType(), "the pixel finding still lands in the metadata");
         assertEquals(7, meta.page());
         verify(vision, times(2)).group(anyString(), anyString(), anyList());
     }

@@ -289,11 +289,6 @@ public class DocumentDedupRepository {
                 ? new Object[] {limit} : new Object[] {afterCreatedAt, afterId, limit};
     }
 
-    public int softDeleteCell(UUID cellId) {
-        return dsl.execute(
-                "UPDATE cells SET valid_until = now() WHERE id = ? AND valid_until IS NULL", cellId);
-    }
-
     /**
      * Atomically write the {@code duplicate_of} audit tunnel AND soft-delete the duplicate cell in a
      * single transaction. This keeps the core dedup invariant: we never soft-delete a cell without

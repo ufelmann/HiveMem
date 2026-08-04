@@ -93,11 +93,12 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
         dsl.execute("INSERT INTO attachments (id, file_hash, mime_type, original_filename, "
                 + "size_bytes, s3_key_original, uploaded_by) VALUES (?, ?, 'application/pdf', 'x.pdf', 1, ?, 'system')",
                 att, "hash-" + att, "key-" + att);
+        UUID original = seedCell("Rechnung 4711", VEC_A, "consumption:a", "committed", t0.minusMinutes(5));
         UUID dup = seedCell("Rechnung 4711", VEC_A, "consumption:b", "committed", t0);
         linkAttachment(dup, att);
 
         assertEquals(1, repo.countOtherLiveCellsForAttachment(att, UUID.randomUUID()));
-        assertTrue(repo.softDeleteCell(dup) >= 1);
+        repo.linkAndSoftDelete(dup, original, "auto-dedup note", "system-dedup");
         // After soft-delete the dup is no longer "live".
         assertEquals(0, repo.countOtherLiveCellsForAttachment(att, dup));
 
