@@ -423,7 +423,11 @@ class SearchParityIntegrationTest {
                 "include", List.of("scores")
         ));
 
-        // 7 accesses (of 25) yield 0.28, not 1.0 -- the property whose absence caused the bug.
+        // 7 accesses (of 25) yield 0.28. Under the old formula this fixture's observed
+        // maximum was 40 (fortyHitsCellId below), so the old value here would have been
+        // 7/40 = 0.175 -- not 1.0. The point isn't that the old value was 1.0 in every
+        // fixture, it's that it was contingent on whatever else happened to be in the
+        // corpus at all; the new value never is.
         assertThat(scoreOf(results, sevenHitsCellId)).isCloseTo(0.28f, within(1e-4f));
         // 2 accesses yield 0.08, not 0.2857.
         assertThat(scoreOf(results, twoHitsCellId)).isCloseTo(0.08f, within(1e-4f));
@@ -482,6 +486,96 @@ class SearchParityIntegrationTest {
 
         float gap = totalOf(results, sevenHitsCellId) - totalOf(results, twoHitsCellId);
         assertThat(gap).isCloseTo(0.030f, within(1e-3f));
+    }
+
+    @Test
+    void confidenceLevelHighSetDiffersBetweenOldStyleAndNewStylePopularityDistribution() throws Exception {
+        // Spec §3.1's sixth case, as an actual before/after ranking comparison rather
+        // than a standalone unit check on ConfidenceLevel.classify: ConfidenceLevel is
+        // relative to the result-set distribution and therefore invariant to any affine
+        // (scale+shift) transform applied uniformly to every score, so a test that just
+        // shows "scores shrink a bit" would prove nothing. What has to be shown is that
+        // the SAME cell set, ranked twice through the deployed ranked_search function,
+        // produces a DIFFERENT HIGH membership.
+        //
+        // Both distributions are reachable through the single deployed (new-formula)
+        // function purely by varying access counts:
+        //   - "old-style": give the outlier cell 25 accesses -> pop = 25/25 = 1.0, the
+        //     same value the OLD max-normalization formula produced for a cell that IS
+        //     the observed maximum (e.g. this repo's real corpus, where 7 accesses WAS
+        //     the observed maximum -> old pop = 7/7 = 1.0).
+        //   - "new-style": give the same cell 7 accesses -> pop = 7/25 = 0.28, the value
+        //     the NEW fixed-reference formula actually produces for that same historical
+        //     access count.
+        // Ranking the same 5-cell set once under each condition and diffing the HIGH
+        // sets is the property that would fail on a revert of the template/migration
+        // change and passes with it in place.
+        UUID popularCellId = UUID.fromString("00000000-0000-0000-0000-000000000881");
+        UUID bgImportance5 = UUID.fromString("00000000-0000-0000-0000-000000000882");
+        UUID bgImportance4 = UUID.fromString("00000000-0000-0000-0000-000000000883");
+        UUID bgImportance3 = UUID.fromString("00000000-0000-0000-0000-000000000884");
+        UUID bgImportance2 = UUID.fromString("00000000-0000-0000-0000-000000000885");
+        OffsetDateTime ts = OffsetDateTime.parse("2026-04-03T13:00:00Z");
+        // Identical content across all five cells keeps score_semantic (0, no embedding
+        // set), score_keyword and score_recency equal for all of them; only
+        // score_importance and score_popularity differ, isolating the popularity effect
+        // exactly as the spec's sixth case requires.
+        String content = "Widget deployment procedure notes shared across the corpus";
+
+        insertDrawer(popularCellId, content, "eng", "facts", "pop", 1,
+                "popular cell, weakest content signal", "committed", ts);
+        insertDrawer(bgImportance5, content, "eng", "facts", "pop", 5, "background five", "committed", ts);
+        insertDrawer(bgImportance4, content, "eng", "facts", "pop", 4, "background four", "committed", ts);
+        insertDrawer(bgImportance3, content, "eng", "facts", "pop", 3, "background three", "committed", ts);
+        insertDrawer(bgImportance2, content, "eng", "facts", "pop", 2, "background two", "committed", ts);
+
+        for (int i = 0; i < 25; i++) adminToolService.logAccess(popularCellId, null, "admin");
+        adminToolService.refreshPopularity();
+
+        JsonNode oldStyleResults = callTool("writer-token", "search", Map.of(
+                "query", "widget deployment procedure",
+                "limit", 10,
+                "include", List.of("scores")
+        ));
+        assertThat(scoreOf(oldStyleResults, popularCellId)).isCloseTo(1.0f, within(1e-4f));
+        assertThat(confidenceOf(oldStyleResults, popularCellId)).isEqualTo("HIGH");
+        java.util.Set<String> highOld = highIds(oldStyleResults);
+
+        dslContext.execute("DELETE FROM access_log WHERE cell_id = ?", popularCellId);
+        for (int i = 0; i < 7; i++) adminToolService.logAccess(popularCellId, null, "admin");
+        adminToolService.refreshPopularity();
+
+        JsonNode newStyleResults = callTool("writer-token", "search", Map.of(
+                "query", "widget deployment procedure",
+                "limit", 10,
+                "include", List.of("scores")
+        ));
+        assertThat(scoreOf(newStyleResults, popularCellId)).isCloseTo(0.28f, within(1e-4f));
+        assertThat(confidenceOf(newStyleResults, popularCellId)).isNotEqualTo("HIGH");
+        java.util.Set<String> highNew = highIds(newStyleResults);
+
+        assertThat(highOld).contains(popularCellId.toString());
+        assertThat(highNew).doesNotContain(popularCellId.toString());
+        assertThat(highOld).isNotEqualTo(highNew);
+    }
+
+    private String confidenceOf(JsonNode results, UUID cellId) {
+        for (JsonNode row : results) {
+            if (row.path("id").asText().equals(cellId.toString())) {
+                return row.path("confidence_level").asText();
+            }
+        }
+        throw new AssertionError("cell not found in results: " + cellId);
+    }
+
+    private java.util.Set<String> highIds(JsonNode results) {
+        java.util.Set<String> ids = new java.util.LinkedHashSet<>();
+        for (JsonNode row : results) {
+            if ("HIGH".equals(row.path("confidence_level").asText())) {
+                ids.add(row.path("id").asText());
+            }
+        }
+        return ids;
     }
 
     private float scoreOf(JsonNode results, UUID cellId) {
