@@ -214,7 +214,11 @@ public class ConsumptionFileRepository {
      *  batch is unknown, not clean, and must not silently pass this filter either way. {@code
      *  blank_pages} is nullable for rows recorded before V0055; a NULL numerator makes the division
      *  NULL, which is never {@code > blankRatioAlert}, so such rows never surface via that branch
-     *  without an explicit NULL check. */
+     *  without an explicit NULL check. The blank branch also requires {@code degraded_pages IS NOT
+     *  NULL}: without it, branch A's {@code degraded_pages >= ?} is the only thing that used to
+     *  guarantee a non-NULL value reaching the {@code DegradedBatch} mapper's primitive {@code int}
+     *  fields below — a row with a NULL degraded_pages but a real blank-page ratio would otherwise
+     *  NPE on unboxing. */
     public List<DegradedBatch> findDegradedBatches(int minDegraded, double blankRatioAlert, int limit) {
         var rows = dsl.fetch("""
                 SELECT sha256, filename, total_pages, degraded_pages, blank_pages, updated_at
@@ -222,7 +226,8 @@ public class ConsumptionFileRepository {
                 WHERE (degraded_pages >= ?
                        AND total_pages > 0
                        AND degraded_pages::numeric / total_pages > 0.02)
-                   OR (total_pages > 0 AND blank_pages::numeric / total_pages > ?)
+                   OR (total_pages > 0 AND degraded_pages IS NOT NULL
+                       AND blank_pages::numeric / total_pages > ?)
                 ORDER BY updated_at DESC
                 LIMIT ?
                 """, minDegraded, blankRatioAlert, limit);
