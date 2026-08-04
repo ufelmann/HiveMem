@@ -233,6 +233,73 @@ class ToolPermissionServiceRealmTest {
         assertThat(svc.filterReadResponse(writeOnlyScoped(), "search", args("{}"), result)).isEqualTo(result);
     }
 
+    // ---- H1: stringified `where` (MCP bridges stringify object args) ----
+    // Production regression (Dracul strigoi-index, run 8C9A4F0B8EFC4C159626538ED6C5FC91): the
+    // realm rewrite ran before the handler's string coercion and replaced the caller's textual
+    // `where` with a fresh {realm_in:[...]} node, so every filter silently vanished and two
+    // different symbol filters returned the byte-identical newest-rows page.
+
+    @Test void rewriteParsesStringifiedWhereAndKeepsCallerKeys() throws Exception {
+        JsonNode out = svc.rewriteReadArgs(scoped(), "search",
+                args("{\"limit\":\"5\",\"where\":\"{\\\"realm\\\": \\\"dracul-research\\\", \\\"topic\\\": \\\"EA\\\"}\"}"));
+        assertThat(out.path("where").isObject()).isTrue(); // normalized for every where-consumer
+        assertThat(out.path("where").path("realm").asText()).isEqualTo("dracul-research");
+        assertThat(out.path("where").path("topic").asText()).isEqualTo("EA");
+        assertThat(out.path("limit").asText()).isEqualTo("5"); // untouched, handler coerces it
+        // caller pinned a visible realm -> no realm_in injection, DB already restricts
+        assertThat(out.path("where").has("realm_in")).isFalse();
+    }
+
+    @Test void rewriteParsesStringifiedWhereWithoutRealmAndInjectsRealmIn() throws Exception {
+        JsonNode out = svc.rewriteReadArgs(scoped(), "search",
+                args("{\"where\":\"{\\\"topic\\\": \\\"EA\\\"}\"}"));
+        assertThat(out.path("where").path("topic").asText()).isEqualTo("EA"); // caller key survives
+        assertThat(out.path("where").path("realm_in")).hasSize(2);            // scope still applied
+    }
+
+    @Test void stringifiedWhereForeignRealmDenied() throws Exception {
+        // The precheck must see through the stringification too — otherwise the rewrite would
+        // now leave a caller-pinned foreign realm untouched and unfiltered at the DB level.
+        assertThat(svc.realmDenial(scoped(), "search",
+                args("{\"where\":\"{\\\"realm\\\": \\\"personal\\\"}\"}"))).isPresent();
+    }
+
+    @Test void stringifiedWhereForeignRealmInDenied() throws Exception {
+        assertThat(svc.realmDenial(scoped(), "search",
+                args("{\"where\":\"{\\\"realm_in\\\": [\\\"personal\\\"]}\"}"))).isPresent();
+    }
+
+    @Test void stringifiedWhereVisibleRealmAllowed() throws Exception {
+        assertThat(svc.realmDenial(scoped(), "search",
+                args("{\"where\":\"{\\\"realm\\\": \\\"dracul\\\"}\"}"))).isEmpty();
+    }
+
+    // Malformed textual where: left verbatim, never replaced by a fresh scoped node. The handler
+    // rejects it loudly ("Invalid where" / "where must be an object"); the scope is not widened
+    // because no rows are ever fetched, and filterReadResponse remains the backstop.
+    @Test void malformedStringifiedWhereLeftUntouchedNotSwallowed() throws Exception {
+        JsonNode out = svc.rewriteReadArgs(scoped(), "search", args("{\"where\":\"not json at all\"}"));
+        assertThat(out.path("where").isTextual()).isTrue();
+        assertThat(out.path("where").asText()).isEqualTo("not json at all");
+        assertThat(out.path("where").has("realm_in")).isFalse();
+    }
+    @Test void stringifiedNonObjectWhereLeftUntouched() throws Exception {
+        JsonNode out = svc.rewriteReadArgs(scoped(), "search", args("{\"where\":\"[1,2]\"}"));
+        assertThat(out.path("where").isTextual()).isTrue();
+        assertThat(out.path("where").asText()).isEqualTo("[1,2]");
+        assertThat(out.has("realm_in")).isFalse();
+    }
+    @Test void malformedStringifiedWhereNotDenied_handlerRejectsIt() throws Exception {
+        assertThat(svc.realmDenial(scoped(), "search", args("{\"where\":\"not json\"}"))).isEmpty();
+    }
+
+    @Test void rewriteParsesStringifiedWhereForListCellIds() throws Exception {
+        JsonNode out = svc.rewriteReadArgs(scoped(), "list_cell_ids",
+                args("{\"where\":\"{\\\"signal\\\": \\\"facts\\\"}\"}"));
+        assertThat(out.path("where").path("signal").asText()).isEqualTo("facts");
+        assertThat(out.path("where").path("realm_in")).hasSize(2);
+    }
+
     // ---- BACKWARD COMPAT (NULL/NULL = no-op) ----
     @Test void unscopedNeverDenied() throws Exception {
         for (String t : List.of("add_cell","reclassify","traverse","data_quality_report","list")) {

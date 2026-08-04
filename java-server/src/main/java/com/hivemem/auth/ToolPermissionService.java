@@ -253,8 +253,8 @@ public class ToolPermissionService {
         if (topRealm.isTextual() && !topRealm.asText().isBlank() && !allowed.contains(topRealm.asText())) {
             return Optional.of(topRealm.asText());
         }
-        JsonNode where = arguments.path("where");
-        if (where.isObject()) {
+        ObjectNode where = whereObject(arguments);
+        if (where != null) {
             JsonNode whereRealm = where.path("realm");
             if (whereRealm.isTextual() && !whereRealm.asText().isBlank()
                     && !allowed.contains(whereRealm.asText())) {
@@ -272,6 +272,42 @@ public class ToolPermissionService {
         return Optional.empty();
     }
 
+    /**
+     * The caller's {@code where} as an object: the node itself, or — when an MCP bridge stringified
+     * the arguments ({@code where:"{\"realm\":\"x\"}"}, observed live) — the JSON string parsed back
+     * into an object. Returns {@code null} when there is no {@code where}, when the string is not
+     * valid JSON, or when it parses to something other than an object (array, number, string).
+     *
+     * <p>Every realm decision below must go through this: reading only {@code where.isObject()}
+     * made a textual {@code where} invisible to the realm logic, which then threw the caller's
+     * filter away (H1).
+     */
+    private static ObjectNode whereObject(JsonNode arguments) {
+        if (arguments == null) {
+            return null;
+        }
+        JsonNode where = arguments.path("where");
+        if (where.isObject()) {
+            return (ObjectNode) where;
+        }
+        if (where.isTextual()) {
+            try {
+                JsonNode parsed = MAPPER.readTree(where.asText());
+                if (parsed != null && parsed.isObject()) {
+                    return (ObjectNode) parsed;
+                }
+            } catch (RuntimeException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /** True when {@code where} is a string that does not parse to a JSON object. */
+    private static boolean whereIsUnparseableString(JsonNode arguments) {
+        return arguments != null && arguments.path("where").isTextual() && whereObject(arguments) == null;
+    }
+
     /** True when the caller has explicitly named any realm (top-level or via where). */
     private static boolean namesAnyRealm(JsonNode arguments) {
         if (arguments == null) {
@@ -281,8 +317,8 @@ public class ToolPermissionService {
         if (topRealm.isTextual() && !topRealm.asText().isBlank()) {
             return true;
         }
-        JsonNode where = arguments.path("where");
-        if (where.isObject()) {
+        ObjectNode where = whereObject(arguments);
+        if (where != null) {
             JsonNode whereRealm = where.path("realm");
             if (whereRealm.isTextual() && !whereRealm.asText().isBlank()) {
                 return true;
@@ -306,6 +342,10 @@ public class ToolPermissionService {
      * filter params into the {@code where} object to respect the handler's where/flat exclusivity.
      * {@code list} is not injectable (its single {@code realm} arg selects the enumeration level),
      * so it relies solely on {@link #filterReadResponse}.
+     *
+     * <p>A stringified {@code where} (MCP bridges do this) is parsed into an object first and
+     * handed on in that normalized form — the caller's keys are never dropped. A {@code where}
+     * string that is not a JSON object is passed through verbatim so the handler rejects it.
      */
     public JsonNode rewriteReadArgs(AuthPrincipal principal, String toolName, JsonNode arguments) {
         if (principal == null || principal.readRealms() == null) {
@@ -314,16 +354,30 @@ public class ToolPermissionService {
         if (!READ_REALM_IN_INJECT_TOOLS.contains(toolName)) {
             return arguments;
         }
-        if (namesAnyRealm(arguments)) {
-            // Caller pinned realm(s); precheck guaranteed they are visible. DB already filters.
-            return arguments == null ? null : arguments.deepCopy();
+        if (whereIsUnparseableString(arguments)) {
+            // A `where` string that is not a JSON object: hand it through verbatim instead of
+            // replacing it with a fresh {realm_in:[...]} node. Rewriting it would silently discard
+            // whatever the caller meant and answer a different question; leaving it makes the
+            // handler reject it loudly ("Invalid where" / "where must be an object"). The scope is
+            // not widened by this — no rows are fetched at all, and filterReadResponse still drops
+            // foreign rows should any handler ever tolerate the malformed value.
+            return arguments.deepCopy();
         }
         ObjectNode root = (arguments != null && arguments.isObject())
                 ? (ObjectNode) arguments.deepCopy()
                 : MAPPER.createObjectNode();
-        ObjectNode where = (root.path("where").isObject())
-                ? (ObjectNode) root.get("where")
-                : MAPPER.createObjectNode();
+        ObjectNode parsedWhere = whereObject(root);
+        if (parsedWhere != null) {
+            // Normalize a stringified where into an object so the injected realm_in lands in the
+            // same node as the caller's keys — and so where-consumers that do not coerce strings
+            // themselves (facet_count, list_cell_ids) see a usable filter.
+            root.set("where", parsedWhere);
+        }
+        if (namesAnyRealm(root)) {
+            // Caller pinned realm(s); precheck guaranteed they are visible. DB already filters.
+            return root;
+        }
+        ObjectNode where = parsedWhere != null ? parsedWhere : MAPPER.createObjectNode();
         // Fold flat filter params into `where` so the injected where.realm_in doesn't collide with
         // the handler's where/flat mutual-exclusivity check.
         for (String key : FLAT_FILTER_KEYS.getOrDefault(toolName, Set.of())) {

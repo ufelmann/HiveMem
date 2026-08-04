@@ -119,7 +119,12 @@ against `/sync/ops`, `/hooks/context`, or other non-MCP routes, regardless of ro
 Within `/mcp`, enforcement differs by tool surface (v1):
 
 - **Realm-filtered**: ordinary reads/writes (`search`, `add_cell`, `list`, etc.) are
-  rewritten/filtered to the token's `read_realms`/`write_realms`.
+  rewritten/filtered to the token's `read_realms`/`write_realms`. The rewrite preserves
+  every filter the caller sent: a `where` that arrives as a JSON *string* (some MCP
+  bridges stringify object arguments) is parsed first, so its keys survive and the realm
+  scope is applied on top of them. A `where` string that is not a JSON object is passed
+  through unchanged and rejected by the tool with an error — it is never replaced by a
+  realm-only filter, which would silently answer a different question.
 - **Global, not realm-filtered**: the knowledge-graph triple surfaces — `search_kg` and
   `time_machine` — operate across all realms regardless of token scope.
 - **Blocked (403) for scoped tokens in v1**: graph-traversal reads (`traverse`, `history`,
