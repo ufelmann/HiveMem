@@ -24,8 +24,14 @@ import java.util.UUID;
 @RequestMapping("/admin")
 public class AdminController {
 
-    /** Upper bound for one dedup-backfill page: ~150 ms per cell, so this is already ~12 minutes. */
-    private static final int MAX_BACKFILL_LIMIT = 5000;
+    /**
+     * Upper bound for one dedup-backfill page. The walk is synchronous, so a page is bounded by
+     * whatever read timeout sits in front of the application, not by the database: at the measured
+     * ~150 ms per cell this is already ~2.5 minutes. A larger ceiling would only offer the operator
+     * a value that cannot finish through a reverse proxy, and a cut-off request gives no answer as
+     * to whether the work committed.
+     */
+    private static final int MAX_BACKFILL_LIMIT = 1000;
 
     private final InstanceConfig instanceConfig;
     private final TokenService tokenService;
@@ -133,6 +139,13 @@ public class AdminController {
      * previous response back in until {@code remaining} is zero. A smaller {@code limit} buys
      * shorter responses, not less total work.
      *
+     * <p><strong>Loop with the default limit rather than raising it.</strong> Because the walk is
+     * synchronous, the page size directly sets the request duration, and a reverse proxy in front
+     * of the application will cut a long request off — leaving the operator with an error and no
+     * way to tell how much of the page committed (the walk itself is safe to resume, but only if
+     * the cursor from the response was received). The default of 200 is ~30 s at today's cost and
+     * matches the sibling backfill endpoints; {@link #MAX_BACKFILL_LIMIT} caps the opt-in.
+     *
      * <p>Both halves of the cursor are required together. Half a cursor cannot be honoured — the
      * keyset compares the pair — so accepting one would silently restart the walk at the beginning
      * while {@code remaining} reports the full count and nothing marks the reset. That is precisely
@@ -146,7 +159,7 @@ public class AdminController {
             @RequestParam(value = "after_created_at", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime afterCreatedAt,
             @RequestParam(value = "after_id", required = false) UUID afterId,
-            @RequestParam(value = "limit", defaultValue = "500") int limit,
+            @RequestParam(value = "limit", defaultValue = "200") int limit,
             HttpServletRequest request) {
         if (!isAdmin(request)) return forbidden();
         if ((afterCreatedAt == null) != (afterId == null)) {

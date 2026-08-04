@@ -247,7 +247,9 @@ class AdminControllerTest {
     /**
      * The contract tells the operator to loop until remaining == 0, so limit must never be a value
      * that makes the loop spin (0 checks nothing and leaves the cursor untouched) or that reaches
-     * Postgres as LIMIT -1.
+     * Postgres as LIMIT -1. The upper bound exists because the walk is synchronous: at the measured
+     * ~150 ms per cell, a page far larger than this can only ever be cut off by a reverse proxy's
+     * read timeout, leaving the operator unsure whether the work committed.
      */
     @Test
     void dedupBackfill_clampsTheLimitIntoTheUsableRange() {
@@ -260,7 +262,24 @@ class AdminControllerTest {
         controller.dedupBackfill(null, null, 999_999, adminRequest());
 
         verify(dedup, times(2)).dedupBackfill(isNull(), isNull(), eq(1));
-        verify(dedup).dedupBackfill(isNull(), isNull(), eq(5000));
+        verify(dedup).dedupBackfill(isNull(), isNull(), eq(1000));
+    }
+
+    /**
+     * The declared default is part of the contract, not an implementation detail: it is the value
+     * an operator gets when looping without thinking about page size, and it has to stay short
+     * enough to survive a synchronous round trip. Read off the annotation because a direct call
+     * bypasses Spring's parameter binding.
+     */
+    @Test
+    void dedupBackfill_defaultLimitIsModest() throws Exception {
+        var method = AdminController.class.getMethod("dedupBackfill", OffsetDateTime.class,
+                UUID.class, int.class, jakarta.servlet.http.HttpServletRequest.class);
+        var limitParam = method.getParameters()[2]
+                .getAnnotation(org.springframework.web.bind.annotation.RequestParam.class);
+
+        assertEquals("limit", limitParam.value());
+        assertEquals("200", limitParam.defaultValue());
     }
 
     @Test

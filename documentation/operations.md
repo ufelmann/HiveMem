@@ -312,17 +312,20 @@ On startup, any live committed cell with a NULL embedding and content longer tha
 
 `POST /admin/dedup-backfill` walks existing live `consumption:`-sourced cells (status `committed` or `pending`) oldest→newest and discards re-scans (same soft-delete + `duplicate_of` tunnel + S3 cleanup as live dedup; a discarded `pending` cell also becomes `rejected`, so it leaves the approval queue). Run it **only after embeddings have been backfilled** — give the startup `needs_summary` tagging plus at least one 5-min summarizer cycle to embed the long scans first, otherwise they have no embedding to match on. This is a production write — get explicit authorization before running it.
 
-The walk is **paged and resumable**: it runs synchronously in the request at roughly 150 ms per cell, so `limit` (default 500, clamped to 1…5000) bounds one call. Feed `after_created_at` / `after_id` from the previous response back in and repeat until `remaining` is 0. The cursor is a keyset over `(created_at, id)` — never page this with an offset or with `limit` alone, both silently fail to advance. Pass **both** cursor halves or neither; half a cursor is rejected with HTTP 400 rather than silently restarting the walk. **URL-encode `after_created_at`** — a `+` in a non-UTC offset would otherwise decode as a space (today the value comes back as UTC with a trailing `Z`, but do not rely on that).
+The walk is **paged and resumable**: it runs synchronously in the request at roughly 150 ms per cell, so `limit` (default 200, clamped to 1…1000) bounds one call. Feed `after_created_at` / `after_id` from the previous response back in and repeat until `remaining` is 0. The cursor is a keyset over `(created_at, id)` — never page this with an offset or with `limit` alone, both silently fail to advance. Pass **both** cursor halves or neither; half a cursor is rejected with HTTP 400 rather than silently restarting the walk. **URL-encode `after_created_at`** — a `+` in a non-UTC offset would otherwise decode as a space (today the value comes back as UTC with a trailing `Z`, but do not rely on that).
+
+**Prefer looping with the default limit over raising it.** The endpoint is synchronous, so the page size is the request duration, and a reverse proxy in front of the application may cut the request off. You then get an error instead of the cursor, and no way to tell how much of that page committed — resuming is only cheap if you received the cursor. Many short calls cost the same total work as one long one.
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
-  "https://<host>/admin/dedup-backfill?limit=500"
-# → {"checked":500,"discarded":3,"remaining":214,
+  "https://<host>/admin/dedup-backfill"
+# → {"checked":200,"discarded":3,"remaining":514,
 #    "after_created_at":"2026-07-14T09:12:03Z","after_id":"<uuid>"}
 curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -G \
   --data-urlencode "after_created_at=2026-07-14T09:12:03Z" \
-  --data-urlencode "after_id=<uuid>" --data-urlencode "limit=500" \
+  --data-urlencode "after_id=<uuid>" \
   "https://<host>/admin/dedup-backfill"
+# repeat with each response's cursor until "remaining" is 0
 ```
 
 ## Queen + Bees on Vistierie (the LXC host)
