@@ -221,11 +221,31 @@ public class EmbeddingStateRepository {
                 "ON cell_chunks USING hnsw ((embedding::vector(" + dimension + ")) vector_cosine_ops)");
     }
 
-    /** Discards every chunk row. Chunks are derived data (design §3.5): on a model change the
-     *  correct response is to drop them, not re-encode them in place, so the window "old chunk
-     *  dimension, newly rendered ranked_search function" never exists. The sweep rebuilds them. */
+    /** Discards every chunk row and clears every cell's {@code chunked_content_md5} marker in the
+     *  same operation. Chunks are derived data (design §3.5): on a model change the correct
+     *  response is to drop them, not re-encode them in place, so the window "old chunk dimension,
+     *  newly rendered ranked_search function" never exists. The sweep rebuilds them.
+     *
+     *  <p>The marker clear is mandatory, not cosmetic: {@link com.hivemem.chunk.CellChunkRepository}
+     *  selects sweep candidates via {@code chunked_content_md5 IS DISTINCT FROM content_md5} — that
+     *  marker records which content the sweep has already considered, so cells that deliberately
+     *  produce zero chunk rows aren't reselected forever. A model change never touches
+     *  {@code cells.content}, so {@code content_md5} is unchanged; leaving the marker in place
+     *  would make every already-considered cell permanently invisible to the sweep once its chunk
+     *  rows are gone. Clearing every cell's marker (not just chunked ones) is correct per spec —
+     *  cells that legitimately produce no chunk rows simply get re-marked on one extra sweep pass.
+     *
+     *  <p>Uses {@code TRUNCATE} rather than {@code DELETE}: unlike DELETE it doesn't need to
+     *  maintain the HNSW index row-by-row or leave dead tuples behind. TRUNCATE only empties the
+     *  index, though — it does *not* drop it, so the existing {@code idx_cell_chunks_embedding}
+     *  (built for the old dimension) still exists afterward under its fixed name. The separate
+     *  {@code dropVectorIndexes("cell_chunks")} call at the {@code EmbeddingMigrationService} call
+     *  site is therefore still required on a dimension change: without it, {@link
+     *  #createChunkEmbeddingIndex}'s {@code CREATE INDEX IF NOT EXISTS} would silently no-op against
+     *  the stale-dimension index instead of creating one for the new dimension. */
     public void discardChunks() {
-        dslContext.execute("DELETE FROM cell_chunks");
+        dslContext.execute("TRUNCATE cell_chunks");
+        dslContext.execute("UPDATE cells SET chunked_content_md5 = NULL WHERE chunked_content_md5 IS NOT NULL");
     }
 
     public void replaceRankedSearchFunction(int dimension) {

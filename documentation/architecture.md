@@ -49,6 +49,20 @@ erDiagram
         TIMESTAMPTZ created_at
         TIMESTAMPTZ valid_from
         TIMESTAMPTZ valid_until
+        TEXT content_md5
+        TEXT chunked_content_md5
+        TIMESTAMPTZ chunk_throttled_until
+    }
+    cell_chunks {
+        UUID id PK
+        UUID cell_id FK
+        INTEGER ordinal
+        INTEGER page_from
+        INTEGER page_to
+        TEXT content
+        vector embedding
+        TEXT cell_content_hash
+        TIMESTAMPTZ created_at
     }
     facts {
         UUID id PK
@@ -158,6 +172,7 @@ erDiagram
     cells ||--o{ cell_attachments : "linked"
     attachments ||--o{ cell_attachments : "linked"
     attachments ||--o| attachment_image_meta : "EXIF (images only)"
+    cells ||--o{ cell_chunks : "chunked into"
 ```
 
 ### Attachment ingestion
@@ -325,6 +340,8 @@ Every HiveMem tool is mapped to a specific role to ensure least privilege. Write
 
 The `ranked_search` stored function powers the `search` tool. It is **not** managed by Flyway; instead it is recreated on every startup by `EmbeddingMigrationService` from an in-code template. This is intentional — the function signature must stay in sync with the embedding vector dimension, which can change between deployments. As of SP-C1 the function accepts the optional parameters `p_tags TEXT[]` (match-ANY array overlap filter) and `p_status TEXT` (filter by cell status, default `committed`).
 
+The document-chunking feature (see [Document chunking sweep](#document-chunking-sweep)) extends the function further. A `chunk_ann` CTE runs an ANN prefilter over `cell_chunks` (`ORDER BY embedding <=> query_embedding LIMIT 400`) deliberately **without** a join to `cells` — joining there forces the planner off the HNSW index (measured 108 ms vs. 4.9 ms with the join moved downstream, where it only ever runs against the already-narrowed candidate set). The function is declared `LANGUAGE SQL STABLE SET hnsw.ef_search = 500`: this is a function-level GUC, not a session-level `SET`, because `LIMIT 400` alone pushes the planner's HNSW startup-cost estimate past the seq-scan crossover at the default `ef_search = 40` — setting it at the function level makes the correct plan independent of whatever the calling session happens to have configured. The resulting per-cell chunk score is combined with the cell's own vector score as `sem = GREATEST(chunk_score, cell_score)` — chunks can only ever raise a cell's semantic score, never lower or replace it, so a strong chunk match cannot cause a cell to drop out of the result set on account of a weak cell-level vector. `RETURNS TABLE` gained three trailing columns, `match_page_from INTEGER, match_page_to INTEGER, match_excerpt TEXT`, populated only when the winning chunk's score is `>=` the cell's own vector score (i.e. the chunk actually contributed to `sem`); otherwise all three are `NULL`, matching the `match` field being omitted entirely from the `search` tool's response for that hit.
+
 ### Search weights, profiles, and confidence
 
 `search` combines six signals (semantic, keyword, recency, importance, popularity, graph_proximity) into a `score_total`. The weight vector is chosen by the `profile` param — a fixed preset (`balanced` (default) | `semantic` | `recent` | `important` | `keyword`), where `balanced` equals the baseline `hivemem.search.weights` defaults. The legacy per-call `weight_*` params are soft-deprecated but still override individual weights when present.
@@ -489,6 +506,63 @@ New `hivemem.queen.*` key added by this feature:
 | Property | Env var | Default | Description |
 |---|---|---|---|
 | `contradiction-webhook-token` | `HIVEMEM_QUEEN_CONTRADICTION_WEBHOOK_TOKEN` | `""` | Bearer token HiveMem expects Vistierie to present on both `POST /vistierie/contradiction/done` and `POST /vistierie/cardinality/done`. Must be set when contradiction detection + queen are both enabled. |
+
+### Document chunking sweep
+
+`CellChunkSweep` is a single `@Scheduled` tick (default every minute, gated behind
+`hivemem.chunk.enabled`, default `true` — unlike the other sweeps in this document, chunking rides
+the already-required embedding sidecar and has no external service cost to waive) that keeps
+`cell_chunks` in step with `cells`: it splits long cell content into ~2000-character passages
+("chunks", greedy-packed up to a 3000-character ceiling — see `ChunkProperties` in
+`java-server/src/main/java/com/hivemem/chunk/`) so a question about one paragraph of a large
+document can surface it even when the cell's own summary vector reads as unrelated.
+`match_page_from`/`match_page_to`/`match_excerpt` in `search` results (see
+[tools.md](tools.md#passage-level-matching-match)) are populated from these chunks.
+
+**Selection** is driven by `cells.chunked_content_md5 IS DISTINCT FROM cells.content_md5`
+(`content_md5` is a generated, stored column) rather than a `NOT EXISTS` against `cell_chunks`.
+This distinction matters: cells at or under the chunking floor still deliberately produce zero
+chunk rows (a single all-covering chunk is not stored), and a `NOT EXISTS` predicate would stay
+permanently true for them — they would re-enter every tick's batch forever and starve cells that
+actually need chunking. `chunked_content_md5` instead records which content the sweep has *looked
+at*, independent of whether that produced any rows, and is only ever set in the same transaction
+as the chunk replacement itself.
+
+**Throttle on failure.** A cell whose chunking or chunk-embedding step fails is marked
+`chunk_throttled_until = now() + backoff` (`hivemem.chunk.backoff`, default `PT15M`) and written
+with **no** chunk rows for that attempt — a vectorless chunk would be invisible in ranking yet look
+"done" forever, so the cell is retried wholesale on a later tick instead.
+
+**Interaction with `EmbeddingMigrationService` on a model change.** Chunks are derived data, so a
+dimension change discards and rebuilds them rather than re-encoding them in place: `reencode`
+deletes all `cell_chunks` rows, drops and recreates the chunk HNSW index for the new dimension, and
+— critically — resets `cells.chunked_content_md5 = NULL` for every cell. That reset is not
+optional: a re-encode does not change `cells.content`, so without it every previously-considered
+cell's marker would still equal its (unchanged) `content_md5`, and the sweep's selection predicate
+would never pick any of them back up — the chunk table would stay empty forever, silently, with no
+error and no failing test. With the reset, the sweep repopulates `cell_chunks` from scratch over
+subsequent ticks; until it catches up, every cell simply ranks on its own cell vector, exactly as
+it did before chunking existed.
+
+**Trap: `hivemem.chunk.enabled` gates only the sweep, not search.** Setting it to `false` stops new
+chunks from being produced, but `ranked_search` never checks this flag — it has no idea the sweep
+exists. Any chunks already written before the flag was flipped keep ranking and keep supplying the
+`match` field in search results, indefinitely, even while the sweep is disabled. Because cell
+content can keep drifting after a chunk was built, those chunks can also go stale relative to the
+cell's current content without anything invalidating them. Disabling the sweep is not a way to make
+chunk-based matching disappear from search.
+
+Configuration (`hivemem.chunk.*`):
+
+| Property | Env var | Default | Description |
+|---|---|---|---|
+| `enabled` | `HIVEMEM_CHUNK_ENABLED` | `true` | Master switch for the sweep. Does **not** gate use of existing chunks in `ranked_search` — see the trap above. |
+| `target-chars` | `HIVEMEM_CHUNK_TARGET_CHARS` | `2000` | Greedy packing target for a chunk, in characters. |
+| `max-chars` | `HIVEMEM_CHUNK_MAX_CHARS` | `3000` | Hard ceiling for a single chunk; content above this is split further. |
+| `min-cell-chars` | `HIVEMEM_CHUNK_MIN_CELL_CHARS` | `2000` | Lower bound on cell content length for the sweep to consider a cell at all. |
+| `batch-size` | `HIVEMEM_CHUNK_BATCH_SIZE` | `50` | Cells considered per sweep tick. |
+| `backoff` | `HIVEMEM_CHUNK_BACKOFF` | `PT15M` | Throttle applied to a cell whose chunking/embedding failed. |
+| `sweep-interval` | `HIVEMEM_CHUNK_SWEEP_INTERVAL` | `PT1M` | How often the sweep ticks. |
 
 ## Language / i18n
 

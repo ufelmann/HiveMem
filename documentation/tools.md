@@ -161,7 +161,7 @@ from a chunk rather than the cell's own vector, the result carries a `match` obj
   "match": {
     "page_from": 12,
     "page_to": 13,
-    "excerpt": "…enthält die Zustimmung der Bausparkasse zur Zusammenlegung und Teilung…"
+    "excerpt": "…bestätigt den Eingang der Unterlagen und die Fortsetzung der Bearbeitung…"
   }
 }
 ```
