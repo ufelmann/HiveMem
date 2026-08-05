@@ -25,7 +25,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
         "spring.autoconfigure.exclude="
                 + "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,"
                 + "org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration,"
-                + "org.springframework.boot.autoconfigure.jooq.JooqAutoConfiguration"
+                + "org.springframework.boot.autoconfigure.jooq.JooqAutoConfiguration",
+        // CellChunkSweep defaults to enabled (unlike consumption/summarize/ocr, which default
+        // false), and its @Scheduled method forces eager instantiation even under lazy-init —
+        // which would in turn eagerly construct CellChunkRepository and need a DSLContext this
+        // DB-less context does not have. See CellChunkSweep's class javadoc.
+        "hivemem.chunk.enabled=false"
 })
 @Import(HiveMemApplicationTest.TestConfig.class)
 class HiveMemApplicationTest {

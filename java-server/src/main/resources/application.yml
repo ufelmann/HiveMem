@@ -158,6 +158,17 @@ hivemem:
     reassembly-render-dpi: ${HIVEMEM_CONSUMPTION_REASSEMBLY_DPI:150}
     reassembly-purpose: ${HIVEMEM_CONSUMPTION_REASSEMBLY_PURPOSE:separator}
     reassembly-max-tokens: ${HIVEMEM_CONSUMPTION_REASSEMBLY_MAX_TOKENS:4096}
+  chunk:
+    # Unlike consumption/summarize/ocr/queen/contradiction, this defaults to true: chunking has no
+    # external service dependency of its own (it rides the already-required embedding sidecar), so
+    # there is no opt-in cost to waive. Off in the test profile — see application-test.yml.
+    enabled: ${HIVEMEM_CHUNK_ENABLED:true}
+    target-chars: ${HIVEMEM_CHUNK_TARGET_CHARS:2000}
+    max-chars: ${HIVEMEM_CHUNK_MAX_CHARS:3000}
+    min-cell-chars: ${HIVEMEM_CHUNK_MIN_CELL_CHARS:2000}
+    batch-size: ${HIVEMEM_CHUNK_BATCH_SIZE:50}
+    backoff: ${HIVEMEM_CHUNK_BACKOFF:PT15M}
+    sweep-interval: ${HIVEMEM_CHUNK_SWEEP_INTERVAL:PT1M}
 
 logging:
   level:

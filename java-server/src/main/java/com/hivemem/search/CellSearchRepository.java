@@ -55,7 +55,7 @@ public class CellSearchRepository {
                        created_at, valid_from, valid_until,
                        score_semantic, score_keyword, score_recency,
                        score_importance, score_popularity, score_graph_proximity,
-                       score_total
+                       score_total, match_page_from, match_page_to, match_excerpt
                 FROM ranked_search(?::vector, ?, ?, ?, ?, ?,
                                    ?::real, ?::real, ?::real, ?::real, ?::real, ?::real,
                                    ?::text[], ?, p_realms => ?::text[])
@@ -90,10 +90,37 @@ public class CellSearchRepository {
                     doubleValue(row, "score_importance"),
                     doubleValue(row, "score_popularity"),
                     doubleValue(row, "score_graph_proximity"),
-                    doubleValue(row, "score_total")
+                    doubleValue(row, "score_total"),
+                    row.get("match_page_from", Integer.class),
+                    row.get("match_page_to", Integer.class),
+                    toExcerpt(row.get("match_excerpt", String.class))
             ));
         }
         return rows;
+    }
+
+    /**
+     * ranked_search returns the raw chunk text truncated at up to 301 characters (design §3.6a):
+     * 301, not 300, so "exactly 300 characters long" stays distinguishable from "longer than
+     * 300". This is the conversion the SQL function deliberately leaves to Java: 300 chars +
+     * "…" when the chunk was longer, the raw text unchanged (no ellipsis) when it was 300 chars
+     * or fewer. {@code null} (no chunk matched) passes through unchanged.
+     *
+     * <p>Postgres's {@code left(content, 301)} counts characters (codepoints); {@code
+     * String.length()}/{@code substring} below count UTF-16 code units. For a chunk containing
+     * astral-plane characters (surrogate pairs, e.g. emoji) the two can disagree near the
+     * boundary — a spurious ellipsis, or a split surrogate pair. Not addressed here: irrelevant
+     * for the current corpus, and a codepoint-aware truncator is not worth the complexity until
+     * it is.
+     */
+    private static String toExcerpt(String rawMatchExcerpt) {
+        if (rawMatchExcerpt == null) {
+            return null;
+        }
+        if (rawMatchExcerpt.length() > 300) {
+            return rawMatchExcerpt.substring(0, 300) + "…";
+        }
+        return rawMatchExcerpt;
     }
 
     public record RankedRow(
@@ -116,7 +143,10 @@ public class CellSearchRepository {
             double scoreImportance,
             double scorePopularity,
             double scoreGraphProximity,
-            double scoreTotal
+            double scoreTotal,
+            Integer matchPageFrom,
+            Integer matchPageTo,
+            String matchExcerpt
     ) {
     }
 

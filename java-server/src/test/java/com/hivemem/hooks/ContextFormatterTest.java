@@ -21,7 +21,7 @@ class ContextFormatterTest {
         return new RankedRow(id, "content", summary, realm, "facts", topic, List.of(), 3,
                 List.of(), null,
                 OffsetDateTime.now(), validFrom, null,
-                0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.85);
+                0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.85, null, null, null);
     }
 
     @Test
@@ -64,7 +64,7 @@ class ContextFormatterTest {
                 "", "r", "facts", "t", List.of(), 3,
                 List.of(), null,
                 OffsetDateTime.now(), null, null,
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5);
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, null, null, null);
 
         String out = f.format(List.of(cell(r, List.of())), 1);
 

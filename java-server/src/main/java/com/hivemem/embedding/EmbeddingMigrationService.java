@@ -102,6 +102,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
             stateRepository.saveInfo(currentInfo);
             stateRepository.createEmbeddingIndex(currentInfo.dimension());
             stateRepository.createFactsEmbeddingIndex(currentInfo.dimension());
+            stateRepository.createChunkEmbeddingIndex(currentInfo.dimension());
             log.info("Created HNSW index for dimension {}", currentInfo.dimension());
             ensureRankedSearchFunction(currentInfo.dimension());
             return;
@@ -115,6 +116,7 @@ public class EmbeddingMigrationService implements ApplicationRunner {
             // when the index already exists.
             stateRepository.createEmbeddingIndex(currentInfo.dimension());
             stateRepository.createFactsEmbeddingIndex(currentInfo.dimension());
+            stateRepository.createChunkEmbeddingIndex(currentInfo.dimension());
             ensureRankedSearchFunction(currentInfo.dimension());
             return;
         }
@@ -194,6 +196,21 @@ public class EmbeddingMigrationService implements ApplicationRunner {
 
             stateRepository.dropEmbeddingIndex();
             log.info("Dropped HNSW index");
+
+            // Chunks are derived data (design §3.5): discard-and-rebuild, not re-encode-in-place,
+            // so the window "old chunk dimension, newly rendered ranked_search function" never
+            // exists. Must happen before ensureRankedSearchFunction(to.dimension()) below — the
+            // sweep repopulates cell_chunks on its own schedule; until then every cell ranks by
+            // its own vector only, exactly like today.
+            stateRepository.discardChunks();
+            // discardChunks() TRUNCATEs cell_chunks, which empties the HNSW index but does not drop
+            // it -- the old-dimension idx_cell_chunks_embedding still exists under its fixed name
+            // afterward. This drop is therefore still required: without it,
+            // createChunkEmbeddingIndex's CREATE INDEX IF NOT EXISTS below would silently no-op
+            // against the stale-dimension index instead of creating one for the new dimension.
+            stateRepository.dropVectorIndexes("cell_chunks");
+            stateRepository.createChunkEmbeddingIndex(to.dimension());
+            log.info("Discarded cell_chunks and rebuilt its HNSW index for dimension {}", to.dimension());
 
             int done = 0;
             java.util.UUID afterCellId = null;

@@ -62,11 +62,11 @@ class QueenWebhookServiceTest {
                         new RankedRow(self, "self", "selfsum", "work", "facts", "t", List.of(), 3,
                                 List.of(), null,
                                 OffsetDateTime.now(), OffsetDateTime.now(), null,
-                                1.0, 0, 0, 0, 0, 0, 1.0),
+                                1.0, 0, 0, 0, 0, 0, 1.0, null, null, null),
                         new RankedRow(other, "o", "othersum", "work", "facts", "t", List.of(), 3,
                                 List.of(), null,
                                 OffsetDateTime.now(), OffsetDateTime.now(), null,
-                                0.8, 0, 0, 0, 0, 0, 0.8)));
+                                0.8, 0, 0, 0, 0, 0, 0.8, null, null, null)));
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> candidates =

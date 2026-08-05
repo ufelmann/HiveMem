@@ -1,7 +1,83 @@
--- Template loaded by EmbeddingStateRepository.replaceRankedSearchFunction.
--- {{DIM}} is replaced at runtime with the active embedding dimension.
+-- V0057: cell_chunks table (chunking design, design §3.2) plus the ranked_search change that
+-- ranks by best matching chunk (design §3.6). The function part below is the Flyway fallback
+-- copy of java-server/src/main/resources/db/templates/ranked_search.sql.tmpl (the authoritative,
+-- runtime-rendered version) -- see V0056's header comment for why this only matters to
+-- environments that migrate without ever booting the app, and why it must be re-diffed against
+-- the template whenever the template's body changes.
+--
+-- Why md5(content) and not sha256(convert_to(content,'UTF8')):
+-- convert_to is STABLE, not IMMUTABLE (its result depends on server encoding), so a generated
+-- column built on it cannot be created:
+--   CREATE TABLE probe (content text,
+--     content_sha256 text GENERATED ALWAYS AS (encode(sha256(convert_to(content,'UTF8')),'hex')) STORED);
+--   -- ERROR:  generation expression is not immutable
+-- md5() is IMMUTABLE and in core. The hash is for change detection only, not security, so md5 is
+-- sufficient and avoids an IMMUTABLE wrapper function plus the risk of forgetting to restore it.
+--
+-- cells.content_md5 is a generated, stored column (not computed ad hoc per sweep tick): without it
+-- the sweep's staleness query would have to detoast and hash every long cell's content on every
+-- tick (measured 28.9 ms at 407 cells; ~45 MB of decompression per tick at 5000 documents). With
+-- it, staleness collapses to a column comparison.
+--
+-- cell_chunks.cell_content_hash (not "content_hash"): the column sits next to a column named
+-- "content", so the obvious name would read as "hash of this chunk row's content" when it actually
+-- means "hash of the CELL's content", copied redundantly onto every chunk row belonging to that
+-- cell. It stays on the row as an integrity/debugging field, read from cells.content_md5 at INSERT
+-- time same as before, but it is NOT the sweep's selection basis -- see chunked_content_md5 below.
+--
+-- cells.chunked_content_md5 is the "considered" marker, and the reason selection does not run a
+-- NOT EXISTS against cell_chunks. Rule 6 (design §3.3) means 183 of 407 cells deliberately write NO
+-- chunk row at all. For those, a NOT EXISTS predicate would stay permanently true: they would
+-- re-enter every tick's batch, occupy its LIMIT slots, and could starve the cells that actually
+-- need chunking -- the sweep's backlog would never terminate. chunked_content_md5 instead records
+-- which content the sweep has LOOKED AT, independent of whether that produced any rows, and is set
+-- in the same transaction as the chunk replacement (found while implementing this task, not by any
+-- of the three review rounds that read the NOT EXISTS version).
+--
+-- No HNSW index here on purpose: EmbeddingStateRepository.createEmbeddingIndex creates the
+-- existing indexes at runtime once the active dimension is known from the embedding service's
+-- /info endpoint. A dimension nailed down by Flyway would break on the next model change, the same
+-- failure V0053 already had to clean up once. EmbeddingStateRepository.createChunkEmbeddingIndex
+-- follows the same pattern, called from EmbeddingMigrationService alongside the two existing
+-- createEmbeddingIndex/createFactsEmbeddingIndex calls.
+--
+-- chunk_throttled_until lives on cells, not cell_chunks: a cell whose chunking/embedding failed has
+-- NO chunk_chunks rows at all, so the throttle state has to survive on the row that outlives the
+-- failed attempt. Modeled on cells.summarize_throttled_until.
 
-CREATE OR REPLACE FUNCTION ranked_search(
+ALTER TABLE cells ADD COLUMN content_md5 text
+    GENERATED ALWAYS AS (md5(content)) STORED;
+
+CREATE TABLE cell_chunks (
+    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    cell_id           uuid NOT NULL REFERENCES cells(id) ON DELETE CASCADE,
+    ordinal           integer NOT NULL,
+    page_from         integer,
+    page_to           integer,
+    content           text NOT NULL,
+    embedding         vector,
+    cell_content_hash text NOT NULL,
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (cell_id, ordinal)
+);
+CREATE INDEX idx_cell_chunks_cell ON cell_chunks (cell_id);
+
+ALTER TABLE cells ADD COLUMN chunk_throttled_until timestamptz;
+ALTER TABLE cells ADD COLUMN chunked_content_md5 text;
+
+-- Same DROP-all-overloads pattern as V0056 (matching by name only, no pronamespace filter --
+-- see V0056's header comment for why).
+DO $do$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT oid::regprocedure AS sig FROM pg_proc
+             WHERE proname = 'ranked_search' LOOP
+        EXECUTE 'DROP FUNCTION ' || r.sig;
+    END LOOP;
+END
+$do$;
+
+CREATE FUNCTION ranked_search(
     query_embedding vector,
     query_text TEXT,
     p_realm TEXT DEFAULT NULL,
@@ -50,10 +126,10 @@ LANGUAGE SQL STABLE SET hnsw.ef_search = 500 AS $$
     chunk_ann AS (
         SELECT ch.cell_id, ch.ordinal, ch.page_from, ch.page_to,
                left(ch.content, 301) AS chunk_content,
-               (1 - ((ch.embedding::vector({{DIM}})) <=> query_embedding))::REAL AS chunk_sem
+               (1 - ((ch.embedding::vector(1024)) <=> query_embedding))::REAL AS chunk_sem
         FROM cell_chunks ch
         WHERE query_embedding IS NOT NULL AND ch.embedding IS NOT NULL
-        ORDER BY (ch.embedding::vector({{DIM}})) <=> query_embedding
+        ORDER BY (ch.embedding::vector(1024)) <=> query_embedding
         LIMIT 400
     ),
     -- Best chunk per cell among the 400 ANN candidates above. `, ordinal` tiebreaks a tied
@@ -80,7 +156,7 @@ LANGUAGE SQL STABLE SET hnsw.ef_search = 500 AS $$
               AND (p_signal IS NULL OR c.signal = p_signal)
               AND (p_topic IS NULL OR c.topic = p_topic)
               AND (p_tags IS NULL OR c.tags && p_tags)
-            ORDER BY (c.embedding::vector({{DIM}})) <=> query_embedding
+            ORDER BY (c.embedding::vector(1024)) <=> query_embedding
             LIMIT 200
         )
 
@@ -145,7 +221,7 @@ LANGUAGE SQL STABLE SET hnsw.ef_search = 500 AS $$
         ORDER BY GREATEST(
             COALESCE(cb.chunk_sem, 0::REAL),
             CASE WHEN c.embedding IS NOT NULL AND query_embedding IS NOT NULL
-                 THEN (1 - ((c.embedding::vector({{DIM}})) <=> query_embedding))::REAL
+                 THEN (1 - ((c.embedding::vector(1024)) <=> query_embedding))::REAL
                  ELSE 0::REAL END
         ) DESC, c.id
         LIMIT 25
@@ -193,7 +269,7 @@ LANGUAGE SQL STABLE SET hnsw.ef_search = 500 AS $$
         LEFT JOIN chunk_best cb ON cb.cell_id = c.id
         CROSS JOIN LATERAL (
             SELECT CASE WHEN c.embedding IS NOT NULL AND query_embedding IS NOT NULL
-                        THEN (1 - ((c.embedding::vector({{DIM}})) <=> query_embedding))::REAL
+                        THEN (1 - ((c.embedding::vector(1024)) <=> query_embedding))::REAL
                         ELSE 0::REAL END AS cell_sem
         ) cs
     )

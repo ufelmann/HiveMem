@@ -95,6 +95,7 @@ class EmbeddingMigrationServiceUnitTest {
 
         verify(repo).saveInfo(info);
         verify(repo).createEmbeddingIndex(1024);
+        verify(repo).createChunkEmbeddingIndex(1024);
         verify(repo).replaceRankedSearchFunction(1024);
         verify(repo, never()).tryAdvisoryLock(anyLong());
     }
@@ -108,6 +109,7 @@ class EmbeddingMigrationServiceUnitTest {
         service.run(null);
 
         verify(repo).createEmbeddingIndex(1024);
+        verify(repo).createChunkEmbeddingIndex(1024);
         verify(repo).replaceRankedSearchFunction(1024);
         verify(repo, never()).saveInfo(any());
         verify(repo, never()).tryAdvisoryLock(anyLong());
@@ -289,5 +291,39 @@ class EmbeddingMigrationServiceUnitTest {
 
         verify(repo).fetchCellBatch(any(), eq(1024), anyInt(), eq(true));
         verify(repo).fetchFactBatch(any(), eq(1024), anyInt(), eq(true));
+    }
+
+    /**
+     * Design §3.5 "Modellwechsel": chunks are derived data, so a model change discards
+     * {@code cell_chunks} and rebuilds its HNSW index rather than re-encoding it in place. The
+     * ordering matters: discard/rebuild must happen before {@code replaceRankedSearchFunction}
+     * activates the new-dimension function, so no query can ever see old-dimension chunk vectors
+     * against it.
+     */
+    @Test
+    void modelChangeDiscardsChunksAndRebuildsChunkIndexBeforeActivatingNewFunction() {
+        EmbeddingMigrationService reencodingService =
+                new EmbeddingMigrationService(client, repo, 10, 0, () -> { });
+
+        when(client.getInfo()).thenReturn(new EmbeddingInfo("new-model", 768));
+        when(repo.loadStoredInfo()).thenReturn(Optional.of(new EmbeddingInfo("old-model", 1024)));
+        when(repo.tryAdvisoryLock(anyLong())).thenReturn(true);
+        when(repo.loadProgress()).thenReturn(Optional.empty());
+        when(repo.fetchCellBatch(any(), anyInt(), anyInt(), anyBoolean())).thenReturn(List.of());
+        when(repo.fetchFactBatch(any(), anyInt(), anyInt(), anyBoolean())).thenReturn(List.of());
+
+        reencodingService.run(null);
+
+        verify(repo).discardChunks();
+        verify(repo).dropVectorIndexes("cell_chunks");
+        verify(repo).createChunkEmbeddingIndex(768);
+        verify(repo).replaceRankedSearchFunction(768);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(repo);
+        order.verify(repo).dropEmbeddingIndex();
+        order.verify(repo).discardChunks();
+        order.verify(repo).dropVectorIndexes("cell_chunks");
+        order.verify(repo).createChunkEmbeddingIndex(768);
+        order.verify(repo).replaceRankedSearchFunction(768);
     }
 }
