@@ -105,6 +105,13 @@ public class CellSearchRepository {
      * 300". This is the conversion the SQL function deliberately leaves to Java: 300 chars +
      * "…" when the chunk was longer, the raw text unchanged (no ellipsis) when it was 300 chars
      * or fewer. {@code null} (no chunk matched) passes through unchanged.
+     *
+     * <p>Postgres's {@code left(content, 301)} counts characters (codepoints); {@code
+     * String.length()}/{@code substring} below count UTF-16 code units. For a chunk containing
+     * astral-plane characters (surrogate pairs, e.g. emoji) the two can disagree near the
+     * boundary — a spurious ellipsis, or a split surrogate pair. Not addressed here: irrelevant
+     * for the current corpus, and a codepoint-aware truncator is not worth the complexity until
+     * it is.
      */
     private static String toExcerpt(String rawMatchExcerpt) {
         if (rawMatchExcerpt == null) {

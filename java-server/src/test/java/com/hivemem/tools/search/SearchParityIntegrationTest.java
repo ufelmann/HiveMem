@@ -911,38 +911,47 @@ class SearchParityIntegrationTest {
         // Force the planner to consider the HNSW index: at only 500 rows a seq scan is otherwise
         // cheap enough that the planner may prefer it, which would make this test pass or fail on
         // the planner's cost model rather than on whether ranked_search's internal query can use
-        // the index at all. Session-level SET is fine because @BeforeEach truncates state for the
-        // next test; it is not overridden by the function's own hnsw.ef_search proconfig entry
-        // (only that specific GUC is function-scoped).
+        // the index at all. This is session-level SET, not SET LOCAL, because these jOOQ
+        // .execute() calls are separate autocommit statements on a pooled connection -- a
+        // transaction-scoped SET LOCAL would not survive between them. Session-level SET DOES
+        // leak onto the pooled connection once it's returned to the pool (TRUNCATE in
+        // @BeforeEach resets table *data*, not session GUCs), so it is explicitly RESET in a
+        // finally block below before the connection can be reused by another test.
         dslContext.execute("SET enable_seqscan = off");
         dslContext.execute("SET enable_bitmapscan = off");
         dslContext.execute("SET enable_sort = off");
-        dslContext.execute("SELECT pg_stat_force_next_flush()");
-        Long idxScansBefore = dslContext.fetchOne("""
-                SELECT idx_scan FROM pg_stat_user_indexes WHERE indexrelname = 'idx_cells_embedding'
-                """).get("idx_scan", Long.class);
+        try {
+            dslContext.execute("SELECT pg_stat_force_next_flush()");
+            Long idxScansBefore = dslContext.fetchOne("""
+                    SELECT idx_scan FROM pg_stat_user_indexes WHERE indexrelname = 'idx_cells_embedding'
+                    """).get("idx_scan", Long.class);
 
-        List<Float> queryVec = client.encodeQuery("Sample cell content number 42");
-        dslContext.fetch(
-                """
-                SELECT id, score_total FROM ranked_search(?::vector, ?, NULL, NULL, NULL, 10,
-                                                           0.35::real, 0.15::real, 0.20::real,
-                                                           0.15::real, 0.15::real)
-                """,
-                queryVec.toArray(Float[]::new),
-                "Sample content"
-        );
-        dslContext.execute("SELECT pg_stat_force_next_flush()");
-        Long idxScansAfter = dslContext.fetchOne("""
-                SELECT idx_scan FROM pg_stat_user_indexes WHERE indexrelname = 'idx_cells_embedding'
-                """).get("idx_scan", Long.class);
+            List<Float> queryVec = client.encodeQuery("Sample cell content number 42");
+            dslContext.fetch(
+                    """
+                    SELECT id, score_total FROM ranked_search(?::vector, ?, NULL, NULL, NULL, 10,
+                                                               0.35::real, 0.15::real, 0.20::real,
+                                                               0.15::real, 0.15::real)
+                    """,
+                    queryVec.toArray(Float[]::new),
+                    "Sample content"
+            );
+            dslContext.execute("SELECT pg_stat_force_next_flush()");
+            Long idxScansAfter = dslContext.fetchOne("""
+                    SELECT idx_scan FROM pg_stat_user_indexes WHERE indexrelname = 'idx_cells_embedding'
+                    """).get("idx_scan", Long.class);
 
-        // A seq scan on cells (the cast in the function not matching the index expression, or the
-        // GUC not taking effect) would leave idx_cells_embedding's scan count unchanged.
-        assertThat(idxScansAfter)
-                .as("ranked_search must use idx_cells_embedding (before=%d, after=%d)",
-                        idxScansBefore, idxScansAfter)
-                .isGreaterThan(idxScansBefore);
+            // A seq scan on cells (the cast in the function not matching the index expression, or
+            // the GUC not taking effect) would leave idx_cells_embedding's scan count unchanged.
+            assertThat(idxScansAfter)
+                    .as("ranked_search must use idx_cells_embedding (before=%d, after=%d)",
+                            idxScansBefore, idxScansAfter)
+                    .isGreaterThan(idxScansBefore);
+        } finally {
+            dslContext.execute("RESET enable_seqscan");
+            dslContext.execute("RESET enable_bitmapscan");
+            dslContext.execute("RESET enable_sort");
+        }
     }
 
     @Test
@@ -1216,8 +1225,54 @@ class SearchParityIntegrationTest {
         assertThat(found.get().matchExcerpt()).isEqualTo("chunk-only cell strong chunk body");
     }
 
+    /**
+     * Mutation-proof coverage for the 301-not-300 rule (design §3.6a, plan's "SIX THINGS THAT
+     * MUST BE RIGHT" #3): a chunk of exactly 300 characters must come back whole, with no
+     * ellipsis. This is the boundary that {@code left(ch.content, 301)} exists to preserve --
+     * mutating the SQL literal to 300 truncates this chunk to 299 chars + "…", which the
+     * assertion below catches. Every other chunk fixture in this class is well under 300 chars,
+     * so without this test the boundary has zero coverage.
+     */
     @Test
-    void matchIsNullWhenCellVectorScoresAtLeastAsWellAsItsBestChunk() throws Exception {
+    void matchExcerptOfExactly300CharsComesBackWholeWithNoEllipsis() throws Exception {
+        UUID id = UUID.randomUUID();
+        insertCellWithEmbedding(id, "cell with exactly-300-char chunk", "eng", "facts", "t", null, 3,
+                "summary", "committed", OffsetDateTime.parse("2026-04-03T10:00:00Z"), null, null);
+        String exactly300 = "x".repeat(300);
+        insertChunk(id, 0, 1, 2, exactly300, unitVector(0));
+
+        CellSearchRepository.RankedRow row = rowFor(
+                searchByVectorOnly(unitVector(0), null, null, null, null, null, null), id)
+                .orElseThrow();
+
+        assertThat(row.matchExcerpt()).hasSize(300).isEqualTo(exactly300).doesNotContain("…");
+    }
+
+    /**
+     * Companion to the 300-char test above: a chunk of 400 characters must come back truncated to
+     * exactly 300 characters plus the ellipsis. Fails if the SQL literal is mutated from 301 to
+     * 300 (off-by-one in the truncation point) or if {@code CellSearchRepository.toExcerpt}'s
+     * {@code > 300} comparison is flipped to {@code >=} or {@code >= 301}.
+     */
+    @Test
+    void matchExcerptOf400CharsIsTruncatedTo300CharsPlusEllipsis() throws Exception {
+        UUID id = UUID.randomUUID();
+        insertCellWithEmbedding(id, "cell with 400-char chunk", "eng", "facts", "t", null, 3,
+                "summary", "committed", OffsetDateTime.parse("2026-04-03T10:00:00Z"), null, null);
+        String exactly400 = "y".repeat(400);
+        insertChunk(id, 0, 1, 2, exactly400, unitVector(0));
+
+        CellSearchRepository.RankedRow row = rowFor(
+                searchByVectorOnly(unitVector(0), null, null, null, null, null, null), id)
+                .orElseThrow();
+
+        assertThat(row.matchExcerpt())
+                .hasSize(301)
+                .isEqualTo(exactly400.substring(0, 300) + "…");
+    }
+
+    @Test
+    void matchIsNullWhenCellVectorScoresStrictlyBetterThanItsBestChunk() throws Exception {
         UUID id = UUID.randomUUID();
         insertCellWithEmbedding(id, "cell with own strong embedding", "eng", "facts", "t", null, 3,
                 "summary", "committed", OffsetDateTime.parse("2026-04-03T10:00:00Z"), null, unitVector(0));
@@ -1346,6 +1401,32 @@ class SearchParityIntegrationTest {
                 .as("p_realms not containing the cell's realm must exclude it").isEmpty();
         assertThat(rowFor(searchByVectorOnly(unitVector(0), null, null, null, null, null, List.of("realmA")), id))
                 .as("p_realms containing the cell's realm must include it").isPresent();
+    }
+
+    /** The p_realm='none' branch (c.realm IS NULL) is a separate predicate arm from the plain
+     *  equality branch tested by {@link #filterParityRealm}, and is the branch most likely to
+     *  drift between the ann/chunk_best-join arm and the cell-vector arm since it's easy to copy
+     *  the equality half of the OR and miss the NULL half. */
+    @Test
+    void filterParityRealmNone() throws Exception {
+        UUID id = insertChunkOnlyCell(null, "facts", "t", null, "committed", null);
+
+        assertThat(rowFor(searchByVectorOnly(unitVector(0), "someRealm", null, null, null, null, null), id))
+                .as("a non-'none' realm filter must exclude a realm-less chunk-only cell").isEmpty();
+        assertThat(rowFor(searchByVectorOnly(unitVector(0), "none", null, null, null, null, null), id))
+                .as("p_realm='none' must include a realm-less chunk-only cell").isPresent();
+    }
+
+    /** Companion to {@link #filterParityRealmNone} for the p_realms array form: 'none' as an
+     *  array element (matched against c.realm IS NULL), not a plain equality element. */
+    @Test
+    void filterParityRealmsInNone() throws Exception {
+        UUID id = insertChunkOnlyCell(null, "facts", "t", null, "committed", null);
+
+        assertThat(rowFor(searchByVectorOnly(unitVector(0), null, null, null, null, null, List.of("someRealm")), id))
+                .as("p_realms without 'none' must exclude a realm-less chunk-only cell").isEmpty();
+        assertThat(rowFor(searchByVectorOnly(unitVector(0), null, null, null, null, null, List.of("none")), id))
+                .as("p_realms containing 'none' must include a realm-less chunk-only cell").isPresent();
     }
 
     @Test
