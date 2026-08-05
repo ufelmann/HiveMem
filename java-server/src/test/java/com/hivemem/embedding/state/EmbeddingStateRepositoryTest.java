@@ -1,7 +1,8 @@
-package com.hivemem.embedding;
+package com.hivemem.embedding.state;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.hivemem.embedding.EmbeddingStateRepository;
 import java.util.UUID;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
@@ -18,7 +19,17 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /** Integration test for {@link EmbeddingStateRepository} against a real Postgres. Pattern:
- *  com.hivemem.chunk.CellChunkRepositoryTest. */
+ *  com.hivemem.chunk.CellChunkRepositoryTest.
+ *
+ *  <p>Deliberately lives in {@code com.hivemem.embedding.state}, NOT {@code com.hivemem.embedding}:
+ *  a {@code @SpringBootTest} with no {@code classes=} (like {@code EmbeddingMigrationIntegrationTest}
+ *  in the parent package) walks up the package hierarchy for the nearest
+ *  {@code @SpringBootConfiguration} and binds to the first one found. Putting {@link TestApplication}
+ *  in {@code com.hivemem.embedding} previously made it exactly that nearest configuration, silently
+ *  hijacking {@code EmbeddingMigrationIntegrationTest}'s context (which then imported only
+ *  {@link EmbeddingStateRepository} and broke every {@code @Autowired RateLimiter} in that test with
+ *  {@code NoSuchBeanDefinitionException}). Do not move this class back into
+ *  {@code com.hivemem.embedding}. */
 @Testcontainers
 @ActiveProfiles("test")
 @SpringBootTest(
