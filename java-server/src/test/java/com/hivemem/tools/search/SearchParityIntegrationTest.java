@@ -8,6 +8,7 @@ import com.hivemem.auth.RateLimiter;
 import com.hivemem.auth.TokenService;
 import com.hivemem.embedding.EmbeddingClient;
 import com.hivemem.embedding.FixedEmbeddingClient;
+import com.hivemem.search.CellSearchRepository;
 import com.hivemem.write.AdminToolService;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
@@ -84,6 +85,9 @@ class SearchParityIntegrationTest {
 
     @Autowired
     private AdminToolService adminToolService;
+
+    @Autowired
+    private CellSearchRepository cellSearchRepository;
 
     @BeforeEach
     void resetDatabase() {
@@ -839,12 +843,18 @@ class SearchParityIntegrationTest {
     }
 
     @Test
-    void rankedSearchIsInlinedByPlanner() {
-        // V0014 rewrote ranked_search as LANGUAGE SQL so the outer planner can
-        // inline the body instead of treating it as an opaque function call.
-        // Inlining shows up as a real plan for the inner SELECT (Seq/Index Scan
-        // on cells, a Sort, etc.) rather than a "Function Scan on ranked_search".
-        // Without inlining, a cross-boundary HNSW/ANN optimization is impossible.
+    void rankedSearchIsNoLongerInlinedOnceItSetsHnswEfSearch() {
+        // V0014 originally rewrote ranked_search as LANGUAGE SQL so the outer planner could inline
+        // the body instead of treating it as an opaque function call. Design §3.6a's chunk_ann
+        // measurement forced a trade-off against that: LIMIT 400 alone pushes the HNSW startup
+        // cost estimate past the seq-scan crossover at the default ef_search=40 (measured 53.9 ms
+        // vs 4.9 ms), so the function now sets hnsw.ef_search=500 as a function-level GUC. A
+        // LANGUAGE SQL function with a non-empty proconfig is no longer eligible for
+        // inline_set_returning_function -- measured and accepted in the design (9.9 ms inlined vs
+        // 9.2 ms with SET on real data, the single caller CellSearchRepository never joins the
+        // result into anything else). This test now documents and guards THAT fact: the plan for
+        // the outer call must show the opaque "Function Scan on ranked_search", not an expanded
+        // inner plan -- the inverse of what V0014's original version of this test asserted.
         FixedEmbeddingClient client = new FixedEmbeddingClient();
         List<Float> queryVec = client.encodeQuery("probe");
         String explainPlan = String.join("\n",
@@ -861,13 +871,20 @@ class SearchParityIntegrationTest {
 
         assertThat(explainPlan)
                 .as("Plan was:\n%s", explainPlan)
-                .doesNotContain("Function Scan on ranked_search");
+                .contains("Function Scan on ranked_search");
     }
 
     @Test
     void rankedSearchUsesHnswIndexWhenSelectingCandidates() {
-        // Seed enough cells (and disable seqscan below) so the planner will
-        // prefer the HNSW expression index for the ANN prefilter.
+        // Design §3.6a: once ranked_search sets hnsw.ef_search, it is no longer inlined (see
+        // rankedSearchIsNoLongerInlinedOnceItSetsHnswEfSearch above), so an outer EXPLAIN on the
+        // wrapper call can no longer show the inner "Index Scan using idx_cells_embedding" line --
+        // Postgres treats a non-inlined LANGUAGE SQL function as an opaque Function Scan and does
+        // not expose its internal plan. Index usage is instead observed the way Postgres itself
+        // tracks it: pg_stat_user_indexes.idx_scan on idx_cells_embedding, which increments once
+        // per statement that scans it, function-internal or not. pg_stat_force_next_flush() (PG15+)
+        // makes the counter visible immediately instead of waiting for the stats collector's
+        // periodic flush.
         FixedEmbeddingClient client = new FixedEmbeddingClient();
         for (int i = 0; i < 500; i++) {
             UUID id = UUID.fromString(String.format("00000000-0000-0000-0000-%012d", 700000 + i));
@@ -891,34 +908,41 @@ class SearchParityIntegrationTest {
         dslContext.execute(
                 "CREATE INDEX idx_cells_embedding ON cells USING hnsw ((embedding::vector(1024)) vector_cosine_ops)");
         dslContext.execute("ANALYZE cells");
-        // Force the planner to consider the HNSW index for the EXPLAIN below.
-        // SET LOCAL would not persist across jOOQ execute calls; session SET
-        // is fine because @BeforeEach truncates state for the next test.
+        // Force the planner to consider the HNSW index: at only 500 rows a seq scan is otherwise
+        // cheap enough that the planner may prefer it, which would make this test pass or fail on
+        // the planner's cost model rather than on whether ranked_search's internal query can use
+        // the index at all. Session-level SET is fine because @BeforeEach truncates state for the
+        // next test; it is not overridden by the function's own hnsw.ef_search proconfig entry
+        // (only that specific GUC is function-scoped).
         dslContext.execute("SET enable_seqscan = off");
         dslContext.execute("SET enable_bitmapscan = off");
         dslContext.execute("SET enable_sort = off");
-        // Let HNSW return enough candidates for our LIMIT 200 prefilter.
-        dslContext.execute("SET hnsw.ef_search = 200");
+        dslContext.execute("SELECT pg_stat_force_next_flush()");
+        Long idxScansBefore = dslContext.fetchOne("""
+                SELECT idx_scan FROM pg_stat_user_indexes WHERE indexrelname = 'idx_cells_embedding'
+                """).get("idx_scan", Long.class);
 
         List<Float> queryVec = client.encodeQuery("Sample cell content number 42");
-        String explainPlan = String.join("\n",
-                dslContext.fetch(
-                        """
-                        EXPLAIN (FORMAT TEXT)
-                        SELECT id, score_total FROM ranked_search(?::vector, ?, NULL, NULL, NULL, 10,
-                                                                   0.35::real, 0.15::real, 0.20::real,
-                                                                   0.15::real, 0.15::real)
-                        """,
-                        queryVec.toArray(Float[]::new),
-                        "Sample content"
-                ).stream().map(r -> r.get(0, String.class)).toList());
+        dslContext.fetch(
+                """
+                SELECT id, score_total FROM ranked_search(?::vector, ?, NULL, NULL, NULL, 10,
+                                                           0.35::real, 0.15::real, 0.20::real,
+                                                           0.15::real, 0.15::real)
+                """,
+                queryVec.toArray(Float[]::new),
+                "Sample content"
+        );
+        dslContext.execute("SELECT pg_stat_force_next_flush()");
+        Long idxScansAfter = dslContext.fetchOne("""
+                SELECT idx_scan FROM pg_stat_user_indexes WHERE indexrelname = 'idx_cells_embedding'
+                """).get("idx_scan", Long.class);
 
-        // The plan should reference the HNSW expression index. Seq scan on cells
-        // means the cast in the function does not match the index expression,
-        // which defeats the whole point of having it.
-        assertThat(explainPlan)
-                .as("ranked_search must use idx_cells_embedding. Plan was:\n%s", explainPlan)
-                .contains("idx_cells_embedding");
+        // A seq scan on cells (the cast in the function not matching the index expression, or the
+        // GUC not taking effect) would leave idx_cells_embedding's scan count unchanged.
+        assertThat(idxScansAfter)
+                .as("ranked_search must use idx_cells_embedding (before=%d, after=%d)",
+                        idxScansBefore, idxScansAfter)
+                .isGreaterThan(idxScansBefore);
     }
 
     @Test
@@ -1094,6 +1118,287 @@ class SearchParityIntegrationTest {
                 """,
                 id, content, realm, signal, topic, importance, summary, status, "writer-1", createdAt, createdAt, null
         );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Task 3: ranked_search ranks by best matching chunk (design §3.6, §5.3).
+    // These tests call CellSearchRepository.rankedSearch directly rather than going through the
+    // MCP "search" tool: exposing match_page_from/_to/_excerpt to MCP callers is Task 4's scope,
+    // not this one's. Query and cell/chunk vectors are constructed as exact orthonormal-basis
+    // combinations (not run through FixedEmbeddingClient's text heuristics) so cosine similarity
+    // values are exact, not merely "high" or "low" -- required for the tie and GREATEST
+    // never-decreases assertions below.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private static final int DIM = 1024;
+    // A query text that matches no seeded content's tsvector, so score_keyword stays 0 for every
+    // row in these tests and only score_semantic (sem) drives WHERE s.sem > 0.3 OR s.kw > 0.
+    private static final String NO_KEYWORD_MATCH_QUERY = "zzzznokeywordmatchzzzz";
+
+    private static List<Float> unitVector(int axis) {
+        List<Float> v = new ArrayList<>(java.util.Collections.nCopies(DIM, 0.0f));
+        v.set(axis, 1.0f);
+        return v;
+    }
+
+    /** cos_sim with {@link #unitVector}(0) is exactly 0.5: axis0 weight cos(60deg), axis2 weight
+     *  sin(60deg), both components of a unit vector. */
+    private static List<Float> halfSimilarityVector() {
+        List<Float> v = new ArrayList<>(java.util.Collections.nCopies(DIM, 0.0f));
+        v.set(0, 0.5f);
+        v.set(2, (float) Math.sqrt(1 - 0.25));
+        return v;
+    }
+
+    private void insertCellWithEmbedding(
+            UUID id, String content, String realm, String signal, String topic, String[] tags,
+            Integer importance, String summary, String status, OffsetDateTime createdAt,
+            OffsetDateTime validUntil, List<Float> embedding) {
+        Float[] embeddingArray = embedding == null ? null : embedding.toArray(Float[]::new);
+        dslContext.execute("""
+                INSERT INTO cells (
+                    id, content, embedding, realm, signal, topic, tags, importance, summary, status,
+                    created_by, created_at, valid_from, valid_until
+                ) VALUES (?, ?, ?::vector, ?, ?, ?, ?::text[], ?, ?, ?, 'writer-1',
+                          ?::timestamptz, ?::timestamptz, ?::timestamptz)
+                """,
+                id, content, embeddingArray, realm, signal, topic, tags, importance, summary, status,
+                createdAt, createdAt, validUntil);
+    }
+
+    private void insertChunk(UUID cellId, int ordinal, Integer pageFrom, Integer pageTo,
+            String content, List<Float> embedding) {
+        Float[] embeddingArray = embedding.toArray(Float[]::new);
+        dslContext.execute("""
+                INSERT INTO cell_chunks (cell_id, ordinal, page_from, page_to, content, embedding, cell_content_hash)
+                VALUES (?, ?, ?, ?, ?, ?::vector, md5(?))
+                """, cellId, ordinal, pageFrom, pageTo, content, embeddingArray, content);
+    }
+
+    /** A cell reachable only through its chunk (embedding IS NULL), with one strong chunk (cos_sim
+     *  1.0 with {@link #unitVector}(0)) at pages 5-6. Used by the filter-parity tests: whatever
+     *  filter value is passed in must be honored on this chunk-only path exactly as it would be on
+     *  the cell-vector path (design §3.6b, §5.3). */
+    private UUID insertChunkOnlyCell(String realm, String signal, String topic, String[] tags,
+            String status, OffsetDateTime validUntil) {
+        UUID id = UUID.randomUUID();
+        insertCellWithEmbedding(id, "chunk-only cell content", realm, signal, topic, tags, 3,
+                "chunk-only summary", status, OffsetDateTime.parse("2026-04-03T10:00:00Z"), validUntil, null);
+        insertChunk(id, 0, 5, 6, "chunk-only cell strong chunk body", unitVector(0));
+        return id;
+    }
+
+    private List<CellSearchRepository.RankedRow> searchByVectorOnly(
+            List<Float> queryEmbedding, String realm, String signal, String topic,
+            List<String> tags, String status, List<String> realmIn) {
+        return cellSearchRepository.rankedSearch(
+                queryEmbedding, NO_KEYWORD_MATCH_QUERY, realm, signal, topic, 20,
+                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, tags, status, realmIn);
+    }
+
+    private Optional<CellSearchRepository.RankedRow> rowFor(
+            List<CellSearchRepository.RankedRow> rows, UUID id) {
+        return rows.stream().filter(r -> r.id().equals(id)).findFirst();
+    }
+
+    @Test
+    void chunkOnlyCellIsFoundAndCarriesMatchFields() throws Exception {
+        UUID id = insertChunkOnlyCell("chunkrealm", "facts", "chunktopic", null, "committed", null);
+
+        List<CellSearchRepository.RankedRow> results =
+                searchByVectorOnly(unitVector(0), null, null, null, null, null, null);
+
+        Optional<CellSearchRepository.RankedRow> found = rowFor(results, id);
+        assertThat(found).as("cell reachable only via its chunk must still be found").isPresent();
+        assertThat(found.get().scoreSemantic()).isCloseTo(1.0, within(1e-4));
+        assertThat(found.get().matchPageFrom()).isEqualTo(5);
+        assertThat(found.get().matchPageTo()).isEqualTo(6);
+        assertThat(found.get().matchExcerpt()).isEqualTo("chunk-only cell strong chunk body");
+    }
+
+    @Test
+    void matchIsNullWhenCellVectorScoresAtLeastAsWellAsItsBestChunk() throws Exception {
+        UUID id = UUID.randomUUID();
+        insertCellWithEmbedding(id, "cell with own strong embedding", "eng", "facts", "t", null, 3,
+                "summary", "committed", OffsetDateTime.parse("2026-04-03T10:00:00Z"), null, unitVector(0));
+        // Orthogonal to the query axis -> cos_sim 0, strictly weaker than the cell's own 1.0.
+        insertChunk(id, 0, 1, 2, "weak chunk", unitVector(1));
+
+        List<CellSearchRepository.RankedRow> results =
+                searchByVectorOnly(unitVector(0), null, null, null, null, null, null);
+
+        CellSearchRepository.RankedRow row = rowFor(results, id).orElseThrow();
+        assertThat(row.scoreSemantic()).isCloseTo(1.0, within(1e-4));
+        assertThat(row.matchPageFrom()).isNull();
+        assertThat(row.matchPageTo()).isNull();
+        assertThat(row.matchExcerpt()).isNull();
+    }
+
+    @Test
+    void tiedChunkAndCellVectorScoresSetMatchFields() throws Exception {
+        // §3.6d: at an exact tie the chunk counts as the provider.
+        UUID id = UUID.randomUUID();
+        insertCellWithEmbedding(id, "cell with tying embedding", "eng", "facts", "t", null, 3,
+                "summary", "committed", OffsetDateTime.parse("2026-04-03T10:00:00Z"), null, unitVector(0));
+        insertChunk(id, 0, 3, 4, "tying chunk body", unitVector(0));
+
+        List<CellSearchRepository.RankedRow> results =
+                searchByVectorOnly(unitVector(0), null, null, null, null, null, null);
+
+        CellSearchRepository.RankedRow row = rowFor(results, id).orElseThrow();
+        assertThat(row.scoreSemantic()).isCloseTo(1.0, within(1e-4));
+        assertThat(row.matchPageFrom()).isEqualTo(3);
+        assertThat(row.matchPageTo()).isEqualTo(4);
+        assertThat(row.matchExcerpt()).isEqualTo("tying chunk body");
+    }
+
+    @Test
+    void greatestNeverLowersSemAsChunksAreAddedToTheSameCell() throws Exception {
+        UUID id = UUID.randomUUID();
+        // Cell's own vector scores exactly 0.5 against the query.
+        insertCellWithEmbedding(id, "cell with half-similarity embedding", "eng", "facts", "t", null, 3,
+                "summary", "committed", OffsetDateTime.parse("2026-04-03T10:00:00Z"), null, halfSimilarityVector());
+
+        double semBeforeAnyChunk = rowFor(
+                searchByVectorOnly(unitVector(0), null, null, null, null, null, null), id)
+                .orElseThrow().scoreSemantic();
+        assertThat(semBeforeAnyChunk).isCloseTo(0.5, within(1e-4));
+
+        // A weaker chunk (cos_sim 0) must not lower sem below the cell vector's own 0.5.
+        insertChunk(id, 0, null, null, "weaker chunk", unitVector(1));
+        double semAfterWeakChunk = rowFor(
+                searchByVectorOnly(unitVector(0), null, null, null, null, null, null), id)
+                .orElseThrow().scoreSemantic();
+        assertThat(semAfterWeakChunk).isCloseTo(0.5, within(1e-4));
+
+        // A stronger chunk (cos_sim 1.0) must raise sem above the cell vector's own 0.5.
+        insertChunk(id, 1, null, null, "stronger chunk", unitVector(0));
+        double semAfterStrongChunk = rowFor(
+                searchByVectorOnly(unitVector(0), null, null, null, null, null, null), id)
+                .orElseThrow().scoreSemantic();
+        assertThat(semAfterStrongChunk).isCloseTo(1.0, within(1e-4));
+    }
+
+    @Test
+    void cellWithoutAnyChunksRanksExactlyAsItDidBeforeChunking() throws Exception {
+        UUID id = UUID.randomUUID();
+        insertCellWithEmbedding(id, "cell with no chunks at all", "eng", "facts", "t", null, 3,
+                "summary", "committed", OffsetDateTime.parse("2026-04-03T10:00:00Z"), null, unitVector(0));
+
+        CellSearchRepository.RankedRow row = rowFor(
+                searchByVectorOnly(unitVector(0), null, null, null, null, null, null), id)
+                .orElseThrow();
+
+        assertThat(row.scoreSemantic()).isCloseTo(1.0, within(1e-4));
+        assertThat(row.matchPageFrom()).isNull();
+        assertThat(row.matchPageTo()).isNull();
+        assertThat(row.matchExcerpt()).isNull();
+    }
+
+    @Test
+    void chunkOnlyCellBecomesAGraphAnchorAndBoostsATunneledNeighbor() throws Exception {
+        // §3.6f: anchors must no longer require c.embedding IS NOT NULL, or a cell reachable only
+        // through its chunk can never seed graph_proximity_scores. Proven here by tunneling a
+        // second cell -- which has NO embedding and NO chunk of its own, so it can only enter
+        // `candidates` via a keyword match on a distinct query term -- to the chunk-only cell and
+        // observing a non-zero graph score, which is only possible if the chunk-only cell was
+        // selected as an anchor (it is the only cell in this fixture that could seed the walk).
+        String keywordQuery = "tunnelneighborkeyword";
+        UUID anchorCandidateId = insertChunkOnlyCell("eng", "facts", "graphtopic", null, "committed", null);
+        UUID neighborId = UUID.randomUUID();
+        insertCellWithEmbedding(neighborId, "content containing tunnelneighborkeyword and nothing else relevant",
+                "eng", "facts", "graphtopic", null, 3, "neighbor summary", "committed",
+                OffsetDateTime.parse("2026-04-03T10:00:00Z"), null, null);
+        dslContext.execute("""
+                INSERT INTO tunnels (from_cell, to_cell, relation, status, created_by)
+                VALUES (?, ?, 'related_to', 'committed', 'writer-1')
+                """, anchorCandidateId, neighborId);
+
+        List<CellSearchRepository.RankedRow> results = cellSearchRepository.rankedSearch(
+                unitVector(0), keywordQuery, null, null, null, 20,
+                0.30, 0.15, 0.0, 0.0, 0.0, 0.70, null, null, null);
+
+        // The neighbor has no embedding and no chunk, so its non-zero graph_proximity score can
+        // only come from the tunnel to the anchor -- which requires the chunk-only cell (whose
+        // only semantic signal is its chunk, not c.embedding) to have been selected as an anchor.
+        CellSearchRepository.RankedRow neighborRow = rowFor(results, neighborId)
+                .orElseThrow(() -> new AssertionError("neighbor must be found via its own keyword match"));
+        assertThat(neighborRow.scoreGraphProximity()).isGreaterThan(0.0);
+    }
+
+    // ─── Filter parity between the chunk-only path and the cell-vector path (design §3.6b) ───
+
+    @Test
+    void filterParityRealm() throws Exception {
+        UUID id = insertChunkOnlyCell("realmA", "facts", "t", null, "committed", null);
+
+        assertThat(rowFor(searchByVectorOnly(unitVector(0), "realmB", null, null, null, null, null), id))
+                .as("wrong realm must exclude the chunk-only cell").isEmpty();
+        assertThat(rowFor(searchByVectorOnly(unitVector(0), "realmA", null, null, null, null, null), id))
+                .as("matching realm must include the chunk-only cell").isPresent();
+    }
+
+    @Test
+    void filterParityRealmsIn() throws Exception {
+        UUID id = insertChunkOnlyCell("realmA", "facts", "t", null, "committed", null);
+
+        assertThat(rowFor(searchByVectorOnly(unitVector(0), null, null, null, null, null, List.of("realmB")), id))
+                .as("p_realms not containing the cell's realm must exclude it").isEmpty();
+        assertThat(rowFor(searchByVectorOnly(unitVector(0), null, null, null, null, null, List.of("realmA")), id))
+                .as("p_realms containing the cell's realm must include it").isPresent();
+    }
+
+    @Test
+    void filterParitySignal() throws Exception {
+        UUID id = insertChunkOnlyCell("eng", "discoveries", "t", null, "committed", null);
+
+        assertThat(rowFor(searchByVectorOnly(unitVector(0), null, "facts", null, null, null, null), id))
+                .as("wrong signal must exclude the chunk-only cell").isEmpty();
+        assertThat(rowFor(searchByVectorOnly(unitVector(0), null, "discoveries", null, null, null, null), id))
+                .as("matching signal must include the chunk-only cell").isPresent();
+    }
+
+    @Test
+    void filterParityTopic() throws Exception {
+        UUID id = insertChunkOnlyCell("eng", "facts", "topicA", null, "committed", null);
+
+        assertThat(rowFor(searchByVectorOnly(unitVector(0), null, null, "topicB", null, null, null), id))
+                .as("wrong topic must exclude the chunk-only cell").isEmpty();
+        assertThat(rowFor(searchByVectorOnly(unitVector(0), null, null, "topicA", null, null, null), id))
+                .as("matching topic must include the chunk-only cell").isPresent();
+    }
+
+    @Test
+    void filterParityTags() throws Exception {
+        UUID id = insertChunkOnlyCell("eng", "facts", "t", new String[] {"tagX"}, "committed", null);
+
+        assertThat(rowFor(searchByVectorOnly(unitVector(0), null, null, null, List.of("tagY"), null, null), id))
+                .as("non-overlapping tags must exclude the chunk-only cell").isEmpty();
+        assertThat(rowFor(searchByVectorOnly(unitVector(0), null, null, null, List.of("tagX"), null, null), id))
+                .as("overlapping tags must include the chunk-only cell").isPresent();
+    }
+
+    @Test
+    void filterParityStatus() throws Exception {
+        UUID id = insertChunkOnlyCell("eng", "facts", "t", null, "pending", null);
+
+        assertThat(rowFor(searchByVectorOnly(unitVector(0), null, null, null, null, null, null), id))
+                .as("default status filter (committed) must exclude a pending chunk-only cell").isEmpty();
+        assertThat(rowFor(searchByVectorOnly(unitVector(0), null, null, null, null, "all", null), id))
+                .as("status=all must include a pending chunk-only cell").isPresent();
+    }
+
+    @Test
+    void filterParityValidUntil() throws Exception {
+        UUID expiredId = insertChunkOnlyCell("eng", "facts", "t", null, "committed",
+                OffsetDateTime.parse("2020-01-01T00:00:00Z"));
+        UUID activeId = insertChunkOnlyCell("eng", "facts", "t", null, "committed", null);
+
+        List<CellSearchRepository.RankedRow> results =
+                searchByVectorOnly(unitVector(0), null, null, null, null, null, null);
+
+        assertThat(rowFor(results, expiredId)).as("expired chunk-only cell must be excluded").isEmpty();
+        assertThat(rowFor(results, activeId)).as("active chunk-only cell must be included").isPresent();
     }
 
     @TestConfiguration(proxyBeanMethods = false)

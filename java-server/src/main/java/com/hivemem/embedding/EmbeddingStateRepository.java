@@ -211,6 +211,23 @@ public class EmbeddingStateRepository {
                 "ON facts USING hnsw ((embedding::vector(" + dimension + ")) vector_cosine_ops)");
     }
 
+    /** Same pattern as {@link #createEmbeddingIndex}/{@link #createFactsEmbeddingIndex}: called at
+     *  all three EmbeddingMigrationService sites (first run, unchanged model, end of reencode) so
+     *  {@code cell_chunks} always has a vector index for the active dimension, not just after a
+     *  model change. {@code CREATE INDEX IF NOT EXISTS} makes the repeated calls harmless. */
+    public void createChunkEmbeddingIndex(int dimension) {
+        dslContext.execute(
+                "CREATE INDEX IF NOT EXISTS idx_cell_chunks_embedding " +
+                "ON cell_chunks USING hnsw ((embedding::vector(" + dimension + ")) vector_cosine_ops)");
+    }
+
+    /** Discards every chunk row. Chunks are derived data (design §3.5): on a model change the
+     *  correct response is to drop them, not re-encode them in place, so the window "old chunk
+     *  dimension, newly rendered ranked_search function" never exists. The sweep rebuilds them. */
+    public void discardChunks() {
+        dslContext.execute("DELETE FROM cell_chunks");
+    }
+
     public void replaceRankedSearchFunction(int dimension) {
         // Adding a parameter to ranked_search via CREATE OR REPLACE creates a new
         // overload rather than replacing the existing function signature, which would

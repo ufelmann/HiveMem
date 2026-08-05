@@ -104,7 +104,7 @@ class HookContextServiceTest {
     void semanticFloorFiltersKeywordOnlyMatch() {
         RankedRow keywordOnly = new RankedRow(UUID.randomUUID(), "x", "keyword match", "r", "s", "t",
                 List.of(), 3, List.of(), null, OffsetDateTime.now(), null, null,
-                0.1, 0.9, 0.0, 0.0, 0.0, 0.0, 0.70);
+                0.1, 0.9, 0.0, 0.0, 0.0, 0.0, 0.70, null, null, null);
         when(repo.rankedSearch(any(), anyString(), any(), any(), any(), anyInt(),
                 anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble(), any(), any(), any()))
                 .thenReturn(List.of(keywordOnly));
@@ -131,10 +131,10 @@ class HookContextServiceTest {
         UUID otherId = UUID.randomUUID();
         RankedRow projectCell = new RankedRow(projectId, "x", "hivemem summary", "tech", "s", "hivemem",
                 List.of("hivemem"), 1, List.of(), null, OffsetDateTime.now(), null, null,
-                0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.80);
+                0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.80, null, null, null);
         RankedRow otherCell = new RankedRow(otherId, "x", "other summary", "tech", "s", "ansible",
                 List.of("ansible"), 1, List.of(), null, OffsetDateTime.now(), null, null,
-                0.85, 0.0, 0.0, 0.0, 0.0, 0.0, 0.85);
+                0.85, 0.0, 0.0, 0.0, 0.0, 0.0, 0.85, null, null, null);
         when(repo.rankedSearch(any(), anyString(), any(), any(), any(), anyInt(),
                 anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble(), any(), any(), any()))
                 .thenReturn(List.of(otherCell, projectCell));
@@ -173,12 +173,12 @@ class HookContextServiceTest {
     private RankedRow weakRow() {
         return new RankedRow(UUID.randomUUID(), "x", "x", "r", "s", "t",
                 List.of(), 3, List.of(), null, OffsetDateTime.now(), null, null,
-                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.10);
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.10, null, null, null);
     }
 
     private RankedRow strongRow() {
         return new RankedRow(UUID.randomUUID(), "x", "Phase 3 plan", "r", "s", "t",
                 List.of(), 1, List.of(), null, OffsetDateTime.now(), null, null,
-                0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.90);
+                0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.90, null, null, null);
     }
 }

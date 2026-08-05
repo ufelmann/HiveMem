@@ -69,7 +69,7 @@ class SearchEmbeddingFallbackTest {
         CellSearchRepository.RankedRow row = new CellSearchRepository.RankedRow(
                 UUID.randomUUID(), "content", "summary", "realm", "facts", "topic",
                 List.of(), 3, List.of(), null, OffsetDateTime.now(), OffsetDateTime.now(), null,
-                0.0, 0.5, 0.3, 0.6, 0.0, 0.0, 0.4);
+                0.0, 0.5, 0.3, 0.6, 0.0, 0.0, 0.4, null, null, null);
         when(cellSearchRepository.rankedSearch(
                 isNull(), anyString(), any(), any(), any(), anyInt(),
                 anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyDouble(),
