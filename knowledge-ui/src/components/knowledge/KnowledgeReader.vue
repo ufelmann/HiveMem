@@ -16,6 +16,7 @@ import { useLayout } from '../../composables/useLayout'
 import { useKnowledgeSearch } from '../../composables/useKnowledgeSearch'
 import { realmColorFor } from '../../composables/realmMeta'
 import ScoreRing from './ScoreRing.vue'
+import type { SearchResult } from '../../api/types'
 
 // The stage shows the search results (moved out of the filter panel); clicking one opens
 // the cell as an overlay on top, so the list stays put underneath.
@@ -123,6 +124,16 @@ const tabs = computed(() => [
   ['text', t('reader.text')],
 ] as const)
 
+// Design §3.7: page numbers are shown only when the chunk that matched carried them
+// (roughly a quarter of chunked cells do) — otherwise the excerpt stands alone, never
+// "Seite null" or a dangling range.
+function matchPageLabel(c: SearchResult): string | null {
+  const m = c.match
+  if (!m || m.page_from == null) return null
+  if (m.page_to == null || m.page_to === m.page_from) return t('search.page', { n: m.page_from })
+  return t('search.pageRange', { from: m.page_from, to: m.page_to })
+}
+
 const hasDoc = computed(() => !!cell.value?.attachments?.length)
 function openDoc() { if (cellStore.currentId) reader.openReader(cellStore.currentId) }
 </script>
@@ -136,7 +147,11 @@ function openDoc() { if (cellStore.currentId) reader.openReader(cellStore.curren
         <ScoreRing v-if="hitSort === 'relevance' && (c.score_total ?? 0) > 0" :value="c.score_total ?? 0" />
         <div class="row-main">
           <div class="row-title">{{ cellLabel(c) }}</div>
-          <div v-if="c.summary" class="row-snip">{{ c.summary }}</div>
+          <div v-if="c.match" class="row-snip" data-test="row-match">
+            <span v-if="matchPageLabel(c)" class="row-match-page" data-test="row-match-page">{{ matchPageLabel(c) }}</span>
+            {{ c.match.excerpt }}
+          </div>
+          <div v-else-if="c.summary" class="row-snip">{{ c.summary }}</div>
           <div class="row-meta">
             <span class="dot" :style="{ background: realmColorFor(c.realm) }" />
             <span>{{ c.realm ?? '—' }}</span>
@@ -239,6 +254,7 @@ function openDoc() { if (cellStore.currentId) reader.openReader(cellStore.curren
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 .row-snip { font-size:12px; color:var(--text-2); margin-top:3px; line-height:1.4;
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.row-match-page { font-weight:600; color:var(--text-1); margin-right:5px; }
 .row-meta { display:flex; align-items:center; gap:7px; margin-top:5px; font-size:11.5px; color:var(--text-2); }
 .row-meta .sep { color:var(--text-3); }
 .row-meta .sig { text-transform:capitalize; }

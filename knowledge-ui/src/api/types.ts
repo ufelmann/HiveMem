@@ -29,6 +29,18 @@ export interface Cell {
   attachments?: Attachment[]
 }
 
+/**
+ * The passage that produced the score, when a chunk (not the cell vector) supplied it.
+ * `page_from`/`page_to` are omitted when the chunk carried no `[page=N]` marker — most
+ * chunked cells don't have one (design doc §3.7: 101 of 407). `excerpt` is always present
+ * once `match` itself is present.
+ */
+export interface SearchMatch {
+  page_from?: number
+  page_to?: number
+  excerpt: string
+}
+
 export interface SearchResult extends Cell {
   score_total: number
   score_semantic?: number
@@ -38,6 +50,7 @@ export interface SearchResult extends Cell {
   score_popularity?: number
   score_graph_proximity?: number
   confidence_level?: string
+  match?: SearchMatch
 }
 
 export interface Realm { name: string; cell_count: number; signals: Signal[] }

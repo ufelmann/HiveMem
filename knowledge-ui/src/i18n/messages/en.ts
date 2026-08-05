@@ -60,6 +60,8 @@ export default {
     hudPlaceholder: 'Search…',
     comingSoon: 'Coming soon',
     stats: '{cells} cells · {facts} facts · {realms} realms',
+    page: 'Page {n}',
+    pageRange: 'Pages {from}–{to}',
   },
   realms: {
     sizeMetric: 'SIZE METRIC',

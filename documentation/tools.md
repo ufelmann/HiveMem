@@ -147,6 +147,34 @@ The absolute `floor` is configurable via `hivemem.search.confidence.floor` in `a
 
 `search` defaults to `summary`, `tags`, `importance`, and `created_at` plus required identity fields (`id`, `realm`, `signal`, `topic`). `get_cell` defaults to `summary`, `key_points`, `insight`, `tags`, `importance`, `source`, `actionability`, `status`, `created_at`, and `attachments` plus the same required identity fields. Pass `include` to request a specific subset of optional fields, including `content`.
 
+#### Passage-Level Matching (`match`)
+
+Long cells are split into ~2000-character passages ("chunks") in the background and ranked
+individually, so a question about one paragraph of a large document can surface that document
+even when its overall summary vector reads as unrelated. When the winning score for a hit came
+from a chunk rather than the cell's own vector, the result carries a `match` object:
+
+```json
+{
+  "id": "…",
+  "summary": "…",
+  "match": {
+    "page_from": 12,
+    "page_to": 13,
+    "excerpt": "…enthält die Zustimmung der Bausparkasse zur Zusammenlegung und Teilung…"
+  }
+}
+```
+
+- `match` is **omitted entirely** (not `null`) when the hit's score came from the cell vector
+  instead of a chunk — this is still the common case for short cells.
+- `excerpt` is the matching passage, truncated to 300 characters with a trailing `…` when
+  longer; it is always present whenever `match` is present.
+- `page_from`/`page_to` are only present when the source content carried recognizable
+  `[page=N]` markers. Most chunked cells don't have one — omit them from your rendering rather
+  than assuming they exist. `page_from == page_to` for a passage that falls entirely on one
+  page.
+
 - `attachments` (get_cell only, on by default): list of the cell's original files, each `{id, mime_type, original_filename, size_bytes, page_count}` (`page_count` is an INTEGER, populated for PDFs at ingest — `null` for non-PDFs). Download the bytes at `GET /api/attachments/{id}/content`. Internal storage keys are not exposed.
 
 ## Progressive Summarization

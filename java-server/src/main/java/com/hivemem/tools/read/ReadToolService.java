@@ -487,7 +487,34 @@ public class ReadToolService {
         }
         projected.put("score_total", rounded(row.scoreTotal()));
         projected.put("confidence_level", confidenceLevel.name());
+        Map<String, Object> match = matchFor(row);
+        if (match != null) {
+            projected.put("match", match);
+        }
         return projected;
+    }
+
+    /**
+     * Design §3.7: {@code match} is present only when a chunk supplied the score (i.e.
+     * {@code match_excerpt} is non-null); otherwise the field is omitted entirely from the
+     * response, not set to null. Within {@code match}, {@code page_from}/{@code page_to} are
+     * themselves omitted when the chunk carried no page marker — only about a quarter of
+     * chunked cells have one (measured: 101 of 407) — leaving {@code excerpt} alone, which is
+     * always present once {@code match} exists.
+     */
+    private static Map<String, Object> matchFor(CellSearchRepository.RankedRow row) {
+        if (row.matchExcerpt() == null) {
+            return null;
+        }
+        Map<String, Object> match = new LinkedHashMap<>();
+        if (row.matchPageFrom() != null) {
+            match.put("page_from", row.matchPageFrom());
+        }
+        if (row.matchPageTo() != null) {
+            match.put("page_to", row.matchPageTo());
+        }
+        match.put("excerpt", row.matchExcerpt());
+        return match;
     }
 
     private static Map<String, Object> projectBrowseRow(

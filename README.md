@@ -118,6 +118,7 @@ for details on every 🟡 / 🔴 row.
 | Feature | Status | Notes |
 |---|---|---|
 | [6-Signal Ranked Search](documentation/tools.md#search-signals) | ✅ Stable | semantic + keyword + recency + importance + popularity + graph proximity, all wired into one SQL ranker |
+| [Passage-Level Matching](documentation/tools.md#passage-level-matching-match) | ✅ Stable | long cells are chunked in the background and ranked per-passage; a hit whose score came from a chunk carries a `match` object (page range when known, excerpt always) |
 | [Progressive Summarization](documentation/tools.md#progressive-summarization) | ✅ Stable | content / summary / key points / insight, all four populated automatically |
 | [Auto-Summarizer for long cells](documentation/summarizer.md) | ✅ Stable | summary is embedded for semantic search, cost-capped per realm |
 | [OCR for scanned PDFs](documentation/ocr.md) | ✅ Stable | Tesseract, async backfill, Vision fallback |
