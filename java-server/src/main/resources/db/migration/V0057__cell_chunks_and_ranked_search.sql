@@ -20,8 +20,17 @@
 -- cell_chunks.cell_content_hash (not "content_hash"): the column sits next to a column named
 -- "content", so the obvious name would read as "hash of this chunk row's content" when it actually
 -- means "hash of the CELL's content", copied redundantly onto every chunk row belonging to that
--- cell. Under the wrong reading, NOT EXISTS in the sweep's selection query would always be true for
--- any multi-chunk cell and the sweep would loop forever re-chunking it.
+-- cell. It stays on the row as an integrity/debugging field, read from cells.content_md5 at INSERT
+-- time same as before, but it is NOT the sweep's selection basis -- see chunked_content_md5 below.
+--
+-- cells.chunked_content_md5 is the "considered" marker, and the reason selection does not run a
+-- NOT EXISTS against cell_chunks. Rule 6 (design §3.3) means 183 of 407 cells deliberately write NO
+-- chunk row at all. For those, a NOT EXISTS predicate would stay permanently true: they would
+-- re-enter every tick's batch, occupy its LIMIT slots, and could starve the cells that actually
+-- need chunking -- the sweep's backlog would never terminate. chunked_content_md5 instead records
+-- which content the sweep has LOOKED AT, independent of whether that produced any rows, and is set
+-- in the same transaction as the chunk replacement (found while implementing this task, not by any
+-- of the three review rounds that read the NOT EXISTS version).
 --
 -- No HNSW index here on purpose: EmbeddingStateRepository.createEmbeddingIndex creates the
 -- existing indexes at runtime once the active dimension is known from the embedding service's
@@ -51,3 +60,4 @@ CREATE TABLE cell_chunks (
 CREATE INDEX idx_cell_chunks_cell ON cell_chunks (cell_id);
 
 ALTER TABLE cells ADD COLUMN chunk_throttled_until timestamptz;
+ALTER TABLE cells ADD COLUMN chunked_content_md5 text;

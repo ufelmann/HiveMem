@@ -28,7 +28,16 @@ public class CellChunkRepository {
 
     /**
      * Cells due for (re-)chunking: committed, current, over the size floor, not throttled, and
-     * either never chunked or chunked against a stale {@code content_md5}. Design §3.4.
+     * either never considered or considered against a stale {@code content_md5}. Design §3.4.
+     *
+     * <p>{@code chunked_content_md5 IS DISTINCT FROM content_md5} (not a {@code NOT EXISTS} against
+     * {@code cell_chunks}) is deliberate and load-bearing: rule 6 (design §3.3) means 183 of 407
+     * cells write NO chunk row at all, so a {@code NOT EXISTS} predicate would stay permanently
+     * true for them — they would re-enter every tick's batch forever, occupying its {@code LIMIT}
+     * slots and starving cells that actually need chunking. {@code chunked_content_md5} instead
+     * records which content the sweep has LOOKED AT, independent of whether that produced any
+     * rows, and {@link #replaceChunks} sets it in the same transaction as the chunk replacement on
+     * every path except the throttle/failure path (a throttled cell must come back).
      */
     public List<Candidate> selectCandidates(int minCellChars, int batchSize) {
         var rows = dsl.fetch("""
@@ -38,8 +47,7 @@ public class CellChunkRepository {
                   AND c.status = 'committed'
                   AND length(c.content) > ?
                   AND (c.chunk_throttled_until IS NULL OR c.chunk_throttled_until < now())
-                  AND NOT EXISTS (SELECT 1 FROM cell_chunks ch
-                                  WHERE ch.cell_id = c.id AND ch.cell_content_hash = c.content_md5)
+                  AND c.chunked_content_md5 IS DISTINCT FROM c.content_md5
                 ORDER BY c.created_at DESC
                 LIMIT ?
                 """, minCellChars, batchSize);
@@ -71,9 +79,18 @@ public class CellChunkRepository {
 
     /**
      * Replaces a cell's entire chunk set in one transaction: delete the old rows, insert the new
-     * ones. {@code cell_content_hash} is read from {@code cells.content_md5} by the INSERT's own
-     * subquery, never passed in from Java — that is the only way the read side (the selection
-     * query's {@code NOT EXISTS} comparison) and the write side cannot drift apart (design §3.4).
+     * ones (if any — an empty {@code chunks} is the rule-6 case, design §3.3), then mark the cell
+     * as considered by copying {@code content_md5} into {@code chunked_content_md5}. All three
+     * steps happen in the same transaction so the "considered" marker can never be set without the
+     * chunk rows it describes, or vice versa.
+     *
+     * <p>{@code cell_content_hash} is read from {@code cells.content_md5} by the INSERT's own
+     * subquery, never passed in from Java — that is the only way it and {@code chunked_content_md5}
+     * cannot drift apart (design §3.4). It remains an integrity/debugging field on the row; it is
+     * no longer {@link #selectCandidates}'s selection basis.
+     *
+     * <p>Must NOT be called on the throttle/failure path: a cell whose embedding threw or returned
+     * {@code null} must come back on the next tick, so nothing here runs for it.
      */
     public void replaceChunks(UUID cellId, List<ChunkToStore> chunks) {
         dsl.transaction(cfg -> {
@@ -88,6 +105,7 @@ public class CellChunkRepository {
                         """,
                         cellId, c.ordinal(), c.pageFrom(), c.pageTo(), c.content(), c.embedding(), cellId);
             }
+            tx.execute("UPDATE cells SET chunked_content_md5 = content_md5 WHERE id = ?", cellId);
         });
     }
 

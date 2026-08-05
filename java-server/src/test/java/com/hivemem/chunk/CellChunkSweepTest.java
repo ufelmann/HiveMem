@@ -102,15 +102,18 @@ class CellChunkSweepTest {
     }
 
     @Test
-    void singleChunkCellWritesNothingAndIsNotThrottled() {
+    void singleChunkCellIsMarkedConsideredWithNoRowsAndIsNotThrottled() {
         UUID id = UUID.randomUUID();
         when(repo.selectCandidates(anyInt(), anyInt()))
                 .thenReturn(List.of(new CellChunkRepository.Candidate(id, "short unpaginated content", "hash")));
 
         sweep.sweep();
 
+        // Rule 6 (design §3.3): no embedding call, no throttle -- but replaceChunks(id, List.of())
+        // MUST still run so chunked_content_md5 gets set and the cell is not reselected forever
+        // (fix round 1: the IS DISTINCT FROM predicate's termination property).
         verify(embeddingClient, never()).encodeDocument(any());
-        verify(repo, never()).replaceChunks(eq(id), any());
+        verify(repo).replaceChunks(id, List.of());
         verify(repo, never()).throttle(eq(id), anyLong());
     }
 

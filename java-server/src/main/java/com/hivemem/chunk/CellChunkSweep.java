@@ -114,8 +114,12 @@ public class CellChunkSweep implements ApplicationRunner {
     private void processCandidate(CellChunkRepository.Candidate candidate) {
         List<Chunk> chunks = chunker.chunk(candidate.content());
         if (chunks.isEmpty()) {
-            // Rule 6 (design §3.3): a single all-covering chunk is not stored. Nothing to persist
-            // and nothing failed, so no throttle either — the cell just yields no chunk rows.
+            // Rule 6 (design §3.3): a single all-covering chunk is not stored. Nothing failed, so
+            // no throttle -- but the cell MUST still be marked considered (chunked_content_md5),
+            // or selectCandidates' IS DISTINCT FROM predicate would stay permanently true for it
+            // and it would re-enter every tick's batch forever (found while implementing this
+            // task: see the migration's comment on chunked_content_md5).
+            repo.replaceChunks(candidate.id(), List.of());
             return;
         }
 

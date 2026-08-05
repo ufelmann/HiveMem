@@ -95,6 +95,12 @@ class CellChunkRepositoryTest {
         return dsl.fetchOne("SELECT content_md5 FROM cells WHERE id = ?", cellId).get(0, String.class);
     }
 
+    /** Marks a cell as already considered by the sweep, independent of writing any chunk rows —
+     *  mirrors what {@link CellChunkRepository#replaceChunks} does in production. */
+    private void markConsidered(UUID cellId, String hash) {
+        dsl.execute("UPDATE cells SET chunked_content_md5 = ? WHERE id = ?", hash, cellId);
+    }
+
     @Test
     void selectsCommittedCellsOverTheSizeFloorWithoutMatchingChunks() {
         UUID id = insertCell(longContent("a"), "committed", false, null);
@@ -105,14 +111,17 @@ class CellChunkRepositoryTest {
     }
 
     @Test
-    void cellWithMatchingHashAcrossThreeChunksIsNotReselected() {
+    void cellAlreadyConsideredWithMatchingHashAcrossThreeChunksIsNotReselected() {
         UUID id = insertCell(longContent("b"), "committed", false, null);
         String hash = contentMd5(id);
-        // Three chunk rows, not one -- a fixture with a single chunk row would also pass under
-        // the wrong "hash means this row's own content" reading of cell_content_hash (design §5.2).
+        // Three chunk rows, not one -- a fixture with a single chunk row would also pass under a
+        // wrong "hash means this row's own content" reading (design §5.2). Selection itself is
+        // driven by chunked_content_md5, not by these rows' presence -- see the test below for the
+        // rule-6 case where NO row exists at all yet the cell must still not be reselected.
         insertChunkRow(id, 0, hash);
         insertChunkRow(id, 1, hash);
         insertChunkRow(id, 2, hash);
+        markConsidered(id, hash);
 
         List<CellChunkRepository.Candidate> candidates = repo.selectCandidates(MIN_CELL_CHARS, 50);
 
@@ -120,14 +129,40 @@ class CellChunkRepositoryTest {
     }
 
     @Test
-    void changedContentIsReselectedAfterMatchingChunksAlreadyExist() {
+    void changedContentIsReselectedAfterAlreadyConsidered() {
         UUID id = insertCell(longContent("c"), "committed", false, null);
-        // Stale hash: does not match content_md5 for the current content.
+        // Stale marker: does not match content_md5 for the current content (e.g. the cell was
+        // edited after it was last chunked).
         insertChunkRow(id, 0, "stale-hash-does-not-match");
+        markConsidered(id, "stale-hash-does-not-match");
 
         List<CellChunkRepository.Candidate> candidates = repo.selectCandidates(MIN_CELL_CHARS, 50);
 
         assertThat(candidates).extracting(CellChunkRepository.Candidate::id).contains(id);
+    }
+
+    /** The termination property the fix round 1 exists for: a rule-6 cell (chunker returns an
+     *  empty list because its content fits in one all-covering chunk) writes NO chunk row, but
+     *  MUST still be marked considered so it is not reselected on the very next pass -- otherwise
+     *  it (and the 183/407 cells like it) would occupy the batch's LIMIT slots on every tick
+     *  forever and could starve cells that actually need chunking. */
+    @Test
+    void ruleSixCellIsSelectedOnceThenNeverAgainAfterReplaceChunksWithNoRows() {
+        UUID id = insertCell(longContent("j"), "committed", false, null);
+
+        List<CellChunkRepository.Candidate> firstPass = repo.selectCandidates(MIN_CELL_CHARS, 50);
+        assertThat(firstPass).extracting(CellChunkRepository.Candidate::id).contains(id);
+
+        // Simulates CellChunkSweep.processCandidate's rule-6 branch: chunker returned an empty
+        // list, so replaceChunks is called with no chunks to store.
+        repo.replaceChunks(id, List.of());
+
+        List<CellChunkRepository.Candidate> secondPass = repo.selectCandidates(MIN_CELL_CHARS, 50);
+        assertThat(secondPass).extracting(CellChunkRepository.Candidate::id).doesNotContain(id);
+
+        Integer rowCount = dsl.fetchOne("SELECT count(*)::int FROM cell_chunks WHERE cell_id = ?", id)
+                .get(0, Integer.class);
+        assertThat(rowCount).as("rule 6: no chunk row is ever written").isZero();
     }
 
     @Test
@@ -198,5 +233,10 @@ class CellChunkRepositoryTest {
         // cell_content_hash came from cells.content_md5 at insert time, not from Java.
         assertThat(rows.get(0).get("cell_content_hash", String.class)).isEqualTo(expectedHash);
         assertThat(rows.get(1).get("cell_content_hash", String.class)).isEqualTo(expectedHash);
+
+        // chunked_content_md5 is set in the same transaction, so the cell is not reselected.
+        String chunkedContentMd5 = dsl.fetchOne("SELECT chunked_content_md5 FROM cells WHERE id = ?", id)
+                .get(0, String.class);
+        assertThat(chunkedContentMd5).isEqualTo(expectedHash);
     }
 }
