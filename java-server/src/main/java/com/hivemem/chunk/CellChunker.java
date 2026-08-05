@@ -111,7 +111,7 @@ public final class CellChunker {
                 current = new RawChunk(p.page(), p.page(), new StringBuilder(p.text()));
             } else if (current.builder().length() + p.text().length() <= props.getTargetChars()) {
                 current.builder().append(p.text());
-                current.setPageTo(p.page());
+                current.extendPage(p.page());
             } else {
                 chunks.add(current);
                 current = new RawChunk(p.page(), p.page(), new StringBuilder(p.text()));
@@ -168,7 +168,7 @@ public final class CellChunker {
 
     /** Mutable accumulator for a chunk being packed/split, before ordinals are assigned. */
     private static final class RawChunk {
-        private final Integer pageFrom;
+        private Integer pageFrom;
         private Integer pageTo;
         private final StringBuilder builder;
 
@@ -180,7 +180,23 @@ public final class CellChunker {
 
         Integer pageFrom() { return pageFrom; }
         Integer pageTo() { return pageTo; }
-        void setPageTo(Integer pageTo) { this.pageTo = pageTo; }
+
+        /**
+         * Folds another packed piece's page into the bounds. {@code pageFrom} becomes the first
+         * non-null page seen so far; {@code pageTo} becomes the last non-null page seen so far. An
+         * unmarked piece (page == null) leaves both bounds untouched — in particular an unmarked
+         * piece packed ahead of a marked one must not make the chunk report a null lower bound
+         * (code review fix round 1, MAJOR).
+         */
+        void extendPage(Integer page) {
+            if (page != null) {
+                if (pageFrom == null) {
+                    pageFrom = page;
+                }
+                pageTo = page;
+            }
+        }
+
         StringBuilder builder() { return builder; }
         String text() { return builder.toString(); }
     }

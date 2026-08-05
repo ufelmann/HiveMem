@@ -46,6 +46,53 @@ class CellChunkerTest {
     }
 
     @Test
+    void unmarkedPrefixPackedWithPage1DoesNotReportANullLowerBound() {
+        // Text physically preceding the first page marker gets folded into the chunk it packs with.
+        // pageFrom must become the first NON-NULL page among the packed pieces (here: 1), not null —
+        // a chunk that demonstrably covers page 1 must never report a null lower bound (code review
+        // fix round 1, MAJOR).
+        String prefix = "header line before any page marker\n";
+        String page1 = "[page=1]" + filler(500);
+        String page2 = "[page=2]" + filler(500);
+        // page1+page2+prefix alone (1052 chars) would pack into one all-covering chunk and be
+        // suppressed by rule 6; a third page forces a second chunk so the first one survives to
+        // inspect.
+        String page3 = "[page=3]" + filler(1000);
+        String content = prefix + page1 + page2 + page3;
+
+        List<Chunk> chunks = chunker.chunk(content);
+
+        assertThat(chunks).isNotEmpty();
+        assertThat(chunks.get(0).pageFrom()).isEqualTo(1);
+        assertThat(chunks.get(0).pageTo()).isEqualTo(2);
+        // Invariant: either both bounds are null, or neither is.
+        for (Chunk c : chunks) {
+            assertThat(c.pageFrom() == null).isEqualTo(c.pageTo() == null);
+        }
+    }
+
+    @Test
+    void twoPiecesSummingToExactlyTargetCharsPackIntoOneChunk() {
+        // Pins the "<=" reading of design §3.3 rule 3 ("solange die Summe targetChars nicht
+        // ueberschreitet"): two pieces whose combined length is exactly targetChars must still land
+        // in a single packed chunk, not be split apart.
+        int half = props.getTargetChars() / 2;
+        String page1 = "[page=1]" + filler(half - 8); // account for the 8-char marker
+        String page2 = "[page=2]" + filler(half - 8);
+        assertThat(page1.length() + page2.length()).isEqualTo(props.getTargetChars());
+
+        // Alone, this would collapse to a single covering chunk (rule 6). Add a third page to force
+        // a second chunk, so we can observe whether pages 1+2 landed together in chunk 0.
+        String page3 = "[page=3]" + filler(500);
+
+        List<Chunk> chunks = chunker.chunk(page1 + page2 + page3);
+
+        assertThat(chunks).isNotEmpty();
+        assertThat(chunks.get(0).pageFrom()).isEqualTo(1);
+        assertThat(chunks.get(0).pageTo()).isEqualTo(2);
+    }
+
+    @Test
     void pageAboveMaxCharsIsSplitAtBlankLines() {
         // A single page far above maxChars (3000), built from paragraphs separated by blank lines,
         // so the split must land on those blank lines and every part must stay within maxChars.
@@ -122,8 +169,10 @@ class CellChunkerTest {
 
         List<Chunk> chunks = chunker.chunk(content);
 
-        // Whatever the outcome, no chunk may carry a non-null page — the malformed markers must
-        // never have been recognized.
+        // Content is long enough (> maxChars) that chunking must actually happen; without this
+        // guard a regression to an empty list would pass the loop below vacuously.
+        assertThat(chunks).isNotEmpty();
+        // No chunk may carry a non-null page — the malformed markers must never have been recognized.
         for (Chunk c : chunks) {
             assertThat(c.pageFrom()).isNull();
             assertThat(c.pageTo()).isNull();
