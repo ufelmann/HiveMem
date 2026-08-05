@@ -109,11 +109,12 @@ class CellChunkSweepTest {
 
         sweep.sweep();
 
-        // Rule 6 (design §3.3): no embedding call, no throttle -- but replaceChunks(id, List.of())
-        // MUST still run so chunked_content_md5 gets set and the cell is not reselected forever
-        // (fix round 1: the IS DISTINCT FROM predicate's termination property).
+        // Rule 6 (design §3.3): no embedding call, no throttle -- but replaceChunks(id, "hash",
+        // List.of()) MUST still run so chunked_content_md5 gets set and the cell is not reselected
+        // forever (fix round 1: the IS DISTINCT FROM predicate's termination property). The hash
+        // passed through is the one captured at selection time (fix round 2, item 4).
         verify(embeddingClient, never()).encodeDocument(any());
-        verify(repo).replaceChunks(id, List.of());
+        verify(repo).replaceChunks(id, "hash", List.of());
         verify(repo, never()).throttle(eq(id), anyLong());
     }
 
@@ -126,7 +127,7 @@ class CellChunkSweepTest {
 
         sweep.sweep();
 
-        verify(repo, never()).replaceChunks(eq(id), any());
+        verify(repo, never()).replaceChunks(eq(id), any(), any());
         verify(repo).throttle(id, props.getBackoff().toSeconds());
     }
 
@@ -140,7 +141,7 @@ class CellChunkSweepTest {
 
         sweep.sweep();
 
-        verify(repo, never()).replaceChunks(eq(id), any());
+        verify(repo, never()).replaceChunks(eq(id), any(), any());
         verify(repo).throttle(id, props.getBackoff().toSeconds());
     }
 
@@ -161,8 +162,8 @@ class CellChunkSweepTest {
         sweep.sweep();
 
         verify(repo).throttle(failing, props.getBackoff().toSeconds());
-        verify(repo, never()).replaceChunks(eq(failing), any());
-        verify(repo).replaceChunks(eq(succeeding), any());
+        verify(repo, never()).replaceChunks(eq(failing), any(), any());
+        verify(repo).replaceChunks(eq(succeeding), any(), any());
         verify(repo, never()).throttle(eq(succeeding), anyLong());
     }
 }

@@ -13,3 +13,11 @@ spring:
 hivemem:
   token-cache:
     enabled: false
+  chunk:
+    # Off in the test profile: the sweep would otherwise run against every real-database
+    # integration test (Spring caches the context for the whole suite run), deleting/rewriting
+    # cell_chunks rows behind fixtures that later tasks read in ranked_search. Every other
+    # background service (consumption, summarize, ocr, queen, contradiction) is off by default
+    # too; chunk is the one exception in production (enabled defaults true there), so it needs
+    # an explicit override here.
+    enabled: false

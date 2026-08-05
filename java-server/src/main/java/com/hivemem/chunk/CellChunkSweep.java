@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component;
  * component). See design §3.4 for the selection query, cleanup step and error handling this class
  * implements.
  *
- * <p><b>Two gates, not one</b> (design §3.4, Befund M5):
+ * <p><b>Two gates, not one</b> (design §3.4):
  * <ol>
  *   <li>{@link EmbeddingMigrationService#isReencodingActive()} — while a reencode is running (or
  *       about to write vectors in a new dimension), the sweep must not write chunk vectors that
@@ -79,7 +79,7 @@ public class CellChunkSweep implements ApplicationRunner {
         startupComplete.set(true);
     }
 
-    @Scheduled(fixedRateString = "${hivemem.chunk.sweep-interval-ms:60000}")
+    @Scheduled(fixedRateString = "#{@chunkProperties.sweepInterval.toMillis()}")
     public void sweep() {
         if (!props.isEnabled()) {
             return;
@@ -119,7 +119,7 @@ public class CellChunkSweep implements ApplicationRunner {
             // or selectCandidates' IS DISTINCT FROM predicate would stay permanently true for it
             // and it would re-enter every tick's batch forever (found while implementing this
             // task: see the migration's comment on chunked_content_md5).
-            repo.replaceChunks(candidate.id(), List.of());
+            repo.replaceChunks(candidate.id(), candidate.contentMd5(), List.of());
             return;
         }
 
@@ -139,6 +139,6 @@ public class CellChunkSweep implements ApplicationRunner {
                     embedding.toArray(Float[]::new)));
         }
 
-        repo.replaceChunks(candidate.id(), toStore);
+        repo.replaceChunks(candidate.id(), candidate.contentMd5(), toStore);
     }
 }

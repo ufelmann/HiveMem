@@ -19,6 +19,11 @@ public class ChunkProperties {
     private Duration backoff = Duration.ofMinutes(15);
     /** Feature switch for the sweep. Used starting with the sweep. */
     private boolean enabled = true;
+    /** Sweep tick interval. Used starting with the sweep (Task 2, fix round 2) — modelled as a
+     *  Duration alongside backoff, referenced via SpEL from CellChunkSweep the way
+     *  ConsumptionRecoverySweep references ConsumptionProperties.recoveryInterval, instead of a
+     *  standalone property invented at the {@code @Scheduled} call site. */
+    private Duration sweepInterval = Duration.ofMinutes(1);
 
     public int getTargetChars() { return targetChars; }
     public void setTargetChars(int v) { this.targetChars = v; }
@@ -32,4 +37,6 @@ public class ChunkProperties {
     public void setBackoff(Duration v) { this.backoff = v; }
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean v) { this.enabled = v; }
+    public Duration getSweepInterval() { return sweepInterval; }
+    public void setSweepInterval(Duration v) { this.sweepInterval = v; }
 }

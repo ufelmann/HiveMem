@@ -80,9 +80,17 @@ public class CellChunkRepository {
     /**
      * Replaces a cell's entire chunk set in one transaction: delete the old rows, insert the new
      * ones (if any — an empty {@code chunks} is the rule-6 case, design §3.3), then mark the cell
-     * as considered by copying {@code content_md5} into {@code chunked_content_md5}. All three
-     * steps happen in the same transaction so the "considered" marker can never be set without the
-     * chunk rows it describes, or vice versa.
+     * as considered. All steps happen in the same transaction so the "considered" marker can never
+     * be set without the chunk rows it describes, or vice versa.
+     *
+     * <p>{@code expectedContentMd5} is the {@code content_md5} captured by {@link #selectCandidates}
+     * at selection time, and the final UPDATE is guarded by it:
+     * {@code chunked_content_md5 = ? WHERE id = ? AND content_md5 = ?}. If the cell's content
+     * changed between selection and this call, the guard fails, the UPDATE affects zero rows, and
+     * the cell is simply picked up again on the next tick — the marker can only ever record the
+     * content that was actually chunked, true by construction rather than by luck (there is no
+     * in-place UPDATE of {@code cells.content} in this codebase today, but the guard keeps this
+     * correct if that ever changes).
      *
      * <p>{@code cell_content_hash} is read from {@code cells.content_md5} by the INSERT's own
      * subquery, never passed in from Java — that is the only way it and {@code chunked_content_md5}
@@ -92,7 +100,7 @@ public class CellChunkRepository {
      * <p>Must NOT be called on the throttle/failure path: a cell whose embedding threw or returned
      * {@code null} must come back on the next tick, so nothing here runs for it.
      */
-    public void replaceChunks(UUID cellId, List<ChunkToStore> chunks) {
+    public void replaceChunks(UUID cellId, String expectedContentMd5, List<ChunkToStore> chunks) {
         dsl.transaction(cfg -> {
             DSLContext tx = DSL.using(cfg);
             tx.execute("DELETE FROM cell_chunks WHERE cell_id = ?", cellId);
@@ -105,7 +113,8 @@ public class CellChunkRepository {
                         """,
                         cellId, c.ordinal(), c.pageFrom(), c.pageTo(), c.content(), c.embedding(), cellId);
             }
-            tx.execute("UPDATE cells SET chunked_content_md5 = content_md5 WHERE id = ?", cellId);
+            tx.execute("UPDATE cells SET chunked_content_md5 = ? WHERE id = ? AND content_md5 = ?",
+                    expectedContentMd5, cellId, expectedContentMd5);
         });
     }
 

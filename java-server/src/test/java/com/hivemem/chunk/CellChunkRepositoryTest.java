@@ -152,10 +152,12 @@ class CellChunkRepositoryTest {
 
         List<CellChunkRepository.Candidate> firstPass = repo.selectCandidates(MIN_CELL_CHARS, 50);
         assertThat(firstPass).extracting(CellChunkRepository.Candidate::id).contains(id);
+        String selectedHash = firstPass.stream()
+                .filter(c -> c.id().equals(id)).findFirst().orElseThrow().contentMd5();
 
         // Simulates CellChunkSweep.processCandidate's rule-6 branch: chunker returned an empty
         // list, so replaceChunks is called with no chunks to store.
-        repo.replaceChunks(id, List.of());
+        repo.replaceChunks(id, selectedHash, List.of());
 
         List<CellChunkRepository.Candidate> secondPass = repo.selectCandidates(MIN_CELL_CHARS, 50);
         assertThat(secondPass).extracting(CellChunkRepository.Candidate::id).doesNotContain(id);
@@ -163,6 +165,25 @@ class CellChunkRepositoryTest {
         Integer rowCount = dsl.fetchOne("SELECT count(*)::int FROM cell_chunks WHERE cell_id = ?", id)
                 .get(0, Integer.class);
         assertThat(rowCount).as("rule 6: no chunk row is ever written").isZero();
+    }
+
+    /** The write-side guard (fix round 2, item 4): if the cell's content changed between selection
+     *  and the replaceChunks call, the UPDATE's {@code AND content_md5 = ?} guard fails, the marker
+     *  is not set, and the cell is picked up again -- rather than silently recording a hash that no
+     *  longer describes the cell's actual content. */
+    @Test
+    void replaceChunksWithAStaleExpectedHashDoesNotMarkTheCellConsidered() {
+        UUID id = insertCell(longContent("k"), "committed", false, null);
+        String staleHash = "hash-from-a-selection-that-is-no-longer-current";
+
+        repo.replaceChunks(id, staleHash, List.of());
+
+        String chunkedContentMd5 = dsl.fetchOne("SELECT chunked_content_md5 FROM cells WHERE id = ?", id)
+                .get(0, String.class);
+        assertThat(chunkedContentMd5).isNull();
+
+        List<CellChunkRepository.Candidate> candidates = repo.selectCandidates(MIN_CELL_CHARS, 50);
+        assertThat(candidates).extracting(CellChunkRepository.Candidate::id).contains(id);
     }
 
     @Test
@@ -220,7 +241,7 @@ class CellChunkRepositoryTest {
         insertChunkRow(id, 1, "old-hash");
 
         Float[] vec = new Float[] {0.1f, 0.2f, 0.3f};
-        repo.replaceChunks(id, List.of(
+        repo.replaceChunks(id, expectedHash, List.of(
                 new CellChunkRepository.ChunkToStore(0, 1, 1, "new chunk zero", vec),
                 new CellChunkRepository.ChunkToStore(1, 2, 3, "new chunk one", vec)));
 
