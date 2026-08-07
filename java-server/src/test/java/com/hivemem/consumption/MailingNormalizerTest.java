@@ -451,7 +451,6 @@ class MailingNormalizerTest {
         assertThat(MailingNormalizer.normalizeDate("13.09.2016")).isEqualTo("2016-09-13");
         assertThat(MailingNormalizer.normalizeDate("2016-09-13")).isEqualTo("2016-09-13");
         assertThat(MailingNormalizer.normalizeDate("13.9.2016")).isEqualTo("2016-09-13");
-        assertThat(MailingNormalizer.normalizeDate("13/09/2016")).isEqualTo("2016-09-13");
         assertThat(MailingNormalizer.normalizeDate("  13.09.2016  ")).isEqualTo("2016-09-13");
     }
 
@@ -471,6 +470,10 @@ class MailingNormalizerTest {
         assertThat(MailingNormalizer.normalizeDate("13.09.16")).isEqualTo("13.09.16");
         assertThat(MailingNormalizer.normalizeDate("Frühjahr 2016")).isEqualTo("frühjahr 2016");
         assertThat(MailingNormalizer.normalizeDate("  Q3   2016 ")).isEqualTo("q3 2016");
+        // A slash is ambiguous between the German (day-first) and American (month-first)
+        // convention, and MailingNormalizer can only merge, never split - so it falls back rather
+        // than guessing which reading applies.
+        assertThat(MailingNormalizer.normalizeDate("13/09/2016")).isEqualTo("13/09/2016");
         // Impossible components fall back rather than rolling over into another month.
         assertThat(MailingNormalizer.normalizeDate("32.09.2016")).isEqualTo("32.09.2016");
         assertThat(MailingNormalizer.normalizeDate("13.13.2016")).isEqualTo("13.13.2016");
@@ -483,6 +486,18 @@ class MailingNormalizerTest {
         assertThat(MailingNormalizer.normalizeDate("   ")).isEqualTo("");
         assertThat(MailingNormalizer.normalizeDate("99999999999999999999.01.2016"))
                 .isEqualTo("99999999999999999999.01.2016");
+    }
+
+    @Test
+    void keepsTwoGenuinelyDifferentDatesApartAcrossFormats() {
+        // The expensive direction: a too-lenient parser would fuse two strangers' letters, and
+        // MailingNormalizer can merge but never split.
+        assertThat(MailingNormalizer.normalizeDate("05.09.2025"))
+                .isNotEqualTo(MailingNormalizer.normalizeDate("09.05.2025"));
+        // Same property across two genuinely different formats: an ISO date and a German long-form
+        // date that denote different calendar days must not collapse onto the same key.
+        assertThat(MailingNormalizer.normalizeDate("2025-09-05"))
+                .isNotEqualTo(MailingNormalizer.normalizeDate("6. September 2025"));
     }
 
     @Test

@@ -153,9 +153,10 @@ public final class MailingNormalizer {
             Map.entry("juli", 7), Map.entry("august", 8), Map.entry("september", 9),
             Map.entry("oktober", 10), Map.entry("november", 11), Map.entry("dezember", 12));
 
-    /** {@code 13.09.2016}, {@code 13.9.2016}, {@code 13/09/2016} - day first, German convention. */
+    /** {@code 13.09.2016}, {@code 13.9.2016} - day first, German convention. A slash separator is
+     *  deliberately not accepted here; see the class javadoc below. */
     private static final Pattern NUMERIC_DMY =
-            Pattern.compile("^(\\d{1,2})[./](\\d{1,2})[./](\\d{4})$");
+            Pattern.compile("^(\\d{1,2})\\.(\\d{1,2})\\.(\\d{4})$");
 
     /** {@code 2016-09-13}. */
     private static final Pattern ISO_YMD =
@@ -177,7 +178,9 @@ public final class MailingNormalizer {
      *  <p>Deliberately conservative in both directions. A two-digit year is NOT expanded - guessing
      *  the century could merge two strangers - and impossible components (day 32, month 13,
      *  31 February) fall back instead of rolling over into a neighbouring month, which is what
-     *  {@code LocalDate.of} would refuse and a lenient parser would silently do. Never throws:
+     *  {@code LocalDate.of} would refuse and a lenient parser would silently do. A slash separator
+     *  (e.g. {@code 09/05/2025}) is likewise NOT accepted: day-first and month-first cannot be told
+     *  apart from the digits alone, and a wrong merge fuses two strangers' letters. Never throws:
      *  {@link MailingNormalizer} is a pure function whose exception would degrade the whole batch. */
     static String normalizeDate(String s) {
         if (s == null) return "";
