@@ -38,8 +38,8 @@ public class MailingAssembler {
             enclosures (data sheets, SEPA mandate, Datenschutz/privacy notice, Widerruf notice,
             contract terms).
 
-            An ENCLOSURE is any sheet that does not itself open a piece of post: it has no
-            addressee block and no letter date of its own. This holds even when the sheet looks
+            An ENCLOSURE is any sheet that does not itself open a piece of post: its date field is
+            null, or carries only a "Stand ..." print date. This holds even when the sheet looks
             self-contained — printed terms and conditions, a Widerruf or Abtretung notice, a
             data-protection sheet or a form annex will normally carry their own title, their own
             form ID (e.g. "123 456.000 A1 (Fassung 1. Januar 2020)"), a publisher's imprint and
@@ -49,8 +49,10 @@ public class MailingAssembler {
             does NOT make them separate mailings.
 
             An enclosure ALWAYS joins the mailing it was scanned adjacent to. It is NEVER its own
-            mailing. A new mailing starts only where a sheet carries BOTH an addressee (or a
-            salutation) AND its own letter date, or is unmistakably a different sender's letter.
+            mailing. A new mailing starts only where a page carries its OWN letter date — a bare
+            date in the date field, never null and never one prefixed with "Stand " — or where the
+            sender is unmistakably a different one. A page whose date is null or "Stand ..." never
+            opens a mailing, however self-contained it looks.
 
             Two letters from the same sender with different LETTER dates are two different
             mailings; identical enclosure copies then belong to the mailing they were scanned
