@@ -9,8 +9,11 @@ import tools.jackson.databind.JsonNode;
 /** Pass 3 of the 3-pass reassembly: text-only assembly of per-page metadata into mailings.
  *  Grouping is a reasoning task over extracted facts, not a vision task — Haiku scored 5/5 here
  *  while every all-in-one vision variant failed. Sheet-pairing rule comes FIRST in the prompt;
- *  that wording is what fixed duplicate-enclosure assignment. Throws on unparseable output so the
- *  orchestrator's degrade-to-pending path takes over. */
+ *  that wording is what fixed duplicate-enclosure assignment.
+ *  The enclosure rule defines an enclosure by the ABSENCE of an addressee and a letter date, not
+ *  by looking generic: measured 2026-08-07, printed terms with their own form ID and page
+ *  numbering were split off as their own mailing in four consecutive runs. Throws on unparseable
+ *  output so the orchestrator's degrade-to-pending path takes over. */
 public class MailingAssembler {
 
     private static final Logger log = LoggerFactory.getLogger(MailingAssembler.class);
@@ -25,7 +28,7 @@ public class MailingAssembler {
             each sheet to a mailing based on whichever of its two pages is clearly identifiable
             (a letter, a data sheet with a contract number, a dated Bescheid); the sheet's other
             page — enclosure, generic notice (Datenschutz, Widerruf, terms), or blank — follows
-            its sheet partner into that mailing. Generic/undated enclosure pages and blanks are
+            its sheet partner into that mailing. Enclosure pages and blanks are
             NEVER their own mailing. Only exception: the scanner may silently drop a fully blank
             back side, which shifts pairing for the pages AFTER the drop — if the pairing produces
             an impossible sheet (two pages that are clearly fronts of different senders' letters),
@@ -33,10 +36,25 @@ public class MailingAssembler {
 
             A MAILING = everything that arrived in one envelope: the letter itself PLUS its
             enclosures (data sheets, SEPA mandate, Datenschutz/privacy notice, Widerruf notice,
-            contract terms). Enclosures carry their own print dates ("Stand ...") — that does NOT
-            make them separate mailings. Two letters from the same sender with different LETTER
-            dates are two different mailings; identical enclosure copies then belong to the mailing
-            they were scanned adjacent to.
+            contract terms).
+
+            An ENCLOSURE is any sheet that does not itself open a piece of post: it has no
+            addressee block and no letter date of its own. This holds even when the sheet looks
+            self-contained — printed terms and conditions, a Widerruf or Abtretung notice, a
+            data-protection sheet or a form annex will normally carry their own title, their own
+            form ID (e.g. "123 456.000 A1 (Fassung 1. Januar 2020)"), a publisher's imprint and
+            even their own page numbering ("Seite 1 von 5"). None of that makes it a mailing. A
+            sender's letterhead on such a sheet does not either — enclosures are printed on the
+            sender's stationery. Enclosures also carry their own print dates ("Stand ...") — that
+            does NOT make them separate mailings.
+
+            An enclosure ALWAYS joins the mailing it was scanned adjacent to. It is NEVER its own
+            mailing. A new mailing starts only where a sheet carries BOTH an addressee (or a
+            salutation) AND its own letter date, or is unmistakably a different sender's letter.
+
+            Two letters from the same sender with different LETTER dates are two different
+            mailings; identical enclosure copies then belong to the mailing they were scanned
+            adjacent to.
 
             Pages:
             %s
