@@ -10,9 +10,11 @@ import tools.jackson.databind.JsonNode;
  *  Grouping is a reasoning task over extracted facts, not a vision task — Haiku scored 5/5 here
  *  while every all-in-one vision variant failed. Sheet-pairing rule comes FIRST in the prompt;
  *  that wording is what fixed duplicate-enclosure assignment.
- *  The enclosure rule defines an enclosure by the ABSENCE of an addressee and a letter date, not
- *  by looking generic: measured 2026-08-07, printed terms with their own form ID and page
- *  numbering were split off as their own mailing in four consecutive runs. Throws on unparseable
+ *  The enclosure rule keys on the one field that actually reaches this pass: an enclosure is a
+ *  page whose date is null or a bare "Stand ..." print date, never a letter date. Deliberately not
+ *  "looks generic" and not "has no addressee" — the extractor emits no addressee at all, so a rule
+ *  needing one is unobservable here. Measured 2026-08-07: printed terms with their own form ID and
+ *  page numbering were split off as their own mailing in four consecutive runs. Throws on unparseable
  *  output so the orchestrator's degrade-to-pending path takes over. */
 public class MailingAssembler {
 
