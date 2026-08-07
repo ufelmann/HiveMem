@@ -36,6 +36,10 @@ public class PageMetadataExtractor {
               title, which does NOT make it an issue date. If only such an edition date exists, report
               it prefixed with "Stand " regardless of its original label. If no issue date is visible,
               null.
+              Always write a date you report as DD.MM.YYYY when day, month and year are all
+              printed — "13.09.2016", never "2016-09-13" and never "13. September 2016". When only
+              a month and a year are printed, report them as printed. The same rule applies after
+              a "Stand " prefix.
             - page_label: the page number PRINTED on the page (e.g. "Seite 2 von 2", "2/3");
               vertical print-shop control strings along the edge do NOT count; else null
             - doc_type: short type, e.g. "letter", "contract data sheet", "SEPA mandate",
