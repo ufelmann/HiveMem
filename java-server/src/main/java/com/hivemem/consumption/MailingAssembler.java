@@ -11,11 +11,13 @@ import tools.jackson.databind.JsonNode;
  *  while every all-in-one vision variant failed. Sheet-pairing rule comes FIRST in the prompt;
  *  that wording is what fixed duplicate-enclosure assignment.
  *  The enclosure rule keys on the one field that actually reaches this pass: an enclosure is a
- *  page whose date is null or a bare "Stand ..." print date, never a letter date. Deliberately not
- *  "looks generic" and not "has no addressee" — the extractor emits no addressee at all, so a rule
- *  needing one is unobservable here. Measured 2026-08-07: printed terms with their own form ID and
- *  page numbering were split off as their own mailing in four consecutive runs. Throws on unparseable
- *  output so the orchestrator's degrade-to-pending path takes over. */
+ *  page whose date is null or a "Stand" print date, never a letter date. Deliberately not "looks
+ *  generic" and not "has no addressee" — the extractor emits no addressee at all, so a rule needing
+ *  one would be unobservable here. Measured 2026-08-07: printed terms with their own form ID and
+ *  page numbering were split off as their own mailing in four consecutive runs. The undated-page
+ *  rule keeps the different-sender escape explicitly, because a degraded page also arrives with
+ *  date=null and {@link MailingNormalizer} can merge but never split. Throws on unparseable output
+ *  so the orchestrator's degrade-to-pending path takes over. */
 public class MailingAssembler {
 
     private static final Logger log = LoggerFactory.getLogger(MailingAssembler.class);
@@ -52,9 +54,10 @@ public class MailingAssembler {
 
             An enclosure ALWAYS joins the mailing it was scanned adjacent to. It is NEVER its own
             mailing. A new mailing starts only where a page carries its OWN letter date — a bare
-            date in the date field, never null and never one prefixed with "Stand " — or where the
-            sender is unmistakably a different one. A page whose date is null or "Stand ..." never
-            opens a mailing, however self-contained it looks.
+            date in the date field, never null and never a "Stand" print date — or where the sender
+            is unmistakably a different one. Looking self-contained is never enough on its own: a
+            page without a letter date does not open a mailing on the strength of its own title,
+            form ID or page numbering. A clearly different sender still may, even undated.
 
             Two letters from the same sender with different LETTER dates are two different
             mailings; identical enclosure copies then belong to the mailing they were scanned
