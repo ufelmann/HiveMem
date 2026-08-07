@@ -97,6 +97,8 @@ public class MailingAssembler {
     public List<DocGroup> assemble(String realm, List<PageMetadataExtractor.PageMetadata> pages) {
         StringBuilder rows = new StringBuilder();
         for (PageMetadataExtractor.PageMetadata m : pages) {
+            log.debug("Assembly input page {}: date={}, label={}, blank={}",
+                    m.page(), m.date(), m.pageLabel(), m.blank());
             rows.append("- page ").append(m.page())
                     .append(": sender=").append(pyRepr(m.sender()))
                     .append(", date=").append(pyRepr(m.date()))
