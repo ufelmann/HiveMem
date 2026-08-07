@@ -1,6 +1,7 @@
 package com.hivemem.consumption;
 
 import com.hivemem.consumption.PageMetadataExtractor.PageMetadata;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -107,7 +108,9 @@ public final class MailingNormalizer {
     /** The merge key of a group. A plain concatenated string would be lossy: a normalized sender is
      *  space-joined words, and a printed date can itself contain spaces (German letters print date
      *  lines like "Musterstadt, den 5. September 2025"), so two different (sender, date) pairs could
-     *  collide on the same string. The record's generated equals/hashCode give a correct map key. */
+     *  collide on the same string. The record's generated equals/hashCode give a correct map key.
+     *  Both components are normalized: the sender through normalizeSender, the date through
+     *  normalizeDate, so two spellings of one calendar date cannot split a mailing. */
     record AnchorKey(String sender, String date) {}
 
     /** The merge key of a group, or null when nothing in it can anchor. The anchor is the first
@@ -129,7 +132,7 @@ public final class MailingNormalizer {
             // punctuation-only senders normalize to "" - keying on those would merge strangers.
             String sender = normalizeSender(m.sender());
             if (sender.isEmpty()) continue;
-            return new AnchorKey(sender, date);
+            return new AnchorKey(sender, normalizeDate(date));
         }
         return null;
     }
@@ -139,6 +142,79 @@ public final class MailingNormalizer {
                 .replaceAll("[.,\\-–/]", " ")
                 .replaceAll("\\s+", " ")
                 .trim();
+    }
+
+    /** German month names as the OCR actually delivers them: with the umlaut, with the umlaut
+     *  stripped, and in the "ae/oe/ue" transcription. Lower case; the lookup lower-cases too. */
+    private static final Map<String, Integer> MONTHS = Map.ofEntries(
+            Map.entry("januar", 1), Map.entry("februar", 2),
+            Map.entry("marz", 3), Map.entry("märz", 3), Map.entry("maerz", 3),
+            Map.entry("april", 4), Map.entry("mai", 5), Map.entry("juni", 6),
+            Map.entry("juli", 7), Map.entry("august", 8), Map.entry("september", 9),
+            Map.entry("oktober", 10), Map.entry("november", 11), Map.entry("dezember", 12));
+
+    /** {@code 13.09.2016}, {@code 13.9.2016}, {@code 13/09/2016} - day first, German convention. */
+    private static final Pattern NUMERIC_DMY =
+            Pattern.compile("^(\\d{1,2})[./](\\d{1,2})[./](\\d{4})$");
+
+    /** {@code 2016-09-13}. */
+    private static final Pattern ISO_YMD =
+            Pattern.compile("^(\\d{4})-(\\d{1,2})-(\\d{1,2})$");
+
+    /** {@code 21. März 2016}, {@code 5. September 2025}, with or without the dot. */
+    private static final Pattern GERMAN_LONG =
+            Pattern.compile("^(\\d{1,2})\\.?\\s+([\\p{L}]+)\\s+(\\d{4})$");
+
+    /** A calendar date as {@code yyyy-MM-dd} when the shape is recognised AND the components form
+     *  a real date, otherwise a conservative canonicalisation (trimmed, lower case, whitespace
+     *  collapsed) of the input.
+     *
+     *  <p>Why this exists: measured on prod 2026-08-07, one batch reported the same letter date as
+     *  {@code 2016-09-13} on one page and {@code 13.09.2016} on the next. {@link #anchorKey} keyed
+     *  on the raw string, so the two groups never merged and the scan produced 4 mailings instead
+     *  of 2.
+     *
+     *  <p>Deliberately conservative in both directions. A two-digit year is NOT expanded - guessing
+     *  the century could merge two strangers - and impossible components (day 32, month 13,
+     *  31 February) fall back instead of rolling over into a neighbouring month, which is what
+     *  {@code LocalDate.of} would refuse and a lenient parser would silently do. Never throws:
+     *  {@link MailingNormalizer} is a pure function whose exception would degrade the whole batch. */
+    static String normalizeDate(String s) {
+        if (s == null) return "";
+        String t = s.trim().replaceAll("\\s+", " ");
+        if (t.isEmpty()) return "";
+        try {
+            Matcher m = ISO_YMD.matcher(t);
+            if (m.matches()) {
+                return iso(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)),
+                        Integer.parseInt(m.group(3)), t);
+            }
+            m = NUMERIC_DMY.matcher(t);
+            if (m.matches()) {
+                return iso(Integer.parseInt(m.group(3)), Integer.parseInt(m.group(2)),
+                        Integer.parseInt(m.group(1)), t);
+            }
+            m = GERMAN_LONG.matcher(t);
+            if (m.matches()) {
+                Integer month = MONTHS.get(m.group(2).toLowerCase(Locale.ROOT));
+                if (month != null) {
+                    return iso(Integer.parseInt(m.group(3)), month,
+                            Integer.parseInt(m.group(1)), t);
+                }
+            }
+        } catch (RuntimeException e) {
+            // Fall through to the canonicalisation below - never throw out of a pure function.
+        }
+        return t.toLowerCase(Locale.ROOT);
+    }
+
+    /** {@code yyyy-MM-dd} when the three components form a real calendar date, else the fallback. */
+    private static String iso(int year, int month, int day, String fallback) {
+        try {
+            return LocalDate.of(year, month, day).toString();
+        } catch (RuntimeException e) {
+            return fallback.toLowerCase(Locale.ROOT);
+        }
     }
 
     /** Collapse groups sharing an anchor key into the first one that carried it. */

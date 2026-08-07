@@ -220,8 +220,9 @@ class MailingNormalizerTest {
         DocGroup g = group("m", 0.9, 1, 2);
         Map<Integer, PageMetadata> meta = MailingNormalizer.byPage(List.of(
                 plain(1), letter(2, "Finanzamt Musterstadt", "05.09.2025")));
+        // The date component is normalized too (normalizeDate): "05.09.2025" -> "2025-09-05".
         assertThat(MailingNormalizer.anchorKey(g, meta))
-                .isEqualTo(new MailingNormalizer.AnchorKey("finanzamt musterstadt", "05.09.2025"));
+                .isEqualTo(new MailingNormalizer.AnchorKey("finanzamt musterstadt", "2025-09-05"));
     }
 
     @Test
@@ -441,5 +442,59 @@ class MailingNormalizerTest {
                 letter(1, "S", null), letter(2, "S", null), letter(3, "S", null)));
         assertThat(out).hasSize(2);
         assertThat(out.get(0).pages).containsExactly(1, 3);
+    }
+
+    @Test
+    void normalizesTheDateFormatsTheExtractorActuallyEmits() {
+        // Measured on prod 2026-08-07: the same batch reported "2016-09-13" on one page and
+        // "13.09.2016" on the next. Both must collapse onto one key.
+        assertThat(MailingNormalizer.normalizeDate("13.09.2016")).isEqualTo("2016-09-13");
+        assertThat(MailingNormalizer.normalizeDate("2016-09-13")).isEqualTo("2016-09-13");
+        assertThat(MailingNormalizer.normalizeDate("13.9.2016")).isEqualTo("2016-09-13");
+        assertThat(MailingNormalizer.normalizeDate("13/09/2016")).isEqualTo("2016-09-13");
+        assertThat(MailingNormalizer.normalizeDate("  13.09.2016  ")).isEqualTo("2016-09-13");
+    }
+
+    @Test
+    void normalizesGermanLongDatesIncludingOcrDamagedUmlauts() {
+        // OCR renders the same page as "21. März 2016" and "21. Marz 2016" in different passes.
+        assertThat(MailingNormalizer.normalizeDate("21. März 2016")).isEqualTo("2016-03-21");
+        assertThat(MailingNormalizer.normalizeDate("21. Marz 2016")).isEqualTo("2016-03-21");
+        assertThat(MailingNormalizer.normalizeDate("21. Maerz 2016")).isEqualTo("2016-03-21");
+        assertThat(MailingNormalizer.normalizeDate("5. September 2025")).isEqualTo("2025-09-05");
+        assertThat(MailingNormalizer.normalizeDate("1. Januar 2020")).isEqualTo("2020-01-01");
+    }
+
+    @Test
+    void leavesUnparseableOrAmbiguousDatesAloneButStillCanonicalisesThem() {
+        // A two-digit year is NOT guessed, and an unknown shape must not collapse onto anything.
+        assertThat(MailingNormalizer.normalizeDate("13.09.16")).isEqualTo("13.09.16");
+        assertThat(MailingNormalizer.normalizeDate("Frühjahr 2016")).isEqualTo("frühjahr 2016");
+        assertThat(MailingNormalizer.normalizeDate("  Q3   2016 ")).isEqualTo("q3 2016");
+        // Impossible components fall back rather than rolling over into another month.
+        assertThat(MailingNormalizer.normalizeDate("32.09.2016")).isEqualTo("32.09.2016");
+        assertThat(MailingNormalizer.normalizeDate("13.13.2016")).isEqualTo("13.13.2016");
+        assertThat(MailingNormalizer.normalizeDate("31.02.2016")).isEqualTo("31.02.2016");
+    }
+
+    @Test
+    void neverThrowsOnDegenerateDateInput() {
+        assertThat(MailingNormalizer.normalizeDate("")).isEqualTo("");
+        assertThat(MailingNormalizer.normalizeDate("   ")).isEqualTo("");
+        assertThat(MailingNormalizer.normalizeDate("99999999999999999999.01.2016"))
+                .isEqualTo("99999999999999999999.01.2016");
+    }
+
+    @Test
+    void mergesTwoGroupsWhoseDatesDifferOnlyInFormat() {
+        // The production case: page 6 reported ISO, page 7 German numeric, same letter.
+        DocGroup a = group("a", 0.9, 1);
+        DocGroup b = group("b", 0.9, 2);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                letter(1, "Sparkasse Musterstadt", "2016-09-13"),
+                letter(2, "Sparkasse Musterstadt", "13.09.2016")));
+
+        assertThat(out).hasSize(1);
+        assertThat(out.get(0).pages).containsExactly(1, 2);
     }
 }
