@@ -158,6 +158,7 @@ hivemem:
     reassembly-render-dpi: ${HIVEMEM_CONSUMPTION_REASSEMBLY_DPI:150}
     reassembly-purpose: ${HIVEMEM_CONSUMPTION_REASSEMBLY_PURPOSE:separator}
     reassembly-max-tokens: ${HIVEMEM_CONSUMPTION_REASSEMBLY_MAX_TOKENS:4096}
+    reassembly-draws: ${HIVEMEM_CONSUMPTION_REASSEMBLY_DRAWS:3}
   chunk:
     # Unlike consumption/summarize/ocr/queen/contradiction, this defaults to true: chunking has no
     # external service dependency of its own (it rides the already-required embedding sidecar), so

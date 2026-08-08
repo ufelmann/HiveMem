@@ -21,6 +21,10 @@ public class ConsumptionProperties {
     private int reassemblyRenderDpi = 150;            // downscale pages for the vision payload
     private String reassemblyPurpose = "separator";   // Vistierie routing purpose
     private int reassemblyMaxTokens = 4096;
+    /** How many independent grouping draws pass 3 takes before the pairwise-majority vote.
+     *  1 disables the vote. Cheap: grouping is ONE text call per batch, while orientation and
+     *  metadata are one vision call per page each — three draws cost about 3.5% more calls. */
+    private int reassemblyDraws = 3;
     private Duration recoveryInterval = Duration.ofMinutes(5);
     private Duration recoveryStaleThreshold = Duration.ofMinutes(30);
     private int failedRetryLimit = 3;
@@ -74,6 +78,8 @@ public class ConsumptionProperties {
     public void setReassemblyPurpose(String v) { this.reassemblyPurpose = v; }
     public int getReassemblyMaxTokens() { return reassemblyMaxTokens; }
     public void setReassemblyMaxTokens(int v) { this.reassemblyMaxTokens = v; }
+    public int getReassemblyDraws() { return reassemblyDraws; }
+    public void setReassemblyDraws(int v) { this.reassemblyDraws = v; }
     public Duration getRecoveryInterval() { return recoveryInterval; }
     public void setRecoveryInterval(Duration v) { this.recoveryInterval = v; }
     public Duration getRecoveryStaleThreshold() { return recoveryStaleThreshold; }

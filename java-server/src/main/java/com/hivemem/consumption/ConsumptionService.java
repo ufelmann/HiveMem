@@ -71,7 +71,7 @@ public class ConsumptionService implements SeparationApplier {
                 ? new ReassemblyOrchestrator(props, rasterizer,
                         new PageOrienter(visionMultiClient),
                         new PageMetadataExtractor(visionMultiClient),
-                        new MailingAssembler(completeClient),
+                        new MailingAssembler(completeClient, props.getReassemblyDraws()),
                         new PageReassembler(props), splitter, attachments, mover)
                 : null;
         this.fileRepo = fileRepoProvider.getIfAvailable();
