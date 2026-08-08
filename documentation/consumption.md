@@ -192,9 +192,19 @@ consumption executor, never throws to the caller):
    surviving into the archive, which is the same trade as the missed rotation
    above: recoverable, unlike a deletion.
 3. **Pass 3 — assembly, text-only.** `MailingAssembler` sends all pages'
-   extracted metadata (no images) in a single call and asks the model to group
-   pages into mailings, in reading order within each mailing. Grouping is a
-   reasoning task over already-extracted facts, not a vision task.
+   extracted metadata (no images) and asks the model to group pages into
+   mailings, in reading order within each mailing. Grouping is a reasoning
+   task over already-extracted facts, not a vision task. To dampen the
+   model's run-to-run variance on this step, the grouping is drawn
+   `reassembly-draws` times (default 3) and the drawn partitions are merged
+   by pairwise majority: for every page pair, the number of draws that put
+   both pages in the same mailing must reach a strict majority
+   (`draws / 2 + 1`) for the pair to be unioned, and union-find then closes
+   the resulting chains. This is affordable because grouping is one text
+   call per batch, while orientation (pass 1) and metadata extraction
+   (pass 2) are each one vision call per page — three draws cost a small
+   fraction more calls than one. Setting `reassembly-draws: 1` restores the
+   old single-call behaviour exactly, with no vote.
 4. **Normalization, deterministic.** `MailingAssembler.assemble` runs pass 3's
    grouping through `MailingNormalizer` before returning it — this is plain Java,
    no LLM call, and enforces what the prompt can only ask for:
@@ -466,6 +476,7 @@ the initial dispatch and the sweep — the sweep degrades rather than retries.
 | `reassembly-render-dpi` | `HIVEMEM_CONSUMPTION_REASSEMBLY_DPI` | `150` | DPI used to rasterize pages into the vision payload (downscaled vs. OCR DPI to keep requests small). |
 | `reassembly-purpose` | `HIVEMEM_CONSUMPTION_REASSEMBLY_PURPOSE` | `separator` | Vistierie routing purpose for all 3-pass reassembly calls. Needs a routing rule pointing at a vision-capable model (Haiku works; Sonnet for harder visual grouping). |
 | `reassembly-max-tokens` | `HIVEMEM_CONSUMPTION_REASSEMBLY_MAX_TOKENS` | `4096` | Max output tokens for each of the three passes' responses. |
+| `reassembly-draws` | `HIVEMEM_CONSUMPTION_REASSEMBLY_DRAWS` | `3` | How many independent groupings pass 3 draws before the pairwise-majority vote. `1` disables the vote and reproduces the old single-call behaviour. |
 | `blank-filter-enabled` | `HIVEMEM_CONSUMPTION_BLANK_FILTER_ENABLED` | `true` | Master switch for BOTH pixel-based signals: the pre-check that skips a page's orientation call (`blank-skip-white-fraction`) and the post-check that drops a page outright (`blank-white-fraction`). The LLM's own blank verdicts from passes 1 and 2 always apply regardless of this flag; disabling it just stops the pixel-based signals from also acting. A document whose pages are all blank (by any signal) is dropped entirely, so it never becomes a cell. |
 | `blank-white-fraction` | `HIVEMEM_CONSUMPTION_BLANK_WHITE_FRACTION` | `0.995` | Post-check: fraction of near-white pixels above which a page is dropped outright, whatever the model said. Higher = more conservative (fewer pages dropped). |
 | `blank-skip-white-fraction` | `HIVEMEM_CONSUMPTION_BLANK_SKIP_WHITE_FRACTION` | `0.97` | Pre-check: fraction of near-white pixels above which a page's orientation call is skipped (the metadata call still runs and still decides deletion). Deliberately looser than `blank-white-fraction` — it only ever saves a vision call, never causes a deletion, so it can afford to fire on more pages. |
