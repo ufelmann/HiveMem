@@ -244,10 +244,12 @@ class MailingAssemblerTest {
         // The low-confidence draw fully overlaps EVERY component (it merged all 6 pages), so it
         // ties on overlap with each split group — but the split group (size 2) is tighter than the
         // merged one (size 6), so findBest's size tie-break keeps it as the best match regardless of
-        // draw order, and 0.2 never becomes the base.
-        List<DocGroup> split = List.of(g("s1", 0.9, 1, 2), g("s2", 0.9, 3, 4), g("s3", 0.9, 5, 6));
+        // draw order, and 0.2 never becomes the base. The merged draw is listed FIRST here
+        // specifically so earliest-draw-wins alone would pick it (wrongly) — only the size
+        // tie-break saves this.
         List<DocGroup> merged = List.of(g("m", 0.2, 1, 2, 3, 4, 5, 6));
-        List<DocGroup> out = MailingAssembler.consensus(List.of(split, merged, split),
+        List<DocGroup> split = List.of(g("s1", 0.9, 1, 2), g("s2", 0.9, 3, 4), g("s3", 0.9, 5, 6));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(merged, split, split),
                 List.of(1, 2, 3, 4, 5, 6));
         assertEquals(3, out.size());
         assertEquals(0.9, out.get(0).minConfidence, 1e-9);

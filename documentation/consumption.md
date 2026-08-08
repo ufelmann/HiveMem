@@ -237,7 +237,14 @@ consumption executor, never throws to the caller):
    are all blank never becomes a cell.
 6. **Status.** A mailing is `committed` if its minimum confidence ≥
    `reassembly-confidence-threshold` (default **0.5** — aggressive, so most
-   mailings commit), otherwise `pending`.
+   mailings commit), otherwise `pending`. With the pass-3 vote on
+   (`reassembly-draws` > 1), that confidence is not the raw model number: it is
+   `base confidence × agreement`, where `base` is the confidence of the
+   best-matching draw group and `agreement` is how much the draws agreed on the
+   mailing's page pairs — so a mailing the draws only agreed on 2 of 3 times
+   commits at 0.6 even if every draw that mentioned it reported 0.9. With
+   `reassembly-draws: 1` there is no vote, and the value is the raw model
+   confidence as before.
 7. **Split + ingest.** `BatchSplitter.assemble` builds one PDF per mailing
    (arbitrary page order supported, in the normalized order step 4 produced), and
    each is ingested with `source = "consumption:"`. The staged source moves to
