@@ -1,7 +1,12 @@
 package com.hivemem.consumption;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tools.jackson.databind.JsonNode;
@@ -133,6 +138,147 @@ public class MailingAssembler {
             groups.add(g);
         }
         return normalizer.normalize(groups, pages);
+    }
+
+    /** Merge N independently drawn partitions of the same page set into one, by pairwise majority.
+     *
+     *  <p>For every unordered page pair, count the draws that put both pages in the SAME group; at
+     *  a strict majority the pair is unioned. Union-find then resolves transitivity, so pages can
+     *  end up together even when no single draw put them together — that is intended: the vote is
+     *  over the relation "same mailing", not over whole partitions, which cannot be averaged.
+     *
+     *  <p>Why a strict majority ({@code draws / 2 + 1}) and not {@code ceil(draws / 2)}: at two
+     *  draws the latter is 1, so a single draw's merge would win. Merging two strangers' letters is
+     *  the expensive direction — {@link MailingNormalizer} can merge but never split — so two draws
+     *  demand unanimity.
+     *
+     *  <p>The page universe is the caller's page list, never the draws: a page no draw mentioned
+     *  still has to land somewhere, and becomes its own group.
+     *
+     *  <p>Pure and total: no LLM, no clock, no randomness, and it never throws. Deterministic for
+     *  given draws — groups are ordered by their lowest page, pages ascending within a group.
+     *
+     *  <p>Measured 2026-08-08: the same scan yielded 5 mailings in one run and 1 in the next while
+     *  its page metadata stayed identical, i.e. the instability sits in this grouping step. */
+    static List<DocGroup> consensus(List<List<DocGroup>> draws, List<Integer> pageNumbers) {
+        List<Integer> pages = new ArrayList<>(new LinkedHashSet<>(pageNumbers));
+        if (pages.isEmpty()) {
+            return new ArrayList<>();
+        }
+        int threshold = draws.size() / 2 + 1;
+
+        // page -> group index, per draw. A page absent from a draw simply has no entry there.
+        List<Map<Integer, Integer>> assignment = new ArrayList<>();
+        for (List<DocGroup> draw : draws) {
+            Map<Integer, Integer> byPage = new HashMap<>();
+            for (int i = 0; i < draw.size(); i++) {
+                for (Integer p : draw.get(i).pages) {
+                    byPage.putIfAbsent(p, i);
+                }
+            }
+            assignment.add(byPage);
+        }
+
+        Map<Integer, Integer> parent = new HashMap<>();
+        for (Integer p : pages) {
+            parent.put(p, p);
+        }
+        for (int i = 0; i < pages.size(); i++) {
+            for (int j = i + 1; j < pages.size(); j++) {
+                int a = pages.get(i);
+                int b = pages.get(j);
+                int votes = 0;
+                for (Map<Integer, Integer> byPage : assignment) {
+                    Integer ga = byPage.get(a);
+                    Integer gb = byPage.get(b);
+                    if (ga != null && ga.equals(gb)) {
+                        votes++;
+                    }
+                }
+                if (votes >= threshold) {
+                    union(parent, a, b);
+                }
+            }
+        }
+
+        // Components, keyed by their representative, ordered by lowest page.
+        Map<Integer, List<Integer>> components = new LinkedHashMap<>();
+        List<Integer> sorted = new ArrayList<>(pages);
+        sorted.sort(Comparator.naturalOrder());
+        for (Integer p : sorted) {
+            components.computeIfAbsent(find(parent, p), k -> new ArrayList<>()).add(p);
+        }
+
+        List<DocGroup> out = new ArrayList<>();
+        int n = 0;
+        for (List<Integer> component : components.values()) {
+            DocGroup group = new DocGroup("doc-" + (++n), describe(draws, assignment, component));
+            group.pages.addAll(component);
+            group.minConfidence = confidenceOf(draws, assignment, component);
+            out.add(group);
+        }
+        return out;
+    }
+
+    private static int find(Map<Integer, Integer> parent, int x) {
+        int root = x;
+        while (parent.get(root) != root) {
+            root = parent.get(root);
+        }
+        for (int cur = x; cur != root; ) {
+            int next = parent.get(cur);
+            parent.put(cur, root);
+            cur = next;
+        }
+        return root;
+    }
+
+    private static void union(Map<Integer, Integer> parent, int a, int b) {
+        int ra = find(parent, a);
+        int rb = find(parent, b);
+        if (ra != rb) {
+            parent.put(Math.max(ra, rb), Math.min(ra, rb));
+        }
+    }
+
+    /** The descriptor of the draw group that overlaps this component most; ties go to the earliest
+     *  draw and lowest group index, so the result stays deterministic. Null when nothing overlaps. */
+    private static String describe(List<List<DocGroup>> draws,
+            List<Map<Integer, Integer>> assignment, List<Integer> component) {
+        String best = null;
+        int bestOverlap = 0;
+        for (int d = 0; d < draws.size(); d++) {
+            for (int i = 0; i < draws.get(d).size(); i++) {
+                int overlap = 0;
+                for (Integer p : component) {
+                    Integer gi = assignment.get(d).get(p);
+                    if (gi != null && gi == i) {
+                        overlap++;
+                    }
+                }
+                if (overlap > bestOverlap) {
+                    bestOverlap = overlap;
+                    best = draws.get(d).get(i).descriptor;
+                }
+            }
+        }
+        return best;
+    }
+
+    /** The lowest confidence among all draw groups that contributed a page to this component:
+     *  a consensus built from disagreeing draws should rather land in the review queue. */
+    private static double confidenceOf(List<List<DocGroup>> draws,
+            List<Map<Integer, Integer>> assignment, List<Integer> component) {
+        double min = Double.MAX_VALUE;
+        for (int d = 0; d < draws.size(); d++) {
+            for (Integer p : component) {
+                Integer gi = assignment.get(d).get(p);
+                if (gi != null) {
+                    min = Math.min(min, draws.get(d).get(gi).minConfidence);
+                }
+            }
+        }
+        return min == Double.MAX_VALUE ? 0.0 : min;
     }
 
     /** Render like Python's repr so the rows match the validated prompt format exactly:
