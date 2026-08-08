@@ -4,10 +4,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tools.jackson.databind.JsonNode;
@@ -138,6 +140,10 @@ public class MailingAssembler {
         if (drawn.isEmpty()) {
             throw lastException;
         }
+        if (drawn.size() < draws) {
+            log.info("Assembly completed {} of {} requested draws; consensus uses only the {} that "
+                    + "succeeded", drawn.size(), draws, drawn.size());
+        }
         List<DocGroup> groups;
         if (drawn.size() == 1) {
             groups = drawn.get(0);
@@ -146,9 +152,11 @@ public class MailingAssembler {
             for (PageMetadataExtractor.PageMetadata m : pages) pageNumbers.add(m.page());
             groups = consensus(drawn, pageNumbers);
             int[] sizes = drawn.stream().mapToInt(List::size).toArray();
-            if (Arrays.stream(sizes).distinct().count() > 1) {
-                log.info("Assembly draws disagreed ({} groups) — consensus over {} draw(s): {} groups",
-                        Arrays.toString(sizes), drawn.size(), groups.size());
+            int contested = contestedPairs(drawn, pageNumbers);
+            if (contested > 0) {
+                log.info("Assembly draws disagreed on {} page pair(s) ({} groups) — consensus over "
+                        + "{} draw(s): {} groups",
+                        contested, Arrays.toString(sizes), drawn.size(), groups.size());
             }
         }
         return normalizer.normalize(groups, pages);
@@ -197,7 +205,10 @@ public class MailingAssembler {
      *  still has to land somewhere, and becomes its own group.
      *
      *  <p>Pure and total: no LLM, no clock, no randomness, and it never throws. Deterministic for
-     *  given draws — groups are ordered by their lowest page, pages ascending within a group.
+     *  given draws — groups are ordered by their lowest page; the page order WITHIN a group follows
+     *  the best-matching draw group (see {@link #findBest}), because that order is the model's
+     *  reading order (letter, continuation pages, enclosures, blanks last) and survives into the
+     *  produced sub-PDF — sorting it away would silently reshuffle every multi-draw mailing.
      *
      *  <p>Measured 2026-08-08: the same scan yielded 5 mailings in one run and 1 in the next while
      *  its page metadata stayed identical, i.e. the instability sits in this grouping step. */
@@ -207,36 +218,20 @@ public class MailingAssembler {
             return new ArrayList<>();
         }
         int threshold = draws.size() / 2 + 1;
-
-        // page -> group index, per draw. A page absent from a draw simply has no entry there.
-        List<Map<Integer, Integer>> assignment = new ArrayList<>();
-        for (List<DocGroup> draw : draws) {
-            Map<Integer, Integer> byPage = new HashMap<>();
-            for (int i = 0; i < draw.size(); i++) {
-                for (Integer p : draw.get(i).pages) {
-                    byPage.putIfAbsent(p, i);
-                }
-            }
-            assignment.add(byPage);
-        }
+        List<Map<Integer, Integer>> assignment = buildAssignment(draws);
 
         Map<Integer, Integer> parent = new HashMap<>();
         for (Integer p : pages) {
             parent.put(p, p);
         }
+        Map<PagePair, Integer> votes = new HashMap<>();
         for (int i = 0; i < pages.size(); i++) {
             for (int j = i + 1; j < pages.size(); j++) {
                 int a = pages.get(i);
                 int b = pages.get(j);
-                int votes = 0;
-                for (Map<Integer, Integer> byPage : assignment) {
-                    Integer ga = byPage.get(a);
-                    Integer gb = byPage.get(b);
-                    if (ga != null && ga.equals(gb)) {
-                        votes++;
-                    }
-                }
-                if (votes >= threshold) {
+                int v = countVotes(assignment, a, b);
+                votes.put(new PagePair(a, b), v);
+                if (v >= threshold) {
                     union(parent, a, b);
                 }
             }
@@ -253,13 +248,98 @@ public class MailingAssembler {
         List<DocGroup> out = new ArrayList<>();
         int n = 0;
         for (List<Integer> component : components.values()) {
-            DocGroup group = new DocGroup("doc-" + (++n), describe(draws, assignment, component));
-            group.pages.addAll(component);
-            group.minConfidence = confidenceOf(draws, assignment, component);
+            BestMatch best = findBest(draws, assignment, component);
+            DocGroup group = new DocGroup("doc-" + (++n), describe(draws, best));
+            group.pages.addAll(orderComponent(draws, best, component));
+            group.minConfidence = confidenceOf(draws, best, component, votes);
             out.add(group);
         }
         return out;
     }
+
+    /** page -> group index, per draw. A page absent from a draw simply has no entry there. */
+    private static List<Map<Integer, Integer>> buildAssignment(List<List<DocGroup>> draws) {
+        List<Map<Integer, Integer>> assignment = new ArrayList<>();
+        for (List<DocGroup> draw : draws) {
+            Map<Integer, Integer> byPage = new HashMap<>();
+            for (int i = 0; i < draw.size(); i++) {
+                for (Integer p : draw.get(i).pages) {
+                    byPage.putIfAbsent(p, i);
+                }
+            }
+            assignment.add(byPage);
+        }
+        return assignment;
+    }
+
+    /** How many draws put pages {@code a} and {@code b} in the same group. */
+    private static int countVotes(List<Map<Integer, Integer>> assignment, int a, int b) {
+        int votes = 0;
+        for (Map<Integer, Integer> byPage : assignment) {
+            Integer ga = byPage.get(a);
+            Integer gb = byPage.get(b);
+            if (ga != null && ga.equals(gb)) {
+                votes++;
+            }
+        }
+        return votes;
+    }
+
+    /** Counts page pairs the draws disagreed on, i.e. where {@code 0 < votes < draws.size()}. Two
+     *  draws can produce the SAME number of groups while disagreeing on every single pair (e.g.
+     *  {1,2},{3,4} vs {1,3},{2,4}), so the group-count alone is not a fit metric for how much the
+     *  vote had to decide — this is. */
+    private static int contestedPairs(List<List<DocGroup>> draws, List<Integer> pageNumbers) {
+        List<Integer> pages = new ArrayList<>(new LinkedHashSet<>(pageNumbers));
+        List<Map<Integer, Integer>> assignment = buildAssignment(draws);
+        int contested = 0;
+        for (int i = 0; i < pages.size(); i++) {
+            for (int j = i + 1; j < pages.size(); j++) {
+                int votes = countVotes(assignment, pages.get(i), pages.get(j));
+                if (votes > 0 && votes < draws.size()) {
+                    contested++;
+                }
+            }
+        }
+        return contested;
+    }
+
+    /** Identifies the draw group that overlaps a component most, i.e. shares the most pages with
+     *  it. Ties go to the earliest draw index, then the lowest group index within that draw (strict
+     *  {@code >}, so the FIRST group seen at the maximum overlap wins) — deterministic, and it is
+     *  the single source of truth {@link #describe}, the within-group page order and the base
+     *  confidence all read from, so they can never disagree with each other. {@link BestMatch#NONE}
+     *  when no draw group shares any page with the component. */
+    private static BestMatch findBest(List<List<DocGroup>> draws,
+            List<Map<Integer, Integer>> assignment, List<Integer> component) {
+        BestMatch best = BestMatch.NONE;
+        int bestOverlap = 0;
+        for (int d = 0; d < draws.size(); d++) {
+            for (int i = 0; i < draws.get(d).size(); i++) {
+                int overlap = 0;
+                for (Integer p : component) {
+                    Integer gi = assignment.get(d).get(p);
+                    if (gi != null && gi == i) {
+                        overlap++;
+                    }
+                }
+                if (overlap > bestOverlap) {
+                    bestOverlap = overlap;
+                    best = new BestMatch(d, i);
+                }
+            }
+        }
+        return best;
+    }
+
+    /** {@code (drawIndex, groupIndex)} of the draw group {@code findBest} picked; {@link #NONE}
+     *  when nothing overlapped. */
+    private record BestMatch(int drawIndex, int groupIndex) {
+        static final BestMatch NONE = new BestMatch(-1, -1);
+    }
+
+    /** An unordered page pair, always stored with {@code a < b}. */
+    private record PagePair(int a, int b) {}
 
     private static int find(Map<Integer, Integer> parent, int x) {
         int root = x;
@@ -282,44 +362,66 @@ public class MailingAssembler {
         }
     }
 
-    /** The descriptor of the draw group that overlaps this component most; ties go to the earliest
-     *  draw and lowest group index, so the result stays deterministic. Null when nothing overlaps. */
-    private static String describe(List<List<DocGroup>> draws,
-            List<Map<Integer, Integer>> assignment, List<Integer> component) {
-        String best = null;
-        int bestOverlap = 0;
-        for (int d = 0; d < draws.size(); d++) {
-            for (int i = 0; i < draws.get(d).size(); i++) {
-                int overlap = 0;
-                for (Integer p : component) {
-                    Integer gi = assignment.get(d).get(p);
-                    if (gi != null && gi == i) {
-                        overlap++;
-                    }
-                }
-                if (overlap > bestOverlap) {
-                    bestOverlap = overlap;
-                    best = draws.get(d).get(i).descriptor;
-                }
-            }
-        }
-        return best;
+    /** The descriptor of the {@link #findBest}-matching draw group; null when nothing overlapped. */
+    private static String describe(List<List<DocGroup>> draws, BestMatch best) {
+        return best.drawIndex() < 0 ? null : draws.get(best.drawIndex()).get(best.groupIndex()).descriptor;
     }
 
-    /** The lowest confidence among all draw groups that contributed a page to this component:
-     *  a consensus built from disagreeing draws should rather land in the review queue. */
-    private static double confidenceOf(List<List<DocGroup>> draws,
-            List<Map<Integer, Integer>> assignment, List<Integer> component) {
-        double min = Double.MAX_VALUE;
-        for (int d = 0; d < draws.size(); d++) {
-            for (Integer p : component) {
-                Integer gi = assignment.get(d).get(p);
-                if (gi != null) {
-                    min = Math.min(min, draws.get(d).get(gi).minConfidence);
+    /** Orders a component's pages the way the {@link #findBest}-matching draw group had them —
+     *  that is the model's reading order (letter, continuation pages, enclosures, blanks last),
+     *  and it must survive the vote unchanged since {@link PageReassembler} and (for a fully
+     *  labelled family) {@link MailingNormalizer#order} both build on it. Pages the best-matching
+     *  group does not mention (or when nothing overlapped at all) are appended ascending. */
+    private static List<Integer> orderComponent(List<List<DocGroup>> draws, BestMatch best,
+            List<Integer> component) {
+        List<Integer> ordered = new ArrayList<>();
+        Set<Integer> used = new HashSet<>();
+        if (best.drawIndex() >= 0) {
+            Set<Integer> componentSet = new HashSet<>(component);
+            for (Integer p : draws.get(best.drawIndex()).get(best.groupIndex()).pages) {
+                if (componentSet.contains(p) && used.add(p)) {
+                    ordered.add(p);
                 }
             }
         }
-        return min == Double.MAX_VALUE ? 0.0 : min;
+        List<Integer> remaining = new ArrayList<>();
+        for (Integer p : component) {
+            if (!used.contains(p)) {
+                remaining.add(p);
+            }
+        }
+        remaining.sort(Comparator.naturalOrder());
+        ordered.addAll(remaining);
+        return ordered;
+    }
+
+    /** {@code baseConfidence * agreement}: {@code baseConfidence} is the minConfidence of the
+     *  {@link #findBest}-matching draw group (0.0 when nothing overlapped), and {@code agreement}
+     *  is the mean, over every unordered page pair INSIDE the component, of {@code votes / draws}
+     *  (1.0 for a single-page component, which has no pair to disagree on). A single draw that
+     *  lumps unrelated pages into one low-confidence group therefore no longer stamps that low
+     *  number onto every OTHER component it happens to touch — only the component it actually best
+     *  matches is charged its confidence, and only to the extent the other draws agreed with it. */
+    private static double confidenceOf(List<List<DocGroup>> draws, BestMatch best,
+            List<Integer> component, Map<PagePair, Integer> votes) {
+        double base = best.drawIndex() < 0 ? 0.0 : draws.get(best.drawIndex()).get(best.groupIndex()).minConfidence;
+        if (component.size() <= 1) {
+            return base;
+        }
+        double sum = 0;
+        int pairs = 0;
+        for (int i = 0; i < component.size(); i++) {
+            for (int j = i + 1; j < component.size(); j++) {
+                int a = component.get(i);
+                int b = component.get(j);
+                PagePair key = a < b ? new PagePair(a, b) : new PagePair(b, a);
+                Integer v = votes.get(key);
+                sum += (v == null ? 0 : v) / (double) draws.size();
+                pairs++;
+            }
+        }
+        double agreement = pairs == 0 ? 1.0 : sum / pairs;
+        return base * agreement;
     }
 
     /** Render like Python's repr so the rows match the validated prompt format exactly:

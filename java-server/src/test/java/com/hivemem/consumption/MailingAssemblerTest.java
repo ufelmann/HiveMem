@@ -210,22 +210,59 @@ class MailingAssemblerTest {
     }
 
     @Test
-    void groupsAreOrderedByTheirLowestPageAndPagesAscending() {
+    void groupsAreOrderedByTheirLowestPage() {
+        // Group order is still by lowest page; the page order WITHIN a group is a separate concern
+        // (see consensusKeepsTheBestMatchingDrawsReadingOrderWithinAGroup) — here the "early" group
+        // was declared as (3, 1), so that draw order — not ascending — is what survives.
         List<DocGroup> draw = List.of(g("late", 0.9, 9, 7), g("early", 0.9, 3, 1));
         List<DocGroup> out = MailingAssembler.consensus(List.of(draw, draw, draw),
                 List.of(1, 3, 7, 9));
-        assertEquals(List.of(1, 3), out.get(0).pages);
-        assertEquals(List.of(7, 9), out.get(1).pages);
+        assertEquals(List.of(3, 1), out.get(0).pages);
+        assertEquals(List.of(9, 7), out.get(1).pages);
     }
 
     @Test
-    void confidenceIsTheMinimumOverTheContributingDrawGroups() {
-        List<DocGroup> a = List.of(g("a", 0.9, 1, 2));
-        List<DocGroup> b = List.of(g("b", 0.4, 1, 2));
-        List<DocGroup> c = List.of(g("c", 0.7, 1, 2));
-        List<DocGroup> out = MailingAssembler.consensus(List.of(a, b, c), List.of(1, 2));
+    void consensusKeepsTheBestMatchingDrawsReadingOrderWithinAGroup() {
+        // The prompt asks for reading order (letter, continuation pages, enclosures, blanks last),
+        // and that order survives into the produced sub-PDF — the vote must not silently re-sort it.
+        List<DocGroup> draw = List.of(g("a", 0.9, 4, 2, 3));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(draw, draw, draw), List.of(2, 3, 4));
         assertEquals(1, out.size());
-        assertEquals(0.4, out.get(0).minConfidence, 1e-9);
+        assertEquals(List.of(4, 2, 3), out.get(0).pages);
+    }
+
+    @Test
+    void confidenceEqualsBaseWhenAllDrawsAgree() {
+        List<DocGroup> draw = List.of(g("a", 0.9, 1, 2));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(draw, draw, draw), List.of(1, 2));
+        assertEquals(1, out.size());
+        assertEquals(0.9, out.get(0).minConfidence, 1e-9);
+    }
+
+    @Test
+    void aLowConfidenceDrawThatMergesEverythingDoesNotDragDownAnUnrelatedComponent() {
+        // The low-confidence draw fully overlaps EVERY component (it merged all 6 pages), so it
+        // ties on overlap with each split group — but the split group comes from an earlier draw
+        // index, so findBest's tie-break keeps it as the best match, and 0.2 never becomes the base.
+        List<DocGroup> split = List.of(g("s1", 0.9, 1, 2), g("s2", 0.9, 3, 4), g("s3", 0.9, 5, 6));
+        List<DocGroup> merged = List.of(g("m", 0.2, 1, 2, 3, 4, 5, 6));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(split, merged, split),
+                List.of(1, 2, 3, 4, 5, 6));
+        assertEquals(3, out.size());
+        assertEquals(0.9, out.get(0).minConfidence, 1e-9);
+        assertEquals(0.9, out.get(1).minConfidence, 1e-9);
+        assertEquals(0.9, out.get(2).minConfidence, 1e-9);
+    }
+
+    @Test
+    void partialAgreementLowersConfidenceBelowTheBase() {
+        // threshold = 3/2+1 = 2; two of three draws agree on {1,2}, so it merges, but the vote was
+        // not unanimous — the confidence must reflect that, not just copy the base 0.9.
+        List<DocGroup> merged = List.of(g("m", 0.9, 1, 2));
+        List<DocGroup> split = List.of(g("s1", 0.9, 1), g("s2", 0.9, 2));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(merged, merged, split), List.of(1, 2));
+        assertEquals(1, out.size());
+        assertEquals(0.6, out.get(0).minConfidence, 1e-9); // 0.9 base * (2 of 3 draws agreed)
     }
 
     @Test
