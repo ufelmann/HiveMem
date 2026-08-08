@@ -1,6 +1,7 @@
 package com.hivemem.consumption;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -89,10 +90,20 @@ public class MailingAssembler {
               answering.""";
 
     private final CompleteClient client;
+    private final int draws;
     private final MailingNormalizer normalizer = new MailingNormalizer();
 
+    /** Single-draw assembler: today's behaviour exactly, no vote. Used by tests and by callers
+     *  that do not want the extra draws. */
     public MailingAssembler(CompleteClient client) {
+        this(client, 1);
+    }
+
+    /** @param draws how many independent groupings to draw before the pairwise-majority vote.
+     *      Values below 1 are clamped to 1. */
+    public MailingAssembler(CompleteClient client, int draws) {
         this.client = client;
+        this.draws = Math.max(1, draws);
     }
 
     /** Assemble mailings from per-page metadata, then hand the model's grouping to
@@ -115,6 +126,36 @@ public class MailingAssembler {
                     .append('\n');
         }
         String prompt = PROMPT.formatted(rows.toString().strip());
+        List<List<DocGroup>> drawn = new ArrayList<>();
+        RuntimeException lastException = null;
+        for (int draw = 1; draw <= draws; draw++) {
+            try {
+                drawn.add(parseDraw(realm, prompt, draw));
+            } catch (RuntimeException e) {
+                lastException = e;
+            }
+        }
+        if (drawn.isEmpty()) {
+            throw lastException;
+        }
+        List<DocGroup> groups;
+        if (drawn.size() == 1) {
+            groups = drawn.get(0);
+        } else {
+            List<Integer> pageNumbers = new ArrayList<>();
+            for (PageMetadataExtractor.PageMetadata m : pages) pageNumbers.add(m.page());
+            groups = consensus(drawn, pageNumbers);
+            int[] sizes = drawn.stream().mapToInt(List::size).toArray();
+            if (Arrays.stream(sizes).distinct().count() > 1) {
+                log.info("Assembly draws disagreed ({} groups) — consensus over {} draw(s): {} groups",
+                        Arrays.toString(sizes), drawn.size(), groups.size());
+            }
+        }
+        return normalizer.normalize(groups, pages);
+    }
+
+    /** One grouping draw, with the same two attempts the single-draw path always had. */
+    private List<DocGroup> parseDraw(String realm, String prompt, int draw) {
         JsonNode arr = null;
         RuntimeException lastException = null;
         for (int attempt = 1; attempt <= 2; attempt++) {
@@ -122,7 +163,7 @@ public class MailingAssembler {
                 arr = LlmJson.parseArray(client.complete(realm, prompt));
                 break;
             } catch (RuntimeException e) {
-                log.warn("Assembly attempt {}/2 failed: {}", attempt, e.toString());
+                log.warn("Assembly draw {} attempt {}/2 failed: {}", draw, attempt, e.toString());
                 lastException = e;
             }
         }
@@ -137,7 +178,7 @@ public class MailingAssembler {
             g.minConfidence = m.path("confidence").asDouble(0.0);
             groups.add(g);
         }
-        return normalizer.normalize(groups, pages);
+        return groups;
     }
 
     /** Merge N independently drawn partitions of the same page set into one, by pairwise majority.

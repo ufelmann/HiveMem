@@ -235,4 +235,56 @@ class MailingAssemblerTest {
         List<DocGroup> out = MailingAssembler.consensus(List.of(List.of()), List.of(1, 2));
         assertEquals(2, out.size()); // no draw grouped anything -> two singletons
     }
+
+    @Test
+    void aSingleDrawBehavesExactlyAsBefore() {
+        CompleteClient cc = mock(CompleteClient.class);
+        when(cc.complete(anyString(), anyString())).thenReturn(
+                "[{\"mailing\":\"m\",\"description\":\"d\",\"confidence\":0.9,\"pages\":[1,2]}]");
+        List<DocGroup> out = new MailingAssembler(cc, 1).assemble("documents",
+                List.of(meta(1, "SYNTHETIC ENERGY", "01.01.2000"),
+                        meta(2, "SYNTHETIC ENERGY", "01.01.2000")));
+        verify(cc, times(1)).complete(anyString(), anyString());
+        assertEquals(1, out.size());
+        assertEquals("m", out.get(0).id);
+    }
+
+    @Test
+    void threeDrawsCallTheModelThreeTimesAndVote() {
+        CompleteClient cc = mock(CompleteClient.class);
+        when(cc.complete(anyString(), anyString()))
+                .thenReturn("[{\"mailing\":\"a\",\"description\":\"d\",\"confidence\":0.9,\"pages\":[1,2]}]")
+                .thenReturn("[{\"mailing\":\"b\",\"description\":\"d\",\"confidence\":0.9,\"pages\":[1]},"
+                        + "{\"mailing\":\"c\",\"description\":\"d\",\"confidence\":0.9,\"pages\":[2]}]")
+                .thenReturn("[{\"mailing\":\"d\",\"description\":\"d\",\"confidence\":0.9,\"pages\":[1,2]}]");
+        List<DocGroup> out = new MailingAssembler(cc, 3).assemble("documents",
+                List.of(meta(1, "SYNTHETIC ENERGY", "01.01.2000"),
+                        meta(2, "SYNTHETIC ENERGY", "01.01.2000")));
+        verify(cc, times(3)).complete(anyString(), anyString());
+        assertEquals(1, out.size()); // 2 of 3 draws merged
+        assertEquals(List.of(1, 2), out.get(0).pages);
+    }
+
+    @Test
+    void aFailedDrawIsSkippedAndTheRestStillVote() {
+        CompleteClient cc = mock(CompleteClient.class);
+        when(cc.complete(anyString(), anyString()))
+                .thenReturn("[{\"mailing\":\"a\",\"description\":\"d\",\"confidence\":0.9,\"pages\":[1,2]}]")
+                .thenThrow(new RestClientException("boom"))   // draw 2, attempt 1
+                .thenThrow(new RestClientException("boom"))   // draw 2, attempt 2
+                .thenReturn("[{\"mailing\":\"c\",\"description\":\"d\",\"confidence\":0.9,\"pages\":[1,2]}]");
+        List<DocGroup> out = new MailingAssembler(cc, 3).assemble("documents",
+                List.of(meta(1, "SYNTHETIC ENERGY", "01.01.2000"),
+                        meta(2, "SYNTHETIC ENERGY", "01.01.2000")));
+        assertEquals(1, out.size());
+        assertEquals(List.of(1, 2), out.get(0).pages);
+    }
+
+    @Test
+    void everyDrawFailingStillThrowsSoTheOrchestratorCanDegrade() {
+        CompleteClient cc = mock(CompleteClient.class);
+        when(cc.complete(anyString(), anyString())).thenThrow(new RestClientException("boom"));
+        assertThrows(RuntimeException.class, () -> new MailingAssembler(cc, 3)
+                .assemble("documents", List.of(meta(1, "SYNTHETIC ENERGY", "01.01.2000"))));
+    }
 }
