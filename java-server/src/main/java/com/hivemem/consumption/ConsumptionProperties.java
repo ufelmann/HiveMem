@@ -20,7 +20,13 @@ public class ConsumptionProperties {
     private double reassemblyConfidenceThreshold = 0.5; // aggressive: most groups commit
     private int reassemblyRenderDpi = 150;            // downscale pages for the vision payload
     private String reassemblyPurpose = "separator";   // Vistierie routing purpose
-    private int reassemblyMaxTokens = 4096;
+    /** Output budget per reassembly pass. 4096 was too tight for the mailing-assembly pass: on
+     *  2026-08-08, every one of the 7 "no JSON payload in LLM output" retries came from a call
+     *  whose output exceeded 4096, while all 1962 calls below that budget parsed on the first
+     *  attempt. The model reasons in prose before emitting the JSON, so a long batch spends the
+     *  budget on the reasoning and gets cut off before the payload. Largest observed output was
+     *  13088 tokens, hence 16384. */
+    private int reassemblyMaxTokens = 16384;
     /** How many independent grouping draws pass 3 takes before the pairwise-majority vote.
      *  1 disables the vote. Cheap: grouping is ONE text call per batch, while orientation and
      *  metadata are one vision call per page each — three draws cost about 3.5% more calls. */
