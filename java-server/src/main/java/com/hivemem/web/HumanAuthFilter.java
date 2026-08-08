@@ -64,8 +64,10 @@ public class HumanAuthFilter extends OncePerRequestFilter {
         // Legacy mode: LoginController serves /login (and /logout invalidates a session
         // that may not exist yet) without requiring a principal first — that's the whole
         // point of a login page. Access mode: LoginController is disabled and GoneController
-        // takes over the same paths, answering 410 to make a stale bookmark diagnosable
-        // instead of silently 403'ing before the request ever reaches a controller.
+        // takes over the same paths — 410 for /logout and for a POSTed login (a stale bookmark
+        // stays diagnosable instead of silently 403'ing before it reaches a controller), and a
+        // redirect to / for GET /login, which is where Access returns the browser after a
+        // successful challenge.
         if (path.equals("/login") || path.equals("/logout")) return true;
         // The SPA must learn its auth mode before it can authenticate at all.
         if (path.equals("/api/config")) return true;

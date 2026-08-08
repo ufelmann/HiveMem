@@ -22,7 +22,26 @@ export async function loadAuthMode(): Promise<AuthMode> {
     return mode
   }
   try {
-    const res = await fetch('/api/config', { credentials: 'same-origin', signal: AbortSignal.timeout(1500) })
+    // redirect: 'manual' is what makes an expired Access session classifiable at all: with
+    // the default 'follow' the cross-origin redirect to the Cloudflare login page either
+    // gets followed into an unreadable response or fails as a TypeError, and the old
+    // catch-all fallback then answered 'legacy' for a deployment that is very much 'access'.
+    const res = await fetch('/api/config', {
+      credentials: 'same-origin',
+      redirect: 'manual',
+      signal: AbortSignal.timeout(1500),
+    })
+    // Only edge-shaped answers mean Access. Deliberately not `!res.ok`: authMode() also
+    // picks the logout URL (stores/auth.ts) and gates the dev-token escape hatch
+    // (useApi.ts), so a transient origin 5xx must not flip the mode for the whole page
+    // load. HumanAuthFilter never filters /api/config and the controller answers 200 in
+    // both modes, so a redirect, 401 or 403 on this path cannot have come from the origin.
+    if (res.type === 'opaqueredirect'
+        || res.status === 401 || res.status === 403
+        || (res.status >= 300 && res.status < 400)) {
+      mode = 'access'
+      return mode
+    }
     const body = await res.json()
     mode = body.authMode === 'access' ? 'access' : 'legacy'
   } catch {
