@@ -304,16 +304,23 @@ public class MailingAssembler {
         return contested;
     }
 
-    /** Identifies the draw group that overlaps a component most, i.e. shares the most pages with
-     *  it. Ties go to the earliest draw index, then the lowest group index within that draw (strict
-     *  {@code >}, so the FIRST group seen at the maximum overlap wins) — deterministic, and it is
-     *  the single source of truth {@link #describe}, the within-group page order and the base
-     *  confidence all read from, so they can never disagree with each other. {@link BestMatch#NONE}
-     *  when no draw group shares any page with the component. */
+    /** Identifies the draw group that best represents a component, by a three-level rule:
+     *  (1) strictly greater overlap (pages shared with the component) wins; (2) on equal overlap,
+     *  strictly SMALLER group size wins — the tighter group is the one whose overlap with the
+     *  component isn't diluted by unrelated pages, i.e. the one that actually corresponds to the
+     *  consensus component rather than a superset of it; a superset group tying on overlap would
+     *  otherwise donate its reading order and its confidence to a component it only partly
+     *  describes; (3) only when both overlap and size are equal does the earliest draw index, then
+     *  lowest group index within that draw, win — draw/group order carries no meaning on its own
+     *  and exists purely to keep the result deterministic. This is the single source of truth
+     *  {@link #describe}, the within-group page order and the base confidence all read from, so
+     *  they can never disagree with each other. {@link BestMatch#NONE} when no draw group shares
+     *  any page with the component. */
     private static BestMatch findBest(List<List<DocGroup>> draws,
             List<Map<Integer, Integer>> assignment, List<Integer> component) {
         BestMatch best = BestMatch.NONE;
         int bestOverlap = 0;
+        int bestSize = Integer.MAX_VALUE;
         for (int d = 0; d < draws.size(); d++) {
             for (int i = 0; i < draws.get(d).size(); i++) {
                 int overlap = 0;
@@ -323,8 +330,10 @@ public class MailingAssembler {
                         overlap++;
                     }
                 }
-                if (overlap > bestOverlap) {
+                int size = draws.get(d).get(i).pages.size();
+                if (overlap > bestOverlap || (overlap == bestOverlap && overlap > 0 && size < bestSize)) {
                     bestOverlap = overlap;
+                    bestSize = size;
                     best = new BestMatch(d, i);
                 }
             }

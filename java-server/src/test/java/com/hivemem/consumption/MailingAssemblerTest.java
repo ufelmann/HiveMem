@@ -242,8 +242,9 @@ class MailingAssemblerTest {
     @Test
     void aLowConfidenceDrawThatMergesEverythingDoesNotDragDownAnUnrelatedComponent() {
         // The low-confidence draw fully overlaps EVERY component (it merged all 6 pages), so it
-        // ties on overlap with each split group — but the split group comes from an earlier draw
-        // index, so findBest's tie-break keeps it as the best match, and 0.2 never becomes the base.
+        // ties on overlap with each split group — but the split group (size 2) is tighter than the
+        // merged one (size 6), so findBest's size tie-break keeps it as the best match regardless of
+        // draw order, and 0.2 never becomes the base.
         List<DocGroup> split = List.of(g("s1", 0.9, 1, 2), g("s2", 0.9, 3, 4), g("s3", 0.9, 5, 6));
         List<DocGroup> merged = List.of(g("m", 0.2, 1, 2, 3, 4, 5, 6));
         List<DocGroup> out = MailingAssembler.consensus(List.of(split, merged, split),
@@ -263,6 +264,22 @@ class MailingAssemblerTest {
         List<DocGroup> out = MailingAssembler.consensus(List.of(merged, merged, split), List.of(1, 2));
         assertEquals(1, out.size());
         assertEquals(0.6, out.get(0).minConfidence, 1e-9); // 0.9 base * (2 of 3 draws agreed)
+    }
+
+    @Test
+    void tiedOverlapPrefersTheTighterGroupOverASuperset() {
+        // "big" (listed FIRST, confidence 0.3) covers all four pages; "small" (listed second,
+        // confidence 0.9) covers exactly the {1,2} component. Both tie on overlap=2 with that
+        // component, so only the size tie-break (small=2 < big=4) can pick the right one. Under the
+        // old earliest-draw-wins tie-break this test would fail: "big" comes first, ties on overlap,
+        // and the old code never looked past the tie to prefer the tighter group — so the {1,2}
+        // component would incorrectly inherit "big"'s 0.3 instead of "small"'s 0.9.
+        List<DocGroup> drawA = List.of(g("big", 0.3, 1, 2, 3, 4));
+        List<DocGroup> drawB = List.of(g("small", 0.9, 1, 2), g("rest", 0.9, 3, 4));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(drawA, drawB), List.of(1, 2, 3, 4));
+        assertEquals(2, out.size());
+        assertEquals(List.of(1, 2), out.get(0).pages);
+        assertEquals(0.9, out.get(0).minConfidence, 1e-9); // "small"'s confidence, not "big"'s 0.3
     }
 
     @Test
