@@ -77,8 +77,7 @@ func TestServeForwardsAFrameThroughTheBridge(t *testing.T) {
 func TestServeNeverExitsOnA401(t *testing.T) {
 	f := testsupport.NewFakeMCP()
 	defer f.Close()
-	f.ForceStatus = 401
-	f.ForceBody = `{"status":401,"error":"Unauthorized"}`
+	f.SetForceResponse(401, `{"status":401,"error":"Unauthorized"}`)
 	newServeTestEnv(t, f.URL)
 
 	store := keystore.NewEncFile([]byte("test passphrase"))

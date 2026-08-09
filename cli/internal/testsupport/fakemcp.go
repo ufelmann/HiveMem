@@ -25,6 +25,10 @@ type FakeMCP struct {
 	// nil error produces an empty successful result.
 	ToolHandler func(name string, args map[string]any) (any, error)
 	// ForceStatus, if non-zero, is returned for every request with Body as-is.
+	// Set both fields through SetForceResponse, not directly: handle() reads
+	// them from the server's goroutine, so an unsynchronized write from the
+	// test goroutine is a data race even though it happens-before the request
+	// in practice.
 	ForceStatus int
 	// ForceBody is the raw body sent when ForceStatus is set.
 	ForceBody string
@@ -88,9 +92,13 @@ func (f *FakeMCP) handle(w http.ResponseWriter, r *http.Request) {
 		f.mu.Unlock()
 	}
 
-	if f.ForceStatus != 0 {
-		w.WriteHeader(f.ForceStatus)
-		_, _ = w.Write([]byte(f.ForceBody))
+	f.mu.Lock()
+	forceStatus := f.ForceStatus
+	forceBody := f.ForceBody
+	f.mu.Unlock()
+	if forceStatus != 0 {
+		w.WriteHeader(forceStatus)
+		_, _ = w.Write([]byte(forceBody))
 		return
 	}
 
@@ -169,6 +177,16 @@ func (f *FakeMCP) handleToolCall(w http.ResponseWriter, id json.RawMessage, para
 	}
 	blob, _ := json.Marshal(out)
 	writeJSON(w, 200, toolText(id, string(blob)))
+}
+
+// SetForceResponse makes every subsequent request answer with the given
+// status and raw body, instead of being routed through the normal handlers.
+// Pass status 0 to disable forcing again.
+func (f *FakeMCP) SetForceResponse(status int, body string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ForceStatus = status
+	f.ForceBody = body
 }
 
 // DenyTool makes the named tool answer -32003 / HTTP 403, which is what the

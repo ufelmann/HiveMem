@@ -40,8 +40,7 @@ func TestStatusReportsTheRoleFromWakeUp(t *testing.T) {
 func TestStatusStopsProbingAfterA401(t *testing.T) {
 	f := testsupport.NewFakeMCP()
 	defer f.Close()
-	f.ForceStatus = 401
-	f.ForceBody = `{"error":"unauthorized"}`
+	f.SetForceResponse(401, `{"error":"unauthorized"}`)
 
 	d := newTestDeps(t, f.URL, &keystore.Credential{
 		AccessToken: "revoked-token-aaaa", TokenType: "Bearer",
@@ -69,8 +68,7 @@ func TestStatusStopsProbingAfterA401(t *testing.T) {
 func TestStatusSuppressionSurvivesACacheWrite(t *testing.T) {
 	f := testsupport.NewFakeMCP()
 	defer f.Close()
-	f.ForceStatus = 401
-	f.ForceBody = `{"error":"unauthorized"}`
+	f.SetForceResponse(401, `{"error":"unauthorized"}`)
 
 	d := newTestDeps(t, f.URL, &keystore.Credential{
 		AccessToken: "revoked-token-bbbb", TokenType: "Bearer",

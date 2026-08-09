@@ -123,8 +123,7 @@ func TestCallToolOnDeniedToolIsToolNotPermitted(t *testing.T) {
 func TestGenericForbiddenIsNotToolNotPermitted(t *testing.T) {
 	f := testsupport.NewFakeMCP()
 	defer f.Close()
-	f.ForceStatus = http.StatusForbidden
-	f.ForceBody = `{"timestamp":"2026-08-09T00:00:00Z","status":403,"error":"Forbidden"}`
+	f.SetForceResponse(http.StatusForbidden, `{"timestamp":"2026-08-09T00:00:00Z","status":403,"error":"Forbidden"}`)
 
 	_, err := newClient(t, f.URL).CallTool(context.Background(), "add_cell", map[string]any{})
 	if err == nil {

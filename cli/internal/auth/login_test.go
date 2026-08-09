@@ -52,8 +52,7 @@ func TestLoginWithTokenStoresOnlyAfterValidation(t *testing.T) {
 func TestLoginWithTokenDoesNotStoreARejectedToken(t *testing.T) {
 	f := testsupport.NewFakeMCP()
 	defer f.Close()
-	f.ForceStatus = 401
-	f.ForceBody = `{"error":"unauthorized"}`
+	f.SetForceResponse(401, `{"error":"unauthorized"}`)
 
 	m, store := newManager(t, f.URL)
 	if _, err := m.LoginWithToken(context.Background(), "bad-token-bbbbbbbb"); err == nil {
