@@ -51,7 +51,12 @@ func (w *winCred) Get(profile string) (*Credential, error) {
 func readGeneric(profile string) ([]byte, error) {
 	cred, err := wincred.GetGenericCredential(targetName(profile))
 	if err != nil {
-		return nil, ErrNotFound
+		if errors.Is(err, wincred.ErrElementNotFound) {
+			return nil, ErrNotFound
+		}
+		// A permissions problem or an unavailable credential service must
+		// surface to the caller, not be mistaken for "try the file instead."
+		return nil, fmt.Errorf("read keyring credential: %w", err)
 	}
 	return cred.CredentialBlob, nil
 }
@@ -67,10 +72,50 @@ func (w *winCred) Set(profile string, c *Credential) error {
 		// Per-user, and deliberately not roamed to a domain profile server.
 		cred.Persist = wincred.PersistLocalMachine
 		if err := cred.Write(); err == nil {
+			// The generic entry is now authoritative; a DPAPI file left over
+			// from a previous oversize write would otherwise shadow it on a
+			// future Get if the generic entry is ever removed by hand.
+			w.removeStaleFile(profile)
 			return nil
 		}
 	}
-	return w.setToFile(profile, blob)
+	if err := w.setToFile(profile, blob); err != nil {
+		return err
+	}
+	// The file is now authoritative; a stale generic entry from a previous
+	// undersize write must not keep answering Get with an outdated blob.
+	w.removeStaleGeneric(profile)
+	return nil
+}
+
+// removeStaleFile best-effort removes a leftover DPAPI file once the generic
+// Credential Manager entry has become authoritative again. A failure here
+// must not fail Set (the write it is cleaning up after already succeeded),
+// but it is surfaced on stderr rather than swallowed, since a silent failure
+// would leave the exact shadowing this cleanup exists to prevent.
+func (w *winCred) removeStaleFile(profile string) {
+	path, err := w.filePath(profile)
+	if err != nil {
+		return
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintf(os.Stderr,
+			"warning: could not remove stale DPAPI credential file for profile %q: %v\n", profile, err)
+	}
+}
+
+// removeStaleGeneric best-effort removes a leftover Credential Manager entry
+// once the DPAPI file has become authoritative. See removeStaleFile for why
+// this warns instead of staying silent, and why it never fails Set.
+func (w *winCred) removeStaleGeneric(profile string) {
+	cred, err := wincred.GetGenericCredential(targetName(profile))
+	if err != nil {
+		return // nothing to remove, including the genuine not-found case
+	}
+	if err := cred.Delete(); err != nil {
+		fmt.Fprintf(os.Stderr,
+			"warning: could not remove stale Credential Manager entry for profile %q: %v\n", profile, err)
+	}
 }
 
 func (w *winCred) Delete(profile string) error {
