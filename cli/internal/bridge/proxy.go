@@ -135,11 +135,10 @@ func (p *Proxy) handle(ctx context.Context, f *Frame) []byte {
 	// the whole point of the cool-down is to keep an already-known-bad
 	// credential from generating more failed, authenticated requests against
 	// the server (each one counts toward the five-failure IP ban).
-	if p.inCoolDown() {
+	token, ok, err := p.acquireInitialToken(ctx)
+	if !ok {
 		return SynthesizeError(f.ID, -32001, "not authenticated: run `hivemem login`")
 	}
-
-	token, err := p.initialToken(ctx)
 	if err != nil {
 		return SynthesizeError(f.ID, -32001, redact.Apply(err.Error()))
 	}
@@ -150,7 +149,7 @@ func (p *Proxy) handle(ctx context.Context, f *Frame) []byte {
 	}
 
 	if status == http.StatusUnauthorized {
-		// Recorded before resolve401 runs: resolve401 compares whatever
+		// Recorded before resolveAfterCoolDown runs: it compares whatever
 		// reload returns against THIS value, so a static-token profile —
 		// whose reload always returns the same token — is caught on the
 		// very first 401, not after a wasted retry.
@@ -158,7 +157,7 @@ func (p *Proxy) handle(ctx context.Context, f *Frame) []byte {
 		p.lastFailedToken = token
 		p.mu.Unlock()
 
-		if retry, newToken := p.resolve401(ctx); retry {
+		if retry, newToken := p.resolveAfterCoolDown(ctx); retry {
 			status, respBody, err = p.post(ctx, body, newToken)
 			if err != nil {
 				return SynthesizeError(f.ID, -32001, redact.Apply(err.Error()))
@@ -234,39 +233,51 @@ func (p *Proxy) post(ctx context.Context, body []byte, token string) (int, []byt
 	return resp.StatusCode, raw, err
 }
 
-// inCoolDown reports whether an unresolvable 401 is still suppressing
-// requests.
-func (p *Proxy) inCoolDown() bool {
+// acquireInitialToken returns the token to use for a frame's first attempt.
+// ok is false when the cool-down is (still) active: the caller must answer
+// the frame directly, without an HTTP request — that is the whole point of
+// the cool-down, since each authenticated request against a known-bad
+// credential counts toward the server's five-failure IP ban.
+//
+// A frame that arrives exactly as an earlier cool-down expires shares the
+// SAME critical section — the "for p.refreshing { Wait() }" gate — used to
+// serialize a 401 retry decision in resolveAfterCoolDown, rather than
+// independently concluding "not cooling down anymore" and dispatching its
+// own request. Without that shared gate, up to Workers concurrently
+// dispatched frames could each observe the cool-down as expired and each
+// call Credential (not Reload — the fast path below) before the single
+// resolver's Reload call had decided whether the cool-down should re-arm,
+// producing a burst of authenticated requests at the exact expiry boundary.
+func (p *Proxy) acquireInitialToken(ctx context.Context) (string, bool, error) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	return time.Now().Before(p.coolDownUntil)
-}
-
-// initialToken returns the token to use for a frame's first attempt. On
-// cool-down expiry the credential is re-read (via Reload, bypassing whatever
-// the plain Credential func would otherwise cache) before the coolDownUntil
-// marker is cleared — otherwise a long-running mcp-serve would keep serving a
-// stale cached token even after the user fixed the credential elsewhere.
-func (p *Proxy) initialToken(ctx context.Context) (string, error) {
-	p.mu.Lock()
-	expired := !p.coolDownUntil.IsZero() && !time.Now().Before(p.coolDownUntil)
-	if expired {
-		p.coolDownUntil = time.Time{}
+	for p.refreshing {
+		p.refreshed.Wait()
 	}
+	coolingDown := time.Now().Before(p.coolDownUntil)
+	// Expired means "a cool-down was armed and its time has passed" — as
+	// opposed to a coolDownUntil that was never set (the common case), which
+	// takes the fast, ungated path below.
+	expired := !coolingDown && !p.coolDownUntil.IsZero()
 	p.mu.Unlock()
 
-	if expired {
-		reload := p.cfg.Reload
-		if reload == nil {
-			reload = p.cfg.Credential
-		}
-		return reload(ctx)
+	if coolingDown {
+		return "", false, nil
 	}
-	return p.cfg.Credential(ctx)
+	if !expired {
+		token, err := p.cfg.Credential(ctx)
+		return token, true, err
+	}
+	ok, token := p.resolveAfterCoolDown(ctx)
+	return token, ok, nil
 }
 
-// resolve401 decides whether a 401 can be retried. The caller has already
-// recorded the token that failed into p.lastFailedToken before calling this.
+// resolveAfterCoolDown is the single serialized path for leaving a cool-down.
+// It is used both when a frame's cool-down had already expired before its
+// first attempt (acquireInitialToken) and when a fresh 401 arrives while a
+// cool-down was not (yet) active (handle). Exactly one goroutine performs the
+// reload at a time; every concurrent caller waits for that result instead of
+// racing it — see acquireInitialToken's doc comment for why that matters at
+// the expiry boundary.
 //
 // It covers BOTH a failed refresh and a static-token profile with no refresh
 // path at all: a static Credential func has nothing to change on reload, so
@@ -276,7 +287,14 @@ func (p *Proxy) initialToken(ctx context.Context) (string, error) {
 // runs) is what catches a static token on the very first 401 rather than
 // after a wasted retry, keeping ten pipelined frames on a revoked static
 // token down to at most two requests total.
-func (p *Proxy) resolve401(ctx context.Context) (bool, string) {
+//
+// A reload that itself fails (errors, or returns an empty token) is treated
+// as "still cannot resolve", exactly like an unchanged token: the cool-down
+// is re-armed before returning, never left cleared. Clearing it here would
+// mean a persistently erroring Reload gets called once per frame forever,
+// with no backoff at all — "re-read, then re-conclude" only holds if a
+// failed re-read still concludes "still cooling down".
+func (p *Proxy) resolveAfterCoolDown(ctx context.Context) (bool, string) {
 	p.mu.Lock()
 	if time.Now().Before(p.coolDownUntil) {
 		p.mu.Unlock()
@@ -285,8 +303,8 @@ func (p *Proxy) resolve401(ctx context.Context) (bool, string) {
 	for p.refreshing {
 		p.refreshed.Wait()
 	}
-	// Another goroutine may have already resolved (or cooled down) this
-	// exact failure while we were waiting.
+	// Another goroutine may have already resolved (or re-armed) this exact
+	// cool-down while we were waiting.
 	if time.Now().Before(p.coolDownUntil) {
 		p.mu.Unlock()
 		return false, ""
@@ -314,6 +332,9 @@ func (p *Proxy) resolve401(ctx context.Context) (bool, string) {
 		return false, ""
 	}
 
+	p.mu.Lock()
+	p.coolDownUntil = time.Time{}
+	p.mu.Unlock()
 	return true, token
 }
 

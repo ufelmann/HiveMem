@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,10 +15,17 @@ import (
 
 func runProxy(t *testing.T, cfg Config, input string) string {
 	t.Helper()
+	return runProxyOn(t, New(cfg), input)
+}
+
+// runProxyOn runs an existing Proxy, so cool-down state set up by an earlier
+// call carries over into this one.
+func runProxyOn(t *testing.T, p *Proxy, input string) string {
+	t.Helper()
 	var out bytes.Buffer
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := New(cfg).Run(ctx, strings.NewReader(input), &out); err != nil {
+	if err := p.Run(ctx, strings.NewReader(input), &out); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	return out.String()
@@ -248,4 +256,139 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(b)
+}
+
+// A Reload that itself fails must not clear the cool-down: "re-read, then
+// re-conclude" only holds if a failed re-read still concludes "still cooling
+// down". A version that clears coolDownUntil unconditionally on expiry (before
+// knowing whether the reload succeeded) leaves a persistently erroring Reload
+// hammered once per frame with no backoff at all.
+func TestProxyReloadErrorReArmsTheCoolDown(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(401)
+		_, _ = w.Write([]byte(`{"status":401,"error":"Unauthorized"}`))
+	}))
+	defer srv.Close()
+
+	var reloadCalls int32
+	p := New(Config{
+		ServerURL:  srv.URL,
+		Credential: staticCred("revoked-token-y"),
+		Reload: func(context.Context) (string, error) {
+			atomic.AddInt32(&reloadCalls, 1)
+			return "", errors.New("reload backend unreachable")
+		},
+		Workers:  1,
+		CoolDown: 40 * time.Millisecond,
+	})
+
+	// First frame discovers the 401; the failing Reload should arm the
+	// cool-down (not merely fail to clear one, since none exists yet).
+	out1 := runProxyOn(t, p, `{"jsonrpc":"2.0","id":1,"method":"ping"}`+"\n")
+	if !strings.Contains(out1, "-32001") {
+		t.Fatalf("first frame must be a synthesized -32001 error, got:\n%s", out1)
+	}
+	if got := atomic.LoadInt32(&hits); got != 1 {
+		t.Fatalf("hits after the first frame = %d, want 1", got)
+	}
+	if got := atomic.LoadInt32(&reloadCalls); got != 1 {
+		t.Fatalf("reload calls after the first frame = %d, want 1", got)
+	}
+
+	// Wait past the cool-down's expiry, then send a second frame. This is the
+	// frame that walks the "expired" branch and re-checks Reload. Whether or
+	// not THIS frame itself reaches the server (a buggy implementation may
+	// short-circuit on the reload error before ever calling post, same as
+	// the fix does), it must decide whether cooldown re-arms — that decision
+	// is what the third frame below actually probes.
+	time.Sleep(4 * p.cfg.CoolDown)
+	out2 := runProxyOn(t, p, `{"jsonrpc":"2.0","id":2,"method":"ping"}`+"\n")
+	if strings.TrimSpace(out2) == "" {
+		t.Fatal("the second frame must still be answered, not left hanging")
+	}
+	if !strings.Contains(out2, "-32001") {
+		t.Fatalf("second frame must also be a synthesized -32001 error, got:\n%s", out2)
+	}
+	hitsAfterSecond := atomic.LoadInt32(&hits)
+
+	// A third frame, sent immediately (no further sleep): if the cool-down
+	// was left cleared instead of re-armed by the second frame's failed
+	// reload, this frame takes the ungated fast path straight to an
+	// authenticated POST — the exact "hammered once per frame, no backoff"
+	// bug. With the fix, the cool-down the second frame re-armed is still
+	// active, so this frame is answered directly, with zero more hits.
+	out3 := runProxyOn(t, p, `{"jsonrpc":"2.0","id":3,"method":"ping"}`+"\n")
+	if strings.TrimSpace(out3) == "" {
+		t.Fatal("the third frame must still be answered, not left hanging")
+	}
+	if !strings.Contains(out3, "-32001") {
+		t.Fatalf("third frame must also be a synthesized -32001 error, got:\n%s", out3)
+	}
+	if got := atomic.LoadInt32(&hits); got != hitsAfterSecond {
+		t.Fatalf("the server received %d more request(s) from the third frame, want 0 — "+
+			"a failed Reload must re-arm the cool-down, not clear it and leave the next frame unprotected (hits: %d -> %d)",
+			got-hitsAfterSecond, hitsAfterSecond, got)
+	}
+}
+
+// A burst of frames arriving exactly as a cool-down expires must not each
+// independently conclude "not cooling down anymore" and dispatch their own
+// request: that race is what would let up to Workers authenticated 401s
+// through at the boundary, on top of the failures that armed the cool-down in
+// the first place — landing on the server's five-failure ban. Reload is made
+// deliberately slow so the boundary window is wide enough to catch a buggy
+// implementation reliably, without relying on tight wall-clock coincidence.
+func TestProxyCoolDownExpiryDoesNotBurst(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(401)
+		_, _ = w.Write([]byte(`{"status":401,"error":"Unauthorized"}`))
+	}))
+	defer srv.Close()
+
+	const stillBadToken = "still-bad-token"
+	p := New(Config{
+		ServerURL:  srv.URL,
+		Credential: staticCred(stillBadToken),
+		Reload: func(context.Context) (string, error) {
+			// Wide enough that, under a buggy implementation, the six
+			// concurrent frames below reliably slip through the boundary
+			// window before this returns.
+			time.Sleep(80 * time.Millisecond)
+			return stillBadToken, nil
+		},
+		Workers:  6,
+		CoolDown: 10 * time.Millisecond,
+	})
+
+	// Prime the cool-down with one frame that discovers the 401.
+	out := runProxyOn(t, p, `{"jsonrpc":"2.0","id":0,"method":"ping"}`+"\n")
+	if !strings.Contains(out, "-32001") {
+		t.Fatalf("priming frame must be a synthesized error, got:\n%s", out)
+	}
+	primed := atomic.LoadInt32(&hits)
+
+	// Wait past the (short) cool-down, then send a burst of frames right as
+	// the boundary reload (still in flight for another ~80ms) is resolving
+	// whether the cool-down should re-arm.
+	time.Sleep(15 * time.Millisecond)
+
+	var in strings.Builder
+	for i := 1; i <= 6; i++ {
+		in.WriteString(`{"jsonrpc":"2.0","id":`)
+		in.WriteString(itoa(i))
+		in.WriteString(`,"method":"ping"}` + "\n")
+	}
+	out = runProxyOn(t, p, in.String())
+
+	if n := strings.Count(strings.TrimSpace(out), "\n") + 1; n != 6 {
+		t.Fatalf("got %d output lines, want 6 — every frame must still be answered:\n%s", n, out)
+	}
+	if got := atomic.LoadInt32(&hits) - primed; got > 1 {
+		t.Fatalf("%d requests reached the server while the boundary reload was in flight, want at most 1 — "+
+			"concurrent frames must wait for the single resolution instead of slipping through", got)
+	}
 }
