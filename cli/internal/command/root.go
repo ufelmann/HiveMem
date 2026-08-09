@@ -6,10 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/visterion/hivemem/cli/internal/auth"
 	"github.com/visterion/hivemem/cli/internal/config"
@@ -18,6 +21,15 @@ import (
 	"github.com/visterion/hivemem/cli/internal/mcp"
 	"github.com/visterion/hivemem/cli/internal/redact"
 )
+
+// errNoServerConfigured is returned by resolveDeps (and its overrides
+// variant) when no server resolves from --server, HIVEMEM_SERVER, or the
+// saved config. status, tools, every generated subcommand, and
+// diagnoseUnrecognizedCommand all surface this exact error — reusing the
+// value, not a second copy of the string, is what keeps them from drifting
+// apart.
+var errNoServerConfigured = errors.New(
+	"no server configured: pass --server or run `hivemem login --server <url>`")
 
 // FixedNames are the command names the CLI owns. A generated tool with one of
 // these names is not registered as a subcommand; it stays reachable via
@@ -96,7 +108,23 @@ func newRootCmd() *cobra.Command {
 // Execute builds the command tree, attaches the generated subcommands, and
 // returns the process exit code.
 func Execute() int {
+	code, line := execute(os.Args[1:], os.Stdout)
+	if line != "" {
+		fmt.Fprintln(os.Stderr, line)
+	}
+	return code
+}
+
+// execute runs the command tree for args and returns the exit code together
+// with the line Execute should print to stderr — "" when nothing should be
+// printed. Split out from Execute so tests can drive the whole dispatch,
+// including the unknown-command diagnosis below, without touching os.Args or
+// the process's real stderr.
+func execute(args []string, out io.Writer) (code int, errLine string) {
 	root := newRootCmd()
+	root.SetOut(out)
+	root.SetErr(out)
+	root.SetArgs(args)
 
 	// Generated subcommands come from the cache and must never block startup:
 	// a missing or unreadable cache simply means fewer subcommands until the
@@ -117,17 +145,121 @@ func Execute() int {
 		}
 	}
 
-	if err := root.Execute(); err != nil {
-		// Redacted: this is the last thing a user copies into a bug report.
-		fmt.Fprintln(os.Stderr, "Error:", redact.Apply(err.Error()))
-		return exitCodeFor(err)
+	err := root.Execute()
+	if err == nil {
+		return 0, ""
 	}
-	return 0
+	if _, ok := unmatchedCommandName(err); ok {
+		if diag, ok := diagnoseUnrecognizedCommand(root.Context(), args); ok {
+			err = diag
+		}
+	}
+	return exitCodeFor(err), errorLine(err)
+}
+
+// errorLine formats the line Execute prints to stderr for a failed run, or
+// "" when nothing should be printed. An *exitError can carry an empty
+// message on purpose — runStatus, newCallCmd and buildCommand all return one
+// solely to smuggle a specific exit code out of a RunE, with the report
+// already written to stdout — and cobra would otherwise print a bare
+// "Error: " line for it.
+func errorLine(err error) string {
+	// Redacted: this is the last thing a user copies into a bug report.
+	msg := redact.Apply(err.Error())
+	if msg == "" {
+		return ""
+	}
+	return "Error: " + msg
+}
+
+// unknownCommandPattern matches cobra's own "unknown command" error text
+// (args.go's legacyArgs, pinned at cobra v1.10.2 in go.mod). If a future
+// cobra bump changes the wording, the match simply fails and
+// diagnoseUnrecognizedCommand is skipped — the original cobra error passes
+// through unchanged, same as today.
+var unknownCommandPattern = regexp.MustCompile(`^unknown command "([^"]*)" for "`)
+
+// unmatchedCommandName extracts the attempted command name from an
+// "unknown command" error, so execute can offer a more specific diagnosis
+// before falling back to cobra's own message.
+func unmatchedCommandName(err error) (string, bool) {
+	m := unknownCommandPattern.FindStringSubmatch(err.Error())
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
+}
+
+// diagnoseUnrecognizedCommand replaces cobra's generic "unknown command"
+// error with the real blocker, for the common case where the typed name is
+// actually a tool that simply has not become a subcommand yet:
+//
+//   - no server resolves at all (no --server, no HIVEMEM_SERVER, nothing
+//     saved in the config) — reports the exact error resolveDeps itself
+//     returns for this, the same one `status` and `tools` already surface,
+//     so the three can never drift apart.
+//   - no credential for the resolved profile — the tool cache is always
+//     empty in that state, so the name cannot be a subcommand yet either.
+//     Reports the same message and exit code `tools` already gives.
+//   - a credential exists but the tool cache was never populated (nobody
+//     has run `hivemem tools` yet, or the cache was cleared) — names the
+//     command that fixes it.
+//
+// When a credential and a cache entry are both present, the name is left
+// alone: it is either really unregistered — a genuine typo, which must not
+// be swallowed — or, in principle, a name that IS in the cache but was
+// skipped by evaluateTool. That second case cannot actually reach here: a
+// fixed-command-name collision already matches the built-in subcommand
+// before Find ever falls back to the root, and evaluateTool's other
+// rejection reason (an unparseable schema) never yields a Name to compare
+// against. So every remaining case is a real typo, and reports false to let
+// the caller keep cobra's own error and exit code.
+//
+// args is the raw, unparsed argument list execute() was given. Cobra never
+// parses --server/--cred-profile for an unmatched command — Find() fails
+// before ParseFlags ever runs — so this re-derives them itself with a
+// throwaway flag set that tolerates unknown flags, instead of reading the
+// (still zero-valued) global opts.
+func diagnoseUnrecognizedCommand(ctx context.Context, args []string) (error, bool) {
+	server, profile := parseGlobalFlags(args)
+	d, err := resolveDepsWithOverrides(ctx, server, profile)
+	if err != nil {
+		if errors.Is(err, errNoServerConfigured) {
+			return err, true
+		}
+		return nil, false
+	}
+	if d.Client == nil {
+		return authError("not logged in: run `hivemem login`"), true
+	}
+	if _, ok := d.Cache.Get(d.Manager.CacheKey()); !ok {
+		return usageError(
+			"the tool list has not been fetched yet: run `hivemem tools --refresh`"), true
+	}
+	return nil, false
+}
+
+// parseGlobalFlags picks --server and --cred-profile out of an arbitrary
+// argument list. It ignores parse errors and unknown flags (including a
+// generated flag with no known arity, like --query on an unregistered tool
+// name) by design: this is a best-effort diagnosis, not a real dispatch, and
+// must never fail the way the real flag parse would.
+func parseGlobalFlags(args []string) (server, credProfile string) {
+	fs := pflag.NewFlagSet("diagnose", pflag.ContinueOnError)
+	fs.ParseErrorsWhitelist = pflag.ParseErrorsWhitelist{UnknownFlags: true}
+	fs.StringVar(&server, "server", "", "")
+	fs.StringVar(&credProfile, "cred-profile", "", "")
+	_ = fs.Parse(args)
+	return server, credProfile
 }
 
 func resolveServer(cfg *config.Config) string {
-	if opts.server != "" {
-		return opts.server
+	return resolveServerOverride(cfg, opts.server)
+}
+
+func resolveServerOverride(cfg *config.Config, override string) string {
+	if override != "" {
+		return override
 	}
 	if v := os.Getenv("HIVEMEM_SERVER"); v != "" {
 		return v
@@ -136,8 +268,12 @@ func resolveServer(cfg *config.Config) string {
 }
 
 func resolveProfile(cfg *config.Config) string {
-	if opts.credProfile != "" {
-		return opts.credProfile
+	return resolveProfileOverride(cfg, opts.credProfile)
+}
+
+func resolveProfileOverride(cfg *config.Config, override string) string {
+	if override != "" {
+		return override
 	}
 	if v := os.Getenv("HIVEMEM_PROFILE"); v != "" {
 		return v
@@ -158,6 +294,17 @@ func timeouts() mcp.Timeouts {
 
 // resolveDeps builds the dependency set for a command run.
 func resolveDeps(ctx context.Context) (*Deps, error) {
+	return resolveDepsWithOverrides(ctx, opts.server, opts.credProfile)
+}
+
+// resolveDepsWithOverrides is resolveDeps with the --server/--cred-profile
+// values passed explicitly rather than read from the global opts. Cobra's
+// own dispatch never has to do this — by the time a RunE runs, ParseFlags
+// already wrote the CLI's --server and --cred-profile into opts — but
+// diagnoseUnrecognizedCommand runs after Find() failed to resolve a
+// subcommand, before ParseFlags ever ran, so it has no populated opts to
+// read and must supply the overrides itself.
+func resolveDepsWithOverrides(ctx context.Context, serverOverride, profileOverride string) (*Deps, error) {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		return nil, err
@@ -166,10 +313,10 @@ func resolveDeps(ctx context.Context) (*Deps, error) {
 	if err != nil {
 		return nil, err
 	}
-	profile := resolveProfile(cfg)
-	server := resolveServer(cfg)
+	profile := resolveProfileOverride(cfg, profileOverride)
+	server := resolveServerOverride(cfg, serverOverride)
 	if server == "" {
-		return nil, fmt.Errorf("no server configured: pass --server or run `hivemem login --server <url>`")
+		return nil, errNoServerConfigured
 	}
 
 	store, err := keystore.Select(keystore.SelectOptions{

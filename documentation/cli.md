@@ -93,6 +93,26 @@ field holding that same text. Both forms are derived from one evaluation, so
 they cannot disagree about which tools are affected. An empty tool set prints
 `[]`, never `null`.
 
+### Typing a tool name before it is a subcommand
+
+A generated subcommand only exists once its schema has been fetched and
+cached — by `login` or by `hivemem tools`. Until then, typing a real tool
+name reports the actual blocker instead of a generic "unknown command":
+
+```bash
+$ hivemem search --query x          # no server configured at all
+Error: no server configured: pass --server or run `hivemem login --server <url>`
+$ hivemem search --query x --server https://hivemem.example   # no credential yet
+Error: not logged in: run `hivemem login`
+$ hivemem login --server https://hivemem.example …
+$ hivemem search --query x --server https://hivemem.example   # credential exists, tool list never fetched
+Error: the tool list has not been fetched yet: run `hivemem tools --refresh`
+```
+
+Once a credential and a cached tool list are both present, an unrecognised
+name is treated as a genuine typo and reported with cobra's own "unknown
+command" message.
+
 ## Seeing what goes over the wire
 
 `--verbose` dumps every HTTP request and response body to **stderr**. Known
