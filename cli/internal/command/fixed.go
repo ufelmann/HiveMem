@@ -17,6 +17,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/visterion/hivemem/cli/internal/auth"
+	"github.com/visterion/hivemem/cli/internal/bridge"
 	"github.com/visterion/hivemem/cli/internal/config"
 	"github.com/visterion/hivemem/cli/internal/keystore"
 	"github.com/visterion/hivemem/cli/internal/mcp"
@@ -335,18 +336,30 @@ func newServeCmd() *cobra.Command {
 			}
 
 			m := auth.NewManager(store, cache, server, profile)
-			cred, err := m.Credential(ctx)
-			if err != nil {
-				return authError("%v", err)
-			}
-			_ = cred
 
-			// TODO(task-13): construct the bridge and hand it the resolved
-			// credential once internal/bridge exists, e.g.:
-			//   p := bridge.New(server, cred, timeouts())
-			//   return p.Run(ctx, cmd.InOrStdin(), cmd.OutOrStdout())
-			return &exitError{code: 1,
-				msg: "mcp-serve is not yet implemented (bridge wiring lands in task 13)"}
+			// token is both Credential and Reload for the bridge: Manager's
+			// Credential already re-reads the store on every call and only
+			// performs its own (locked, proactive) refresh when the stored
+			// credential is due. Passing it for both means the bridge's
+			// cool-down-expiry re-read picks up a static-token profile fixed
+			// via `hivemem login` while this process kept running, and never
+			// exits on its own for an auth failure — that is the command
+			// path's behaviour, not mcp-serve's.
+			token := func(ctx context.Context) (string, error) {
+				cred, err := m.Credential(ctx)
+				if err != nil {
+					return "", err
+				}
+				return cred.AccessToken, nil
+			}
+			p := bridge.New(bridge.Config{
+				ServerURL:  server,
+				Credential: token,
+				Reload:     token,
+				Workers:    4,
+				CoolDown:   60 * time.Second,
+			})
+			return p.Run(ctx, cmd.InOrStdin(), cmd.OutOrStdout())
 		},
 	}
 }
