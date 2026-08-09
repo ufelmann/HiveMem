@@ -62,6 +62,19 @@ hivemem call <tool> --args-json '{…}'   # raw escape hatch
 Nested objects take a JSON fragment (`--where-json`); `--json` switches the
 *output* to raw JSON.
 
+`call --args-json` is the escape hatch: it accepts keys the cached schema does
+not describe, but a property the schema marks as required must still be
+present. The server ignores keys it does not read rather than rejecting them,
+so an incomplete payload would otherwise come back as a confident wrong answer.
+
+## Seeing what goes over the wire
+
+`--verbose` dumps every HTTP request and response body to **stderr**. Known
+secrets — bearer tokens, refresh tokens, the values in a token response — are
+replaced with `***`, and request headers are never printed at all. Output goes
+to stderr, so it stays out of the way of `--json` and of `mcp-serve`'s
+transport.
+
 ## As an MCP server
 
 ```json
