@@ -68,4 +68,23 @@ class VistierieRunsClientTest {
         assertThatThrownBy(() -> client("admin-tok").listRuns(50, 0))
                 .isInstanceOf(VistierieUnavailableException.class);
     }
+
+    @Test
+    void listRunsTenantScopedAlwaysUsesPlainRunsPathEvenWithAdminToken() {
+        mock.stubTenantRuns("""
+                [{"run_id":"b1","agent_name":"isolated-cell-bee","parent_run_id":"q1",
+                  "status":"done","output":{"cell_id":"c1","proposals":[]}}]
+                """);
+        JsonNode out = client("admin-tok").listRunsTenantScoped(100);
+        assertThat(out.get(0).get("run_id").asString()).isEqualTo("b1");
+        verify(getRequestedFor(urlPathEqualTo("/runs"))
+                .withHeader("Authorization", equalTo("Bearer tenant-tok")));
+    }
+
+    @Test
+    void listRunsTenantScopedServerErrorMapsToUnavailable() {
+        mock.stubRunsServerError();
+        assertThatThrownBy(() -> client("").listRunsTenantScoped(100))
+                .isInstanceOf(VistierieUnavailableException.class);
+    }
 }

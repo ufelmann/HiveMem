@@ -129,16 +129,27 @@ public class VistierieWebhookController {
             @RequestHeader(name = "Authorization", required = false) String auth,
             @RequestBody CompletionPayload payload) {
         requireToken(auth, props.getCompletionWebhookToken());
-        if (payload == null || !"done".equals(payload.status()) || payload.output() == null) {
-            log.info("Queen run {} status={} — nothing to ingest",
-                    payload == null ? "?" : payload.run_id(),
-                    payload == null ? "?" : payload.status());
+        if (payload != null && "done".equals(payload.status()) && payload.output() != null) {
+            Object raw = payload.output().get("proposals");
+            List<Map<String, Object>> proposals = raw instanceof List<?> l ? (List<Map<String, Object>>) l : List.of();
+            int written = service.ingestProposals(proposals);
+            log.info("Queen run {} ingested {} pending tunnel proposal(s)", payload.run_id(), written);
             return ResponseEntity.ok().build();
         }
-        Object raw = payload.output().get("proposals");
-        List<Map<String, Object>> proposals = raw instanceof List<?> l ? (List<Map<String, Object>>) l : List.of();
-        int written = service.ingestProposals(proposals);
-        log.info("Queen run {} ingested {} pending tunnel proposal(s)", payload.run_id(), written);
+        // Vistierie never attaches output to a failed run (see QueenWebhookService#
+        // recoverProposalsFromChildRuns javadoc), so a tripped max_run_seconds would otherwise
+        // discard every proposal the already-finished Bees produced. Recover those from their
+        // own (independently persisted) child runs instead of losing them.
+        if (payload != null && "failed".equals(payload.status())
+                && "max_run_seconds_exceeded".equals(payload.error())) {
+            int written = service.recoverProposalsFromChildRuns(payload.run_id());
+            log.info("Queen run {} timed out (max_run_seconds_exceeded); recovered {} pending "
+                    + "tunnel proposal(s) from already-finished bees", payload.run_id(), written);
+            return ResponseEntity.ok().build();
+        }
+        log.info("Queen run {} status={} — nothing to ingest",
+                payload == null ? "?" : payload.run_id(),
+                payload == null ? "?" : payload.status());
         return ResponseEntity.ok().build();
     }
 

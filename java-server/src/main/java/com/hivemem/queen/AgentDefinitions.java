@@ -281,7 +281,15 @@ public class AgentDefinitions {
                 dispatch));
         def.put("output_schema", outputSchema);
         def.put("max_turns", 40);
-        def.put("max_run_seconds", 300);
+        // 600s (10 min), raised from 300s on 2026-08-09: prod measured a 20-cell batch at
+        // 256-280s (avg ~13.4s/bee, 2914-cell backlog, 20 = QueenProperties.isolatedBatchLimit).
+        // 300s left under 40s of margin, so ordinary night-to-night bee-latency variance was
+        // enough to trip max_run_seconds_exceeded on 12 of the last 14 runs (297-314s). 600s
+        // gives a normal run >2x headroom (600-280=320s spare) and comfortably absorbs a
+        // several-slow-bees night (e.g. 5 bees at their own 60s cap + 15 at the ~14s average =
+        // 510s) without still being the unrealistic every-bee-maxes bound (20*60=1200s) that
+        // would let a genuinely stuck run hang for 20 minutes before failing.
+        def.put("max_run_seconds", 600);
         def.put("webhook_token", props.getWebhookToken());
         def.put("schedule", props.getSchedule());
         def.put("completion_webhook", props.getHivememBaseUrl() + "/vistierie/runs/done");

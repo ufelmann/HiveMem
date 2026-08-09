@@ -11,9 +11,11 @@ import com.hivemem.write.WriteToolService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -36,15 +38,18 @@ public class QueenWebhookService {
     private final CellSearchRepository search;
     private final EmbeddingClient embedding;
     private final WriteToolService writes;
+    private final VistierieRunsClient runsClient;
 
     public QueenWebhookService(QueenProperties props, QueenRepository repo, CellReadRepository cells,
-                               CellSearchRepository search, EmbeddingClient embedding, WriteToolService writes) {
+                               CellSearchRepository search, EmbeddingClient embedding, WriteToolService writes,
+                               VistierieRunsClient runsClient) {
         this.props = props;
         this.repo = repo;
         this.cells = cells;
         this.search = search;
         this.embedding = embedding;
         this.writes = writes;
+        this.runsClient = runsClient;
     }
 
     public Map<String, Object> findIsolatedCells(int requestedLimit) {
@@ -173,5 +178,72 @@ public class QueenWebhookService {
             }
         }
         return written;
+    }
+
+    /**
+     * Recovery for a Queen run that failed on {@code max_run_seconds_exceeded}. Vistierie's
+     * {@code AgentRunner} passes {@code output=null} on every failure branch (there is no
+     * partial-output delivery for the parent run itself), so the completion webhook body never
+     * carries the proposals a timed-out Queen had already collected — even though most of that
+     * work happened and would otherwise be lost.
+     *
+     * <p>Each {@code dispatch_bee} call is its own independent Vistierie run, though, and each
+     * one is durably marked {@code done} with its own real output the moment that Bee finishes —
+     * regardless of what happens to the parent Queen run afterwards. This method recovers that:
+     * it lists the tenant's recent runs (the only shape that carries {@code parent_run_id} and
+     * {@code output} — Vistierie's admin listing carries neither), keeps the {@code
+     * isolated-cell-bee} children of {@code queenRunId} that reached {@code done}, and ingests
+     * their proposals exactly as the Queen's own completion path would have (bee's own {@code
+     * cell_id} becomes {@code from_cell}).
+     *
+     * <p>Best-effort: a Vistierie outage here must not throw back into the webhook handler — it
+     * would just mean this specific night's timeout stays a total loss, same as before this
+     * method existed.
+     */
+    public int recoverProposalsFromChildRuns(String queenRunId) {
+        JsonNode body;
+        try {
+            body = runsClient.listRunsTenantScoped(100);
+        } catch (RuntimeException e) {
+            log.warn("Timeout recovery for queen run {}: could not list Vistierie runs: {}",
+                    queenRunId, e.toString());
+            return 0;
+        }
+        JsonNode items = body == null ? null : (body.has("items") ? body.get("items") : body);
+        if (items == null || !items.isArray()) return 0;
+
+        List<Map<String, Object>> mapped = new ArrayList<>();
+        Set<String> surveyedCells = new LinkedHashSet<>();
+        for (JsonNode r : items) {
+            if (!AgentDefinitions.BEE_NAME.equals(text(r, "agent_name"))) continue;
+            if (!queenRunId.equals(text(r, "parent_run_id"))) continue;
+            if (!"done".equals(text(r, "status"))) continue;
+            JsonNode output = r.get("output");
+            if (output == null || output.isNull()) continue;
+            String cellId = text(output, "cell_id");
+            if (cellId == null) continue;
+            surveyedCells.add(cellId);
+            JsonNode proposals = output.get("proposals");
+            if (proposals == null || !proposals.isArray()) continue;
+            for (JsonNode p : proposals) {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("from_cell", cellId);
+                m.put("to_cell", text(p, "to_cell"));
+                m.put("relation", text(p, "relation"));
+                m.put("note", text(p, "note"));
+                mapped.add(m);
+            }
+        }
+        int written = ingestProposals(mapped);
+        log.info("Timeout recovery for queen run {}: {} finished bee(s) recovered (of a requested "
+                        + "batch), {} pending tunnel proposal(s) ingested",
+                queenRunId, surveyedCells.size(), written);
+        return written;
+    }
+
+    private static String text(JsonNode n, String field) {
+        if (n == null) return null;
+        JsonNode v = n.get(field);
+        return v == null || v.isNull() ? null : v.asString();
     }
 }

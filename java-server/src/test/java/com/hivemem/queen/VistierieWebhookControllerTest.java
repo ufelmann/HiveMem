@@ -86,6 +86,24 @@ class VistierieWebhookControllerTest {
                 .andExpect(status().isOk());
         verify(service, org.mockito.Mockito.never())
                 .ingestProposals(org.mockito.ArgumentMatchers.anyList());
+        verify(service, org.mockito.Mockito.never())
+                .recoverProposalsFromChildRuns(org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void completionRecoversFromChildRunsOnTimeout() throws Exception {
+        when(service.recoverProposalsFromChildRuns("r1")).thenReturn(3);
+        mvc.perform(post("/vistierie/runs/done")
+                        .header("Authorization", "Bearer cwt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"run_id":"r1","status":"failed","output":null,
+                                 "error":"max_run_seconds_exceeded"}
+                                """))
+                .andExpect(status().isOk());
+        verify(service).recoverProposalsFromChildRuns("r1");
+        verify(service, org.mockito.Mockito.never())
+                .ingestProposals(org.mockito.ArgumentMatchers.anyList());
     }
 
     @Test

@@ -8,6 +8,8 @@ import com.hivemem.search.CellSearchRepository;
 import com.hivemem.search.CellSearchRepository.RankedRow;
 import com.hivemem.write.WriteToolService;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -25,6 +27,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class QueenWebhookServiceTest {
@@ -34,18 +37,19 @@ class QueenWebhookServiceTest {
     private final EmbeddingClient embedding = mock(EmbeddingClient.class);
     private final WriteToolService writes = mock(WriteToolService.class);
     private final QueenRepository repo = mock(QueenRepository.class);
+    private final VistierieRunsClient runsClient = mock(VistierieRunsClient.class);
 
     private QueenWebhookService service() {
         QueenProperties p = new QueenProperties();
         p.setIsolatedBatchLimit(20);
-        return new QueenWebhookService(p, repo, cells, search, embedding, writes);
+        return new QueenWebhookService(p, repo, cells, search, embedding, writes, runsClient);
     }
 
     @Test
     void findIsolatedCellsCapsAtBatchLimit() {
         QueenProperties p = new QueenProperties();
         p.setIsolatedBatchLimit(2);
-        QueenWebhookService svc = new QueenWebhookService(p, repo, cells, search, embedding, writes);
+        QueenWebhookService svc = new QueenWebhookService(p, repo, cells, search, embedding, writes, runsClient);
         svc.findIsolatedCells(1000);
         verify(repo).findIsolatedCellIds(2);
     }
@@ -102,6 +106,57 @@ class QueenWebhookServiceTest {
         List<Map<String, Object>> bad = (List) java.util.List.of("not-a-map");
         int written = service().ingestProposals(bad);
         org.assertj.core.api.Assertions.assertThat(written).isEqualTo(0);
+    }
+
+    @Test
+    void recoverProposalsFromChildRunsIngestsOnlyDoneBeesOfThisParent() {
+        UUID from1 = UUID.randomUUID();
+        UUID from2 = UUID.randomUUID();
+        UUID other = UUID.randomUUID();
+        UUID to1 = UUID.randomUUID();
+        UUID to2 = UUID.randomUUID();
+        when(repo.tunnelExists(any(), any(), anyString())).thenReturn(false);
+
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode body = mapper.readTree("""
+                [
+                  {"run_id":"b1","agent_name":"isolated-cell-bee","parent_run_id":"q1","status":"done",
+                   "output":{"cell_id":"%s","proposals":[{"to_cell":"%s","relation":"related_to","note":"n1"}]}},
+                  {"run_id":"b2","agent_name":"isolated-cell-bee","parent_run_id":"q1","status":"done",
+                   "output":{"cell_id":"%s","proposals":[{"to_cell":"%s","relation":"builds_on"}]}},
+                  {"run_id":"b3","agent_name":"isolated-cell-bee","parent_run_id":"q1","status":"failed",
+                   "output":null},
+                  {"run_id":"b4","agent_name":"isolated-cell-bee","parent_run_id":"other-queen-run","status":"done",
+                   "output":{"cell_id":"%s","proposals":[]}},
+                  {"run_id":"q1","agent_name":"queen","parent_run_id":null,"status":"failed","output":null}
+                ]
+                """.formatted(from1, to1, from2, to2, other));
+        when(runsClient.listRunsTenantScoped(100)).thenReturn(body);
+
+        int written = service().recoverProposalsFromChildRuns("q1");
+
+        assertThat(written).isEqualTo(2);
+        verify(writes).addTunnel(argThatIsQueenAgent(), eq(from1), eq(to1), eq("related_to"), eq("n1"), eq("pending"));
+        verify(writes).addTunnel(argThatIsQueenAgent(), eq(from2), eq(to2), eq("builds_on"), isNull(), eq("pending"));
+        verify(writes, org.mockito.Mockito.times(2))
+                .addTunnel(any(), any(), any(), anyString(), any(), anyString());
+    }
+
+    @Test
+    void recoverProposalsFromChildRunsToleratesTransportFailure() {
+        when(runsClient.listRunsTenantScoped(anyInt()))
+                .thenThrow(new VistierieUnavailableException("down", new RuntimeException("boom")));
+        int written = service().recoverProposalsFromChildRuns("q1");
+        assertThat(written).isEqualTo(0);
+    }
+
+    @Test
+    void recoverProposalsFromChildRunsHandlesEmptyList() {
+        ObjectMapper mapper = new ObjectMapper();
+        when(runsClient.listRunsTenantScoped(100)).thenReturn(mapper.readTree("[]"));
+        int written = service().recoverProposalsFromChildRuns("q1");
+        assertThat(written).isEqualTo(0);
+        verifyNoInteractions(writes);
     }
 
     private static AuthPrincipal argThatIsQueenAgent() {

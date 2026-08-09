@@ -425,6 +425,12 @@ Vistierie calls back into HiveMem over the `hivemem-net` Docker network via thre
 
 All four endpoints live under `/vistierie/**`, which is **exempt from the global `AuthFilter` and `SessionAuthFilter`**. Each request is authenticated by a constant-time bearer-token check against the respective config property.
 
+### Queen timeout: `max_run_seconds` and recovery
+
+`queen`'s `max_run_seconds` is 600 (`AgentDefinitions.queen()`; raised from 300 on 2026-08-09, see that method's comment for the measured-duration reasoning). Vistierie's `AgentRunner` never attaches `output` to a run it fails for any reason — including `max_run_seconds_exceeded` — so a completion webhook with `status=failed` always arrives with `output=null`, no matter how many of the Queen's dispatched Bees had already finished.
+
+Each `dispatch_bee` call is its own independent Vistierie run, though, and each is durably marked `done` with its own real output the moment that Bee finishes, regardless of what later happens to the parent Queen run. `POST /vistierie/runs/done` uses this: when it sees `status=failed` and `error=max_run_seconds_exceeded`, `QueenWebhookService#recoverProposalsFromChildRuns` lists the tenant's recent Vistierie runs (via the plain, non-admin `GET /runs` — the only shape carrying `parent_run_id` and `output`), keeps the `isolated-cell-bee` children of that run that reached `done`, and ingests their proposals as `pending` tunnels exactly as a successful Queen completion would have. A Vistierie outage during recovery is swallowed (logged, zero proposals recovered) rather than thrown back into the webhook handler.
+
 ### Write isolation
 
 HiveMem remains the **sole writer**. The Bee only proposes; `POST /vistierie/runs/done` ingests the aggregated proposals and inserts each as a `pending` tunnel. Those entries then flow through the existing approval workflow (`approve_pending`) before any change is committed to the knowledge graph.

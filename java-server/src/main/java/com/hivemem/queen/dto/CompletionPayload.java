@@ -8,5 +8,6 @@ import java.util.Map;
 public record CompletionPayload(
         @JsonProperty("run_id") String run_id,
         @JsonProperty("status") String status,
-        @JsonProperty("output") Map<String, Object> output
+        @JsonProperty("output") Map<String, Object> output,
+        @JsonProperty("error") String error
 ) {}

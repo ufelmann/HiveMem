@@ -65,6 +65,24 @@ public class VistierieRunsClient {
         }
     }
 
+    /**
+     * Tenant-scoped {@code GET /runs}, always via the plain (non-admin) path — regardless of
+     * whether an admin token is configured. Used for max_run_seconds_exceeded recovery: only
+     * this shape carries {@code parent_run_id} and {@code output} per run; Vistierie's admin
+     * path ({@code GET /admin/runs}, {@code AdminRunSummary}) carries neither.
+     */
+    public JsonNode listRunsTenantScoped(int limit) {
+        try {
+            return client.get()
+                    .uri(uri -> uri.path("/runs").queryParam("limit", limit).build())
+                    .header("Authorization", "Bearer " + tenantToken)
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (RestClientException e) {
+            throw new VistierieUnavailableException("Vistierie runs list (tenant-scoped) failed", e);
+        }
+    }
+
     public JsonNode getRun(String runId) {
         try {
             return client.get().uri("/runs/{id}", runId)
