@@ -5,6 +5,7 @@ package command
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -42,7 +43,6 @@ type Deps struct {
 	Client  *mcp.Client
 	Cache   *config.Cache
 	Store   keystore.Store
-	Opts    *globalOpts
 }
 
 var opts = &globalOpts{}
@@ -152,11 +152,17 @@ func resolveDeps(ctx context.Context) (*Deps, error) {
 		PassphrasePrompt: promptPassphrase,
 	})
 	if err != nil {
+		if errors.Is(err, keystore.ErrPassphraseRequired) {
+			// Same mapping newServeCmd applies on the headless path: exit 3
+			// with the keystore package's own message, which names
+			// HIVEMEM_PASSPHRASE.
+			return nil, &exitError{code: 3, msg: err.Error()}
+		}
 		return nil, err
 	}
 
 	m := auth.NewManager(store, cache, server, profile)
-	d := &Deps{Manager: m, Cache: cache, Store: store, Opts: opts}
+	d := &Deps{Manager: m, Cache: cache, Store: store}
 
 	if cred, err := m.Credential(ctx); err == nil {
 		d.Client = mcp.New(server, cred.AccessToken, timeouts())
@@ -165,8 +171,9 @@ func resolveDeps(ctx context.Context) (*Deps, error) {
 }
 
 func exitCodeFor(err error) int {
-	if code, ok := err.(exitCoder); ok {
-		return code.ExitCode()
+	var ec exitCoder
+	if errors.As(err, &ec) {
+		return ec.ExitCode()
 	}
 	return mcp.ExitCodeFor(err)
 }

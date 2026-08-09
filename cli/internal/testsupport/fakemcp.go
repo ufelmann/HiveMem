@@ -71,29 +71,36 @@ func (f *FakeMCP) ToolCallCount(tool string) int {
 }
 
 func (f *FakeMCP) handle(w http.ResponseWriter, r *http.Request) {
-	if f.ForceStatus != 0 {
-		w.WriteHeader(f.ForceStatus)
-		_, _ = w.Write([]byte(f.ForceBody))
-		return
-	}
-
 	var req struct {
 		JSONRPC string          `json:"jsonrpc"`
 		ID      json.RawMessage `json:"id"`
 		Method  string          `json:"method"`
 		Params  json.RawMessage `json:"params"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, 200, map[string]any{
-			"jsonrpc": "2.0", "id": nil,
-			"error": map[string]any{"code": -32600, "message": "Invalid Request: " + err.Error()},
-		})
+	decodeErr := json.NewDecoder(r.Body).Decode(&req)
+
+	// Record the call before the forced-status short-circuit below: a forced
+	// non-2xx response is still a request the client made, and callers assert
+	// on f.Calls to prove a client did (or, for suppression, did not) probe.
+	if decodeErr == nil {
+		f.mu.Lock()
+		f.Calls = append(f.Calls, req.Method)
+		f.mu.Unlock()
+	}
+
+	if f.ForceStatus != 0 {
+		w.WriteHeader(f.ForceStatus)
+		_, _ = w.Write([]byte(f.ForceBody))
 		return
 	}
 
-	f.mu.Lock()
-	f.Calls = append(f.Calls, req.Method)
-	f.mu.Unlock()
+	if decodeErr != nil {
+		writeJSON(w, 200, map[string]any{
+			"jsonrpc": "2.0", "id": nil,
+			"error": map[string]any{"code": -32600, "message": "Invalid Request: " + decodeErr.Error()},
+		})
+		return
+	}
 
 	switch req.Method {
 	case "initialize":

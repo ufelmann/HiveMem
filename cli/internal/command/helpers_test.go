@@ -22,5 +22,5 @@ func newTestDeps(t *testing.T, serverURL string, cred *keystore.Credential) *Dep
 		t.Fatalf("LoadCache: %v", err)
 	}
 	m := auth.NewManager(store, cache, serverURL, "work")
-	return &Deps{Manager: m, Cache: cache, Store: store, Opts: &globalOpts{}}
+	return &Deps{Manager: m, Cache: cache, Store: store}
 }

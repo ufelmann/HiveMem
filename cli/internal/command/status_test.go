@@ -90,6 +90,9 @@ func TestStatusSuppressionSurvivesACacheWrite(t *testing.T) {
 	if len(f.Calls) != after {
 		t.Fatal("a cache write wiped the suppression record")
 	}
+	if !strings.Contains(out.String(), "not probed") {
+		t.Fatalf("a suppressed run must say so, got:\n%s", out.String())
+	}
 }
 
 // A probe that succeeds is evidence of repair and must clear the record.
