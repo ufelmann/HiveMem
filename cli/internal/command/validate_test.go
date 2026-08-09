@@ -39,3 +39,21 @@ func TestValidateChecksEnumValues(t *testing.T) {
 		t.Fatalf("a valid enum value was rejected: %v", err)
 	}
 }
+
+// GenerateSpec captures the item enum for an array-of-enum property
+// (search.include), but only ValidateArgs checking the top-level Enum would
+// never look at it: --include bogus would then be sent to the server
+// unchecked, which silently ignores it rather than rejecting it.
+func TestValidateChecksArrayItemEnums(t *testing.T) {
+	spec := specFor(t, "search")
+	if err := ValidateArgs(spec, map[string]any{"include": []string{"scores"}}); err != nil {
+		t.Fatalf("a valid include value was rejected: %v", err)
+	}
+	err := ValidateArgs(spec, map[string]any{"include": []string{"bogus"}})
+	if err == nil {
+		t.Fatal("an out-of-enum array element must be rejected")
+	}
+	if code := exitCodeFor(err); code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+}

@@ -44,5 +44,17 @@
     "name": "status",
     "description": "Server-side counts. Collides with the fixed status command.",
     "inputSchema": {"type": "object", "additionalProperties": false, "properties": {}}
+  },
+  {
+    "name": "diagnose",
+    "description": "Fixture-only tool whose schema collides with a reserved global flag.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "server": {"type": "string", "description": "Collides with the reserved --server global"},
+        "target": {"type": "string", "description": "Non-colliding property"}
+      }
+    }
   }
 ]

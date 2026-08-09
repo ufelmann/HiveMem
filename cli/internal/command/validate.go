@@ -30,15 +30,27 @@ func ValidateArgs(spec *ToolSpec, args map[string]any) error {
 	}
 	for key, val := range args {
 		p := spec.Properties[key]
-		if len(p.Enum) == 0 {
+		if len(p.Enum) > 0 {
+			s, ok := val.(string)
+			if ok && !containsString(p.Enum, s) {
+				return usageError("%s: %q is not one of %v", flagName(key), s, p.Enum)
+			}
+		}
+		if len(p.Items.Enum) == 0 {
 			continue
 		}
-		s, ok := val.(string)
+		// A repeatable flag comes out of BuildArgs as []string (it uses
+		// GetStringArray); validate every element against the item enum so a
+		// bad value like --include bogus is caught here, not silently ignored
+		// by the server.
+		items, ok := val.([]string)
 		if !ok {
 			continue
 		}
-		if !containsString(p.Enum, s) {
-			return usageError("%s: %q is not one of %v", flagName(key), s, p.Enum)
+		for _, s := range items {
+			if !containsString(p.Items.Enum, s) {
+				return usageError("%s: %q is not one of %v", flagName(key), s, p.Items.Enum)
+			}
 		}
 	}
 	return nil

@@ -113,6 +113,11 @@ func TestSearchKeepsItsOwnProfileFlag(t *testing.T) {
 	}
 }
 
+// Checked against the flags buildCommand actually registers, not against
+// GenerateSpec's raw FlagSpec list: GenerateSpec does not filter (the
+// "diagnose" fixture entry deliberately declares a "server" property, colliding
+// with the reserved --server global), so the guarantee this test names only
+// holds where buildCommand's skip is applied.
 func TestNoGeneratedFlagCollidesWithAReservedGlobal(t *testing.T) {
 	reserved := map[string]bool{}
 	for _, r := range ReservedFlags {
@@ -120,11 +125,36 @@ func TestNoGeneratedFlagCollidesWithAReservedGlobal(t *testing.T) {
 	}
 	for _, raw := range loadFixture(t) {
 		spec, _ := GenerateSpec(raw)
-		for _, f := range spec.Flags {
-			if reserved[f.Flag] {
-				t.Fatalf("tool %s generates --%s, which is a reserved global", spec.Name, f.Flag)
+		cmd := buildCommand(spec, reserved)
+		for name := range reserved {
+			if cmd.Flags().Lookup(name) != nil {
+				t.Fatalf("tool %s registers --%s, which is a reserved global", spec.Name, name)
 			}
 		}
+	}
+}
+
+// The "diagnose" fixture entry has a "server" property, which collides with
+// the reserved --server global, alongside a "target" property, which does
+// not. Losing the whole command (or its unrelated flags) to one colliding
+// property would be its own regression, so both are checked, not just the
+// absence of --server.
+func TestReservedPropertyFlagIsSkippedButOtherFlagsSurviveAndTheCommandStillRegisters(t *testing.T) {
+	root := newRootCmd()
+	attachGenerated(root, loadFixture(t))
+
+	cmd, _, err := root.Find([]string{"diagnose"})
+	if err != nil {
+		t.Fatalf("find diagnose: %v", err)
+	}
+	if cmd.Name() != "diagnose" {
+		t.Fatalf("diagnose did not register as a subcommand, found %q instead", cmd.Name())
+	}
+	if cmd.Flags().Lookup("server") != nil {
+		t.Fatal("--server must not be registered: it collides with the reserved global --server")
+	}
+	if cmd.Flags().Lookup("target") == nil {
+		t.Fatal("--target must still be registered: one colliding property must not take its siblings down with it")
 	}
 }
 
