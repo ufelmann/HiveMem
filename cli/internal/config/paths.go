@@ -12,12 +12,18 @@ import (
 const appDir = "hivemem"
 
 // ConfigDir returns the durable configuration directory, creating it 0700.
+//
+// XDG_CONFIG_HOME, when set, takes precedence on every platform including
+// Windows — this is what lets tests isolate themselves with t.Setenv rather
+// than touching the real per-user config directory. Only when it is unset
+// does resolution fall back to the platform default: %APPDATA% on Windows,
+// ~/.config elsewhere.
 func ConfigDir() (string, error) {
 	var base string
-	if runtime.GOOS == "windows" {
-		base = os.Getenv("APPDATA")
-	} else if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
+	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
 		base = x
+	} else if runtime.GOOS == "windows" {
+		base = os.Getenv("APPDATA")
 	} else {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -32,12 +38,17 @@ func ConfigDir() (string, error) {
 // and every lock file. It is created 0700 on first use regardless of which
 // keystore backend is active — on the keyring backends nothing else would
 // create it, and the lock lives there.
+//
+// XDG_DATA_HOME, when set, takes precedence on every platform including
+// Windows, for the same isolation reason as ConfigDir. Only when it is unset
+// does resolution fall back to the platform default: %LOCALAPPDATA% on
+// Windows, ~/.local/share elsewhere.
 func DataDir() (string, error) {
 	var base string
-	if runtime.GOOS == "windows" {
-		base = os.Getenv("LOCALAPPDATA")
-	} else if x := os.Getenv("XDG_DATA_HOME"); x != "" {
+	if x := os.Getenv("XDG_DATA_HOME"); x != "" {
 		base = x
+	} else if runtime.GOOS == "windows" {
+		base = os.Getenv("LOCALAPPDATA")
 	} else {
 		home, err := os.UserHomeDir()
 		if err != nil {
