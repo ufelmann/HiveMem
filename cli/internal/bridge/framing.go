@@ -44,11 +44,10 @@ func NewFrameReader(r io.Reader) *FrameReader {
 func (f *FrameReader) Next() (*Frame, error) {
 	line, err := f.readLine()
 	if errors.Is(err, errFrameTooLarge) {
-		// Parse the oversized frame anyway, but flag the error so callers know
-		// it exceeded the limit. The frame data is still available.
-		frame := parseFrame(line)
-		frame.ParseErr = err
-		return frame, nil
+		// Oversize frame: data was drained without accumulating. Return a flagged
+		// frame with no usable payload. The id is unrecoverable, so synthesis
+		// must generate an error response instead.
+		return &Frame{ParseErr: err}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -59,13 +58,12 @@ func (f *FrameReader) Next() (*Frame, error) {
 	return parseFrame(line), nil
 }
 
-// readLine reads one line, growing beyond bufio's initial buffer as needed.
-// If a complete line exceeds MaxFrameBytes, it's still returned with an error,
-// so the frame data is available for error reporting and the stream stays
-// synchronized for subsequent frames.
+// readLine reads one line up to MaxFrameBytes, growing beyond bufio's initial
+// buffer as needed. A line longer than the cap is consumed to its end without
+// accumulating, then reported as an error, so the following frames still arrive
+// and memory usage stays bounded by MaxFrameBytes.
 func (f *FrameReader) readLine() ([]byte, error) {
 	var buf []byte
-	exceeds := false
 	for {
 		chunk, isPrefix, err := f.r.ReadLine()
 		if err != nil {
@@ -73,12 +71,17 @@ func (f *FrameReader) readLine() ([]byte, error) {
 		}
 		buf = append(buf, chunk...)
 		if len(buf) > MaxFrameBytes {
-			exceeds = true
+			// Drain the rest of this line so the next Next() starts clean,
+			// discarding data to keep memory bounded.
+			for isPrefix {
+				_, isPrefix, err = f.r.ReadLine()
+				if err != nil {
+					break
+				}
+			}
+			return nil, errFrameTooLarge
 		}
 		if !isPrefix {
-			if exceeds {
-				return buf, errFrameTooLarge
-			}
 			return buf, nil
 		}
 	}

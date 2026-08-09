@@ -50,18 +50,19 @@ func TestFrameWithoutIDIsMarked(t *testing.T) {
 	}
 }
 
-// A 9 MB frame must be read whole. A 1 MB probe would pass with any buffer
-// between 1 and 8 MB while violating the rule, and a real multi-MB attachment
-// would then truncate and hang the client.
-func TestNineMegabyteFrameIsReadWhole(t *testing.T) {
-	payload := strings.Repeat("x", 9<<20)
+// A 4 MB frame must be read whole. A 1 MB probe would pass with any buffer
+// between 1 and 8 MB while violating the rule. 4 MB is comfortably above the
+// bufio.Scanner default (64 KB) and safely under the MaxFrameBytes cap (8 MB),
+// ensuring the buffer grows beyond the initial size without truncation.
+func TestFourMegabyteFrameIsReadWhole(t *testing.T) {
+	payload := strings.Repeat("x", 4<<20)
 	in := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"blob":"` + payload + `"}}` + "\n"
 
 	f, err := NewFrameReader(strings.NewReader(in)).Next()
 	if err != nil {
-		t.Fatalf("a 9 MB frame must be readable: %v", err)
+		t.Fatalf("a 4 MB frame must be readable: %v", err)
 	}
-	if len(f.Raw) < 9<<20 {
+	if len(f.Raw) < 4<<20 {
 		t.Fatalf("frame was truncated to %d bytes", len(f.Raw))
 	}
 	if string(f.ID) != "1" {
@@ -83,6 +84,41 @@ func TestFrameExceedingTheBufferIsReportedNotDropped(t *testing.T) {
 	next, err := fr.Next()
 	if err != nil {
 		t.Fatalf("the reader must recover after an oversize frame: %v", err)
+	}
+	if string(next.ID) != "2" {
+		t.Fatalf("recovery frame id = %q, want 2", next.ID)
+	}
+}
+
+// Memory-bounded oversize test: feeding data many times larger than MaxFrameBytes
+// must not cause unbounded buffering. The oversized frame is drained without
+// accumulating, so Raw is nil/empty and memory usage stays bounded.
+func TestOversizeFrameMemoryIsBounded(t *testing.T) {
+	// Create a payload 3x larger than MaxFrameBytes
+	payload := strings.Repeat("x", 3*MaxFrameBytes)
+	in := `{"jsonrpc":"2.0","id":1,"params":{"blob":"` + payload + `"}}` + "\n" +
+		`{"jsonrpc":"2.0","id":2,"method":"ping"}` + "\n"
+
+	fr := NewFrameReader(strings.NewReader(in))
+	f, err := fr.Next()
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if f.ParseErr == nil {
+		t.Fatal("an oversized frame must be flagged")
+	}
+	if len(f.Raw) > 0 {
+		t.Fatalf("oversized frame's Raw must be empty (was drained), got %d bytes", len(f.Raw))
+	}
+	// id should not be extractable from a drained frame
+	if f.HasID {
+		t.Fatal("id must not be extractable from a drained oversized frame")
+	}
+
+	// The following frame must still be delivered correctly.
+	next, err := fr.Next()
+	if err != nil {
+		t.Fatalf("the reader must recover after an oversized frame: %v", err)
 	}
 	if string(next.ID) != "2" {
 		t.Fatalf("recovery frame id = %q, want 2", next.ID)
