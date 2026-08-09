@@ -67,6 +67,26 @@ not describe, but a property the schema marks as required must still be
 present. The server ignores keys it does not read rather than rejecting them,
 so an incomplete payload would otherwise come back as a confident wrong answer.
 
+### Tools shadowed by a built-in command
+
+A tool whose name matches a fixed command (`login`, `logout`, `status`,
+`tools`, `call`, `mcp-serve`) does not get a generated subcommand — the fixed
+command wins. The tool stays reachable, just not by its own name:
+
+```bash
+hivemem call status --args-json '{}'   # reach a tool named "status"
+```
+
+`hivemem tools` marks such a tool instead of listing it as if it were an
+ordinary subcommand:
+
+```
+status                       Report ingestion status (shadowed by the built-in command — call with: hivemem call status)
+```
+
+With `--json`, the same entry carries `"shadowed": true` and a
+`"shadowed_by"` field instead of the suffix text.
+
 ## Seeing what goes over the wire
 
 `--verbose` dumps every HTTP request and response body to **stderr**. Known

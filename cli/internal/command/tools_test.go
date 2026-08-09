@@ -138,3 +138,112 @@ func TestVerboseFlagControlsTheHTTPDump(t *testing.T) {
 		t.Fatalf("a run without --verbose dumped:\n%s", dump.String())
 	}
 }
+
+// A tool named "status" collides with the fixed `status` command, so
+// attachGenerated skips it and it never becomes a subcommand. Without a
+// visible marker, `hivemem tools` still lists it, `hivemem --help` does not
+// show it as a subcommand, and nothing explains where it went — the "silent
+// success" failure mode. `tools` must mark it and name the escape hatch.
+func TestToolsMarksAToolShadowedByAFixedCommand(t *testing.T) {
+	f := testsupport.NewFakeMCP()
+	defer f.Close()
+	f.Tools = []json.RawMessage{
+		json.RawMessage(`{"name":"search","description":"Search the knowledge base"}`),
+		json.RawMessage(`{"name":"status","description":"Report ingestion status"}`),
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "")
+	t.Setenv("HIVEMEM_PASSPHRASE", "test passphrase")
+	pinEncFileBackend(t)
+	withStdin(t, "static-token-bbbbbbbbbb\n")
+
+	if _, err := runRoot(t, "--server", f.URL, "--cred-profile", "work",
+		"login", "--token"); err != nil {
+		t.Fatalf("login --token: %v", err)
+	}
+
+	out, err := runRoot(t, "--server", f.URL, "--cred-profile", "work", "tools")
+	if err != nil {
+		t.Fatalf("tools: %v", err)
+	}
+
+	var statusLine, searchLine string
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "status"):
+			statusLine = line
+		case strings.HasPrefix(line, "search"):
+			searchLine = line
+		}
+	}
+	if statusLine == "" {
+		t.Fatalf("tools output has no line for the shadowed %q tool:\n%s", "status", out)
+	}
+	if !strings.Contains(statusLine, "shadowed") ||
+		!strings.Contains(statusLine, "hivemem call status") {
+		t.Fatalf("shadowed %q tool line carries no visible marker naming the "+
+			"escape hatch, got:\n%q", "status", statusLine)
+	}
+	if searchLine == "" {
+		t.Fatalf("tools output has no line for %q:\n%s", "search", out)
+	}
+	if strings.Contains(searchLine, "shadowed") {
+		t.Fatalf("non-colliding tool %q wrongly marked shadowed:\n%q", "search", searchLine)
+	}
+}
+
+// The --json form of `tools` must carry the same information as a field, not
+// only as text in the human-readable form.
+func TestToolsJSONMarksAToolShadowedByAFixedCommand(t *testing.T) {
+	f := testsupport.NewFakeMCP()
+	defer f.Close()
+	f.Tools = []json.RawMessage{
+		json.RawMessage(`{"name":"search","description":"Search the knowledge base"}`),
+		json.RawMessage(`{"name":"status","description":"Report ingestion status"}`),
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "")
+	t.Setenv("HIVEMEM_PASSPHRASE", "test passphrase")
+	pinEncFileBackend(t)
+	withStdin(t, "static-token-cccccccccc\n")
+
+	if _, err := runRoot(t, "--server", f.URL, "--cred-profile", "work",
+		"login", "--token"); err != nil {
+		t.Fatalf("login --token: %v", err)
+	}
+
+	out, err := runRoot(t, "--server", f.URL, "--cred-profile", "work", "tools", "--json")
+	if err != nil {
+		t.Fatalf("tools --json: %v", err)
+	}
+
+	var entries []struct {
+		Name       string `json:"name"`
+		Shadowed   bool   `json:"shadowed"`
+		ShadowedBy string `json:"shadowed_by"`
+	}
+	if err := json.Unmarshal([]byte(out), &entries); err != nil {
+		t.Fatalf("tools --json did not produce a JSON array: %v\noutput:\n%s", err, out)
+	}
+
+	found := false
+	for _, e := range entries {
+		if e.Name != "status" {
+			if e.Shadowed {
+				t.Fatalf("non-colliding tool %q wrongly marked shadowed in JSON: %+v", e.Name, e)
+			}
+			continue
+		}
+		found = true
+		if !e.Shadowed || e.ShadowedBy == "" {
+			t.Fatalf("shadowed tool %q missing the shadowed marker in JSON: %+v", "status", e)
+		}
+	}
+	if !found {
+		t.Fatalf("tools --json output has no entry for %q:\n%s", "status", out)
+	}
+}

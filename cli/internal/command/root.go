@@ -25,6 +25,19 @@ import (
 // command and an MCP tool.
 var FixedNames = []string{"login", "logout", "status", "tools", "call", "mcp-serve"}
 
+// isFixedName reports whether name collides with a fixed command name. It is
+// the single predicate both attachGenerated (which decides which generated
+// tools become subcommands) and `tools` (which marks a shadowed tool instead
+// of letting it silently disappear) rely on.
+func isFixedName(name string) bool {
+	for _, n := range FixedNames {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
 // ReservedFlags are global flag names no generated flag may take. Note that
 // `profile` is deliberately absent: `search` declares a `profile` property (a
 // weight preset), so the credential selector is `--cred-profile`.
@@ -92,6 +105,11 @@ func Execute() int {
 		if cfg, err := config.LoadConfig(); err == nil {
 			key := config.CacheKey{ServerURL: resolveServer(cfg), Profile: resolveProfile(cfg)}
 			if entry, ok := cache.Get(key); ok {
+				// The skipped names are not consumed here: `tools` marks a
+				// shadowed tool by re-testing the same isFixedName predicate
+				// against its own (possibly freshly re-fetched) cache entry,
+				// so the marker never goes stale relative to the subcommand
+				// tree built from this snapshot.
 				attachGenerated(root, entry.Tools)
 			}
 		}

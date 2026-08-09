@@ -114,10 +114,6 @@ func flagName(property string) string { return strings.ReplaceAll(property, "_",
 // attachGenerated registers one subcommand per tool and returns the names it
 // skipped because they collide with a fixed command.
 func attachGenerated(root *cobra.Command, tools []json.RawMessage) []string {
-	fixed := map[string]bool{}
-	for _, n := range FixedNames {
-		fixed[n] = true
-	}
 	reserved := map[string]bool{}
 	for _, f := range ReservedFlags {
 		reserved[f] = true
@@ -129,7 +125,7 @@ func attachGenerated(root *cobra.Command, tools []json.RawMessage) []string {
 		if err != nil || spec.Name == "" {
 			continue
 		}
-		if fixed[spec.Name] {
+		if isFixedName(spec.Name) {
 			// The fixed command wins; the tool stays reachable via `call`.
 			skipped = append(skipped, spec.Name)
 			continue
