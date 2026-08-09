@@ -32,6 +32,12 @@ type StubAS struct {
 	DropRefreshResponse bool
 	// IssuerOverride publishes endpoints on a different origin (split-host).
 	IssuerOverride string
+	// TokenPrefix is prepended to every minted token. A test that asserts a
+	// token does NOT appear somewhere sets it to something unique: the
+	// redactor is global and never reset, so a token string another test
+	// already registered would be scrubbed for free and the assertion would
+	// hold no matter what the code under test does.
+	TokenPrefix string
 
 	nextToken int
 	rotated   map[string]bool
@@ -191,8 +197,8 @@ func (s *StubAS) token(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	writeJSON(w, 200, map[string]any{
-		"access_token":  "access-" + n + "-xxxxxxxxxx",
-		"refresh_token": "refresh-" + n + "-xxxxxxxxxx",
+		"access_token":  s.TokenPrefix + "access-" + n + "-xxxxxxxxxx",
+		"refresh_token": s.TokenPrefix + "refresh-" + n + "-xxxxxxxxxx",
 		"token_type":    "Bearer",
 		"expires_in":    3600,
 		"scope":         "read write",

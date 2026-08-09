@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/visterion/hivemem/cli/internal/httplog"
 	"github.com/visterion/hivemem/cli/internal/keystore"
+	"github.com/visterion/hivemem/cli/internal/redact"
 )
 
 // SetAuthServerURL overrides where discovery is fetched from. Defaults to the
@@ -214,6 +216,10 @@ func postToken(ctx context.Context, endpoint string, form url.Values) (*tokenRes
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
+	// The form carries the refresh token and the PKCE verifier, so it is dumped
+	// only after redaction like everything else.
+	httplog.Request(http.MethodPost, endpoint, []byte(form.Encode()))
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("token request: %w", err)
@@ -222,6 +228,7 @@ func postToken(ctx context.Context, endpoint string, form url.Values) (*tokenRes
 
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
+		httplog.Response(resp.StatusCode, raw)
 		var e struct {
 			Error       string `json:"error"`
 			Description string `json:"error_description"`
@@ -233,6 +240,12 @@ func postToken(ctx context.Context, endpoint string, form url.Values) (*tokenRes
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, fmt.Errorf("decode token response: %w", err)
 	}
+	// Registered BEFORE the body is dumped. These tokens are brand new — the
+	// redactor has never seen them — so dumping first would print the one thing
+	// --verbose must never print. This is the case redact.Register exists for.
+	redact.Register(out.AccessToken)
+	redact.Register(out.RefreshToken)
+	httplog.Response(resp.StatusCode, raw)
 	return &out, nil
 }
 

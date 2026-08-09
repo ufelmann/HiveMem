@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/visterion/hivemem/cli/internal/httplog"
 	"github.com/visterion/hivemem/cli/internal/redact"
 )
 
@@ -231,12 +232,15 @@ func (p *Proxy) post(ctx context.Context, body []byte, token string) (int, []byt
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Authorization", "Bearer "+token)
 
+	httplog.Request(http.MethodPost, req.URL.String(), body)
+
 	resp, err := p.http.Do(req)
 	if err != nil {
 		return 0, nil, "", err
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
+	httplog.Response(resp.StatusCode, raw)
 	return resp.StatusCode, raw, resp.Header.Get("Retry-After"), err
 }
 

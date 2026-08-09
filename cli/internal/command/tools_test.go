@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/visterion/hivemem/cli/internal/httplog"
+	"github.com/visterion/hivemem/cli/internal/keystore"
 	"github.com/visterion/hivemem/cli/internal/testsupport"
 )
 
@@ -85,5 +87,54 @@ func TestToolsImmediatelyAfterTokenLoginListsTheTools(t *testing.T) {
 	// entry login wrote was unusable, which is the same defect one step later.
 	if n := f.MethodCount("tools/list"); n != 1 {
 		t.Fatalf("tools/list was called %d times, want exactly 1 (from the login)", n)
+	}
+}
+
+// The flag was declared and read by nothing at all: --help promised redacted
+// HTTP logging and the run produced none. This covers the wiring in both
+// directions — a dump when asked for, silence when not.
+func TestVerboseFlagControlsTheHTTPDump(t *testing.T) {
+	f := testsupport.NewFakeMCP()
+	defer f.Close()
+	f.Tools = []json.RawMessage{json.RawMessage(`{"name":"search","description":"Search"}`)}
+
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "")
+	t.Setenv("HIVEMEM_PASSPHRASE", "test passphrase")
+	pinEncFileBackend(t)
+
+	store := keystore.NewEncFile([]byte("test passphrase"))
+	if err := store.Set("work", &keystore.Credential{
+		AccessToken: "token-verbose-aaaa", TokenType: "Bearer",
+	}); err != nil {
+		t.Fatalf("seed credential: %v", err)
+	}
+
+	var dump bytes.Buffer
+	httplog.SetOutput(&dump)
+	t.Cleanup(func() {
+		httplog.SetEnabled(false)
+		httplog.SetOutput(os.Stderr)
+	})
+
+	if _, err := runRoot(t, "--server", f.URL, "--cred-profile", "work",
+		"--verbose", "tools", "--refresh"); err != nil {
+		t.Fatalf("tools --refresh --verbose: %v", err)
+	}
+	if !strings.Contains(dump.String(), "tools/list") {
+		t.Fatalf("--verbose dumped no HTTP exchange, got:\n%q", dump.String())
+	}
+	if strings.Contains(dump.String(), "token-verbose-aaaa") {
+		t.Fatalf("the bearer token reached the dump:\n%s", dump.String())
+	}
+
+	dump.Reset()
+	if _, err := runRoot(t, "--server", f.URL, "--cred-profile", "work",
+		"tools", "--refresh"); err != nil {
+		t.Fatalf("tools --refresh: %v", err)
+	}
+	if dump.Len() != 0 {
+		t.Fatalf("a run without --verbose dumped:\n%s", dump.String())
 	}
 }

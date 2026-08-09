@@ -13,8 +13,10 @@ import (
 
 	"github.com/visterion/hivemem/cli/internal/auth"
 	"github.com/visterion/hivemem/cli/internal/config"
+	"github.com/visterion/hivemem/cli/internal/httplog"
 	"github.com/visterion/hivemem/cli/internal/keystore"
 	"github.com/visterion/hivemem/cli/internal/mcp"
+	"github.com/visterion/hivemem/cli/internal/redact"
 )
 
 // FixedNames are the command names the CLI owns. A generated tool with one of
@@ -60,12 +62,18 @@ func newRootCmd() *cobra.Command {
 		Short:         "HiveMem command-line client",
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// Persistent so it runs for every subcommand, including the generated
+		// ones, and before any RunE issues a request.
+		PersistentPreRun: func(*cobra.Command, []string) {
+			httplog.SetEnabled(opts.verbose)
+		},
 	}
 	p := root.PersistentFlags()
 	p.StringVar(&opts.server, "server", "", "HiveMem server URL")
 	p.StringVar(&opts.credProfile, "cred-profile", "", "credential profile (or HIVEMEM_PROFILE)")
 	p.BoolVar(&opts.asJSON, "json", false, "emit raw JSON instead of formatted output")
-	p.BoolVar(&opts.verbose, "verbose", false, "log HTTP requests (secrets are redacted)")
+	p.BoolVar(&opts.verbose, "verbose", false,
+		"dump HTTP requests and responses to stderr (secrets are redacted)")
 	p.DurationVar(&opts.timeout, "timeout", 0, "override the request timeout")
 
 	addFixedCommands(root)
@@ -90,7 +98,8 @@ func Execute() int {
 	}
 
 	if err := root.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
+		// Redacted: this is the last thing a user copies into a bug report.
+		fmt.Fprintln(os.Stderr, "Error:", redact.Apply(err.Error()))
 		return exitCodeFor(err)
 	}
 	return 0

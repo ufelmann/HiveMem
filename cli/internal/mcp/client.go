@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/visterion/hivemem/cli/internal/httplog"
 	"github.com/visterion/hivemem/cli/internal/redact"
 )
 
@@ -179,6 +180,8 @@ func (c *Client) call(ctx context.Context, timeout time.Duration, method string,
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
+	httplog.Request(http.MethodPost, c.serverURL+"/mcp", body)
+
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, redact.Wrap(err)
@@ -189,6 +192,7 @@ func (c *Client) call(ctx context.Context, timeout time.Duration, method string,
 	if err != nil {
 		return nil, redact.Wrap(err)
 	}
+	httplog.Response(resp.StatusCode, raw)
 
 	// Read from the header, not the body: a 429 from AuthFilter goes through
 	// response.sendError, whose body carries no wait time at all.

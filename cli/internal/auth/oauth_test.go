@@ -1,17 +1,20 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/visterion/hivemem/cli/internal/config"
+	"github.com/visterion/hivemem/cli/internal/httplog"
 	"github.com/visterion/hivemem/cli/internal/keystore"
 	"github.com/visterion/hivemem/cli/internal/testsupport"
 )
@@ -218,5 +221,63 @@ func visitURLCapturingRedirect(captured *string) func(string) error {
 		}
 		*captured = parsed.Query().Get("redirect_uri")
 		return visitURL(u)
+	}
+}
+
+// Spec: "--verbose must leave neither token in the dumped output". The token
+// response body carries a brand-new access and refresh token that the redactor
+// has never seen, so a dump written before they are registered prints exactly
+// the two values --verbose exists to keep out of a bug report.
+//
+// The stub's tokens get a unique prefix on purpose: the redactor is global and
+// never reset between tests, so a plain "access-1-xxxxxxxxxx" would already be
+// scrubbed by another test's registration and this assertion could not fail.
+func TestVerboseLoginDumpsTheExchangeWithoutEitherToken(t *testing.T) {
+	as := testsupport.NewStubAS()
+	defer as.Close()
+	as.TokenPrefix = "verboseprobe-"
+	f := testsupport.NewFakeMCP()
+	defer f.Close()
+	f.Role = "writer"
+
+	m, store := newOAuthManager(t, f.URL, as.URL)
+
+	var dump bytes.Buffer
+	httplog.SetOutput(&dump)
+	httplog.SetEnabled(true)
+	t.Cleanup(func() {
+		httplog.SetEnabled(false)
+		httplog.SetOutput(os.Stderr)
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var redirectURI string
+	if _, err := m.LoginWithOAuth(ctx, visitURLCapturingRedirect(&redirectURI)); err != nil {
+		t.Fatalf("LoginWithOAuth: %v", err)
+	}
+
+	got := dump.String()
+	if got == "" {
+		t.Fatal("--verbose dumped nothing at all")
+	}
+	if !strings.Contains(got, "/oauth/token") {
+		t.Fatalf("the token exchange was not dumped:\n%s", got)
+	}
+
+	cred, err := store.Get("work")
+	if err != nil {
+		t.Fatalf("credential was not stored: %v", err)
+	}
+	for name, secret := range map[string]string{
+		"access token":  cred.AccessToken,
+		"refresh token": cred.RefreshToken,
+	} {
+		if secret == "" {
+			t.Fatalf("%s is empty — the assertion below would be vacuous", name)
+		}
+		if strings.Contains(got, secret) {
+			t.Fatalf("the %s reached the --verbose dump:\n%s", name, got)
+		}
 	}
 }
