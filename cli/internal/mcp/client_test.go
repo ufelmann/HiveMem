@@ -86,6 +86,35 @@ func TestCallToolSuccessIsExitZero(t *testing.T) {
 	}
 }
 
+// A denied tool must surface as -32003/403, not as a transport error, so the
+// client's IsToolNotPermitted() discrimination is actually exercised.
+func TestCallToolOnDeniedToolIsToolNotPermitted(t *testing.T) {
+	f := testsupport.NewFakeMCP()
+	defer f.Close()
+	f.DenyTool("add_cell")
+
+	_, err := newClient(t, f.URL).CallTool(context.Background(), "add_cell", map[string]any{})
+	if err == nil {
+		t.Fatal("CallTool succeeded, want a denial error")
+	}
+	mcpErr, ok := err.(*Error)
+	if !ok {
+		t.Fatalf("error type = %T, want *Error: %v", err, err)
+	}
+	if mcpErr.Code != -32003 {
+		t.Fatalf("Code = %d, want -32003", mcpErr.Code)
+	}
+	if mcpErr.HTTPStatus != http.StatusForbidden {
+		t.Fatalf("HTTPStatus = %d, want %d", mcpErr.HTTPStatus, http.StatusForbidden)
+	}
+	if !mcpErr.IsToolNotPermitted() {
+		t.Fatal("IsToolNotPermitted() = false, want true")
+	}
+	if got := ExitCodeFor(mcpErr); got != 3 {
+		t.Fatalf("ExitCodeFor = %d, want 3", got)
+	}
+}
+
 func TestAuthorizationHeaderIsSent(t *testing.T) {
 	var got string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

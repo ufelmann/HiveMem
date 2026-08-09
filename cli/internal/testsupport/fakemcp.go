@@ -33,6 +33,8 @@ type FakeMCP struct {
 	UnknownKeys []string
 	// KnownKeys declares the schema's properties for the unknown-key recorder.
 	KnownKeys map[string][]string
+	// DeniedTools holds the names DenyTool marked as not permitted.
+	DeniedTools map[string]bool
 }
 
 // NewFakeMCP starts a fake server. Close it with Close().
@@ -127,7 +129,18 @@ func (f *FakeMCP) handleToolCall(w http.ResponseWriter, id json.RawMessage, para
 			}
 		}
 	}
+	denied := f.DeniedTools[p.Name]
 	f.mu.Unlock()
+
+	if denied {
+		// Mirrors ToolCallDispatcher.java:58-60: the permission gate runs
+		// before handler resolution and answers -32003 at HTTP 403.
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"jsonrpc": "2.0", "id": id,
+			"error": map[string]any{"code": -32003, "message": "Tool not permitted: " + p.Name},
+		})
+		return
+	}
 
 	if p.Name == "wake_up" {
 		writeJSON(w, 200, toolText(id, `{"role":"`+f.Role+`"}`))
@@ -154,19 +167,13 @@ func (f *FakeMCP) handleToolCall(w http.ResponseWriter, id json.RawMessage, para
 // DenyTool makes the named tool answer -32003 / HTTP 403, which is what the
 // real server returns for a tool that is unknown OR not permitted.
 func (f *FakeMCP) DenyTool(name string) {
-	prev := f.ToolHandler
-	f.ToolHandler = func(n string, args map[string]any) (any, error) {
-		if n == name {
-			panic(denySignal{name})
-		}
-		if prev != nil {
-			return prev(n, args)
-		}
-		return map[string]any{}, nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.DeniedTools == nil {
+		f.DeniedTools = map[string]bool{}
 	}
+	f.DeniedTools[name] = true
 }
-
-type denySignal struct{ name string }
 
 func result(id json.RawMessage, payload any) map[string]any {
 	return map[string]any{"jsonrpc": "2.0", "id": id, "result": payload}
