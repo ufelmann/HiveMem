@@ -23,6 +23,9 @@ type InFlight struct {
 //
 // ClientID is not a secret but belongs to the credential: the server requires
 // it on every refresh, so it must be replaced atomically with the tokens.
+// TokenEndpoint is here for the same reason: it is discovered once during
+// login and is the only address the refresh grant may be presented to, so a
+// later process — which runs no discovery — has nowhere else to get it from.
 // Scope and TokenType are stored for diagnostics only — the effective role
 // comes from a wake_up probe, never from the requested scope.
 type Credential struct {
@@ -30,6 +33,7 @@ type Credential struct {
 	RefreshToken    string     `json:"refresh_token,omitempty"`
 	TokenType       string     `json:"token_type"`
 	ClientID        string     `json:"client_id,omitempty"`
+	TokenEndpoint   string     `json:"token_endpoint,omitempty"`
 	Scope           string     `json:"scope,omitempty"`
 	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
 	RefreshInFlight *InFlight  `json:"refresh_in_flight,omitempty"`

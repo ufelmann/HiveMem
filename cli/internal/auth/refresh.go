@@ -29,8 +29,35 @@ const (
 // ErrReloginRequired means the grant is gone or its state is unknown.
 var ErrReloginRequired = errors.New("re-login required: run `hivemem login`")
 
-// SetTokenEndpoint pins the token endpoint. Normally discovered; tests set it.
+// SetTokenEndpoint pins the token endpoint, overriding whatever the stored
+// credential carries. Nothing in production calls this — the endpoint travels
+// in the credential blob (see resolveTokenEndpoint); it exists so a test can
+// aim the refresh at a stub without going through a login.
 func (m *Manager) SetTokenEndpoint(u string) { m.tokenEndpoint = u }
+
+// resolveTokenEndpoint answers where this credential's refresh grant may be
+// presented.
+//
+// The credential is the authority: it was discovered at login time, and in a
+// split-host deployment the authorization server is a different origin than
+// the MCP server the CLI was pointed at, so it cannot be reconstructed. An
+// explicit pin wins over it, and a credential stored before the endpoint was
+// persisted falls back to re-running discovery rather than failing — that
+// blob is otherwise unrefreshable and would force a needless re-login.
+func (m *Manager) resolveTokenEndpoint(ctx context.Context, cred *keystore.Credential) (string, error) {
+	if m.tokenEndpoint != "" {
+		return m.tokenEndpoint, nil
+	}
+	if cred.TokenEndpoint != "" {
+		return cred.TokenEndpoint, nil
+	}
+	meta, err := Discover(ctx, m.authURL())
+	if err != nil {
+		return "", fmt.Errorf("%w: the stored credential carries no token endpoint "+
+			"and discovery failed: %v", ErrReloginRequired, err)
+	}
+	return meta.TokenEndpoint, nil
+}
 
 // inProcess holds one mutex per profile. It is not required for correctness:
 // config.WithLock("cred-"+profile, …) already serializes refreshes for that
@@ -127,6 +154,20 @@ func (m *Manager) doRefresh(ctx context.Context, cred *keystore.Credential) (*ke
 		return nil, fmt.Errorf("%w: the stored credential has no client_id", ErrReloginRequired)
 	}
 
+	// Resolved BEFORE the marker is written. Everything above and here is a
+	// configuration-level failure that sends no request at all; latching the
+	// profile for it would brand a perfectly good grant as
+	// outcome-unknown and demand a re-login for a problem a re-login on the
+	// same broken configuration cannot fix.
+	endpoint, err := m.resolveTokenEndpoint(ctx, cred)
+	if err != nil {
+		return nil, err
+	}
+	if endpoint == "" {
+		return nil, fmt.Errorf("%w: no token endpoint is known for this credential",
+			ErrReloginRequired)
+	}
+
 	// Mark before the request. The server revokes the presented token before
 	// it answers, so a lost response must never be retried blindly.
 	marked := *cred
@@ -141,7 +182,7 @@ func (m *Manager) doRefresh(ctx context.Context, cred *keystore.Credential) (*ke
 	// Required on every refresh; its absence is answered invalid_request.
 	form.Set("client_id", cred.ClientID)
 
-	tok, err := postToken(ctx, m.tokenEndpoint, form)
+	tok, err := postToken(ctx, endpoint, form)
 	if err != nil {
 		var oe *OAuthError
 		if errors.As(err, &oe) && oe.RequiresRelogin() {
@@ -157,11 +198,15 @@ func (m *Manager) doRefresh(ctx context.Context, cred *keystore.Credential) (*ke
 		AccessToken:  tok.AccessToken,
 		RefreshToken: tok.RefreshToken,
 		TokenType:    tok.TokenType,
-		// Retained from the previous blob: the token response carries no
-		// client_id, and the NEXT refresh requires it.
-		ClientID:  cred.ClientID,
-		Scope:     orDefault(tok.Scope, cred.Scope),
-		ExpiresAt: &expires,
+		// Retained from the previous blob: the token response carries neither
+		// the client_id nor the token endpoint, and the NEXT refresh requires
+		// both. The resolved endpoint is written back rather than the stored
+		// one, so a blob that had to fall back to discovery carries it
+		// afterwards.
+		ClientID:      cred.ClientID,
+		TokenEndpoint: endpoint,
+		Scope:         orDefault(tok.Scope, cred.Scope),
+		ExpiresAt:     &expires,
 		// Explicitly absent: a marker left behind here makes refresh #2 demand
 		// a re-login, invisibly.
 		RefreshInFlight: nil,

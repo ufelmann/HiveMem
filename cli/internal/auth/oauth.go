@@ -82,16 +82,18 @@ func (m *Manager) LoginWithOAuth(ctx context.Context, openBrowser func(string) e
 		return "", err
 	}
 
-	// 5. Store the credential INCLUDING client_id — refresh is impossible
-	//    without it.
+	// 5. Store the credential INCLUDING client_id AND the discovered token
+	//    endpoint — refresh is impossible without either, and no later process
+	//    runs discovery.
 	expires := time.Now().UTC().Add(time.Duration(tok.ExpiresIn) * time.Second)
 	cred := &keystore.Credential{
-		AccessToken:  tok.AccessToken,
-		RefreshToken: tok.RefreshToken,
-		TokenType:    tok.TokenType,
-		ClientID:     clientID,
-		Scope:        tok.Scope,
-		ExpiresAt:    &expires,
+		AccessToken:   tok.AccessToken,
+		RefreshToken:  tok.RefreshToken,
+		TokenType:     tok.TokenType,
+		ClientID:      clientID,
+		TokenEndpoint: meta.TokenEndpoint,
+		Scope:         tok.Scope,
+		ExpiresAt:     &expires,
 	}
 	cred.Register()
 	if err := m.store.Set(m.profile, cred); err != nil {

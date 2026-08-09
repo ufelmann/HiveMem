@@ -76,6 +76,13 @@ func TestOAuthLoginBindsBeforeRegisteringAndSucceeds(t *testing.T) {
 	if cred.ClientID == "" {
 		t.Fatal("client_id was not stored — refresh would be impossible")
 	}
+	// The token endpoint is discovered exactly once, here. No later process
+	// runs discovery, so a login that drops it leaves every refresh posting to
+	// the empty string an hour later.
+	if cred.TokenEndpoint != as.URL+"/oauth/token" {
+		t.Fatalf("stored token_endpoint = %q, want %q — refresh would post nowhere",
+			cred.TokenEndpoint, as.URL+"/oauth/token")
+	}
 	if cred.RefreshToken == "" {
 		t.Fatal("refresh token was not stored")
 	}
