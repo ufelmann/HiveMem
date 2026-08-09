@@ -2,13 +2,9 @@
 package main
 
 import (
-	"fmt"
 	"os"
+
+	"github.com/visterion/hivemem/cli/internal/command"
 )
 
-func main() {
-	// Replaced in Task 10 by command.Execute(); kept minimal so the module
-	// builds from the first commit.
-	fmt.Fprintln(os.Stderr, "hivemem: not yet wired up")
-	os.Exit(1)
-}
+func main() { os.Exit(command.Execute()) }
