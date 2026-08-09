@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -50,15 +51,19 @@ func LoadCache() (*Cache, error) {
 	}
 	empty := &Cache{Entries: map[string]*CacheEntry{}}
 
-	data, err := os.ReadFile(cachePath(dir))
+	path := cachePath(dir)
+	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return empty, nil
 	}
 	if err != nil {
+		// Read error (permission denied, I/O error, etc.) — emit diagnostic but stay open.
+		fmt.Fprintf(os.Stderr, "warning: cannot read cache: %v\n", err)
 		return empty, nil
 	}
 	var c Cache
 	if err := json.Unmarshal(data, &c); err != nil {
+		// Corrupt JSON — silently discard (it's derived state).
 		return empty, nil
 	}
 	if c.Entries == nil {
@@ -77,28 +82,115 @@ func (c *Cache) Get(key CacheKey) (*CacheEntry, bool) {
 // any existing entry so that last_auth_failure survives a schema refresh.
 // Passing an empty role nulls the recorded role rather than leaving a stale one
 // beside a fresh tool set.
+// Takes the lock for the entire read-mutate-write cycle to prevent lost updates
+// from concurrent processes.
 func (c *Cache) PutTools(key CacheKey, tools []json.RawMessage, role string) error {
-	e, ok := c.Entries[key.String()]
-	if !ok {
-		e = &CacheEntry{}
-		c.Entries[key.String()] = e
+	dir, err := ConfigDir()
+	if err != nil {
+		return err
 	}
-	e.Tools = tools
-	e.Role = role
-	e.FetchedAt = time.Now().UTC()
-	return c.save()
+
+	return WithLock("cache", func() error {
+		// Re-read from disk under the lock to see the latest state.
+		latest := &Cache{Entries: map[string]*CacheEntry{}}
+		path := cachePath(dir)
+
+		data, err := os.ReadFile(path)
+		if err == nil {
+			// File exists, try to parse it.
+			if err := json.Unmarshal(data, latest); err != nil {
+				// Corrupt file, start fresh.
+				latest.Entries = map[string]*CacheEntry{}
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			// Read error other than NotExist — fail the operation.
+			return fmt.Errorf("read cache: %w", err)
+		}
+		// If file doesn't exist, latest.Entries is already empty.
+
+		// Get or create entry in the freshly-read cache.
+		e, ok := latest.Entries[key.String()]
+		if !ok {
+			e = &CacheEntry{}
+			latest.Entries[key.String()] = e
+		}
+
+		// Preserve LastAuthFailure from the entry on disk.
+		preservedFailure := e.LastAuthFailure
+
+		// Apply the change.
+		e.Tools = tools
+		e.Role = role
+		e.FetchedAt = time.Now().UTC()
+		e.LastAuthFailure = preservedFailure
+
+		// Write.
+		marshalled, err := json.MarshalIndent(latest, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := WriteAtomic(path, marshalled, 0o600); err != nil {
+			return err
+		}
+
+		// Update receiver to reflect what was written.
+		*c = *latest
+		return nil
+	})
 }
 
 // PutAuthFailure sets or, with a nil f, clears the suppression record.
+// Takes the lock for the entire read-mutate-write cycle to prevent lost updates
+// from concurrent processes.
 func (c *Cache) PutAuthFailure(key CacheKey, f *AuthFailure) error {
-	e, ok := c.Entries[key.String()]
-	if !ok {
-		e = &CacheEntry{}
-		c.Entries[key.String()] = e
+	dir, err := ConfigDir()
+	if err != nil {
+		return err
 	}
-	e.LastAuthFailure = f
-	return c.save()
+
+	return WithLock("cache", func() error {
+		// Re-read from disk under the lock to see the latest state.
+		latest := &Cache{Entries: map[string]*CacheEntry{}}
+		path := cachePath(dir)
+
+		data, err := os.ReadFile(path)
+		if err == nil {
+			// File exists, try to parse it.
+			if err := json.Unmarshal(data, latest); err != nil {
+				// Corrupt file, start fresh.
+				latest.Entries = map[string]*CacheEntry{}
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			// Read error other than NotExist — fail the operation.
+			return fmt.Errorf("read cache: %w", err)
+		}
+		// If file doesn't exist, latest.Entries is already empty.
+
+		// Get or create entry in the freshly-read cache.
+		e, ok := latest.Entries[key.String()]
+		if !ok {
+			e = &CacheEntry{}
+			latest.Entries[key.String()] = e
+		}
+
+		// Apply the change.
+		e.LastAuthFailure = f
+
+		// Write.
+		marshalled, err := json.MarshalIndent(latest, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := WriteAtomic(path, marshalled, 0o600); err != nil {
+			return err
+		}
+
+		// Update receiver to reflect what was written.
+		*c = *latest
+		return nil
+	})
 }
+
 
 // IsStale reports whether the entry is missing or older than maxAge.
 func (c *Cache) IsStale(key CacheKey, maxAge time.Duration) bool {
@@ -109,16 +201,3 @@ func (c *Cache) IsStale(key CacheKey, maxAge time.Duration) bool {
 	return time.Since(e.FetchedAt) > maxAge
 }
 
-func (c *Cache) save() error {
-	dir, err := ConfigDir()
-	if err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return err
-	}
-	return WithLock("cache", func() error {
-		return WriteAtomic(cachePath(dir), data, 0o600)
-	})
-}
