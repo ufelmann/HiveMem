@@ -64,7 +64,7 @@ func (m *Manager) LoginWithOAuth(ctx context.Context, openBrowser func(string) e
 
 	authURL := buildAuthorizeURL(meta.AuthorizationEndpoint, clientID, lb.RedirectURI(), pkce)
 	if err := openBrowser(authURL); err != nil {
-		return "", fmt.Errorf("open browser: %w", err)
+		return "", fmt.Errorf("open browser: %w (on a headless host use `hivemem login --token`)", err)
 	}
 	fmt.Fprintf(os.Stderr, "Opened %s\nWaiting for the browser to complete the login…\n",
 		meta.AuthorizationEndpoint)

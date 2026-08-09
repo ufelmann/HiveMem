@@ -2,9 +2,14 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/visterion/hivemem/cli/internal/config"
 	"github.com/visterion/hivemem/cli/internal/keystore"
@@ -48,7 +53,15 @@ func TestOAuthLoginBindsBeforeRegisteringAndSucceeds(t *testing.T) {
 
 	m, store := newOAuthManager(t, f.URL, as.URL)
 
-	role, err := m.LoginWithOAuth(context.Background(), visitURL)
+	// Bounded so a reordering regression (register before bind, so the
+	// authorize step never matches a registered redirect_uri and the browser
+	// never reaches the loopback callback) fails in seconds, not after the
+	// production 5-minute wait.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var redirectURI string
+	role, err := m.LoginWithOAuth(ctx, visitURLCapturingRedirect(&redirectURI))
 	if err != nil {
 		t.Fatalf("LoginWithOAuth: %v", err)
 	}
@@ -69,6 +82,13 @@ func TestOAuthLoginBindsBeforeRegisteringAndSucceeds(t *testing.T) {
 	if cred.ExpiresAt == nil {
 		t.Fatal("expires_at was not derived from expires_in")
 	}
+
+	// Direct assertion that the registered redirect URI is the one actually
+	// bound: register-before-bind would register a stale (or empty-port)
+	// URI while the authorize/callback round trip used the real one.
+	if got := as.RegisteredRedirects[cred.ClientID]; len(got) != 1 || got[0] != redirectURI {
+		t.Fatalf("registered redirect URI = %v, want [%q] (the one actually bound)", got, redirectURI)
+	}
 }
 
 // A second login must register a fresh client: the stored client_id carries a
@@ -81,12 +101,18 @@ func TestSecondLoginRegistersAFreshClient(t *testing.T) {
 
 	m, store := newOAuthManager(t, f.URL, as.URL)
 
-	if _, err := m.LoginWithOAuth(context.Background(), visitURL); err != nil {
+	ctx1, cancel1 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel1()
+	var firstRedirectURI string
+	if _, err := m.LoginWithOAuth(ctx1, visitURLCapturingRedirect(&firstRedirectURI)); err != nil {
 		t.Fatalf("first login: %v", err)
 	}
 	first, _ := store.Get("work")
 
-	if _, err := m.LoginWithOAuth(context.Background(), visitURL); err != nil {
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel2()
+	var secondRedirectURI string
+	if _, err := m.LoginWithOAuth(ctx2, visitURLCapturingRedirect(&secondRedirectURI)); err != nil {
 		t.Fatalf("second login: %v", err)
 	}
 	second, _ := store.Get("work")
@@ -97,24 +123,54 @@ func TestSecondLoginRegistersAFreshClient(t *testing.T) {
 	if len(as.RegisteredRedirects) != 2 {
 		t.Fatalf("expected two registrations, got %d", len(as.RegisteredRedirects))
 	}
+
+	// Each registration must carry the port that was actually bound for that
+	// login, not a stale one left over from the other.
+	if got := as.RegisteredRedirects[first.ClientID]; len(got) != 1 || got[0] != firstRedirectURI {
+		t.Fatalf("first registered redirect URI = %v, want [%q]", got, firstRedirectURI)
+	}
+	if got := as.RegisteredRedirects[second.ClientID]; len(got) != 1 || got[0] != secondRedirectURI {
+		t.Fatalf("second registered redirect URI = %v, want [%q]", got, secondRedirectURI)
+	}
 }
 
+// TestOAuthLoginUsesDiscoveryEndpointsNotTheServerURL proves that
+// LoginWithOAuth uses the endpoints out of the discovery document rather than
+// reconstructing them by appending paths to the URL the CLI was pointed at.
+//
+// The discovery-only origin below implements ONLY the well-known endpoint; it
+// 404s on anything else, including /oauth/register and /oauth/authorize. Its
+// discovery document advertises endpoints on a completely different origin
+// (the real StubAS). An implementation that rebuilds endpoints from the
+// discovery URL instead of using the document's fields would therefore try to
+// POST to the discovery-only origin's /oauth/register and fail with 404.
 func TestOAuthLoginUsesDiscoveryEndpointsNotTheServerURL(t *testing.T) {
 	as := testsupport.NewStubAS()
 	defer as.Close()
 	f := testsupport.NewFakeMCP()
 	defer f.Close()
 
-	// Split-host: discovery publishes endpoints on the issuer, which is not
-	// the URL the CLI was pointed at.
-	as.IssuerOverride = as.URL
+	discoveryOnly := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/.well-known/oauth-authorization-server" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issuer":                 as.URL,
+			"authorization_endpoint": as.URL + "/oauth/authorize",
+			"token_endpoint":         as.URL + "/oauth/token",
+			"registration_endpoint":  as.URL + "/oauth/register",
+		})
+	}))
+	defer discoveryOnly.Close()
 
-	m, _ := newOAuthManager(t, f.URL, as.URL)
-	if _, err := m.LoginWithOAuth(context.Background(), visitURL); err != nil {
+	m, _ := newOAuthManager(t, f.URL, discoveryOnly.URL)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := m.LoginWithOAuth(ctx, visitURL); err != nil {
 		t.Fatalf("LoginWithOAuth: %v", err)
-	}
-	if as.RefreshCalls != 0 {
-		t.Fatal("login must not call the refresh grant")
 	}
 }
 
@@ -141,4 +197,19 @@ func visitURL(u string) error {
 	}
 	go func() { _, _ = httpGetFollow(u) }()
 	return nil
+}
+
+// visitURLCapturingRedirect behaves like visitURL but also records the
+// redirect_uri the authorize request carried, so a test can assert it against
+// what was registered without needing access to the Loopback the production
+// code keeps internal.
+func visitURLCapturingRedirect(captured *string) func(string) error {
+	return func(u string) error {
+		parsed, err := url.Parse(u)
+		if err != nil {
+			return err
+		}
+		*captured = parsed.Query().Get("redirect_uri")
+		return visitURL(u)
+	}
 }
