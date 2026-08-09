@@ -222,9 +222,9 @@ func TestToolsJSONMarksAToolShadowedByAFixedCommand(t *testing.T) {
 	}
 
 	var entries []struct {
-		Name       string `json:"name"`
-		Shadowed   bool   `json:"shadowed"`
-		ShadowedBy string `json:"shadowed_by"`
+		Name         string `json:"name"`
+		Unregistered bool   `json:"unregistered"`
+		Reason       string `json:"reason"`
 	}
 	if err := json.Unmarshal([]byte(out), &entries); err != nil {
 		t.Fatalf("tools --json did not produce a JSON array: %v\noutput:\n%s", err, out)
@@ -233,17 +233,106 @@ func TestToolsJSONMarksAToolShadowedByAFixedCommand(t *testing.T) {
 	found := false
 	for _, e := range entries {
 		if e.Name != "status" {
-			if e.Shadowed {
-				t.Fatalf("non-colliding tool %q wrongly marked shadowed in JSON: %+v", e.Name, e)
+			if e.Unregistered {
+				t.Fatalf("non-colliding tool %q wrongly marked unregistered in JSON: %+v", e.Name, e)
 			}
 			continue
 		}
 		found = true
-		if !e.Shadowed || e.ShadowedBy == "" {
-			t.Fatalf("shadowed tool %q missing the shadowed marker in JSON: %+v", "status", e)
+		if !e.Unregistered || e.Reason == "" {
+			t.Fatalf("shadowed tool %q missing the unregistered marker in JSON: %+v", "status", e)
+		}
+		// Point 3 of the review: the reason must name the actual shadower,
+		// not a generic constant that adds nothing over the boolean.
+		if !strings.Contains(e.Reason, `"status"`) {
+			t.Fatalf("reason for shadowed tool %q does not name the shadower: %+v", "status", e)
 		}
 	}
 	if !found {
 		t.Fatalf("tools --json output has no entry for %q:\n%s", "status", out)
+	}
+}
+
+// An empty tool set must render as `[]`, not `null`: a nil slice marshals to
+// null, and a caller piping `hivemem tools --json | jq '.[]'` into a shell
+// pipeline gets "Cannot iterate over null" instead of nothing.
+func TestToolsJSONEmptyToolSetIsAnEmptyArrayNotNull(t *testing.T) {
+	f := testsupport.NewFakeMCP()
+	defer f.Close()
+	f.Tools = []json.RawMessage{}
+
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "")
+	t.Setenv("HIVEMEM_PASSPHRASE", "test passphrase")
+	pinEncFileBackend(t)
+	withStdin(t, "static-token-dddddddddd\n")
+
+	if _, err := runRoot(t, "--server", f.URL, "--cred-profile", "work",
+		"login", "--token"); err != nil {
+		t.Fatalf("login --token: %v", err)
+	}
+
+	out, err := runRoot(t, "--server", f.URL, "--cred-profile", "work", "tools", "--json")
+	if err != nil {
+		t.Fatalf("tools --json: %v", err)
+	}
+	if strings.TrimSpace(out) != "[]" {
+		t.Fatalf("tools --json for an empty tool set = %q, want %q", strings.TrimSpace(out), "[]")
+	}
+}
+
+// A tool with no name is exactly as unregisterable as a fixed-command
+// collision, and just as silent if `tools` marks only collisions. It must be
+// marked too, with a Reason distinct from the collision case.
+func TestToolsMarksAnUnnamedToolAsUnregistered(t *testing.T) {
+	f := testsupport.NewFakeMCP()
+	defer f.Close()
+	f.Tools = []json.RawMessage{
+		json.RawMessage(`{"name":"search","description":"Search the knowledge base"}`),
+		json.RawMessage(`{"description":"a tool the server forgot to name"}`),
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "")
+	t.Setenv("HIVEMEM_PASSPHRASE", "test passphrase")
+	pinEncFileBackend(t)
+	withStdin(t, "static-token-eeeeeeeeee\n")
+
+	if _, err := runRoot(t, "--server", f.URL, "--cred-profile", "work",
+		"login", "--token"); err != nil {
+		t.Fatalf("login --token: %v", err)
+	}
+
+	out, err := runRoot(t, "--server", f.URL, "--cred-profile", "work", "tools", "--json")
+	if err != nil {
+		t.Fatalf("tools --json: %v", err)
+	}
+
+	var entries []struct {
+		Name         string `json:"name"`
+		Unregistered bool   `json:"unregistered"`
+		Reason       string `json:"reason"`
+	}
+	if err := json.Unmarshal([]byte(out), &entries); err != nil {
+		t.Fatalf("tools --json did not produce a JSON array: %v\noutput:\n%s", err, out)
+	}
+
+	found := false
+	for _, e := range entries {
+		if e.Name != "" {
+			continue
+		}
+		found = true
+		if !e.Unregistered || e.Reason == "" {
+			t.Fatalf("unnamed tool missing the unregistered marker in JSON: %+v", e)
+		}
+		if strings.Contains(e.Reason, "shadowed") {
+			t.Fatalf("unnamed tool's reason wrongly claims a fixed-command collision: %+v", e)
+		}
+	}
+	if !found {
+		t.Fatalf("tools --json output has no entry for the unnamed tool:\n%s", out)
 	}
 }

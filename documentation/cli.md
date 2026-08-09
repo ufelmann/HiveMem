@@ -67,25 +67,31 @@ not describe, but a property the schema marks as required must still be
 present. The server ignores keys it does not read rather than rejecting them,
 so an incomplete payload would otherwise come back as a confident wrong answer.
 
-### Tools shadowed by a built-in command
+### Tools that do not get their own subcommand
 
-A tool whose name matches a fixed command (`login`, `logout`, `status`,
-`tools`, `call`, `mcp-serve`) does not get a generated subcommand — the fixed
-command wins. The tool stays reachable, just not by its own name:
+Two things stop a tool from becoming a generated subcommand:
+
+- its name matches a fixed command (`login`, `logout`, `status`, `tools`,
+  `call`, `mcp-serve`) — the fixed command wins;
+- its schema cannot be parsed, or names no tool at all.
+
+Either way the tool stays reachable, just not by its own name:
 
 ```bash
 hivemem call status --args-json '{}'   # reach a tool named "status"
 ```
 
-`hivemem tools` marks such a tool instead of listing it as if it were an
-ordinary subcommand:
+`hivemem tools` says so on the tool's own line rather than listing it as if it
+were an ordinary subcommand:
 
 ```
-status                       Report ingestion status (shadowed by the built-in command — call with: hivemem call status)
+status                       Report ingestion status (shadowed by the built-in command "status" — call with: hivemem call status)
 ```
 
-With `--json`, the same entry carries `"shadowed": true` and a
-`"shadowed_by"` field instead of the suffix text.
+With `--json`, the same entry carries `"unregistered": true` and a `"reason"`
+field holding that same text. Both forms are derived from one evaluation, so
+they cannot disagree about which tools are affected. An empty tool set prints
+`[]`, never `null`.
 
 ## Seeing what goes over the wire
 

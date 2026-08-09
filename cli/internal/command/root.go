@@ -105,11 +105,13 @@ func Execute() int {
 		if cfg, err := config.LoadConfig(); err == nil {
 			key := config.CacheKey{ServerURL: resolveServer(cfg), Profile: resolveProfile(cfg)}
 			if entry, ok := cache.Get(key); ok {
-				// The skipped names are not consumed here: `tools` marks a
-				// shadowed tool by re-testing the same isFixedName predicate
-				// against its own (possibly freshly re-fetched) cache entry,
-				// so the marker never goes stale relative to the subcommand
-				// tree built from this snapshot.
+				// `tools` independently re-derives which tools are not
+				// subcommands by calling evaluateTool itself, rather than
+				// consuming a value returned here. That is safe — not a
+				// staleness risk — because FixedNames is a static,
+				// compile-time list: evaluateTool returns the same verdict
+				// for a given raw tool definition no matter when or where
+				// it runs, so the two call sites cannot drift apart.
 				attachGenerated(root, entry.Tools)
 			}
 		}

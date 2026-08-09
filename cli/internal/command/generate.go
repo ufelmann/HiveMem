@@ -111,28 +111,65 @@ func GenerateSpec(raw json.RawMessage) (*ToolSpec, error) {
 // inverse is only unambiguous while no property contains a literal dash.
 func flagName(property string) string { return strings.ReplaceAll(property, "_", "-") }
 
-// attachGenerated registers one subcommand per tool and returns the names it
-// skipped because they collide with a fixed command.
-func attachGenerated(root *cobra.Command, tools []json.RawMessage) []string {
+// toolRegistration is the outcome of deciding whether one raw tool definition
+// becomes a generated subcommand. attachGenerated and the `tools` command
+// both derive their behavior from evaluateTool so that the subcommand tree
+// and the `tools` listing can never disagree about why a tool is not its own
+// subcommand.
+type toolRegistration struct {
+	Name        string
+	Description string
+	// Spec is non-nil exactly when Registered is true.
+	Spec *ToolSpec
+	// Registered is true when the tool became a subcommand.
+	Registered bool
+	// Reason explains why the tool did not become a subcommand. Empty
+	// exactly when Registered is true.
+	Reason string
+}
+
+// evaluateTool decides whether a raw tool definition can become a generated
+// subcommand. A tool fails to register for two distinct reasons: its schema
+// could not be parsed (or names no tool at all), or its name collides with a
+// fixed command. Both leave the tool reachable only through `hivemem call`.
+func evaluateTool(raw json.RawMessage) toolRegistration {
+	spec, err := GenerateSpec(raw)
+	if err != nil {
+		return toolRegistration{Reason: fmt.Sprintf("tool schema is not valid JSON: %v", err)}
+	}
+	if spec.Name == "" {
+		return toolRegistration{
+			Description: spec.Description,
+			Reason:      "tool schema has no name and cannot become a subcommand",
+		}
+	}
+	if isFixedName(spec.Name) {
+		return toolRegistration{
+			Name: spec.Name, Description: spec.Description,
+			Reason: fmt.Sprintf(
+				"shadowed by the built-in command %q — call with: hivemem call %s",
+				spec.Name, spec.Name),
+		}
+	}
+	return toolRegistration{
+		Name: spec.Name, Description: spec.Description, Spec: spec, Registered: true,
+	}
+}
+
+// attachGenerated registers one subcommand per tool that evaluateTool
+// approved.
+func attachGenerated(root *cobra.Command, tools []json.RawMessage) {
 	reserved := map[string]bool{}
 	for _, f := range ReservedFlags {
 		reserved[f] = true
 	}
 
-	var skipped []string
 	for _, raw := range tools {
-		spec, err := GenerateSpec(raw)
-		if err != nil || spec.Name == "" {
-			continue
+		reg := evaluateTool(raw)
+		if reg.Registered {
+			root.AddCommand(buildCommand(reg.Spec, reserved))
 		}
-		if isFixedName(spec.Name) {
-			// The fixed command wins; the tool stays reachable via `call`.
-			skipped = append(skipped, spec.Name)
-			continue
-		}
-		root.AddCommand(buildCommand(spec, reserved))
 	}
-	return skipped
 }
 
 func buildCommand(spec *ToolSpec, reserved map[string]bool) *cobra.Command {

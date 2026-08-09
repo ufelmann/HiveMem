@@ -3,9 +3,8 @@ package command
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
-
-	"github.com/spf13/cobra"
 )
 
 func loadFixture(t *testing.T) []json.RawMessage {
@@ -162,17 +161,7 @@ func TestReservedPropertyFlagIsSkippedButOtherFlagsSurviveAndTheCommandStillRegi
 // tool stays reachable through `hivemem call status`.
 func TestCollidingToolIsNotRegisteredAsASubcommand(t *testing.T) {
 	root := newRootCmd()
-	skipped := attachGenerated(root, loadFixture(t))
-
-	found := false
-	for _, s := range skipped {
-		if s == "status" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("status should have been skipped, skipped = %v", skipped)
-	}
+	attachGenerated(root, loadFixture(t))
 
 	cmd, _, err := root.Find([]string{"status"})
 	if err != nil {
@@ -199,5 +188,45 @@ func TestGeneratedCommandsAreRegisteredOnce(t *testing.T) {
 			t.Fatalf("command %q registered %d times", name, n)
 		}
 	}
-	_ = cobra.Command{}
+}
+
+// A tool with no "name" field is exactly as unregisterable as a name
+// collision, and just as silent if nothing reports why. evaluateTool must
+// give a non-empty Reason for it, distinct from the collision case, so the
+// `tools` listing can explain either failure instead of only the collision.
+func TestEvaluateToolReportsAReasonForAnUnnamedTool(t *testing.T) {
+	reg := evaluateTool(json.RawMessage(`{"description":"a tool the server forgot to name"}`))
+	if reg.Registered {
+		t.Fatal("a tool with no name must not register as a subcommand")
+	}
+	if reg.Reason == "" {
+		t.Fatal("evaluateTool gave no Reason for an unnamed tool")
+	}
+	if strings.Contains(reg.Reason, "shadowed") {
+		t.Fatalf("an unnamed tool's Reason must not claim a fixed-command collision, got %q", reg.Reason)
+	}
+}
+
+// A raw tool definition that is not valid JSON at all must also carry a
+// Reason, distinct from both other cases.
+func TestEvaluateToolReportsAReasonForInvalidJSON(t *testing.T) {
+	reg := evaluateTool(json.RawMessage(`not json at all`))
+	if reg.Registered {
+		t.Fatal("invalid JSON must not register as a subcommand")
+	}
+	if reg.Reason == "" {
+		t.Fatal("evaluateTool gave no Reason for invalid JSON")
+	}
+}
+
+// The predicate attachGenerated and `tools` share must agree with itself:
+// calling it twice on the same input must produce the same verdict, which is
+// what lets root.go's comment claim the two call sites cannot drift apart.
+func TestEvaluateToolIsDeterministic(t *testing.T) {
+	raw := json.RawMessage(`{"name":"status","description":"Report ingestion status"}`)
+	a := evaluateTool(raw)
+	b := evaluateTool(raw)
+	if a.Registered != b.Registered || a.Reason != b.Reason {
+		t.Fatalf("evaluateTool is not deterministic: %+v vs %+v", a, b)
+	}
 }

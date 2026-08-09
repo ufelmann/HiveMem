@@ -248,25 +248,24 @@ func newToolsCmd() *cobra.Command {
 			type toolListing struct {
 				Name        string `json:"name"`
 				Description string `json:"description"`
-				// Shadowed is true when Name collides with a fixed command:
-				// attachGenerated skipped it, so it was never registered as
-				// a subcommand and is reachable only via `hivemem call`.
-				Shadowed   bool   `json:"shadowed,omitempty"`
-				ShadowedBy string `json:"shadowed_by,omitempty"`
+				// Unregistered is true when this tool did not become its
+				// own subcommand — either its name collides with a fixed
+				// command, or its schema could not be parsed. Reason says
+				// which, and both the JSON and human-readable forms come
+				// from the same evaluateTool call so they cannot disagree.
+				Unregistered bool   `json:"unregistered,omitempty"`
+				Reason       string `json:"reason,omitempty"`
 			}
-			var listings []toolListing
+			// Never nil: an empty tool set must render as `[]` in --json,
+			// not `null`, so a caller piping into `jq '.[]'` gets nothing
+			// instead of "Cannot iterate over null".
+			listings := []toolListing{}
 			for _, raw := range entry.Tools {
-				var t struct {
-					Name        string `json:"name"`
-					Description string `json:"description"`
-				}
-				_ = json.Unmarshal(raw, &t)
-				l := toolListing{Name: t.Name, Description: t.Description}
-				if isFixedName(t.Name) {
-					l.Shadowed = true
-					l.ShadowedBy = "built-in command"
-				}
-				listings = append(listings, l)
+				reg := evaluateTool(raw)
+				listings = append(listings, toolListing{
+					Name: reg.Name, Description: reg.Description,
+					Unregistered: !reg.Registered, Reason: reg.Reason,
+				})
 			}
 
 			if opts.asJSON {
@@ -277,9 +276,8 @@ func newToolsCmd() *cobra.Command {
 
 			for _, l := range listings {
 				line := fmt.Sprintf("%-28s %s", l.Name, firstLine(l.Description))
-				if l.Shadowed {
-					line += fmt.Sprintf(
-						" (shadowed by the built-in command — call with: hivemem call %s)", l.Name)
+				if l.Unregistered {
+					line += fmt.Sprintf(" (%s)", l.Reason)
 				}
 				fmt.Fprintln(cmd.OutOrStdout(), line)
 			}
