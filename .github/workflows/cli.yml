@@ -1,0 +1,75 @@
+name: cli
+
+on:
+  push:
+    paths: ['cli/**', '.github/workflows/cli.yml']
+  pull_request:
+    paths: ['cli/**', '.github/workflows/cli.yml']
+  release:
+    types: [published]
+
+jobs:
+  test:
+    # Both platforms: without a Windows runner the DPAPI path never executes.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: cli/go.sum
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        run: go test ./... -race -count=1
+
+      - name: Install keyring tooling (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y dbus-x11 gnome-keyring
+
+      - name: Test (Linux, no session bus)
+        if: runner.os == 'Linux'
+        env:
+          DBUS_SESSION_BUS_ADDRESS: ''
+        run: go test ./... -race -count=1
+
+      - name: Test (Linux, with Secret Service)
+        if: runner.os == 'Linux'
+        run: |
+          dbus-run-session -- bash -c \
+            'echo "" | gnome-keyring-daemon --unlock --components=secrets >/dev/null 2>&1; \
+             go test ./internal/keystore/ -race -count=1 -run TestSecretService'
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: cli/go.sum
+      - name: Cross-compile
+        run: make build-all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hivemem-cli
+          path: cli/bin/*
+      - name: Attach to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: cli/bin/*

@@ -36,8 +36,8 @@ mapping is created (`hivemem-token set-email`).
 |---|---|---|
 | `/api/**` (incl. `/api/tools/call`) | Human | Access JWT **or** session cookie (`HumanAuthFilter`); no principal → `401` |
 | SPA routes (everything not matched below) | Human | Access JWT **or** session cookie; no principal → `302 /login` (legacy) or `403` page (access mode, no `/login` exists) |
-| `/admin/**` except `/admin/peers**` | Human (browser) | Access JWT **or** session cookie; no principal → same as SPA routes |
-| `/admin/peers**` | Machine (CLI, `connect-peers.sh`) | Bearer token — `HumanAuthFilter` defers to `AuthFilter` without attempting a human principal |
+| `/admin/**` (browser, no `Authorization` header) | Human (browser) | Access JWT **or** session cookie; no principal → same as SPA routes |
+| `/admin/**` (with an `Authorization` header) | Machine (CLI, `connect-peers.sh`) | Bearer token — `HumanAuthFilter` defers to `AuthFilter` for any `/admin` path, not only `/admin/peers` |
 | `/mcp` | Machine | Bearer token from `api_tokens`, **or** an OAuth access token — never a session |
 | `/hooks`, `/sync` (incl. `/sync/ops`) | Machine | Bearer token (`AuthFilter`) |
 | `/vistierie/**` | Machine (webhook) | Controller-level webhook token (constant-time check), not `AuthFilter` |

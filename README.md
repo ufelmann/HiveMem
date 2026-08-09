@@ -155,6 +155,7 @@ for details on every 🟡 / 🔴 row.
 | [Document & Scan Pipeline](documentation/document-pipeline.md) | End-to-end overview: entry points, shared ingest core, the four enrichment paths |
 | [Consumption Folder](documentation/consumption.md) | Scan-to-folder ingest, automatic content-based document separation, config reference |
 | [Inbox Archivist](documentation/archivist.md) | Auto-classification of `inbox` cells into the right realm/signal/topic, trigger model, guarded tools, move log |
+| [CLI](documentation/cli.md) | The `hivemem` command-line client and stdio MCP bridge |
 
 ## License
 
