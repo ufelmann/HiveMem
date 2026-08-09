@@ -213,7 +213,7 @@ func TestOversizeDrainMemoryBounded(t *testing.T) {
 	// Cost should not grow materially with input size; use 2x as a generous threshold
 	// to avoid flakiness. Both allocations should be dominated by MaxFrameBytes.
 	if cost200 > cost24*2 {
-		t.Logf("WARN: 200 MiB drain cost %d exceeds 24 MiB cost %d by >2x (suggest checking for accumulation)", cost200, cost24)
+		t.Fatalf("200 MiB drain cost %d exceeds 24 MiB cost %d by >2x; drain is accumulating rather than discarding", cost200, cost24)
 	}
 }
 
