@@ -4,7 +4,6 @@ package command
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -87,17 +86,6 @@ func Execute() int {
 		return exitCodeFor(err)
 	}
 	return 0
-}
-
-// attachGenerated registers subcommands generated from cached tool schemas.
-//
-// TODO(task-11): generate one Cobra subcommand per cached tool schema (a
-// generated tool whose name collides with FixedNames must not be registered —
-// it stays reachable only via `hivemem call <tool>`). Until that task lands,
-// this is a deliberate no-op so Execute's wiring is already in place.
-func attachGenerated(root *cobra.Command, tools []json.RawMessage) {
-	_ = root
-	_ = tools
 }
 
 func resolveServer(cfg *config.Config) string {
