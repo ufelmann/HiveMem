@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -63,8 +64,8 @@ func (e *Error) IsInternal() bool { return e.Code == CodeInternal }
 
 // ExitCodeFor maps an error to the CLI's exit code.
 func ExitCodeFor(err error) int {
-	e, ok := err.(*Error)
-	if !ok {
+	var e *Error
+	if !errors.As(err, &e) {
 		return 1
 	}
 	switch {

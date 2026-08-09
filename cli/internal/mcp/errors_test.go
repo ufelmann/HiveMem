@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 )
@@ -46,5 +47,17 @@ func TestToolNotPermittedIsRecognised(t *testing.T) {
 	e := &Error{Code: -32003, Message: "Tool not permitted: add_cell", HTTPStatus: http.StatusForbidden}
 	if !e.IsToolNotPermitted() {
 		t.Fatal("-32003 was not recognised as a permission denial")
+	}
+}
+
+func TestExitCodeForUnwrapsError(t *testing.T) {
+	// A *Error with HTTPStatus 401 wrapped in fmt.Errorf should still map to exit code 3,
+	// which happens when a login token is rejected and the error is wrapped with
+	// fmt.Errorf("the token was rejected: %w", err).
+	underlying := &Error{HTTPStatus: http.StatusUnauthorized, Message: "invalid token"}
+	wrapped := fmt.Errorf("the token was rejected: %w", underlying)
+
+	if got := ExitCodeFor(wrapped); got != 3 {
+		t.Fatalf("wrapped 401 exit code = %d, want 3", got)
 	}
 }
