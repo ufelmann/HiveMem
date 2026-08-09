@@ -12,10 +12,11 @@ import (
 
 // Manager ties one profile's credential to one server.
 type Manager struct {
-	store     keystore.Store
-	cache     *config.Cache
-	serverURL string
-	profile   string
+	store         keystore.Store
+	cache         *config.Cache
+	serverURL     string
+	profile       string
+	authServerURL string
 }
 
 // NewManager returns a manager for (serverURL, profile).
