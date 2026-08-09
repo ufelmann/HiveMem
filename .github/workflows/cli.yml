@@ -35,9 +35,9 @@ jobs:
         if: runner.os == 'Windows'
         run: go test ./... -race -count=1
 
-      - name: Install keyring tooling (Linux)
+      - name: Install D-Bus tooling (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y dbus-x11 gnome-keyring
+        run: sudo apt-get update && sudo apt-get install -y dbus-x11
 
       - name: Test (Linux, no session bus)
         if: runner.os == 'Linux'
@@ -45,12 +45,26 @@ jobs:
           DBUS_SESSION_BUS_ADDRESS: ''
         run: go test ./... -race -count=1
 
-      - name: Test (Linux, with Secret Service)
+      # NOTE: this does NOT cover the Secret Service round trip, and that is
+      # intentional. gnome-keyring is deliberately NOT installed here: its
+      # package registers a D-Bus service-activation file, so merely running
+      # under `dbus-run-session` auto-starts it — and its "login" collection
+      # can never be bootstrapped non-interactively from an empty home
+      # directory (`gnome-keyring-daemon --unlock` only unlocks a keyring file
+      # that already exists; creating one over D-Bus requires a Prompt round
+      # trip tied to an interactive secret prompter this runner does not
+      # have). Verified by hand (2026-08-09): with the daemon installed and
+      # auto-activated, TestSecretServiceRoundTrip does NOT skip — it FAILS
+      # with "Object does not exist at path .../collection/login" because the
+      # default collection alias never resolves. Only with no secrets
+      # provider registered at all does platformKeyring() correctly report
+      # "unavailable" and the test SKIPs, which is what this step now proves.
+      # TestSecretServiceRoundTrip must be exercised manually on a real
+      # desktop session before releasing a change to secretservice_linux.go.
+      - name: Test (Linux, with session bus, no Secret Service)
         if: runner.os == 'Linux'
         run: |
-          dbus-run-session -- bash -c \
-            'echo "" | gnome-keyring-daemon --unlock --components=secrets >/dev/null 2>&1; \
-             go test ./internal/keystore/ -race -count=1 -run TestSecretService'
+          dbus-run-session -- go test ./internal/keystore/ -race -count=1 -run TestSecretService -v
 
   build:
     needs: test
