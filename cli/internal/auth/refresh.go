@@ -32,10 +32,32 @@ var ErrReloginRequired = errors.New("re-login required: run `hivemem login`")
 // SetTokenEndpoint pins the token endpoint. Normally discovered; tests set it.
 func (m *Manager) SetTokenEndpoint(u string) { m.tokenEndpoint = u }
 
-// inProcess serializes refreshes inside one process, on top of the
-// cross-process file lock. Ten concurrent bridge frames hitting expiry together
-// must produce one token request, not ten.
-var inProcess sync.Mutex
+// inProcess holds one mutex per profile. It is not required for correctness:
+// config.WithLock("cred-"+profile, …) already serializes refreshes for that
+// profile, both across processes and within this one, since each call opens
+// its own file descriptor and flock(2) alone would already be correct. What
+// this buys instead is cost: without it, ten concurrent goroutines hitting
+// expiry for the same profile would each open a file descriptor and block on
+// a syscall-level lock; with it, they contend on cheap memory and only the
+// winner touches the filesystem. Keyed per profile so a refresh for one
+// profile (say "personal") never blocks a concurrent refresh for an unrelated
+// one ("work") against a different auth server.
+var (
+	inProcessMu sync.Mutex
+	inProcess   = map[string]*sync.Mutex{}
+)
+
+// inProcessLock returns (creating on first use) the in-process mutex for profile.
+func inProcessLock(profile string) *sync.Mutex {
+	inProcessMu.Lock()
+	defer inProcessMu.Unlock()
+	m, ok := inProcess[profile]
+	if !ok {
+		m = &sync.Mutex{}
+		inProcess[profile] = m
+	}
+	return m
+}
 
 // Credential returns a usable credential, refreshing it first when it is
 // within RefreshSkew of expiry.
@@ -48,8 +70,9 @@ func (m *Manager) Credential(ctx context.Context) (*keystore.Credential, error) 
 		return cred, nil
 	}
 
-	inProcess.Lock()
-	defer inProcess.Unlock()
+	lock := inProcessLock(m.profile)
+	lock.Lock()
+	defer lock.Unlock()
 
 	var out *keystore.Credential
 	lockErr := config.WithLock("cred-"+m.profile, func() error {
