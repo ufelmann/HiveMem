@@ -137,14 +137,21 @@ public class VistierieWebhookController {
             return ResponseEntity.ok().build();
         }
         // Vistierie never attaches output to a failed run (see QueenWebhookService#
-        // recoverProposalsFromChildRuns javadoc), so a tripped max_run_seconds would otherwise
-        // discard every proposal the already-finished Bees produced. Recover those from their
-        // own (independently persisted) child runs instead of losing them.
-        if (payload != null && "failed".equals(payload.status())
-                && "max_run_seconds_exceeded".equals(payload.error())) {
-            int written = service.recoverProposalsFromChildRuns(payload.run_id());
-            log.info("Queen run {} timed out (max_run_seconds_exceeded); recovered {} pending "
-                    + "tunnel proposal(s) from already-finished bees", payload.run_id(), written);
+        // recoverProposalsFromChildRuns javadoc), so ANY failed Queen run would otherwise
+        // discard every proposal the already-finished Bees produced — not just a tripped
+        // max_run_seconds. Prod evidence (2026-08-09 review): the dominant failure text is
+        // actually "tool_error: subagent_failed: ..." (one Bee's own failure, e.g. its own
+        // max_run_seconds, kills the whole parent run via AgentRunner's tool_error path), not
+        // the literal "max_run_seconds_exceeded" string — matching on that exact text alone
+        // covered a small minority of failures and left the dominant class unrecovered. Recover
+        // on every failed status instead; recoverProposalsFromChildRuns's own filters (bee
+        // agent name, this run's parent_run_id, child status=done, output present) already make
+        // this a safe no-op when there is nothing to recover (e.g. a Queen run that failed
+        // before dispatching any Bee).
+        if (payload != null && "failed".equals(payload.status())) {
+            int written = service.recoverProposalsFromChildRuns(payload.run_id(), payload.started_at());
+            log.info("Queen run {} failed ({}); recovered {} pending tunnel proposal(s) from "
+                    + "already-finished bees", payload.run_id(), payload.error(), written);
             return ResponseEntity.ok().build();
         }
         log.info("Queen run {} status={} — nothing to ingest",

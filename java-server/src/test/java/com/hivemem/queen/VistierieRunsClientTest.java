@@ -75,16 +75,33 @@ class VistierieRunsClientTest {
                 [{"run_id":"b1","agent_name":"isolated-cell-bee","parent_run_id":"q1",
                   "status":"done","output":{"cell_id":"c1","proposals":[]}}]
                 """);
-        JsonNode out = client("admin-tok").listRunsTenantScoped(100);
+        JsonNode out = client("admin-tok").listRunsTenantScoped(100, null);
         assertThat(out.get(0).get("run_id").asString()).isEqualTo("b1");
         verify(getRequestedFor(urlPathEqualTo("/runs"))
                 .withHeader("Authorization", equalTo("Bearer tenant-tok")));
     }
 
     @Test
+    void listRunsTenantScopedOmitsFromParamWhenNull() {
+        mock.stubTenantRuns("[]");
+        client("").listRunsTenantScoped(100, null);
+        verify(getRequestedFor(urlPathEqualTo("/runs"))
+                .withoutQueryParam("from"));
+    }
+
+    @Test
+    void listRunsTenantScopedPassesFromParamWhenGiven() {
+        mock.stubTenantRuns("[]");
+        java.time.Instant from = java.time.Instant.parse("2026-08-09T03:00:00Z");
+        client("").listRunsTenantScoped(100, from);
+        verify(getRequestedFor(urlPathEqualTo("/runs"))
+                .withQueryParam("from", equalTo("2026-08-09T03:00:00Z")));
+    }
+
+    @Test
     void listRunsTenantScopedServerErrorMapsToUnavailable() {
         mock.stubRunsServerError();
-        assertThatThrownBy(() -> client("").listRunsTenantScoped(100))
+        assertThatThrownBy(() -> client("").listRunsTenantScoped(100, null))
                 .isInstanceOf(VistierieUnavailableException.class);
     }
 }

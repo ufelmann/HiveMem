@@ -131,30 +131,44 @@ class QueenWebhookServiceTest {
                   {"run_id":"q1","agent_name":"queen","parent_run_id":null,"status":"failed","output":null}
                 ]
                 """.formatted(from1, to1, from2, to2, other));
-        when(runsClient.listRunsTenantScoped(100)).thenReturn(body);
+        when(runsClient.listRunsTenantScoped(eq(100), any())).thenReturn(body);
 
-        int written = service().recoverProposalsFromChildRuns("q1");
+        int written = service().recoverProposalsFromChildRuns("q1", "2026-08-09T03:00:00Z");
 
         assertThat(written).isEqualTo(2);
         verify(writes).addTunnel(argThatIsQueenAgent(), eq(from1), eq(to1), eq("related_to"), eq("n1"), eq("pending"));
         verify(writes).addTunnel(argThatIsQueenAgent(), eq(from2), eq(to2), eq("builds_on"), isNull(), eq("pending"));
         verify(writes, org.mockito.Mockito.times(2))
                 .addTunnel(any(), any(), any(), anyString(), any(), anyString());
+        verify(runsClient).listRunsTenantScoped(100, java.time.Instant.parse("2026-08-09T03:00:00Z"));
+    }
+
+    /** A missing/unparseable started_at falls back to an unbounded (still limit-capped) query. */
+    @Test
+    void recoverProposalsFromChildRunsFallsBackToNullFromWhenStartedAtMissingOrUnparseable() {
+        ObjectMapper mapper = new ObjectMapper();
+        when(runsClient.listRunsTenantScoped(eq(100), any())).thenReturn(mapper.readTree("[]"));
+
+        service().recoverProposalsFromChildRuns("q1", null);
+        verify(runsClient).listRunsTenantScoped(100, null);
+
+        service().recoverProposalsFromChildRuns("q1", "not-a-valid-instant");
+        verify(runsClient, org.mockito.Mockito.times(2)).listRunsTenantScoped(100, null);
     }
 
     @Test
     void recoverProposalsFromChildRunsToleratesTransportFailure() {
-        when(runsClient.listRunsTenantScoped(anyInt()))
+        when(runsClient.listRunsTenantScoped(anyInt(), any()))
                 .thenThrow(new VistierieUnavailableException("down", new RuntimeException("boom")));
-        int written = service().recoverProposalsFromChildRuns("q1");
+        int written = service().recoverProposalsFromChildRuns("q1", null);
         assertThat(written).isEqualTo(0);
     }
 
     @Test
     void recoverProposalsFromChildRunsHandlesEmptyList() {
         ObjectMapper mapper = new ObjectMapper();
-        when(runsClient.listRunsTenantScoped(100)).thenReturn(mapper.readTree("[]"));
-        int written = service().recoverProposalsFromChildRuns("q1");
+        when(runsClient.listRunsTenantScoped(eq(100), any())).thenReturn(mapper.readTree("[]"));
+        int written = service().recoverProposalsFromChildRuns("q1", null);
         assertThat(written).isEqualTo(0);
         verifyNoInteractions(writes);
     }

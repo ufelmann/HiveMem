@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -181,11 +182,19 @@ public class QueenWebhookService {
     }
 
     /**
-     * Recovery for a Queen run that failed on {@code max_run_seconds_exceeded}. Vistierie's
+     * Recovery for ANY failed Queen run — not scoped to a particular error text. Vistierie's
      * {@code AgentRunner} passes {@code output=null} on every failure branch (there is no
      * partial-output delivery for the parent run itself), so the completion webhook body never
-     * carries the proposals a timed-out Queen had already collected — even though most of that
-     * work happened and would otherwise be lost.
+     * carries the proposals a failed Queen had already collected — even though most of that work
+     * happened and would otherwise be lost. Broadening this past the literal
+     * {@code max_run_seconds_exceeded} text is deliberate: prod evidence (2026-08-09) showed the
+     * dominant failure text is actually {@code tool_error: subagent_failed: ...} — one Bee's own
+     * failure (e.g. that Bee hitting its own {@code max_run_seconds}) kills the parent Queen run
+     * immediately via {@code AgentRunner}'s tool_error path, at whatever elapsed time that
+     * happens to be. This method's own filters below (Bee agent name, this run's
+     * {@code parent_run_id}, child {@code status=done}, output present) already make it a safe
+     * no-op when a failed Queen run genuinely has nothing to recover (e.g. it failed before
+     * dispatching any Bee), so callers do not need to pre-filter by error text either.
      *
      * <p>Each {@code dispatch_bee} call is its own independent Vistierie run, though, and each
      * one is durably marked {@code done} with its own real output the moment that Bee finishes —
@@ -196,16 +205,22 @@ public class QueenWebhookService {
      * their proposals exactly as the Queen's own completion path would have (bee's own {@code
      * cell_id} becomes {@code from_cell}).
      *
+     * @param queenStartedAt the failed Queen run's own {@code started_at} (ISO-8601), used to
+     *     bound the runs query to {@code from=queenStartedAt} so it never has to page through
+     *     unrelated history to find this run's children. Optional — a missing/unparseable value
+     *     falls back to an unbounded (but still {@code limit}-capped) query.
+     *
      * <p>Best-effort: a Vistierie outage here must not throw back into the webhook handler — it
-     * would just mean this specific night's timeout stays a total loss, same as before this
+     * would just mean this specific night's failure stays a total loss, same as before this
      * method existed.
      */
-    public int recoverProposalsFromChildRuns(String queenRunId) {
+    public int recoverProposalsFromChildRuns(String queenRunId, String queenStartedAt) {
+        Instant from = parseInstant(queenStartedAt);
         JsonNode body;
         try {
-            body = runsClient.listRunsTenantScoped(100);
+            body = runsClient.listRunsTenantScoped(100, from);
         } catch (RuntimeException e) {
-            log.warn("Timeout recovery for queen run {}: could not list Vistierie runs: {}",
+            log.warn("Failure recovery for queen run {}: could not list Vistierie runs: {}",
                     queenRunId, e.toString());
             return 0;
         }
@@ -235,10 +250,19 @@ public class QueenWebhookService {
             }
         }
         int written = ingestProposals(mapped);
-        log.info("Timeout recovery for queen run {}: {} finished bee(s) recovered (of a requested "
-                        + "batch), {} pending tunnel proposal(s) ingested",
+        log.info("Failure recovery for queen run {}: {} finished bee(s) recovered, {} pending "
+                        + "tunnel proposal(s) ingested",
                 queenRunId, surveyedCells.size(), written);
         return written;
+    }
+
+    private static Instant parseInstant(String iso) {
+        if (iso == null || iso.isBlank()) return null;
+        try {
+            return Instant.parse(iso);
+        } catch (java.time.format.DateTimeParseException e) {
+            return null;
+        }
     }
 
     private static String text(JsonNode n, String field) {
