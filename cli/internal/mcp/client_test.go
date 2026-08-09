@@ -3,8 +3,10 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/visterion/hivemem/cli/internal/testsupport"
@@ -172,3 +174,31 @@ func TestAuthorizationHeaderIsSent(t *testing.T) {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+// The server answers a rate-limit ban with response.sendError(429) after
+// setting Retry-After (AuthFilter.java:116): the wait time is in the header and
+// nowhere in the body, so a body-only reader loses the one number that tells
+// "wait 40 seconds" apart from "wait 15 minutes".
+func TestRetryAfterHeaderIsCapturedAndSurfaced(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "900")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"status":429,"error":"Too Many Requests"}`))
+	}))
+	defer srv.Close()
+
+	_, err := newClient(t, srv.URL).ListTools(context.Background())
+	if err == nil {
+		t.Fatal("a 429 must surface as an error")
+	}
+	var me *Error
+	if !errors.As(err, &me) {
+		t.Fatalf("want an *mcp.Error, got %#v", err)
+	}
+	if me.RetryAfter != "900" {
+		t.Fatalf("RetryAfter = %q, want \"900\"", me.RetryAfter)
+	}
+	if !strings.Contains(err.Error(), "900") {
+		t.Fatalf("the wait time must reach the message, got: %v", err)
+	}
+}

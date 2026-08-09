@@ -190,16 +190,23 @@ func (c *Client) call(ctx context.Context, timeout time.Duration, method string,
 		return nil, redact.Wrap(err)
 	}
 
+	// Read from the header, not the body: a 429 from AuthFilter goes through
+	// response.sendError, whose body carries no wait time at all.
+	retryAfter := resp.Header.Get("Retry-After")
+
 	var rpc rpcResponse
 	if jsonErr := json.Unmarshal(raw, &rpc); jsonErr != nil || rpc.JSONRPC == "" {
 		// Not a JSON-RPC body: a Spring error page, an HTML proxy error, etc.
-		return nil, &Error{HTTPStatus: resp.StatusCode, Message: summarize(raw)}
+		return nil, &Error{HTTPStatus: resp.StatusCode, Message: summarize(raw),
+			RetryAfter: retryAfter}
 	}
 	if rpc.Error != nil {
-		return nil, &Error{Code: rpc.Error.Code, Message: rpc.Error.Message, HTTPStatus: resp.StatusCode}
+		return nil, &Error{Code: rpc.Error.Code, Message: rpc.Error.Message,
+			HTTPStatus: resp.StatusCode, RetryAfter: retryAfter}
 	}
 	if resp.StatusCode >= 400 {
-		return nil, &Error{HTTPStatus: resp.StatusCode, Message: summarize(raw)}
+		return nil, &Error{HTTPStatus: resp.StatusCode, Message: summarize(raw),
+			RetryAfter: retryAfter}
 	}
 	return rpc.Result, nil
 }

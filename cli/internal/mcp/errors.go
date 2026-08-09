@@ -30,13 +30,22 @@ type Error struct {
 	Code       int
 	Message    string
 	HTTPStatus int
+	// RetryAfter is the Retry-After header, in seconds, as the server sent it.
+	// AuthFilter.java:116 sets it on every 429 it raises, and it is the only
+	// way to tell "wait 40 seconds" from "wait 15 minutes" — without it a
+	// rate-limit ban is indistinguishable from a broken token.
+	RetryAfter string
 }
 
 func (e *Error) Error() string {
-	if e.Code != 0 {
-		return fmt.Sprintf("server error %d: %s", e.Code, e.Message)
+	suffix := ""
+	if e.RetryAfter != "" {
+		suffix = fmt.Sprintf(" (retry after %ss)", e.RetryAfter)
 	}
-	return fmt.Sprintf("HTTP %d: %s", e.HTTPStatus, e.Message)
+	if e.Code != 0 {
+		return fmt.Sprintf("server error %d: %s%s", e.Code, e.Message, suffix)
+	}
+	return fmt.Sprintf("HTTP %d: %s%s", e.HTTPStatus, e.Message, suffix)
 }
 
 // IsUnknownTool reports the defensive path: a permitted tool name with no

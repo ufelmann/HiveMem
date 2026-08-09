@@ -193,7 +193,12 @@ func runStatus(ctx context.Context, d *Deps, out io.Writer, force bool) int {
 			return 3
 		}
 		if errors.As(err, &me) && me.HTTPStatus == 429 {
-			fmt.Fprintln(out, "Status:   rate limited — this address is temporarily banned")
+			wait := ""
+			if me.RetryAfter != "" {
+				wait = fmt.Sprintf(" — retry after %ss", me.RetryAfter)
+			}
+			fmt.Fprintf(out, "Status:   rate limited — this address is temporarily "+
+				"banned%s\n", wait)
 			return 4
 		}
 		fmt.Fprintf(out, "Status:   probe failed: %v\n", err)

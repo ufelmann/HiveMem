@@ -143,7 +143,7 @@ func (p *Proxy) handle(ctx context.Context, f *Frame) []byte {
 		return SynthesizeError(f.ID, -32001, redact.Apply(err.Error()))
 	}
 
-	status, respBody, err := p.post(ctx, body, token)
+	status, respBody, retryAfter, err := p.post(ctx, body, token)
 	if err != nil {
 		return SynthesizeError(f.ID, -32001, redact.Apply(err.Error()))
 	}
@@ -158,7 +158,7 @@ func (p *Proxy) handle(ctx context.Context, f *Frame) []byte {
 		p.mu.Unlock()
 
 		if retry, newToken := p.resolveAfterCoolDown(ctx); retry {
-			status, respBody, err = p.post(ctx, body, newToken)
+			status, respBody, retryAfter, err = p.post(ctx, body, newToken)
 			if err != nil {
 				return SynthesizeError(f.ID, -32001, redact.Apply(err.Error()))
 			}
@@ -168,7 +168,7 @@ func (p *Proxy) handle(ctx context.Context, f *Frame) []byte {
 		}
 	}
 
-	return p.normalize(f, status, respBody)
+	return p.normalize(f, status, respBody, retryAfter)
 }
 
 // normalize decides between passing a body through and synthesizing.
@@ -176,14 +176,17 @@ func (p *Proxy) handle(ctx context.Context, f *Frame) []byte {
 // The test is structural AND id-based: the server answers a bind failure with
 // id null while still carrying "jsonrpc", so a purely structural check would
 // forward it and leave the client's id unanswered forever.
-func (p *Proxy) normalize(f *Frame, status int, body []byte) []byte {
+func (p *Proxy) normalize(f *Frame, status int, body []byte, retryAfter string) []byte {
 	var probe struct {
 		JSONRPC string          `json:"jsonrpc"`
 		ID      json.RawMessage `json:"id"`
 	}
 	if err := json.Unmarshal(body, &probe); err != nil || probe.JSONRPC == "" {
-		return SynthesizeError(f.ID, codeForStatus(status),
-			fmt.Sprintf("HTTP %d: %s", status, summarize(body)))
+		msg := fmt.Sprintf("HTTP %d: %s", status, summarize(body))
+		if retryAfter != "" {
+			msg += fmt.Sprintf(" (retry after %ss)", retryAfter)
+		}
+		return SynthesizeError(f.ID, codeForStatus(status), msg)
 	}
 	if !bytes.Equal(normalizeID(probe.ID), normalizeID(f.ID)) {
 		// Same content, corrected id, so the client can match it.
@@ -212,11 +215,15 @@ func rewriteID(body []byte, id json.RawMessage) []byte {
 	return out
 }
 
-func (p *Proxy) post(ctx context.Context, body []byte, token string) (int, []byte, error) {
+// post sends one frame and returns the status, the raw body and the
+// Retry-After header. The header is returned separately because a 429 from
+// AuthFilter goes through response.sendError: the wait time is in the header
+// and nowhere in the body, so a body-only reader loses it entirely.
+func (p *Proxy) post(ctx context.Context, body []byte, token string) (int, []byte, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		strings.TrimRight(p.cfg.ServerURL, "/")+"/mcp", bytes.NewReader(body))
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, "", err
 	}
 	// Content-Type is mandatory: without it Spring's @RequestBody binding
 	// answers 415 before the controller runs.
@@ -226,11 +233,11 @@ func (p *Proxy) post(ctx context.Context, body []byte, token string) (int, []byt
 
 	resp, err := p.http.Do(req)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, "", err
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
-	return resp.StatusCode, raw, err
+	return resp.StatusCode, raw, resp.Header.Get("Retry-After"), err
 }
 
 // acquireInitialToken returns the token to use for a frame's first attempt.
@@ -361,12 +368,19 @@ func pinProtocolVersion(body []byte) []byte {
 	return out
 }
 
+// codeUpstreamFailure is what a synthesized 5xx carries. It is deliberately
+// NOT -32003: the server emits -32003 itself for "Tool not permitted"
+// (McpResponse.forbidden), and the bridge passes that frame through untouched.
+// Reusing it here would make a transient upstream outage indistinguishable
+// from a permission denial for any client that switches on the code.
+const codeUpstreamFailure = -32004
+
 func codeForStatus(status int) int {
 	switch {
 	case status == http.StatusTooManyRequests:
 		return -32005
 	case status >= 500:
-		return -32003
+		return codeUpstreamFailure
 	default:
 		return -32001
 	}

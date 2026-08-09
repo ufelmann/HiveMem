@@ -392,3 +392,66 @@ func TestProxyCoolDownExpiryDoesNotBurst(t *testing.T) {
 			"concurrent frames must wait for the single resolution instead of slipping through", got)
 	}
 }
+
+// Same header, other HTTP path. The bridge reads only bodies otherwise, and a
+// 429 from AuthFilter carries its wait time nowhere else.
+func TestProxySurfacesRetryAfterOnA429(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "900")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"status":429,"error":"Too Many Requests"}`))
+	}))
+	defer srv.Close()
+
+	out := runProxy(t, Config{ServerURL: srv.URL, Credential: staticCred("t-gggggggg"), Workers: 1},
+		`{"jsonrpc":"2.0","id":11,"method":"ping"}`+"\n")
+
+	var got struct {
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &got); err != nil {
+		t.Fatalf("output is not a JSON-RPC frame: %v\n%s", err, out)
+	}
+	if got.Error == nil || got.Error.Code != -32005 {
+		t.Fatalf("want a -32005 rate-limit frame, got:\n%s", out)
+	}
+	if !strings.Contains(got.Error.Message, "900") {
+		t.Fatalf("the Retry-After value must reach the message, got: %q", got.Error.Message)
+	}
+}
+
+// A synthesized 5xx must not reuse -32003: the server emits that itself for
+// "Tool not permitted", and the bridge deliberately passes those frames
+// through. One code for both makes a transient outage indistinguishable from a
+// permission denial.
+func TestSynthesized5xxDoesNotCollideWithTheServersForbiddenCode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`<html><body>Bad Gateway</body></html>`))
+	}))
+	defer srv.Close()
+
+	out := runProxy(t, Config{ServerURL: srv.URL, Credential: staticCred("t-hhhhhhhh"), Workers: 1},
+		`{"jsonrpc":"2.0","id":12,"method":"ping"}`+"\n")
+
+	var got struct {
+		Error *struct {
+			Code int `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &got); err != nil {
+		t.Fatalf("output is not a JSON-RPC frame: %v\n%s", err, out)
+	}
+	if got.Error == nil {
+		t.Fatalf("a 5xx must synthesize an error frame, got:\n%s", out)
+	}
+	if got.Error.Code == -32003 {
+		t.Fatal("a synthesized 5xx must not reuse the server's -32003")
+	}
+	if got.Error.Code != codeUpstreamFailure {
+		t.Fatalf("code = %d, want %d", got.Error.Code, codeUpstreamFailure)
+	}
+}
