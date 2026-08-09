@@ -115,6 +115,46 @@ func TestCallToolOnDeniedToolIsToolNotPermitted(t *testing.T) {
 	}
 }
 
+// A generic 403 (the server's non-MCP path — no jsonrpc member, no -32003)
+// must NOT be mistaken for a tool-not-permitted denial. Without this test,
+// a client predicate as loose as "HTTPStatus == 403" would still pass
+// TestCallToolOnDeniedToolIsToolNotPermitted, because the fake's DeniedTools
+// response always pairs 403 with -32003 and the exact prefix.
+func TestGenericForbiddenIsNotToolNotPermitted(t *testing.T) {
+	f := testsupport.NewFakeMCP()
+	defer f.Close()
+	f.ForceStatus = http.StatusForbidden
+	f.ForceBody = `{"timestamp":"2026-08-09T00:00:00Z","status":403,"error":"Forbidden"}`
+
+	_, err := newClient(t, f.URL).CallTool(context.Background(), "add_cell", map[string]any{})
+	if err == nil {
+		t.Fatal("CallTool succeeded, want an error")
+	}
+	genericErr, ok := err.(*Error)
+	if !ok {
+		t.Fatalf("error type = %T, want *Error: %v", err, err)
+	}
+	if genericErr.Code != 0 {
+		t.Fatalf("Code = %d, want 0 (no jsonrpc error member in a generic 403)", genericErr.Code)
+	}
+	if genericErr.IsToolNotPermitted() {
+		t.Fatal("IsToolNotPermitted() = true, want false: a bare HTTP 403 is not a -32003 denial")
+	}
+
+	f2 := testsupport.NewFakeMCP()
+	defer f2.Close()
+	f2.DenyTool("add_cell")
+
+	_, err2 := newClient(t, f2.URL).CallTool(context.Background(), "add_cell", map[string]any{})
+	deniedErr, ok := err2.(*Error)
+	if !ok {
+		t.Fatalf("error type = %T, want *Error: %v", err2, err2)
+	}
+	if !deniedErr.IsToolNotPermitted() {
+		t.Fatal("IsToolNotPermitted() = false, want true: a genuine -32003 denial must be recognised")
+	}
+}
+
 func TestAuthorizationHeaderIsSent(t *testing.T) {
 	var got string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
