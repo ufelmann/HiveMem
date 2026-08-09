@@ -327,6 +327,7 @@ func newServeCmd() *cobra.Command {
 			store, err := keystore.Select(keystore.SelectOptions{
 				Passphrase: []byte(os.Getenv("HIVEMEM_PASSPHRASE")),
 				// No PassphrasePrompt: stdin here is the JSON-RPC transport.
+				ForceBackend: forceKeystoreBackend,
 			})
 			if err != nil {
 				if errors.Is(err, keystore.ErrPassphraseRequired) {

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 )
@@ -34,7 +35,7 @@ func TestWriteAtomicLeavesNoPartialFile(t *testing.T) {
 }
 
 func TestWriteAtomicSetsMode(t *testing.T) {
-	if os.Getenv("GOOS") == "windows" {
+	if runtime.GOOS == "windows" {
 		t.Skip("POSIX modes are not meaningful on Windows")
 	}
 	path := filepath.Join(t.TempDir(), "creds.enc")
@@ -90,7 +91,7 @@ func TestWithLockSerializesWriters(t *testing.T) {
 }
 
 func TestDataDirIsCreatedWith0700(t *testing.T) {
-	if os.Getenv("GOOS") == "windows" {
+	if runtime.GOOS == "windows" {
 		t.Skip("POSIX modes are not meaningful on Windows")
 	}
 	base := t.TempDir()

@@ -46,6 +46,14 @@ type Deps struct {
 
 var opts = &globalOpts{}
 
+// forceKeystoreBackend pins the keystore backend for both resolveDeps and
+// mcp-serve. Empty in production, which is auto-selection. Tests set it so the
+// suite exercises one known backend on every platform: clearing
+// DBUS_SESSION_BUS_ADDRESS forces encfile on Linux but is inert on Windows,
+// where the DPAPI keyring is unconditionally available — an auto-selecting test
+// would then look in wincred for a credential seeded into the encrypted file.
+var forceKeystoreBackend string
+
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "hivemem",
@@ -138,6 +146,7 @@ func resolveDeps(ctx context.Context) (*Deps, error) {
 	store, err := keystore.Select(keystore.SelectOptions{
 		Passphrase:       []byte(os.Getenv("HIVEMEM_PASSPHRASE")),
 		PassphrasePrompt: promptPassphrase,
+		ForceBackend:     forceKeystoreBackend,
 	})
 	if err != nil {
 		if errors.Is(err, keystore.ErrPassphraseRequired) {

@@ -22,6 +22,7 @@ func newServeTestEnv(t *testing.T, serverURL string) {
 	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "")
 	t.Setenv("HIVEMEM_PASSPHRASE", "test passphrase")
 	t.Setenv("HIVEMEM_SERVER", serverURL)
+	pinEncFileBackend(t)
 
 	saved := opts.server
 	opts.server = ""

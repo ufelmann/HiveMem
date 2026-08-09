@@ -82,14 +82,16 @@ func TestExitCodeForUnwrapsAWrappedExitError(t *testing.T) {
 
 // resolveDeps must map a missing encfile passphrase to exit 3, the same way
 // newServeCmd does, instead of letting it fall through unwrapped to exit 1.
-// DBUS_SESSION_BUS_ADDRESS is cleared to force the encfile backend
-// deterministically, reproducing "headless host, no session bus" regardless
-// of what is actually running on the machine executing the test.
+// DBUS_SESSION_BUS_ADDRESS is cleared to reproduce "headless host, no session
+// bus" regardless of what is running on the machine executing the test, and
+// pinEncFileBackend makes that hold on Windows too, where the DPAPI keyring is
+// always available and the environment variable means nothing.
 func TestResolveDepsMapsMissingPassphraseToExitThree(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "")
 	t.Setenv("HIVEMEM_PASSPHRASE", "")
+	pinEncFileBackend(t)
 
 	saved := opts.server
 	opts.server = "http://example.invalid"

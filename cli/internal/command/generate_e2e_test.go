@@ -18,16 +18,17 @@ const e2ePassphrase = "e2e test passphrase, not a real secret"
 // setupE2ECredential seeds a static (non-expiring, no-refresh-token) credential
 // for the "work" profile into the encrypted-file backend, and points the
 // process at a fresh config/data directory so tests never share state. The
-// session bus address is cleared to force the encfile backend deterministically
-// — the same technique TestResolveDepsMapsMissingPassphraseToExitThree uses —
-// so this does not depend on whether a real keyring happens to be reachable
-// from the machine running the suite.
+// session bus address is cleared and the backend pinned to encfile, so this
+// does not depend on whether a real keyring happens to be reachable from the
+// machine running the suite — nor on the platform, since on Windows the DPAPI
+// keyring is available unconditionally and the env var is inert.
 func setupE2ECredential(t *testing.T) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "")
 	t.Setenv("HIVEMEM_PASSPHRASE", e2ePassphrase)
+	pinEncFileBackend(t)
 
 	store := keystore.NewEncFile([]byte(e2ePassphrase))
 	cred := &keystore.Credential{AccessToken: "token-e2e-aaaaaaaaaaaa", TokenType: "Bearer"}
