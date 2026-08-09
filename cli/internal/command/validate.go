@@ -92,15 +92,31 @@ func handleToolError(ctx context.Context, d *Deps, tool string, err error) error
 	return err
 }
 
+// probeRole issues the wake_up that pairs with every tool-set write and returns
+// the role it reports, or "" if the probe failed.
+//
+// It also deletes the 401-suppression record on success. The spec makes ANY
+// paired wake_up that returns a JSON-RPC result evidence of repair, not only
+// the one `status` issues: a static token's fingerprint never changes, so a
+// repaired credential whose record survives a fully successful `tools
+// --refresh` keeps `status` printing "not probed" and exiting 3 for up to 24 h,
+// breaking every health check wrapping it. A failed probe is not evidence of
+// anything and leaves the record standing.
+func probeRole(ctx context.Context, d *Deps) string {
+	who, err := d.Client.WakeUp(ctx)
+	if err != nil {
+		return ""
+	}
+	_ = d.Cache.PutAuthFailure(d.Manager.CacheKey(), nil)
+	return who.Role
+}
+
 func (d *Deps) refetch(ctx context.Context) (string, error) {
 	tools, err := d.Client.ListTools(ctx)
 	if err != nil {
 		return "", err
 	}
-	role := ""
-	if who, werr := d.Client.WakeUp(ctx); werr == nil {
-		role = who.Role
-	}
+	role := probeRole(ctx, d)
 	if err := d.Cache.PutTools(d.Manager.CacheKey(), tools, role); err != nil {
 		return "", err
 	}

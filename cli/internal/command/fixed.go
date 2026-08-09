@@ -231,11 +231,9 @@ func newToolsCmd() *cobra.Command {
 					return err
 				}
 				// Every tool-set write carries a paired role probe, so the
-				// recorded role never goes stale beside a fresh tool set.
-				role := ""
-				if who, err := d.Client.WakeUp(ctx); err == nil {
-					role = who.Role
-				}
+				// recorded role never goes stale beside a fresh tool set — and
+				// a probe that succeeds clears the 401 suppression.
+				role := probeRole(ctx, d)
 				if err := d.Cache.PutTools(key, tools, role); err != nil {
 					return err
 				}
