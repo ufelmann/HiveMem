@@ -5,6 +5,8 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import tools.jackson.databind.JsonNode;
 
+import java.time.Instant;
+
 /**
  * Read-only proxy to Vistierie's runs API. When an admin token is configured the list
  * call uses {@code GET /admin/runs} (includes cost); otherwise it falls back to the
@@ -62,6 +64,33 @@ public class VistierieRunsClient {
                     .body(JsonNode.class);
         } catch (RestClientException e) {
             throw new VistierieUnavailableException("Vistierie runs list failed", e);
+        }
+    }
+
+    /**
+     * Tenant-scoped {@code GET /runs}, always via the plain (non-admin) path — regardless of
+     * whether an admin token is configured. Used for failed-Queen-run recovery: only this shape
+     * carries {@code parent_run_id} and {@code output} per run; Vistierie's admin path
+     * ({@code GET /admin/runs}, {@code AdminRunSummary}) carries neither.
+     *
+     * <p>{@code from} (inclusive, {@code /runs}' own semantics) is optional and, when given,
+     * bounds the query to runs at or after that instant — cheap insurance against ever having to
+     * page through unrelated history to find a run's Bee children, even though a single night's
+     * window (currently measured at 5-18 runs per Queen run) makes the unbounded call safe today.
+     */
+    public JsonNode listRunsTenantScoped(int limit, Instant from) {
+        try {
+            return client.get()
+                    .uri(uri -> {
+                        uri.path("/runs").queryParam("limit", limit);
+                        if (from != null) uri.queryParam("from", from.toString());
+                        return uri.build();
+                    })
+                    .header("Authorization", "Bearer " + tenantToken)
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (RestClientException e) {
+            throw new VistierieUnavailableException("Vistierie runs list (tenant-scoped) failed", e);
         }
     }
 

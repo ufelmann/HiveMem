@@ -19,7 +19,8 @@ class QueenWebhookServiceArchivistTest {
     private final QueenWebhookService svc = new QueenWebhookService(
             props, repo, mock(com.hivemem.cells.CellReadRepository.class),
             mock(com.hivemem.search.CellSearchRepository.class),
-            mock(com.hivemem.embedding.EmbeddingClient.class), writes);
+            mock(com.hivemem.embedding.EmbeddingClient.class), writes,
+            mock(VistierieRunsClient.class));
 
     @Test
     void findInboxCellsClampsToBatchLimitAndStringifies() {

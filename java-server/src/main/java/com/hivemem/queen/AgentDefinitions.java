@@ -281,7 +281,25 @@ public class AgentDefinitions {
                 dispatch));
         def.put("output_schema", outputSchema);
         def.put("max_turns", 40);
-        def.put("max_run_seconds", 300);
+        // 600s (10 min), raised from 300s on 2026-08-09: prod measured a fully-successful
+        // 20-cell batch at 256-280s (avg ~13.4s/bee, 2914-cell backlog, 20 =
+        // QueenProperties.isolatedBatchLimit). 300s left under 40s of margin over the slower of
+        // those two runs, so ordinary night-to-night bee-latency variance alone was enough to
+        // trip max_run_seconds_exceeded — the literal-text failure cluster measured at
+        // 297-314s. 600s gives a normal (all-bees-succeed) run >2x headroom (600-280=320s
+        // spare).
+        //
+        // What 600s does NOT fix, and isn't meant to: a single Bee hitting ITS OWN
+        // max_run_seconds (isolated-cell-bee, 60s) fails immediately and kills the parent Queen
+        // run right there via AgentRunner's tool_error path (error text "tool_error:
+        // subagent_failed: max_run_seconds_exceeded") — it does not "return after 60s" and let
+        // the Queen continue. Prod run 4C549D69... (2026-08-09) died this way at 166s, nowhere
+        // near either the old or the new ceiling. Raising max_run_seconds cannot protect against
+        // that failure mode; only VistierieWebhookController#completion's blanket
+        // recover-on-any-failed-status (see QueenWebhookService#recoverProposalsFromChildRuns)
+        // does, by salvaging whatever Bees had already finished before the failure regardless of
+        // why the parent died.
+        def.put("max_run_seconds", 600);
         def.put("webhook_token", props.getWebhookToken());
         def.put("schedule", props.getSchedule());
         def.put("completion_webhook", props.getHivememBaseUrl() + "/vistierie/runs/done");
