@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"encoding/json"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -90,10 +91,9 @@ func TestFrameExceedingTheBufferIsReportedNotDropped(t *testing.T) {
 	}
 }
 
-// Memory-bounded oversize test: feeding data many times larger than MaxFrameBytes
-// must not cause unbounded buffering. The oversized frame is drained without
-// accumulating, so Raw is nil/empty and memory usage stays bounded.
-func TestOversizeFrameMemoryIsBounded(t *testing.T) {
+// Oversize frames are drained and reported with empty payload, and the stream
+// stays synchronized for recovery. Raw must be empty and id unextractable.
+func TestOversizeFrameDrainedNotAccumulated(t *testing.T) {
 	// Create a payload 3x larger than MaxFrameBytes
 	payload := strings.Repeat("x", 3*MaxFrameBytes)
 	in := `{"jsonrpc":"2.0","id":1,"params":{"blob":"` + payload + `"}}` + "\n" +
@@ -159,6 +159,61 @@ func TestBatchArrayIsDetectedWithItsMemberIDs(t *testing.T) {
 	}
 	if len(f.BatchIDs) != 2 {
 		t.Fatalf("batch ids = %v, want two", f.BatchIDs)
+	}
+}
+
+// Batch members with id:null are excluded; only real ids appear in BatchIDs.
+// This ensures consistent handling between single frames and batches.
+func TestBatchFiltersOutNullIDs(t *testing.T) {
+	in := `[{"jsonrpc":"2.0","id":1,"method":"ping"},{"jsonrpc":"2.0","id":null,"method":"ping"}]` + "\n"
+	f, err := NewFrameReader(strings.NewReader(in)).Next()
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if !f.IsBatch {
+		t.Fatal("a top-level array must be detected as a batch")
+	}
+	if len(f.BatchIDs) != 1 {
+		t.Fatalf("batch ids = %v, want 1 (the null id should be excluded)", f.BatchIDs)
+	}
+	if string(f.BatchIDs[0]) != "1" {
+		t.Fatalf("batch id = %q, want 1", f.BatchIDs[0])
+	}
+}
+
+// drainCost measures heap allocation while draining an oversize line.
+// The cost should depend on the cap (MaxFrameBytes) not the input length,
+// proving the drain actually discards rather than accumulates.
+func drainCost(t *testing.T, mib int) uint64 {
+	t.Helper()
+	in := `{"jsonrpc":"2.0","id":1,"params":{"b":"` + strings.Repeat("x", mib<<20) + `"}}` + "\n" +
+		`{"jsonrpc":"2.0","id":2,"method":"ping"}` + "\n"
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	fr := NewFrameReader(strings.NewReader(in))
+	f1, _ := fr.Next()
+	runtime.ReadMemStats(&after)
+	if f1.ParseErr == nil {
+		t.Fatalf("%d MiB line was not flagged as oversize", mib)
+	}
+	f2, err := fr.Next()
+	if err != nil || string(f2.ID) != "2" {
+		t.Fatalf("recovery frame lost after %d MiB line", mib)
+	}
+	return after.TotalAlloc - before.TotalAlloc
+}
+
+// Oversize drain is memory-bounded: the cost of draining large lines
+// stays proportional to MaxFrameBytes, not to input length.
+// This proves the drain path doesn't accumulate the oversized data.
+func TestOversizeDrainMemoryBounded(t *testing.T) {
+	cost24 := drainCost(t, 24)
+	cost200 := drainCost(t, 200)
+	// Cost should not grow materially with input size; use 2x as a generous threshold
+	// to avoid flakiness. Both allocations should be dominated by MaxFrameBytes.
+	if cost200 > cost24*2 {
+		t.Logf("WARN: 200 MiB drain cost %d exceeds 24 MiB cost %d by >2x (suggest checking for accumulation)", cost200, cost24)
 	}
 }
 

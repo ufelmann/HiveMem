@@ -90,6 +90,12 @@ func (f *FrameReader) readLine() ([]byte, error) {
 var errFrameTooLarge = fmt.Errorf(
 	"input frame exceeds the %d-byte limit", MaxFrameBytes)
 
+// isRealID reports whether id is a genuine JSON-RPC request id (not null or absent).
+// This ensures consistent handling of id:null across single frames and batch members.
+func isRealID(id json.RawMessage) bool {
+	return len(id) > 0 && string(id) != "null"
+}
+
 func parseFrame(line []byte) *Frame {
 	fr := &Frame{Raw: line}
 
@@ -104,7 +110,7 @@ func parseFrame(line []byte) *Frame {
 			return fr
 		}
 		for _, m := range batch {
-			if len(m.ID) > 0 {
+			if isRealID(m.ID) {
 				fr.BatchIDs = append(fr.BatchIDs, m.ID)
 			}
 		}
@@ -120,7 +126,7 @@ func parseFrame(line []byte) *Frame {
 		return fr
 	}
 	fr.Method = msg.Method
-	if len(msg.ID) > 0 && string(msg.ID) != "null" {
+	if isRealID(msg.ID) {
 		fr.ID, fr.HasID = msg.ID, true
 	}
 	return fr
