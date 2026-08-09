@@ -168,13 +168,20 @@ func (s *StubAS) token(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if s.DropRefreshResponse {
-			// Rotated server-side, but the client never sees the answer.
-			hj, ok := w.(http.Hijacker)
-			if ok {
-				conn, _, _ := hj.Hijack()
-				_ = conn.Close()
-				return
-			}
+			// Rotated server-side, but the client never sees the answer. A
+			// declared Content-Length the body does not deliver makes net/http's
+			// own (well-synchronized) server teardown abort the connection once
+			// the handler returns, so the client's read fails with an I/O error.
+			// A raw Hijack()+Close(), and separately panic(http.ErrAbortHandler),
+			// were both tried here first: both raced under `-race` between this
+			// mutex-protected write and the caller's later unsynchronized read of
+			// RefreshCalls/RefreshClientIDs, because neither path goes through
+			// net/http's normal response-completion synchronization.
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Content-Length", "1000")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("{"))
+			return
 		}
 	}
 

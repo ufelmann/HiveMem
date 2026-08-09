@@ -2,7 +2,6 @@
 package auth
 
 import (
-	"context"
 	"encoding/json"
 
 	"github.com/visterion/hivemem/cli/internal/config"
@@ -17,6 +16,7 @@ type Manager struct {
 	serverURL     string
 	profile       string
 	authServerURL string
+	tokenEndpoint string
 }
 
 // NewManager returns a manager for (serverURL, profile).
@@ -37,12 +37,6 @@ func (m *Manager) ServerURL() string { return m.serverURL }
 
 // Store exposes the backend, for `hivemem status`.
 func (m *Manager) Store() keystore.Store { return m.store }
-
-// Credential returns the stored credential, refreshing it first when it is
-// within the refresh window. Task 9 replaces the body of this method.
-func (m *Manager) Credential(ctx context.Context) (*keystore.Credential, error) {
-	return m.store.Get(m.profile)
-}
 
 // clientFor builds an MCP client for a credential.
 func (m *Manager) clientFor(c *keystore.Credential) *mcp.Client {
