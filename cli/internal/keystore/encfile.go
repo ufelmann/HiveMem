@@ -130,3 +130,20 @@ func (e *encFile) aead(salt []byte) (cipher.AEAD, error) {
 	}
 	return cipher.NewGCM(block)
 }
+
+// probeEncFileExists reports whether an encrypted credential file exists for
+// this profile, without decrypting it.
+func probeEncFileExists(profile string) (bool, error) {
+	dir, err := config.DataDir()
+	if err != nil {
+		return false, err
+	}
+	_, err = os.Stat(filepath.Join(dir, "creds-"+profile+".enc"))
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
