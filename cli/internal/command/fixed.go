@@ -281,6 +281,13 @@ func newCallCmd() *cobra.Command {
 					return usageError("--args-json is not valid JSON: %v", err)
 				}
 			}
+			if entry, ok := d.Cache.Get(d.Manager.CacheKey()); ok {
+				if spec := cachedSpec(entry.Tools, args[0]); spec != nil {
+					if err := requireProperties(spec, payload); err != nil {
+						return err
+					}
+				}
+			}
 			res, err := d.Client.CallTool(ctx, args[0], payload)
 			if err != nil {
 				return err

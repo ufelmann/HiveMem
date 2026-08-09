@@ -23,7 +23,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          # Taken from go.mod so the two can never drift: go.mod requires
+          # 1.25.0, which a pinned 1.23 toolchain cannot build at all.
+          go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
 
       - name: Vet
@@ -60,7 +62,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          # Taken from go.mod so the two can never drift: go.mod requires
+          # 1.25.0, which a pinned 1.23 toolchain cannot build at all.
+          go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
       - name: Cross-compile
         run: make build-all

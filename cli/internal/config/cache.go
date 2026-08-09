@@ -191,7 +191,6 @@ func (c *Cache) PutAuthFailure(key CacheKey, f *AuthFailure) error {
 	})
 }
 
-
 // IsStale reports whether the entry is missing or older than maxAge.
 func (c *Cache) IsStale(key CacheKey, maxAge time.Duration) bool {
 	e, ok := c.Get(key)
@@ -200,4 +199,3 @@ func (c *Cache) IsStale(key CacheKey, maxAge time.Duration) bool {
 	}
 	return time.Since(e.FetchedAt) > maxAge
 }
-

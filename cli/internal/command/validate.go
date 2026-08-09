@@ -56,6 +56,36 @@ func ValidateArgs(spec *ToolSpec, args map[string]any) error {
 	return nil
 }
 
+// cachedSpec returns the generated spec for name, or nil when the cache does
+// not carry that tool. A miss is not an error: `call` is also the way to reach
+// a tool the cache has never seen.
+func cachedSpec(tools []json.RawMessage, name string) *ToolSpec {
+	for _, raw := range tools {
+		spec, err := GenerateSpec(raw)
+		if err == nil && spec.Name == name {
+			return spec
+		}
+	}
+	return nil
+}
+
+// requireProperties is the required-property half of ValidateArgs.
+//
+// `call` uses it alone. --args-json is deliberately exempt from the
+// unknown-key check — it is the escape hatch for a schema the cache does not
+// carry — but the required check still applies, because nothing downstream
+// performs it: the server does not validate arguments against the schema, it
+// simply ignores keys it does not read, so a call missing a required property
+// comes back as a confident wrong answer rather than an error.
+func requireProperties(spec *ToolSpec, args map[string]any) error {
+	for _, req := range spec.Required {
+		if _, ok := args[req]; !ok {
+			return usageError("%s requires %q in --args-json", spec.Name, req)
+		}
+	}
+	return nil
+}
+
 // handleToolError implements the cache-invalidation rules.
 //
 // -32003 is the trigger that fires in production. The permission gate runs
