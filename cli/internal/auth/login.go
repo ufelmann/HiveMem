@@ -22,7 +22,8 @@ func (m *Manager) LoginWithToken(ctx context.Context, token string) (string, err
 	redact.Register(token)
 
 	cred := &keystore.Credential{AccessToken: token, TokenType: "Bearer"}
-	res, err := m.clientFor(cred).WakeUp(ctx)
+	client := m.clientFor(cred)
+	res, err := client.WakeUp(ctx)
 	if err != nil {
 		return "", fmt.Errorf("the token was rejected: %w", err)
 	}
@@ -30,7 +31,15 @@ func (m *Manager) LoginWithToken(ctx context.Context, token string) (string, err
 	if err := m.store.Set(m.profile, cred); err != nil {
 		return "", fmt.Errorf("store credential: %w", err)
 	}
-	if err := m.recordTools(nil, res.Role); err != nil {
+	// The schemas are fetched here for the same reason the OAuth branch fetches
+	// them: PutTools stamps fetched_at, so recording a nil tool set would leave
+	// `hivemem tools` printing nothing — and generating no subcommands — for a
+	// full 24 h, on the very path the headless documentation recommends.
+	tools, err := client.ListTools(ctx)
+	if err != nil {
+		return "", fmt.Errorf("fetch tool schemas: %w", err)
+	}
+	if err := m.recordTools(tools, res.Role); err != nil {
 		return "", fmt.Errorf("record role: %w", err)
 	}
 	// A fresh credential invalidates any suppression from the previous one.
