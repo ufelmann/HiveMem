@@ -341,25 +341,18 @@ func newServeCmd() *cobra.Command {
 
 			m := auth.NewManager(store, cache, server, profile)
 
-			// token is both Credential and Reload for the bridge: Manager's
-			// Credential already re-reads the store on every call and only
-			// performs its own (locked, proactive) refresh when the stored
-			// credential is due. Passing it for both means the bridge's
-			// cool-down-expiry re-read picks up a static-token profile fixed
-			// via `hivemem login` while this process kept running, and never
-			// exits on its own for an auth failure — that is the command
-			// path's behaviour, not mcp-serve's.
-			token := func(ctx context.Context) (string, error) {
-				cred, err := m.Credential(ctx)
-				if err != nil {
-					return "", err
-				}
-				return cred.AccessToken, nil
-			}
+			// The bridge asks for a credential once per FRAME, and Reload is its
+			// cool-down-expiry path: passing the same store-reading closure for
+			// both is what made the cost proportional to traffic. The caching
+			// pair keeps Reload's semantics — a static-token profile fixed via
+			// `hivemem login` while this process kept running is still picked
+			// up, and mcp-serve still never exits on its own for an auth
+			// failure, which is the command path's behaviour, not this one's.
+			credential, reload := newCachingCredential(m)
 			p := bridge.New(bridge.Config{
 				ServerURL:  server,
-				Credential: token,
-				Reload:     token,
+				Credential: credential,
+				Reload:     reload,
 				Workers:    4,
 				CoolDown:   60 * time.Second,
 			})

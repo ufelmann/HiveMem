@@ -126,6 +126,12 @@ func (m *Manager) Credential(ctx context.Context) (*keystore.Credential, error) 
 	return out, nil
 }
 
+// NeedsRefresh reports whether a credential has entered the refresh window.
+// Exported for mcp-serve, which holds one credential for the process lifetime
+// — re-reading the store per frame re-derives an Argon2id key at 64 MiB, or
+// opens a D-Bus session — and needs to know when its copy is due.
+func (m *Manager) NeedsRefresh(c *keystore.Credential) bool { return m.needsRefresh(c) }
+
 // needsRefresh compares against the THRESHOLD, not against now. Comparing
 // against now would be self-defeating: at expires_at - RefreshSkew the stored
 // expiry is still in the future, so every process — including the first —
