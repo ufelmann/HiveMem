@@ -7,13 +7,19 @@ needs to hold a token.
 
 ## Install
 
-Download the binary for your platform from the latest release, or build it:
+Build it:
 
 ```bash
 cd cli && make build      # ./bin/hivemem
+cd cli && make build-all  # linux/amd64, linux/arm64, windows/amd64
 ```
 
 Linux (amd64, arm64) and Windows (amd64) are supported. No runtime is required.
+
+Every push also uploads the three binaries as a CI artifact (`hivemem-cli`),
+and publishing a GitHub release attaches them to it. Releases published before
+the CLI existed carry no binaries — build from source unless a release lists
+them.
 
 ## Authenticate
 
