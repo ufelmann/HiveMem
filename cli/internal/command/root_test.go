@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -106,5 +107,29 @@ func TestResolveDepsMapsMissingPassphraseToExitThree(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "HIVEMEM_PASSPHRASE") {
 		t.Fatalf("error must name HIVEMEM_PASSPHRASE, got: %v", err)
+	}
+}
+
+func TestForceKeystoreBackendSeededFromEnv(t *testing.T) {
+	t.Setenv("HIVEMEM_E2E_FORCE_BACKEND", "encfile")
+	// forceKeystoreBackend is read once, at package init, from
+	// HIVEMEM_E2E_FORCE_BACKEND — re-run that same read here rather than
+	// depending on process init order relative to t.Setenv, which would
+	// make this test flaky depending on test execution order.
+	if got := os.Getenv("HIVEMEM_E2E_FORCE_BACKEND"); got != "encfile" {
+		t.Fatalf("test setup broken: HIVEMEM_E2E_FORCE_BACKEND = %q", got)
+	}
+	if got := keystoreBackendOverride(); got != "encfile" {
+		t.Fatalf("keystoreBackendOverride() = %q, want %q", got, "encfile")
+	}
+}
+
+func TestForceKeystoreBackendInProcessOverrideWinsOverEnv(t *testing.T) {
+	t.Setenv("HIVEMEM_E2E_FORCE_BACKEND", "encfile")
+	saved := forceKeystoreBackend
+	forceKeystoreBackend = "keyring"
+	t.Cleanup(func() { forceKeystoreBackend = saved })
+	if got := keystoreBackendOverride(); got != "keyring" {
+		t.Fatalf("keystoreBackendOverride() = %q, want %q (in-process var must win)", got, "keyring")
 	}
 }

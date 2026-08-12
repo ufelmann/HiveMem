@@ -79,7 +79,30 @@ var opts = &globalOpts{}
 // DBUS_SESSION_BUS_ADDRESS forces encfile on Linux but is inert on Windows,
 // where the DPAPI keyring is unconditionally available — an auto-selecting test
 // would then look in wincred for a credential seeded into the encrypted file.
-var forceKeystoreBackend string
+//
+// It is also seeded from HIVEMEM_E2E_FORCE_BACKEND at process start. That is
+// the ONLY way a separate process — the built binary execed by
+// internal/e2e's subprocess test — can pin the backend, since it cannot reach
+// this package-level variable directly the way an in-process test can. It is
+// not documented as a user-facing flag: real users get auto-selection.
+var forceKeystoreBackend = os.Getenv("HIVEMEM_E2E_FORCE_BACKEND")
+
+// keystoreBackendOverride returns the effective backend pin: an in-process
+// test assignment to forceKeystoreBackend always wins over the environment
+// variable it was seeded from, so existing white-box tests that mutate the
+// variable directly (see helpers_test.go's pinEncFileBackend) are unaffected
+// by this env var existing at all. When forceKeystoreBackend was never set
+// in-process, this re-reads HIVEMEM_E2E_FORCE_BACKEND live rather than
+// relying solely on the package-init read: in the real subprocess-exec case
+// the env var is present before the binary starts, so the init-time read
+// already has it, but in-process tests set it via t.Setenv after package
+// init has already run, and would otherwise never observe it.
+func keystoreBackendOverride() string {
+	if forceKeystoreBackend != "" {
+		return forceKeystoreBackend
+	}
+	return os.Getenv("HIVEMEM_E2E_FORCE_BACKEND")
+}
 
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
@@ -322,7 +345,7 @@ func resolveDepsWithOverrides(ctx context.Context, serverOverride, profileOverri
 	store, err := keystore.Select(keystore.SelectOptions{
 		Passphrase:       []byte(os.Getenv("HIVEMEM_PASSPHRASE")),
 		PassphrasePrompt: promptPassphrase,
-		ForceBackend:     forceKeystoreBackend,
+		ForceBackend:     keystoreBackendOverride(),
 	})
 	if err != nil {
 		if errors.Is(err, keystore.ErrPassphraseRequired) {
