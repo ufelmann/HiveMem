@@ -3,8 +3,13 @@ LDFLAGS := -s -w
 
 .PHONY: test build build-all lint capture-schemas
 
+# -skip TestCLIEndToEnd mirrors .github/workflows/cli.yml's broad test steps:
+# TestCLIEndToEnd hard-fails (rather than skipping) whenever CI is set but
+# HIVEMEM_CLI_E2E is not, which some CI-like local dev containers/shells also
+# set. Run the e2e suite explicitly via HIVEMEM_CLI_E2E=1 go test
+# ./internal/e2e/... -run TestCLIEndToEnd instead.
 test:
-	CGO_ENABLED=0 $(GO) test ./... -count=1
+	CGO_ENABLED=0 $(GO) test ./... -count=1 -skip TestCLIEndToEnd
 
 build:
 	CGO_ENABLED=0 $(GO) build -ldflags '$(LDFLAGS)' -o bin/hivemem .

@@ -31,19 +31,27 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # -skip TestCLIEndToEnd is paired with the dedicated "End-to-end (built
+      # binary)" step below: HIVEMEM_CLI_E2E is unset here, and TestCLIEndToEnd
+      # hard-fails (rather than skipping) whenever CI is set but
+      # HIVEMEM_CLI_E2E is not — which GitHub Actions makes true for every
+      # step on every platform. If the dedicated e2e step is ever removed,
+      # this -skip must be removed too, or the suite silently stops running
+      # anywhere in CI.
       - name: Test (Windows)
         if: runner.os == 'Windows'
-        run: go test ./... -race -count=1
+        run: go test ./... -race -count=1 -skip TestCLIEndToEnd
 
       - name: Install D-Bus tooling (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y dbus-x11
 
+      # See the -skip note on "Test (Windows)" above: same pairing applies here.
       - name: Test (Linux, no session bus)
         if: runner.os == 'Linux'
         env:
           DBUS_SESSION_BUS_ADDRESS: ''
-        run: go test ./... -race -count=1
+        run: go test ./... -race -count=1 -skip TestCLIEndToEnd
 
       # NOTE: this does NOT cover the Secret Service round trip, and that is
       # intentional. gnome-keyring is deliberately NOT installed here: its
@@ -66,6 +74,12 @@ jobs:
         run: |
           dbus-run-session -- go test ./internal/keystore/ -race -count=1 -run TestSecretService -v
 
+      # Paired with the -skip TestCLIEndToEnd flags added to the two broad
+      # steps above: this is the only step that actually runs TestCLIEndToEnd
+      # in CI. Do not remove this step without also removing those -skip
+      # flags, or TestCLIEndToEnd stops running anywhere in CI while its own
+      # guard (see e2e_test.go) still merely hard-fails the broad steps
+      # instead of ever being exercised.
       - name: End-to-end (built binary)
         env:
           HIVEMEM_CLI_E2E: "1"
