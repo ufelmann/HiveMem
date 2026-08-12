@@ -16,10 +16,10 @@ cd cli && make build-all  # linux/amd64, linux/arm64, windows/amd64
 
 Linux (amd64, arm64) and Windows (amd64) are supported. No runtime is required.
 
-Every push also uploads the three binaries as a CI artifact (`hivemem-cli`),
-and publishing a GitHub release attaches them to it. Releases published before
-the CLI existed carry no binaries — build from source unless a release lists
-them.
+Or download them: releases from `v9.38.0` onward attach `hivemem-linux-amd64`,
+`hivemem-linux-arm64`, `hivemem-windows-amd64.exe` and a `SHA256SUMS` file.
+Every push also uploads the same three binaries as a CI artifact
+(`hivemem-cli`). Releases published before the CLI existed carry none.
 
 ## Authenticate
 
