@@ -2,6 +2,7 @@ package keystore
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -94,6 +95,24 @@ func TestSelectHonoursForceBackend(t *testing.T) {
 	}
 	if got.Name() != "encrypted file" {
 		t.Fatalf("ForceBackend was ignored, selected %q", got.Name())
+	}
+}
+
+func TestSelectRejectsAnUnrecognizedForceBackend(t *testing.T) {
+	keyring := &fakeBackend{name: "keyring", available: true}
+	file := &fakeBackend{name: "encrypted file"}
+
+	_, err := selectFrom(candidate{keyring, true}, candidate{file, true},
+		SelectOptions{ForceBackend: "totally-bogus"})
+	if err == nil {
+		t.Fatal("want an error for an unrecognized ForceBackend, got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "totally-bogus") {
+		t.Fatalf("error %q does not name the bad value", msg)
+	}
+	if !strings.Contains(msg, BackendKeyring) || !strings.Contains(msg, BackendEncFile) {
+		t.Fatalf("error %q does not list the accepted backend names", msg)
 	}
 }
 

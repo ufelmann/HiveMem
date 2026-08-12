@@ -3,6 +3,7 @@ package keystore
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // ErrPassphraseRequired signals that the encrypted-file backend was selected
@@ -11,6 +12,18 @@ import (
 var ErrPassphraseRequired = errors.New(
 	"the encrypted-file keystore needs a passphrase; set HIVEMEM_PASSPHRASE")
 
+// Accepted names for SelectOptions.ForceBackend. This is the single source
+// of truth: selectFrom's comparisons and its "unrecognized backend" error
+// message both derive from this list, so adding a backend here without also
+// updating the error message is not possible — there is nothing else to
+// update.
+const (
+	BackendKeyring = "keyring"
+	BackendEncFile = "encfile"
+)
+
+var acceptedBackends = []string{BackendKeyring, BackendEncFile}
+
 // SelectOptions controls backend choice.
 type SelectOptions struct {
 	// Passphrase, if set, is used directly for the encrypted-file backend.
@@ -18,7 +31,8 @@ type SelectOptions struct {
 	// PassphrasePrompt is called only when the file backend is selected and
 	// Passphrase is empty. Leave nil in non-interactive contexts.
 	PassphrasePrompt func() ([]byte, error)
-	// ForceBackend pins a backend: "keyring" or "encfile". Empty means auto.
+	// ForceBackend pins a backend: BackendKeyring or BackendEncFile. Empty
+	// means auto. Any other non-empty value is a hard error.
 	ForceBackend string
 }
 
@@ -39,8 +53,18 @@ func Select(opts SelectOptions) (Store, error) {
 }
 
 func selectFrom(keyring, file candidate, opts SelectOptions) (Store, error) {
-	wantFile := opts.ForceBackend == "encfile"
-	wantKeyring := opts.ForceBackend == "keyring"
+	wantFile := opts.ForceBackend == BackendEncFile
+	wantKeyring := opts.ForceBackend == BackendKeyring
+
+	if opts.ForceBackend != "" && !wantFile && !wantKeyring {
+		accepted := make([]string, len(acceptedBackends))
+		for i, name := range acceptedBackends {
+			accepted[i] = fmt.Sprintf("%q", name)
+		}
+		return nil, fmt.Errorf(
+			"unrecognized keystore backend %q: must be one of %s",
+			opts.ForceBackend, strings.Join(accepted, " or "))
+	}
 
 	if !wantFile && (wantKeyring || keyring.available) {
 		if keyring.store == nil {
