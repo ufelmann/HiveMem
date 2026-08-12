@@ -88,6 +88,14 @@ jobs:
   build:
     needs: test
     runs-on: ubuntu-latest
+    # Attaching binaries to a release is a write to repository contents. The
+    # default token is read-only here, and without this the release event's
+    # run fails at "Attach to release" with "Resource not accessible by
+    # integration" — after every other step has passed, so the run looks
+    # healthy right up to the point that produces the artifacts. Observed on
+    # v9.38.0.
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: cli
