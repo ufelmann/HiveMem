@@ -112,10 +112,12 @@ func TestResolveDepsMapsMissingPassphraseToExitThree(t *testing.T) {
 
 func TestForceKeystoreBackendSeededFromEnv(t *testing.T) {
 	t.Setenv("HIVEMEM_E2E_FORCE_BACKEND", "encfile")
-	// forceKeystoreBackend is read once, at package init, from
-	// HIVEMEM_E2E_FORCE_BACKEND — re-run that same read here rather than
-	// depending on process init order relative to t.Setenv, which would
-	// make this test flaky depending on test execution order.
+	// keystoreBackendOverride() re-reads os.Getenv("HIVEMEM_E2E_FORCE_BACKEND")
+	// live on every call whenever the in-process forceKeystoreBackend var is
+	// empty — deliberately, since t.Setenv runs after package init and a
+	// once-at-init read would never observe it. Re-run that same read here
+	// too, so this test documents the actual (live-read) behavior instead of
+	// depending on process init order relative to t.Setenv.
 	if got := os.Getenv("HIVEMEM_E2E_FORCE_BACKEND"); got != "encfile" {
 		t.Fatalf("test setup broken: HIVEMEM_E2E_FORCE_BACKEND = %q", got)
 	}

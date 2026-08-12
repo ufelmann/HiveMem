@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/visterion/hivemem/cli/internal/testsupport"
@@ -58,10 +59,13 @@ func TestCLIEndToEnd(t *testing.T) {
 			`"inputSchema":{"type":"object","required":["text"],` +
 			`"properties":{"text":{"type":"string","description":"note text"}}}}`,
 	)}
+	var gotArgsMu sync.Mutex
 	var gotArgs map[string]any
 	f.ToolHandler = func(name string, args map[string]any) (any, error) {
 		if name == "note_add" {
+			gotArgsMu.Lock()
 			gotArgs = args
+			gotArgsMu.Unlock()
 			text, _ := args["text"].(string)
 			return map[string]any{"stored": text}, nil
 		}
@@ -118,8 +122,11 @@ func TestCLIEndToEnd(t *testing.T) {
 	if f.ToolCallCount("note_add") != 1 {
 		t.Fatalf("note_add called %d times, want 1", f.ToolCallCount("note_add"))
 	}
-	if gotArgs["text"] != "hello from e2e" {
-		t.Fatalf("note_add received text = %v, want %q", gotArgs["text"], "hello from e2e")
+	gotArgsMu.Lock()
+	gotText := gotArgs["text"]
+	gotArgsMu.Unlock()
+	if gotText != "hello from e2e" {
+		t.Fatalf("note_add received text = %v, want %q", gotText, "hello from e2e")
 	}
 	if !strings.Contains(out, "hello from e2e") {
 		t.Fatalf("note_add output does not contain the tool result:\n%s", out)
@@ -144,12 +151,39 @@ func TestCLIEndToEnd(t *testing.T) {
 	if initResp["error"] != nil {
 		t.Fatalf("initialize response carries an error: %v", initResp["error"])
 	}
+	// The bridge passes the server's response through untouched (see
+	// bridge/proxy.go's normalize, which only ever rewrites "id"), so
+	// initResp["result"] is exactly what fakemcp.go's initialize handler
+	// returns: {"protocolVersion": ..., "serverInfo": {...}}. A mutation that
+	// dropped or emptied "result" while leaving "error":null in place would
+	// pass the error-only check above undetected; assert the field itself.
+	initResult, ok := initResp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("initialize response has no result object:\n%s", out)
+	}
+	if initResult["protocolVersion"] != "2025-06-18" {
+		t.Fatalf("initialize result missing protocolVersion, got: %v", initResult)
+	}
 	callResp, ok := responses["2"]
 	if !ok {
 		t.Fatalf("no response for id 2 (tools/call):\n%s", out)
 	}
 	if callResp["error"] != nil {
 		t.Fatalf("tools/call response carries an error: %v", callResp["error"])
+	}
+	// Same reasoning as initResp above: the tool-result envelope wraps the
+	// fake server's raw note_add response ({"stored":"via mcp-serve"}) as a
+	// text content block (fakemcp.go's toolText/handleToolCall), passed
+	// through unparsed by the bridge (proxy.go's normalize). Marshal the
+	// result back out and look for the tool's own return value, so a
+	// mutation that empties/truncates result.content is caught even though
+	// the envelope and error:null are untouched.
+	callResultBlob, err := json.Marshal(callResp["result"])
+	if err != nil {
+		t.Fatalf("marshal tools/call result: %v", err)
+	}
+	if !strings.Contains(string(callResultBlob), "via mcp-serve") {
+		t.Fatalf("tools/call result does not contain the tool's returned text:\n%s", callResultBlob)
 	}
 	if f.ToolCallCount("note_add") != 2 {
 		t.Fatalf("note_add called %d times after mcp-serve, want 2", f.ToolCallCount("note_add"))
@@ -164,8 +198,17 @@ func TestCLIEndToEnd(t *testing.T) {
 	if code != 3 {
 		t.Fatalf("status after logout: exit = %d, want 3, output:\n%s", code, out)
 	}
-	if !strings.Contains(out, "not logged in") {
-		t.Fatalf("status after logout does not report not-logged-in:\n%s", out)
+	// Exact line, not a bare substring match: fixed.go's runStatus has two
+	// distinct "not logged in" messages that both exit 3 — the plain
+	// absent-credential case ("Status:   not logged in") and a backend
+	// mismatch case ("Status:   not logged in here — a credential for this
+	// profile exists in the %s backend"), which also contains the shorter
+	// string as a prefix. A loose Contains check would pass if the wrong
+	// branch fired (e.g. a stray credential in another backend under the
+	// same profile). See internal/command/execute_test.go for the same exact
+	// string used at the unit level.
+	if !strings.Contains(out, "Status:   not logged in\n") {
+		t.Fatalf("status after logout does not report the exact not-logged-in line:\n%s", out)
 	}
 }
 
