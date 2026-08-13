@@ -666,4 +666,50 @@ class MailingNormalizerTest {
         assertThat(out.get(1).pages).containsExactly(2);
         assertThat(out.get(0).minConfidence).isEqualTo(0.7);   // minimum across the absorbed pair
     }
+
+    /** {@code clearlyDifferent} is a similarity test, not an equivalence relation: this triple has
+     *  d(A,B)=2, d(B,C)=2, both at the merge threshold, but d(A,C)=4, over it - so A and C are
+     *  clearly different while neither is clearly different from B. First-match-wins over such a
+     *  predicate makes the partition depend on arrival order.
+     *
+     *  <p>The two outcomes below were MEASURED by running all six permutations of A, B, C through
+     *  {@code normalize} after the Candidate-capture fix (see {@code merge}'s javadoc), not derived
+     *  on paper: order B,A,C merges everything into one document, order A,B,C splits C off into its
+     *  own document. Both outcomes are legitimate under the "merge when unsure" bias - this test
+     *  exists only so a future refactor cannot silently change which orders merge and which split. */
+    @Test
+    void tripleWithNonTransitiveDistancesSplitsOrMergesDependingOnArrivalOrder() {
+        String refA = "10000000";
+        String refB = "10000022";
+        String refC = "10002222";
+
+        // Measured: B, A, C -> one document (all three merge).
+        DocGroup b1 = group("b", 0.9, 2);
+        DocGroup a1 = group("a", 0.8, 1);
+        DocGroup c1 = group("c", 0.7, 3);
+        List<DocGroup> merged = new MailingNormalizer().normalize(List.of(b1, a1, c1), List.of(
+                new PageMetadata(2, "Kasse", "20.02.2024", null, "letter", refB, "letter b",
+                        false, false),
+                new PageMetadata(1, "Kasse", "20.02.2024", null, "letter", refA, "letter a",
+                        false, false),
+                new PageMetadata(3, "Kasse", "20.02.2024", null, "letter", refC, "letter c",
+                        false, false)));
+        assertThat(merged).hasSize(1);
+        assertThat(merged.get(0).pages).containsExactlyInAnyOrder(1, 2, 3);
+
+        // Measured: A, B, C -> two documents ({A, B} together, C split off).
+        DocGroup a2 = group("a", 0.9, 1);
+        DocGroup b2 = group("b", 0.8, 2);
+        DocGroup c2 = group("c", 0.7, 3);
+        List<DocGroup> split = new MailingNormalizer().normalize(List.of(a2, b2, c2), List.of(
+                new PageMetadata(1, "Kasse", "20.02.2024", null, "letter", refA, "letter a",
+                        false, false),
+                new PageMetadata(2, "Kasse", "20.02.2024", null, "letter", refB, "letter b",
+                        false, false),
+                new PageMetadata(3, "Kasse", "20.02.2024", null, "letter", refC, "letter c",
+                        false, false)));
+        assertThat(split).hasSize(2);
+        assertThat(split.get(0).pages).containsExactlyInAnyOrder(1, 2);
+        assertThat(split.get(1).pages).containsExactly(3);
+    }
 }

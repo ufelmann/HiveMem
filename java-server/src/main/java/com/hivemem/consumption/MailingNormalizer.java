@@ -323,33 +323,45 @@ public final class MailingNormalizer {
         }
     }
 
+    /** A mailing under an anchor key, plus the reference it anchored on WHEN IT ARRIVED.
+     *  Captured rather than recomputed: absorb() inserts pages into the middle of a group, which
+     *  can move anchorPage() onto a different page and change the reference — comparing against a
+     *  reference the group acquired by absorption caused a demonstrated over-split. */
+    private record Candidate(String reference, DocGroup group) {}
+
     /** Collapse groups sharing an anchor key into the first compatible one that carried it.
      *
      *  <p>One key can now hold SEVERAL mailings: one sender may send several letters on one day, and
      *  their reference numbers are what tells them apart. An incoming group joins the first group
      *  under its key whose anchor reference is not {@link #clearlyDifferent} from its own, and starts
      *  its own mailing when none is. With no references anywhere every list holds at most one group,
-     *  which is exactly the behaviour this method had before. */
+     *  which is exactly the behaviour this method had before.
+     *
+     *  <p>{@link #clearlyDifferent} is a similarity test, not an equivalence relation, so non-
+     *  transitive triples exist (A close to B, B close to C, A far from C). First-match-wins over
+     *  such a predicate makes the resulting partition depend on the arrival order of the groups —
+     *  the same three references can end up as one document or two depending on which one is seen
+     *  first. That bias runs towards merging, which is the safe direction for this feature. */
     private static List<DocGroup> merge(List<DocGroup> groups, Map<Integer, PageMetadata> meta) {
         List<DocGroup> out = new ArrayList<>();
-        Map<AnchorKey, List<DocGroup>> byKey = new HashMap<>();
+        Map<AnchorKey, List<Candidate>> byKey = new HashMap<>();
         for (DocGroup g : groups) {
             AnchorKey key = anchorKey(g, meta);
             if (key == null) {
                 out.add(g);
                 continue;
             }
-            List<DocGroup> candidates = byKey.computeIfAbsent(key, k -> new ArrayList<>());
+            List<Candidate> candidates = byKey.computeIfAbsent(key, k -> new ArrayList<>());
             String reference = anchorReference(g, meta);
             DocGroup target = null;
-            for (DocGroup candidate : candidates) {
-                if (!clearlyDifferent(anchorReference(candidate, meta), reference)) {
-                    target = candidate;
+            for (Candidate candidate : candidates) {
+                if (!clearlyDifferent(candidate.reference(), reference)) {
+                    target = candidate.group();
                     break;
                 }
             }
             if (target == null) {
-                candidates.add(g);
+                candidates.add(new Candidate(reference, g));
                 out.add(g);
             } else {
                 absorb(target, g, meta);
