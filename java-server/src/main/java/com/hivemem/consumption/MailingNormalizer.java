@@ -113,10 +113,10 @@ public final class MailingNormalizer {
      *  normalizeDate, so two spellings of one calendar date cannot split a mailing. */
     record AnchorKey(String sender, String date) {}
 
-    /** The merge key of a group, or null when nothing in it can anchor. The anchor is the first
-     *  non-blank page carrying a usable sender AND a usable issue date. `reference` is deliberately
-     *  NOT part of the key: a differently-read Steuernummer is exactly what split the tax batch. */
-    static AnchorKey anchorKey(DocGroup g, Map<Integer, PageMetadata> meta) {
+    /** The page a group anchors on: the first non-blank page carrying a usable sender AND a usable
+     *  issue date. Shared by {@link #anchorKey} and {@link #anchorReference} so both always describe
+     *  the SAME page — a key from one page and a reference from another would compare nonsense. */
+    private static PageMetadata anchorPage(DocGroup g, Map<Integer, PageMetadata> meta) {
         for (Integer p : g.pages) {
             PageMetadata m = meta.get(p);
             if (m == null || m.blank()) continue;
@@ -130,11 +130,27 @@ public final class MailingNormalizer {
             if (date.isEmpty() || date.regionMatches(true, 0, "Stand", 0, 5)) continue;
             // An unreadable letterhead arrives as "" (asString(null) coerces an empty string) and
             // punctuation-only senders normalize to "" - keying on those would merge strangers.
-            String sender = normalizeSender(m.sender());
-            if (sender.isEmpty()) continue;
-            return new AnchorKey(sender, normalizeDate(date));
+            if (normalizeSender(m.sender()).isEmpty()) continue;
+            return m;
         }
         return null;
+    }
+
+    /** The merge key of a group, or null when nothing in it can anchor. `reference` is deliberately
+     *  NOT part of the key: a differently-read Steuernummer is exactly what split the tax batch.
+     *  The reference is consulted separately, and only to REFUSE a merge — see
+     *  {@link #clearlyDifferent}. */
+    static AnchorKey anchorKey(DocGroup g, Map<Integer, PageMetadata> meta) {
+        PageMetadata m = anchorPage(g, meta);
+        if (m == null) return null;
+        return new AnchorKey(normalizeSender(m.sender()), normalizeDate(m.date().trim()));
+    }
+
+    /** The raw reference of the anchor page, or null when the group has no anchor. Raw on purpose:
+     *  normalization belongs to {@link #clearlyDifferent}, which is the only consumer. */
+    static String anchorReference(DocGroup g, Map<Integer, PageMetadata> meta) {
+        PageMetadata m = anchorPage(g, meta);
+        return m == null ? null : m.reference();
     }
 
     static String normalizeSender(String s) {

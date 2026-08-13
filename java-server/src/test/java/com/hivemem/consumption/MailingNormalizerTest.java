@@ -573,4 +573,31 @@ class MailingNormalizerTest {
         assertThat(MailingNormalizer.clearlyDifferent(
                 "Service-Nr. 1000000.1", "Service-Nr. 2222222.2")).isTrue();
     }
+
+    @Test
+    void anchorReferenceComesFromTheAnchorPageNotJustAnyPage() {
+        // Page 1 cannot anchor (enclosure print date), page 2 can. The reference must come from
+        // page 2 — an enclosure routinely carries a foreign number (a form ID, a publisher's
+        // number), and letting that decide would split a letter from its own enclosures.
+        DocGroup g = group("a", 0.9, 1, 2, 3);
+        Map<Integer, PageMetadata> meta = MailingNormalizer.byPage(List.of(
+                new PageMetadata(1, "Kasse", "Stand 01.01.2025", null, "terms",
+                        "FORM-999", "enclosure", false, false),
+                new PageMetadata(2, "Kasse", "05.09.2025", null, "letter",
+                        "1000000.1", "the letter", false, false),
+                new PageMetadata(3, "Kasse", "05.09.2025", null, "letter",
+                        "2222222.2", "later page", false, false)));
+
+        assertThat(MailingNormalizer.anchorReference(g, meta)).isEqualTo("1000000.1");
+    }
+
+    @Test
+    void anchorReferenceIsNullWhenTheGroupHasNoAnchor() {
+        DocGroup g = group("a", 0.9, 1);
+        Map<Integer, PageMetadata> meta = MailingNormalizer.byPage(List.of(
+                new PageMetadata(1, null, null, null, "letter", "1000000.1", "no anchor",
+                        false, false)));
+
+        assertThat(MailingNormalizer.anchorReference(g, meta)).isNull();
+    }
 }
