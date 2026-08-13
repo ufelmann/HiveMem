@@ -533,4 +533,44 @@ class MailingNormalizerTest {
         assertThat(MailingNormalizer.normalizeReference("Service-Nr. 2041188.0"))
                 .isEqualTo("5ERV1CENR20411880");
     }
+
+    @Test
+    void measuresEditDistance() {
+        assertThat(MailingNormalizer.levenshtein("", "")).isZero();
+        assertThat(MailingNormalizer.levenshtein("abc", "abc")).isZero();
+        assertThat(MailingNormalizer.levenshtein("", "abc")).isEqualTo(3);
+        assertThat(MailingNormalizer.levenshtein("abc", "")).isEqualTo(3);
+        assertThat(MailingNormalizer.levenshtein("1234567890", "123456780")).isEqualTo(1);
+        assertThat(MailingNormalizer.levenshtein("10000001", "22222222")).isEqualTo(8);
+    }
+
+    @Test
+    void treatsOnlyUnmistakablyDifferentReferencesAsDifferent() {
+        // No usable reference on either side -> never a reason to split.
+        assertThat(MailingNormalizer.clearlyDifferent(null, "1000000.1")).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent("1000000.1", null)).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent("", "1000000.1")).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent("-/.", "1000000.1")).isFalse();
+
+        // The tax batch: the trailing zero read as the letter O. Same number.
+        assertThat(MailingNormalizer.clearlyDifferent("12/345/67890", "12/345/6789O")).isFalse();
+
+        // A dropped digit is OCR noise, not a different number.
+        assertThat(MailingNormalizer.clearlyDifferent("12/345/67890", "12/345/6780")).isFalse();
+
+        // Short references need more than one differing character.
+        assertThat(MailingNormalizer.clearlyDifferent("4711", "4712")).isFalse();
+
+        // Containment: the same reference with and without its label prefix.
+        assertThat(MailingNormalizer.clearlyDifferent("1000000.1", "Service-Nr. 1000000.1"))
+                .isFalse();
+
+        // Containment floor: a 3-character reference is too short to be trusted as a substring.
+        assertThat(MailingNormalizer.clearlyDifferent("471", "9999471999")).isTrue();
+
+        // Two genuinely different reference numbers -> split, prefixed or not.
+        assertThat(MailingNormalizer.clearlyDifferent("1000000.1", "2222222.2")).isTrue();
+        assertThat(MailingNormalizer.clearlyDifferent(
+                "Service-Nr. 1000000.1", "Service-Nr. 2222222.2")).isTrue();
+    }
 }
