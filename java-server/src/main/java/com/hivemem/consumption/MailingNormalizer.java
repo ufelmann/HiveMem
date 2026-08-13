@@ -144,6 +144,41 @@ public final class MailingNormalizer {
                 .trim();
     }
 
+    /** Map of the character pairs OCR actually confuses on reference numbers, folded onto the digit
+     *  so that "12/345/6789O" and "12/345/67890" compare equal. Folding onto the digit rather than
+     *  the letter is arbitrary but must stay consistent — the comparison only cares that both
+     *  spellings land on the same character. */
+    private static char foldConfusable(char c) {
+        return switch (c) {
+            case 'O' -> '0';
+            case 'I', 'L' -> '1';
+            case 'S' -> '5';
+            case 'B' -> '8';
+            case 'Z' -> '2';
+            case 'G' -> '6';
+            default -> c;
+        };
+    }
+
+    /** A reference number reduced to what a comparison may rely on: upper case, ASCII alphanumerics
+     *  only, OCR confusables folded. Returns "" for null, blank and punctuation-only input — callers
+     *  read "" as "no usable reference" and must not split on it.
+     *
+     *  <p>Note what this does NOT do: it does not strip a label prefix. "Service-Nr." survives as
+     *  "5ERV1CENR" because letters are alphanumeric. Prefix handling belongs to
+     *  {@link #clearlyDifferent}'s containment clause, not here — stripping it would need the
+     *  letter/digit boundary that folding confusables destroys. */
+    static String normalizeReference(String s) {
+        if (s == null) return "";
+        String upper = s.toUpperCase(Locale.ROOT);
+        StringBuilder out = new StringBuilder(upper.length());
+        for (int i = 0; i < upper.length(); i++) {
+            char c = upper.charAt(i);
+            if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) out.append(foldConfusable(c));
+        }
+        return out.toString();
+    }
+
     /** German month names as the OCR actually delivers them: with the umlaut, with the umlaut
      *  stripped, and in the "ae/oe/ue" transcription. Lower case; the lookup lower-cases too. */
     private static final Map<String, Integer> MONTHS = Map.ofEntries(

@@ -512,4 +512,25 @@ class MailingNormalizerTest {
         assertThat(out).hasSize(1);
         assertThat(out.get(0).pages).containsExactly(1, 2);
     }
+
+    @Test
+    void normalizesReferencesForComparison() {
+        // Null and blank collapse to the empty string: callers treat "" as "no reference".
+        assertThat(MailingNormalizer.normalizeReference(null)).isEmpty();
+        assertThat(MailingNormalizer.normalizeReference("")).isEmpty();
+        assertThat(MailingNormalizer.normalizeReference("  ")).isEmpty();
+        assertThat(MailingNormalizer.normalizeReference("-/. ")).isEmpty();
+
+        // Separators are dropped, letters upper-cased.
+        assertThat(MailingNormalizer.normalizeReference("12/345/67890")).isEqualTo("1234567890");
+        assertThat(MailingNormalizer.normalizeReference("ab-12 34")).isEqualTo("A81234");
+
+        // Each OCR confusable maps onto its digit.
+        assertThat(MailingNormalizer.normalizeReference("OILSBZG")).isEqualTo("0115826");
+
+        // A label prefix is NOT stripped — letters are alphanumeric. The containment clause in
+        // clearlyDifferent is what handles prefixes; see the spec, section 4.1.
+        assertThat(MailingNormalizer.normalizeReference("Service-Nr. 2041188.0"))
+                .isEqualTo("5ERV1CENR20411880");
+    }
 }
