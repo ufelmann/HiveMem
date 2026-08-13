@@ -218,11 +218,13 @@ consumption executor, never throws to the caller):
      two mailings sharing sender and date stay apart when their references are
      *clearly* different, which is how an insurer's annual mailing (several
      separate letters, all sent on one day) survives as several documents. Clearly
-     different tolerates OCR noise — confusable characters (O/0, I/1, S/5, B/8) are
-     folded together, a reference containing another counts as the same one so a
-     label prefix cannot split a letter, and the edit distance must exceed a
-     quarter of the reference length. In doubt the pages stay in one mailing: a
-     wrongly merged document is easy to spot and repair, a wrongly split one is not.
+     different tolerates OCR noise — confusable characters (O/0, I/1, L/1, S/5, B/8,
+     Z/2, G/6) are folded together, a reference containing another counts as the same
+     one so a label prefix cannot split a letter, and the edit distance must exceed a
+     quarter of the reference length. A reference shorter than four characters after
+     normalization is treated as absent and can never split two letters. In doubt the
+     pages stay in one mailing: a wrongly merged document is easy to spot and repair,
+     a wrongly split one is not.
      The merged mailing's confidence is the minimum over all merged
      mailings, which biases a merge towards the `pending` review queue rather
      than guaranteeing it.

@@ -530,8 +530,8 @@ class MailingNormalizerTest {
 
         // A label prefix is NOT stripped — letters are alphanumeric. The containment clause in
         // clearlyDifferent is what handles prefixes; see the spec, section 4.1.
-        assertThat(MailingNormalizer.normalizeReference("Service-Nr. 2041188.0"))
-                .isEqualTo("5ERV1CENR20411880");
+        assertThat(MailingNormalizer.normalizeReference("Service-Nr. 1000000.1"))
+                .isEqualTo("5ERV1CENR10000001");
     }
 
     @Test
