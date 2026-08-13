@@ -15,9 +15,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Deterministic post-processing of pass 3: enforces in Java what MailingAssembler.PROMPT can only
- *  ask for - mailings that share sender + issue date are merged, and the pages of a single complete
- *  labelled document are ordered by their printed labels. Pure function, never throws: an exception
- *  escaping assemble() would degrade the whole batch to one pending document. */
+ *  ask for - mailings that share sender + issue date are merged unless their reference numbers are
+ *  clearly different, and the pages of a single complete labelled document are ordered by their
+ *  printed labels. Pure function, never throws: an exception escaping assemble() would degrade the
+ *  whole batch to one pending document. */
 public final class MailingNormalizer {
 
     /** Only labels carrying BOTH a number and a printed total count. A total-less number cannot be
@@ -322,15 +323,33 @@ public final class MailingNormalizer {
         }
     }
 
-    /** Collapse groups sharing an anchor key into the first one that carried it. */
+    /** Collapse groups sharing an anchor key into the first compatible one that carried it.
+     *
+     *  <p>One key can now hold SEVERAL mailings: one sender may send several letters on one day, and
+     *  their reference numbers are what tells them apart. An incoming group joins the first group
+     *  under its key whose anchor reference is not {@link #clearlyDifferent} from its own, and starts
+     *  its own mailing when none is. With no references anywhere every list holds at most one group,
+     *  which is exactly the behaviour this method had before. */
     private static List<DocGroup> merge(List<DocGroup> groups, Map<Integer, PageMetadata> meta) {
         List<DocGroup> out = new ArrayList<>();
-        Map<AnchorKey, DocGroup> byKey = new HashMap<>();
+        Map<AnchorKey, List<DocGroup>> byKey = new HashMap<>();
         for (DocGroup g : groups) {
             AnchorKey key = anchorKey(g, meta);
-            DocGroup target = key == null ? null : byKey.get(key);
+            if (key == null) {
+                out.add(g);
+                continue;
+            }
+            List<DocGroup> candidates = byKey.computeIfAbsent(key, k -> new ArrayList<>());
+            String reference = anchorReference(g, meta);
+            DocGroup target = null;
+            for (DocGroup candidate : candidates) {
+                if (!clearlyDifferent(anchorReference(candidate, meta), reference)) {
+                    target = candidate;
+                    break;
+                }
+            }
             if (target == null) {
-                if (key != null) byKey.put(key, g);
+                candidates.add(g);
                 out.add(g);
             } else {
                 absorb(target, g, meta);

@@ -600,4 +600,70 @@ class MailingNormalizerTest {
 
         assertThat(MailingNormalizer.anchorReference(g, meta)).isNull();
     }
+
+    @Test
+    void keepsSameSenderAndDateApartWhenReferencesAreClearlyDifferent() {
+        // The insurer case: several letters sent on one day, distinguished only by their
+        // reference numbers. Before this rule they were forced into one document.
+        DocGroup a = group("a", 0.9, 1);
+        DocGroup b = group("b", 0.8, 2);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                new PageMetadata(1, "Kasse", "20.02.2024", null, "letter",
+                        "1000000.1", "first letter", false, false),
+                new PageMetadata(2, "Kasse", "20.02.2024", null, "letter",
+                        "2222222.2", "second letter", false, false)));
+
+        assertThat(out).hasSize(2);
+        assertThat(out.get(0).pages).containsExactly(1);
+        assertThat(out.get(1).pages).containsExactly(2);
+    }
+
+    @Test
+    void stillMergesWhenOneSideHasNoReference() {
+        DocGroup a = group("a", 0.9, 1);
+        DocGroup b = group("b", 0.8, 2);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                new PageMetadata(1, "Kasse", "20.02.2024", null, "letter",
+                        "1000000.1", "the letter", false, false),
+                new PageMetadata(2, "Kasse", "20.02.2024", null, "letter",
+                        null, "continuation", false, false)));
+
+        assertThat(out).hasSize(1);
+        assertThat(out.get(0).pages).containsExactly(1, 2);
+    }
+
+    @Test
+    void stillMergesWhenTheReferenceOnlyCarriesALabelPrefix() {
+        DocGroup a = group("a", 0.9, 1);
+        DocGroup b = group("b", 0.8, 2);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                new PageMetadata(1, "Kasse", "20.02.2024", null, "letter",
+                        "1000000.1", "the letter", false, false),
+                new PageMetadata(2, "Kasse", "20.02.2024", null, "letter",
+                        "Service-Nr. 1000000.1", "same letter", false, false)));
+
+        assertThat(out).hasSize(1);
+        assertThat(out.get(0).pages).containsExactly(1, 2);
+    }
+
+    @Test
+    void groupsEachIncomingGroupWithItsOwnReference() {
+        // Three groups, two of them the same mailing. The third must not be swallowed by the
+        // first just because it shares sender and date.
+        DocGroup a = group("a", 0.9, 1);
+        DocGroup b = group("b", 0.8, 2);
+        DocGroup c = group("c", 0.7, 3);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b, c), List.of(
+                new PageMetadata(1, "Kasse", "20.02.2024", null, "letter",
+                        "1000000.1", "letter one", false, false),
+                new PageMetadata(2, "Kasse", "20.02.2024", null, "letter",
+                        "2222222.2", "letter two", false, false),
+                new PageMetadata(3, "Kasse", "20.02.2024", null, "letter",
+                        "1000000.1", "letter one, continued", false, false)));
+
+        assertThat(out).hasSize(2);
+        assertThat(out.get(0).pages).containsExactly(1, 3);
+        assertThat(out.get(1).pages).containsExactly(2);
+        assertThat(out.get(0).minConfidence).isEqualTo(0.7);   // minimum across the absorbed pair
+    }
 }
