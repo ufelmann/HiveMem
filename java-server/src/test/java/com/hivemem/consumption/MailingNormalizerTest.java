@@ -565,13 +565,34 @@ class MailingNormalizerTest {
         assertThat(MailingNormalizer.clearlyDifferent("1000000.1", "Service-Nr. 1000000.1"))
                 .isFalse();
 
-        // Containment floor: a 3-character reference is too short to be trusted as a substring.
-        assertThat(MailingNormalizer.clearlyDifferent("471", "9999471999")).isTrue();
+        // Below the floor a reference is unusable evidence, so it can never split - superseding the
+        // pre-amendment behaviour where a 3-character reference fell through to the distance gate.
+        assertThat(MailingNormalizer.clearlyDifferent("471", "9999471999")).isFalse();
 
         // Two genuinely different reference numbers -> split, prefixed or not.
         assertThat(MailingNormalizer.clearlyDifferent("1000000.1", "2222222.2")).isTrue();
         assertThat(MailingNormalizer.clearlyDifferent(
                 "Service-Nr. 1000000.1", "Service-Nr. 2222222.2")).isTrue();
+    }
+
+    @Test
+    void treatsAReferenceBelowTheContainmentFloorAsUnusable() {
+        // One or two characters surviving normalization is OCR debris, not an Aktenzeichen.
+        // Splitting two letters on that evidence is the failure direction the design rules out.
+        assertThat(MailingNormalizer.clearlyDifferent("1", "22")).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent("12", "34")).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent("12", "3456")).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent("123", "9999888877")).isFalse();
+
+        // The floor applies to each side independently: a usable reference opposite an unusable one
+        // still cannot split.
+        assertThat(MailingNormalizer.clearlyDifferent("1000000.1", "12")).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent("12", "1000000.1")).isFalse();
+
+        // Exactly at the floor the rule still works: four characters are comparable.
+        assertThat(MailingNormalizer.clearlyDifferent("1111", "2222")).isTrue();
+        // ...and remains tolerant of one differing character at that length.
+        assertThat(MailingNormalizer.clearlyDifferent("4711", "4712")).isFalse();
     }
 
     @Test

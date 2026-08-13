@@ -196,8 +196,10 @@ public final class MailingNormalizer {
         return out.toString();
     }
 
-    /** A reference shorter than this is not trusted as a substring: "471" occurs inside plenty of
-     *  unrelated numbers, and treating that as "same reference" would merge two strangers. */
+    /** Shortest normalized reference this rule will act on at all. Below it a reference is treated as
+     *  absent: it is not trusted as a substring ("471" occurs inside plenty of unrelated numbers),
+     *  and it is not trusted for a distance comparison either, because the threshold degenerates to 1
+     *  and two differing characters would split two letters apart. */
     private static final int CONTAINMENT_MIN_LENGTH = 4;
 
     /** Edit distance, two-row dynamic programming. No dependency and no recursion: reference numbers
@@ -228,11 +230,14 @@ public final class MailingNormalizer {
      *  and tends to go unnoticed. Measured 2026-08-08: forcing the merge cost 8 of 247 documents from
      *  one insurer that sends several letters on one day.
      *
-     *  <p>Three gates, in order. A missing or unusable reference never splits. Containment covers the
-     *  same reference written with and without its label ("Service-Nr. 1000000.1"), which the edit
-     *  distance alone would call different because the prefix survives normalization. Only then does
-     *  distance decide, against a threshold that scales with length so a long number tolerates more
-     *  OCR noise than a short one.
+     *  <p>Three gates, in order. A missing reference never splits, and neither does one shorter than
+     *  {@link #CONTAINMENT_MIN_LENGTH} characters after normalization: one or two surviving
+     *  characters are OCR debris rather than an Aktenzeichen, and at that length the threshold
+     *  degenerates to 1, so two differing characters would be enough to tear a letter apart.
+     *  Containment covers the same reference written with and without its label ("Service-Nr.
+     *  1000000.1"), which the edit distance alone would call different because the prefix survives
+     *  normalization. Only then does distance decide, against a threshold that scales with length so
+     *  a long number tolerates more OCR noise than a short one.
      *
      *  <p>Known limitation, accepted in the spec: a long label prefix inflates both strings and
      *  therefore the threshold, which can suppress a real split. That failure is a missed split — the
@@ -240,7 +245,9 @@ public final class MailingNormalizer {
     static boolean clearlyDifferent(String a, String b) {
         String na = normalizeReference(a);
         String nb = normalizeReference(b);
-        if (na.isEmpty() || nb.isEmpty()) return false;
+        if (na.length() < CONTAINMENT_MIN_LENGTH || nb.length() < CONTAINMENT_MIN_LENGTH) {
+            return false;
+        }
         if (na.length() >= CONTAINMENT_MIN_LENGTH && nb.contains(na)) return false;
         if (nb.length() >= CONTAINMENT_MIN_LENGTH && na.contains(nb)) return false;
         int threshold = Math.max(1, (int) Math.ceil(0.25 * Math.max(na.length(), nb.length())));
