@@ -196,6 +196,21 @@ public final class MailingNormalizer {
         return out.toString();
     }
 
+    /** The digits of a reference, in order, taken from the RAW string.
+     *
+     *  <p>Raw on purpose: {@link #foldConfusable} maps letters onto digits, so digits pulled from a
+     *  normalized reference would include letters of the label prefix ("Service-Nr." contributes
+     *  5, 1 and so on) and the comparison would be against noise. */
+    private static String digitsOf(String s) {
+        if (s == null) return "";
+        StringBuilder out = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c >= '0' && c <= '9') out.append(c);
+        }
+        return out.toString();
+    }
+
     /** Shortest normalized reference this rule will act on at all. Below it a reference is treated as
      *  absent: it is not trusted as a substring ("471" occurs inside plenty of unrelated numbers),
      *  and it is not trusted for a distance comparison either, because the threshold degenerates to 1
@@ -239,6 +254,11 @@ public final class MailingNormalizer {
      *  normalization. Only then does distance decide, against a threshold that scales with length so
      *  a long number tolerates more OCR noise than a short one.
      *
+     *  <p>The digit guard exists because `reference` is not a stable identifier: the extractor re-words
+     *  it per page, so the same number arrives as "Konto-Nr. 6100000" on one page and
+     *  "Kontonummer 6100000" on the next. Two different label words dominate the edit distance and
+     *  would split a letter in two. Comparing the digit runs alone survives the re-wording.
+     *
      *  <p>Known limitation, accepted in the spec: a long label prefix inflates both strings and
      *  therefore the threshold, which can suppress a real split. That failure is a missed split — the
      *  safe direction. */
@@ -250,6 +270,10 @@ public final class MailingNormalizer {
         }
         if (na.length() >= CONTAINMENT_MIN_LENGTH && nb.contains(na)) return false;
         if (nb.length() >= CONTAINMENT_MIN_LENGTH && na.contains(nb)) return false;
+        String da = digitsOf(a);
+        String db = digitsOf(b);
+        if (da.length() >= CONTAINMENT_MIN_LENGTH && db.contains(da)) return false;
+        if (db.length() >= CONTAINMENT_MIN_LENGTH && da.contains(db)) return false;
         int threshold = Math.max(1, (int) Math.ceil(0.25 * Math.max(na.length(), nb.length())));
         return levenshtein(na, nb) > threshold;
     }

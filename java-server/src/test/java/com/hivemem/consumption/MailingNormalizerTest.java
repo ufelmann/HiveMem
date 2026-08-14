@@ -733,4 +733,28 @@ class MailingNormalizerTest {
         assertThat(split.get(0).pages).containsExactlyInAnyOrder(1, 2);
         assertThat(split.get(1).pages).containsExactly(3);
     }
+
+    @Test
+    void mergesWhenTheDigitsMatchThroughDifferentLabelWords() {
+        // The reference field is free-form prose, not a stable identifier: the extractor re-words it
+        // per page. When BOTH sides carry a label and the labels differ, the prefixes dominate the
+        // edit distance and the rule used to split although the number was identical. Shapes below
+        // are synthetic but mirror pairs actually observed in one production corpus.
+        assertThat(MailingNormalizer.clearlyDifferent(
+                "T100000 / Personalnummer 1871",
+                "T100000 (employee ID), 1871 (personnel number)")).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent(
+                "Vertrags-Nr. 1000000.1", "Kunden-Nr. 1000000.1")).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent(
+                "Konto-Nr. 6100000", "Kontonummer 6100000")).isFalse();
+
+        // The guard needs at least four digits, so a stray digit cannot glue two strangers together.
+        assertThat(MailingNormalizer.clearlyDifferent(
+                "Vorgang 12", "Sammelmappe 9912345678")).isTrue();
+
+        // It must not disarm the feature: genuinely different numbers still split, labelled or not.
+        assertThat(MailingNormalizer.clearlyDifferent("1000000.1", "2222222.2")).isTrue();
+        assertThat(MailingNormalizer.clearlyDifferent(
+                "Service-Nr. 1000000.1", "Service-Nr. 2222222.2")).isTrue();
+    }
 }
