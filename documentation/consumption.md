@@ -220,15 +220,14 @@ consumption executor, never throws to the caller):
      separate letters, all sent on one day) survives as several documents. Clearly
      different tolerates OCR noise — confusable characters (O/0, I/1, L/1, S/5, B/8,
      Z/2, G/6) are folded together, a reference containing another counts as the same
-     one so a label prefix cannot split a letter, and the same holds for the raw digit
-     runs alone — because the extractor re-words the reference label per page, the same
-     number arrives as `Konto-Nr. 6100000` on one page and `Kontonummer 6100000` on the
-     next, and comparing the digit runs survives the re-wording where the full strings
-     would not — and the edit distance must exceed a
-     quarter of the reference length. A reference shorter than four characters after
-     normalization is treated as absent and can never split two letters. In doubt the
-     pages stay in one mailing: a wrongly merged document is easy to spot and repair,
-     a wrongly split one is not.
+     one so a label prefix cannot split a letter, and the edit distance must exceed a
+     quarter of the reference length. The same containment test also runs on the digit
+     runs alone: the extractor re-words the label per page, so one page carries
+     `Konto-Nr. 6100000` and the next `Kontonummer 6100000`, and comparing digits
+     survives a re-wording that the full strings would not. A reference shorter than
+     four characters after normalization is treated as absent and can never split two
+     letters. In doubt the pages stay in one mailing: a wrongly merged document is
+     easy to spot and repair, a wrongly split one is not.
      The merged mailing's confidence is the minimum over all merged
      mailings, which biases a merge towards the `pending` review queue rather
      than guaranteeing it.
