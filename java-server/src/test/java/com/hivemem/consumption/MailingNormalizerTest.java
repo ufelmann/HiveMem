@@ -741,8 +741,8 @@ class MailingNormalizerTest {
         // edit distance and the rule used to split although the number was identical. Shapes below
         // are synthetic but mirror pairs actually observed in one production corpus.
         assertThat(MailingNormalizer.clearlyDifferent(
-                "T100000 / Personalnummer 1871",
-                "T100000 (employee ID), 1871 (personnel number)")).isFalse();
+                "T100000 / Personalnummer 1000",
+                "T100000 (employee ID), 1000 (personnel number)")).isFalse();
         assertThat(MailingNormalizer.clearlyDifferent(
                 "Vertrags-Nr. 1000000.1", "Kunden-Nr. 1000000.1")).isFalse();
         assertThat(MailingNormalizer.clearlyDifferent(
