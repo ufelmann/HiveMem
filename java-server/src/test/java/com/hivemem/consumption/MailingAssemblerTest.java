@@ -1,5 +1,6 @@
 package com.hivemem.consumption;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -342,5 +343,17 @@ class MailingAssemblerTest {
         when(cc.complete(anyString(), anyString())).thenThrow(new RestClientException("boom"));
         assertThrows(RuntimeException.class, () -> new MailingAssembler(cc, 3)
                 .assemble("documents", List.of(meta(1, "SYNTHETIC ENERGY", "01.01.2000"))));
+    }
+
+    @Test
+    void promptAllowsSameSenderSameDateWhenReferencesDiffer() {
+        // The old blanket ban is what merged an insurer's annual mailing into one document.
+        assertThat(MailingAssembler.PROMPT)
+                .doesNotContain("It is FORBIDDEN to output two mailings with the same sender and "
+                        + "the same letter date");
+        // The exception must be stated, and it must be tied to the reference number.
+        assertThat(MailingAssembler.PROMPT).contains("clearly different reference numbers");
+        // The enclosure rule must survive: a form ID is not a reference for this purpose.
+        assertThat(MailingAssembler.PROMPT).contains("An enclosure ALWAYS joins the mailing");
     }
 }

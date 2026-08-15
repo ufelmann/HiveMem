@@ -213,7 +213,22 @@ consumption executor, never throws to the caller):
      punctuation-insensitively; a date carrying a `Stand ...` prefix (the print
      date of a generic enclosure such as a Datenschutz notice) never anchors a
      mailing, and the contract/customer/tax reference is deliberately left out of
-     the key. The merged mailing's confidence is the minimum over all merged
+     the key — a differently-read Steuernummer would otherwise split one Bescheid
+     into two. The reference is consulted separately, and only to REFUSE a merge:
+     two mailings sharing sender and date stay apart when their references are
+     *clearly* different, which is how an insurer's annual mailing (several
+     separate letters, all sent on one day) survives as several documents. Clearly
+     different tolerates OCR noise — confusable characters (O/0, I/1, L/1, S/5, B/8,
+     Z/2, G/6) are folded together, a reference containing another counts as the same
+     one so a label prefix cannot split a letter, and the edit distance must exceed a
+     quarter of the reference length. The same containment test also runs on the digit
+     runs alone: the extractor re-words the label per page, so one page carries
+     `Konto-Nr. 6100000` and the next `Kontonummer 6100000`, and comparing digits
+     survives a re-wording that the full strings would not. A reference shorter than
+     four characters after normalization is treated as absent and can never split two
+     letters. In doubt the pages stay in one mailing: a wrongly merged document is
+     easy to spot and repair, a wrongly split one is not.
+     The merged mailing's confidence is the minimum over all merged
      mailings, which biases a merge towards the `pending` review queue rather
      than guaranteeing it.
    - **Page placement on merge.** A page pulled in by a merge is inserted right
