@@ -19,6 +19,9 @@ System architecture diagram, PostgreSQL data model (ER), security and capability
 ### [Authentication](auth.md)
 The four roles (admin / writer / reader / agent), the approval workflow for agent writes, the `hivemem-token` CLI, and security implementation details.
 
+### [Command-Line Client](cli.md)
+`hivemem`, a single binary for Linux and Windows: every MCP tool as a subcommand generated from the server's own schemas, credentials in the operating system's secret store, OAuth + PKCE or a static token, and a stdio MCP bridge (`hivemem mcp-serve`) so no other client needs a token of its own. Not to be confused with the `hivemem-token` admin script covered under Authentication.
+
 ### [Hook Integration](hook/)
 Auto-inject relevant memory cells into every Claude Code session before you even ask. Includes setup, the 6-stage filtering pipeline, configuration reference, output format, and roadmap.
 

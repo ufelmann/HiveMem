@@ -48,3 +48,6 @@ todo.md
 
 # design prose stays local (images in docs/images/ remain tracked for the README)
 knowledge-ui/docs/*.md
+
+# CLI build output
+cli/bin/

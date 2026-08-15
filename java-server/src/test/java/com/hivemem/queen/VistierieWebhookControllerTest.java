@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -77,15 +78,59 @@ class VistierieWebhookControllerTest {
         verify(service).ingestProposals(org.mockito.ArgumentMatchers.anyList());
     }
 
+    /**
+     * A failed Queen run always triggers recovery now, regardless of the exact error text —
+     * prod evidence (2026-08-09) showed the dominant failure text is "tool_error:
+     * subagent_failed: ..." (one Bee's own failure kills the parent), not the literal
+     * "max_run_seconds_exceeded" string that an earlier version of this handler matched on
+     * exactly. recoverProposalsFromChildRuns's own filters make this a safe no-op when there is
+     * genuinely nothing to recover (e.g. a Queen run that failed before dispatching any Bee) —
+     * simulated here by the mock's default zero return.
+     */
     @Test
-    void completionIgnoresFailedRuns() throws Exception {
+    void completionRecoversOnAnyFailedStatusRegardlessOfErrorText() throws Exception {
         mvc.perform(post("/vistierie/runs/done")
                         .header("Authorization", "Bearer cwt")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"run_id\":\"r1\",\"status\":\"failed\",\"output\":null}"))
                 .andExpect(status().isOk());
+        verify(service).recoverProposalsFromChildRuns(eq("r1"), org.mockito.ArgumentMatchers.isNull());
         verify(service, org.mockito.Mockito.never())
                 .ingestProposals(org.mockito.ArgumentMatchers.anyList());
+    }
+
+    @Test
+    void completionRecoversFromChildRunsOnTimeout() throws Exception {
+        when(service.recoverProposalsFromChildRuns(eq("r1"), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(3);
+        mvc.perform(post("/vistierie/runs/done")
+                        .header("Authorization", "Bearer cwt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"run_id":"r1","status":"failed","output":null,
+                                 "error":"max_run_seconds_exceeded","started_at":"2026-08-09T03:00:00Z"}
+                                """))
+                .andExpect(status().isOk());
+        verify(service).recoverProposalsFromChildRuns("r1", "2026-08-09T03:00:00Z");
+        verify(service, org.mockito.Mockito.never())
+                .ingestProposals(org.mockito.ArgumentMatchers.anyList());
+    }
+
+    /** The dominant real-world failure text — must recover exactly like max_run_seconds_exceeded. */
+    @Test
+    void completionRecoversOnToolErrorSubagentFailedText() throws Exception {
+        when(service.recoverProposalsFromChildRuns(eq("r1"), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(2);
+        mvc.perform(post("/vistierie/runs/done")
+                        .header("Authorization", "Bearer cwt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"run_id":"r1","status":"failed","output":null,
+                                 "error":"tool_error: subagent_failed: max_run_seconds_exceeded",
+                                 "started_at":"2026-08-09T03:00:00Z"}
+                                """))
+                .andExpect(status().isOk());
+        verify(service).recoverProposalsFromChildRuns("r1", "2026-08-09T03:00:00Z");
     }
 
     @Test

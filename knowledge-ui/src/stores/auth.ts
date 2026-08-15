@@ -3,7 +3,7 @@ import type { Role } from '../api/types'
 import { useApi, resetApi } from '../api/useApi'
 import { applyBackendDefault } from '../i18n'
 import { authMode } from '../api/authMode'
-import { triggerReauth } from '../api/reauth'
+import { clearReauthGuard, triggerReauth } from '../api/reauth'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -18,6 +18,9 @@ export const useAuthStore = defineStore('auth', {
       this.role = w.role
       this.identity = w.identity
       applyBackendDefault(w.default_language)
+      // The session is healthy — drop any stamp an earlier re-auth left behind, so the
+      // next genuine one is not swallowed by the guard.
+      clearReauthGuard()
 
       // A non-admin who deep-links straight to /queen lands there before wake_up
       // resolves — router.ts's adminGuard runs at navigation time, when the role
@@ -48,7 +51,10 @@ export const useAuthStore = defineStore('auth', {
         if (mode === 'access') {
           window.location.href = '/cdn-cgi/access/logout'
         } else {
-          triggerReauth(mode)
+          // force: the user asked to leave. A guard stamp from an earlier automatic re-auth
+          // would make this return silently and strand them on a blank splash — state
+          // already cleared, no error set, nothing navigating.
+          triggerReauth(mode, undefined, { force: true })
         }
       }
     }

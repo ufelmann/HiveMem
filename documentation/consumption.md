@@ -192,9 +192,19 @@ consumption executor, never throws to the caller):
    surviving into the archive, which is the same trade as the missed rotation
    above: recoverable, unlike a deletion.
 3. **Pass 3 — assembly, text-only.** `MailingAssembler` sends all pages'
-   extracted metadata (no images) in a single call and asks the model to group
-   pages into mailings, in reading order within each mailing. Grouping is a
-   reasoning task over already-extracted facts, not a vision task.
+   extracted metadata (no images) and asks the model to group pages into
+   mailings, in reading order within each mailing. Grouping is a reasoning
+   task over already-extracted facts, not a vision task. To dampen the
+   model's run-to-run variance on this step, the grouping is drawn
+   `reassembly-draws` times (default 3) and the drawn partitions are merged
+   by pairwise majority: for every page pair, the number of draws that put
+   both pages in the same mailing must reach a strict majority
+   (`draws / 2 + 1`) for the pair to be unioned, and union-find then closes
+   the resulting chains. This is affordable because grouping is one text
+   call per batch, while orientation (pass 1) and metadata extraction
+   (pass 2) are each one vision call per page — three draws cost a small
+   fraction more calls than one. Setting `reassembly-draws: 1` restores the
+   old single-call behaviour exactly, with no vote.
 4. **Normalization, deterministic.** `MailingAssembler.assemble` runs pass 3's
    grouping through `MailingNormalizer` before returning it — this is plain Java,
    no LLM call, and enforces what the prompt can only ask for:
@@ -203,7 +213,22 @@ consumption executor, never throws to the caller):
      punctuation-insensitively; a date carrying a `Stand ...` prefix (the print
      date of a generic enclosure such as a Datenschutz notice) never anchors a
      mailing, and the contract/customer/tax reference is deliberately left out of
-     the key. The merged mailing's confidence is the minimum over all merged
+     the key — a differently-read Steuernummer would otherwise split one Bescheid
+     into two. The reference is consulted separately, and only to REFUSE a merge:
+     two mailings sharing sender and date stay apart when their references are
+     *clearly* different, which is how an insurer's annual mailing (several
+     separate letters, all sent on one day) survives as several documents. Clearly
+     different tolerates OCR noise — confusable characters (O/0, I/1, L/1, S/5, B/8,
+     Z/2, G/6) are folded together, a reference containing another counts as the same
+     one so a label prefix cannot split a letter, and the edit distance must exceed a
+     quarter of the reference length. The same containment test also runs on the digit
+     runs alone: the extractor re-words the label per page, so one page carries
+     `Konto-Nr. 6100000` and the next `Kontonummer 6100000`, and comparing digits
+     survives a re-wording that the full strings would not. A reference shorter than
+     four characters after normalization is treated as absent and can never split two
+     letters. In doubt the pages stay in one mailing: a wrongly merged document is
+     easy to spot and repair, a wrongly split one is not.
+     The merged mailing's confidence is the minimum over all merged
      mailings, which biases a merge towards the `pending` review queue rather
      than guaranteeing it.
    - **Page placement on merge.** A page pulled in by a merge is inserted right
@@ -227,7 +252,14 @@ consumption executor, never throws to the caller):
    are all blank never becomes a cell.
 6. **Status.** A mailing is `committed` if its minimum confidence ≥
    `reassembly-confidence-threshold` (default **0.5** — aggressive, so most
-   mailings commit), otherwise `pending`.
+   mailings commit), otherwise `pending`. With the pass-3 vote on
+   (`reassembly-draws` > 1), that confidence is not the raw model number: it is
+   `base confidence × agreement`, where `base` is the confidence of the
+   best-matching draw group and `agreement` is how much the draws agreed on the
+   mailing's page pairs — so a mailing the draws only agreed on 2 of 3 times
+   commits at 0.6 even if every draw that mentioned it reported 0.9. With
+   `reassembly-draws: 1` there is no vote, and the value is the raw model
+   confidence as before.
 7. **Split + ingest.** `BatchSplitter.assemble` builds one PDF per mailing
    (arbitrary page order supported, in the normalized order step 4 produced), and
    each is ingested with `source = "consumption:"`. The staged source moves to
@@ -465,7 +497,8 @@ the initial dispatch and the sweep — the sweep degrades rather than retries.
 | `reassembly-confidence-threshold` | `HIVEMEM_CONSUMPTION_REASSEMBLY_CONFIDENCE` | `0.5` | Minimum per-group confidence for a `committed` document; below it the group is `pending`. Aggressive default — most groups commit. |
 | `reassembly-render-dpi` | `HIVEMEM_CONSUMPTION_REASSEMBLY_DPI` | `150` | DPI used to rasterize pages into the vision payload (downscaled vs. OCR DPI to keep requests small). |
 | `reassembly-purpose` | `HIVEMEM_CONSUMPTION_REASSEMBLY_PURPOSE` | `separator` | Vistierie routing purpose for all 3-pass reassembly calls. Needs a routing rule pointing at a vision-capable model (Haiku works; Sonnet for harder visual grouping). |
-| `reassembly-max-tokens` | `HIVEMEM_CONSUMPTION_REASSEMBLY_MAX_TOKENS` | `4096` | Max output tokens for each of the three passes' responses. |
+| `reassembly-max-tokens` | `HIVEMEM_CONSUMPTION_REASSEMBLY_MAX_TOKENS` | `16384` | Max output tokens for each of the three passes' responses. Raised from `4096`, which was too tight for the mailing-assembly pass on large batches: the model reasons in prose before emitting its JSON, so a long batch could spend the whole budget on the reasoning and be cut off before the payload — surfacing as `no JSON payload in LLM output` and costing a retry. Only calls that exceeded the old budget ever failed this way; none below it did. |
+| `reassembly-draws` | `HIVEMEM_CONSUMPTION_REASSEMBLY_DRAWS` | `3` | How many independent groupings pass 3 draws before the pairwise-majority vote. `1` disables the vote and reproduces the old single-call behaviour. |
 | `blank-filter-enabled` | `HIVEMEM_CONSUMPTION_BLANK_FILTER_ENABLED` | `true` | Master switch for BOTH pixel-based signals: the pre-check that skips a page's orientation call (`blank-skip-white-fraction`) and the post-check that drops a page outright (`blank-white-fraction`). The LLM's own blank verdicts from passes 1 and 2 always apply regardless of this flag; disabling it just stops the pixel-based signals from also acting. A document whose pages are all blank (by any signal) is dropped entirely, so it never becomes a cell. |
 | `blank-white-fraction` | `HIVEMEM_CONSUMPTION_BLANK_WHITE_FRACTION` | `0.995` | Post-check: fraction of near-white pixels above which a page is dropped outright, whatever the model said. Higher = more conservative (fewer pages dropped). |
 | `blank-skip-white-fraction` | `HIVEMEM_CONSUMPTION_BLANK_SKIP_WHITE_FRACTION` | `0.97` | Pre-check: fraction of near-white pixels above which a page's orientation call is skipped (the metadata call still runs and still decides deletion). Deliberately looser than `blank-white-fraction` — it only ever saves a vision call, never causes a deletion, so it can afford to fire on more pages. |

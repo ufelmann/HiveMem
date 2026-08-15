@@ -8,7 +8,7 @@ graph TB
         Auth["AuthFilter<br/><i>Token auth + role check + rate limit</i>"]
         ToolGate["ToolPermissionService<br/><i>Filter tools/list by role</i>"]
         Identity["Identity Injection<br/><i>created_by from token</i>"]
-        MCP["McpController<br/>:8421<br/><i>46 tools, Streamable HTTP</i>"]
+        MCP["McpController<br/>:8421<br/><i>50 tools, Streamable HTTP</i>"]
     end
 
     EmbSvc["External Embeddings Service<br/><i>HTTP API</i>"]
@@ -424,6 +424,12 @@ Vistierie calls back into HiveMem over the `hivemem-net` Docker network via thre
 | `POST /vistierie/runs/done` | `hivemem.queen.completion-webhook-token` | Receives the Queen's aggregated output and writes each proposal as a `pending` tunnel |
 
 All four endpoints live under `/vistierie/**`, which is **exempt from the global `AuthFilter` and `SessionAuthFilter`**. Each request is authenticated by a constant-time bearer-token check against the respective config property.
+
+### Queen timeout: `max_run_seconds` and recovery
+
+`queen`'s `max_run_seconds` is 600 (`AgentDefinitions.queen()`; raised from 300 on 2026-08-09, see that method's comment for the measured-duration reasoning). Vistierie's `AgentRunner` never attaches `output` to a run it fails for any reason — including `max_run_seconds_exceeded` — so a completion webhook with `status=failed` always arrives with `output=null`, no matter how many of the Queen's dispatched Bees had already finished.
+
+Each `dispatch_bee` call is its own independent Vistierie run, though, and each is durably marked `done` with its own real output the moment that Bee finishes, regardless of what later happens to the parent Queen run. `POST /vistierie/runs/done` uses this: on **any** `status=failed`, `QueenWebhookService#recoverProposalsFromChildRuns` lists the tenant's recent Vistierie runs (via the plain, non-admin `GET /runs` — the only shape carrying `parent_run_id` and `output`), keeps the `isolated-cell-bee` children of that run that reached `done`, and ingests their proposals as `pending` tunnels exactly as a successful Queen completion would have. This is deliberately not scoped to the literal `max_run_seconds_exceeded` error text: prod evidence (2026-08-09) showed the dominant failure text is actually `tool_error: subagent_failed: ...` — one Bee's own failure (e.g. that Bee hitting its own `max_run_seconds`) kills the whole parent run immediately via `AgentRunner`'s tool_error path, well before the parent's own `max_run_seconds` is anywhere near reached. Matching on the exact `max_run_seconds_exceeded` string alone covered only a minority of failures. The recovery method's own filters (Bee agent name, this run's `parent_run_id`, child `status=done`, output present) already make it a safe no-op for a failed run that never dispatched a Bee. A Vistierie outage during recovery is swallowed (logged, zero proposals recovered) rather than thrown back into the webhook handler.
 
 ### Write isolation
 

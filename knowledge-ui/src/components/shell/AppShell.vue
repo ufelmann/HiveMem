@@ -6,7 +6,6 @@ import { useUiStore } from '../../stores/ui'
 import IconRail from './IconRail.vue'
 import TopBar from './TopBar.vue'
 import Reader from '../Reader.vue'
-import PwaReloadPrompt from './PwaReloadPrompt.vue'
 import UploadFab from './UploadFab.vue'
 
 const route = useRoute()
@@ -40,7 +39,9 @@ watch(isMobile, m => { if (!m) ui.setDrawer(false) })
     </div>
     <div v-if="isMobile && ui.mobileDrawerOpen" class="drawer-scrim" @click="ui.setDrawer(false)" />
     <Reader />
-    <PwaReloadPrompt />
+    <!-- PwaReloadPrompt lives in App.vue, outside the isAuthenticated gate: a stale worker
+         is exactly what keeps the user unauthenticated, so the control that replaces it
+         must not require being logged in. -->
     <UploadFab v-if="route.name === 'upload'" />
   </div>
 </template>

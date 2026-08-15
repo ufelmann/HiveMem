@@ -1,0 +1,205 @@
+package command
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/visterion/hivemem/cli/internal/mcp"
+)
+
+// ValidateArgs checks the argument object against the cached schema before any
+// request is sent.
+//
+// This is not belt-and-braces: the server does NOT validate arguments against
+// the schema, so an unknown or mis-mapped key is silently ignored rather than
+// rejected. A reverse-map bug would therefore return a confident wrong answer.
+// The CLI is the only place it can be caught.
+func ValidateArgs(spec *ToolSpec, args map[string]any) error {
+	for key := range args {
+		if _, ok := spec.Properties[key]; !ok {
+			return usageError("%s has no property %q", spec.Name, key)
+		}
+	}
+	for _, req := range spec.Required {
+		if _, ok := args[req]; !ok {
+			return usageError("%s requires --%s", spec.Name, flagName(req))
+		}
+	}
+	for key, val := range args {
+		p := spec.Properties[key]
+		if len(p.Enum) > 0 {
+			s, ok := val.(string)
+			if ok && !containsString(p.Enum, s) {
+				return usageError("%s: %q is not one of %v", flagName(key), s, p.Enum)
+			}
+		}
+		if len(p.Items.Enum) == 0 {
+			continue
+		}
+		// A repeatable flag comes out of BuildArgs as []string (it uses
+		// GetStringArray); validate every element against the item enum so a
+		// bad value like --include bogus is caught here, not silently ignored
+		// by the server.
+		items, ok := val.([]string)
+		if !ok {
+			continue
+		}
+		for _, s := range items {
+			if !containsString(p.Items.Enum, s) {
+				return usageError("%s: %q is not one of %v", flagName(key), s, p.Items.Enum)
+			}
+		}
+	}
+	return nil
+}
+
+// cachedSpec returns the generated spec for name, or nil when the cache does
+// not carry that tool. A miss is not an error: `call` is also the way to reach
+// a tool the cache has never seen.
+func cachedSpec(tools []json.RawMessage, name string) *ToolSpec {
+	for _, raw := range tools {
+		spec, err := GenerateSpec(raw)
+		if err == nil && spec.Name == name {
+			return spec
+		}
+	}
+	return nil
+}
+
+// requireProperties is the required-property half of ValidateArgs.
+//
+// `call` uses it alone. --args-json is deliberately exempt from the
+// unknown-key check — it is the escape hatch for a schema the cache does not
+// carry — but the required check still applies, because nothing downstream
+// performs it: the server does not validate arguments against the schema, it
+// simply ignores keys it does not read, so a call missing a required property
+// comes back as a confident wrong answer rather than an error.
+func requireProperties(spec *ToolSpec, args map[string]any) error {
+	for _, req := range spec.Required {
+		if _, ok := args[req]; !ok {
+			return usageError("%s requires %q in --args-json", spec.Name, req)
+		}
+	}
+	return nil
+}
+
+// handleToolError implements the cache-invalidation rules.
+//
+// -32003 is the trigger that fires in production. The permission gate runs
+// before handler resolution, so a tool the server no longer knows is answered
+// "not permitted", never "unknown tool". A realm denial produces the identical
+// error, which is why the re-fetch is suppressed for a very fresh cache.
+func handleToolError(ctx context.Context, d *Deps, tool string, err error) error {
+	var me *mcp.Error
+	if !errors.As(err, &me) {
+		return err
+	}
+	key := d.Manager.CacheKey()
+
+	switch {
+	case me.IsToolNotPermitted():
+		if !d.Cache.IsStale(key, 60*time.Second) {
+			// Too fresh to be a stale-cache problem: report the denial.
+			return &exitError{code: 3, msg: me.Message}
+		}
+		return d.refetchAndClassify(ctx, tool, me)
+
+	case me.IsUnknownTool():
+		// Defensive path: a permitted name with no handler. No age gate here.
+		// Refresh the cache so the next invocation reflects reality, but
+		// report the original error — issuing a second call with empty
+		// arguments here would not be a retry of the user's call, it would
+		// just be a different, meaningless request whose result we'd throw
+		// away. There is nothing useful to do with it but surface err.
+		if _, rerr := d.refetch(ctx); rerr != nil {
+			return err
+		}
+		return err
+	}
+	return err
+}
+
+// probeRole issues the wake_up that pairs with every tool-set write and returns
+// the role it reports, or "" if the probe failed.
+//
+// It also deletes the 401-suppression record on success. The spec makes ANY
+// paired wake_up that returns a JSON-RPC result evidence of repair, not only
+// the one `status` issues: a static token's fingerprint never changes, so a
+// repaired credential whose record survives a fully successful `tools
+// --refresh` keeps `status` printing "not probed" and exiting 3 for up to 24 h,
+// breaking every health check wrapping it. A failed probe is not evidence of
+// anything and leaves the record standing.
+func probeRole(ctx context.Context, d *Deps) string {
+	who, err := d.Client.WakeUp(ctx)
+	if err != nil {
+		return ""
+	}
+	_ = d.Cache.PutAuthFailure(d.Manager.CacheKey(), nil)
+	return who.Role
+}
+
+func (d *Deps) refetch(ctx context.Context) (string, error) {
+	tools, err := d.Client.ListTools(ctx)
+	if err != nil {
+		return "", err
+	}
+	role := probeRole(ctx, d)
+	if err := d.Cache.PutTools(d.Manager.CacheKey(), tools, role); err != nil {
+		return "", err
+	}
+	return role, nil
+}
+
+// refetchAndClassify decides between a removed tool, a role reduction and a
+// genuine denial. tools/list carries no role, so the role comes from wake_up —
+// without that second probe the role-reduction branch would be dead code.
+func (d *Deps) refetchAndClassify(ctx context.Context, tool string, me *mcp.Error) error {
+	before, _ := d.Cache.Get(d.Manager.CacheKey())
+	oldRole := ""
+	if before != nil {
+		oldRole = before.Role
+	}
+
+	newRole, err := d.refetch(ctx)
+	if err != nil {
+		return &exitError{code: 3, msg: me.Message}
+	}
+	if oldRole != "" && newRole != "" && oldRole != newRole {
+		return &exitError{code: 3, msg: fmt.Sprintf(
+			"this credential's role changed from %s to %s, and %s is no longer available to it",
+			oldRole, newRole, tool)}
+	}
+
+	after, _ := d.Cache.Get(d.Manager.CacheKey())
+	if after != nil && !toolPresent(after.Tools, tool) {
+		return &exitError{code: 2, msg: fmt.Sprintf(
+			"%s is no longer available on this server", tool)}
+	}
+	return &exitError{code: 3, msg: me.Message}
+}
+
+// toolPresent decodes each cached tool's name and reports whether name is
+// among them.
+func toolPresent(tools []json.RawMessage, name string) bool {
+	for _, raw := range tools {
+		var t struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(raw, &t); err == nil && t.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(hay []string, needle string) bool {
+	for _, h := range hay {
+		if h == needle {
+			return true
+		}
+	}
+	return false
+}

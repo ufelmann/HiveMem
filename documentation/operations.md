@@ -139,7 +139,7 @@ full path matrix and status-code behavior.
 
 | Variable | Default | Description |
 |---|---|---|
-| `HIVEMEM_ACCESS_ENABLED` | `false` | Set to `true` to require an Access JWT for humans and disable session login (`/login`, `/logout` return `410 Gone`) |
+| `HIVEMEM_ACCESS_ENABLED` | `false` | Set to `true` to require an Access JWT for humans and disable session login (`/logout` and non-GET `/login` return `410 Gone`; `GET /login` redirects to `/` so a post-Access-login return hop lands in the app) |
 | `HIVEMEM_ACCESS_TEAM_DOMAIN` | *(empty)* | Your Cloudflare Access team domain, e.g. `https://<your-team>.cloudflareaccess.com` — used to fetch the JWKS and verify the JWT issuer |
 | `HIVEMEM_ACCESS_AUD` | *(empty)* | The Access application's Audience (AUD) tag — verified against the JWT's `aud` claim |
 | `HIVEMEM_ACCESS_JWKS_TTL` | `PT15M` | How long the fetched JWKS is cached before HiveMem re-fetches it (ISO-8601 duration) |

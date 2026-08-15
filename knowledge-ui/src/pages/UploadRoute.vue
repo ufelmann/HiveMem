@@ -12,7 +12,9 @@ const { t } = useI18n()
 function openCell(cellId: string) {
   router.push({ name: 'search', query: { cell: cellId } })
 }
-function relogin() { triggerReauth(authMode()) }
+// force: an explicit user action must never be swallowed by the re-auth guard — pressing
+// the button and having nothing happen is worse than the error it is trying to escape.
+function relogin() { triggerReauth(authMode(), undefined, { force: true }) }
 </script>
 
 <template>

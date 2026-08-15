@@ -16,7 +16,7 @@ Humans prove who they are one of two ways, depending on deployment mode:
 
 | Mode | `hivemem.access.enabled` | Humans authenticate via | `/login`, `/logout` |
 |---|---|---|---|
-| **Access** (Cloudflare Access in front) | `true` | Cloudflare Access JWT (`Cf-Access-Jwt-Assertion` header) | disabled — return `410 Gone` |
+| **Access** (Cloudflare Access in front) | `true` | Cloudflare Access JWT (`Cf-Access-Jwt-Assertion` header) | disabled — `410 Gone`, except `GET /login` → `302 /` |
 | **Legacy** (self-hosted, default) | `false` | Session cookie via the `/login` form | active |
 
 Legacy is a fully supported production mode, not a dev fallback — it's what self-hosted
@@ -36,12 +36,12 @@ mapping is created (`hivemem-token set-email`).
 |---|---|---|
 | `/api/**` (incl. `/api/tools/call`) | Human | Access JWT **or** session cookie (`HumanAuthFilter`); no principal → `401` |
 | SPA routes (everything not matched below) | Human | Access JWT **or** session cookie; no principal → `302 /login` (legacy) or `403` page (access mode, no `/login` exists) |
-| `/admin/**` except `/admin/peers**` | Human (browser) | Access JWT **or** session cookie; no principal → same as SPA routes |
-| `/admin/peers**` | Machine (CLI, `connect-peers.sh`) | Bearer token — `HumanAuthFilter` defers to `AuthFilter` without attempting a human principal |
+| `/admin/**` (browser, no `Authorization` header) | Human (browser) | Access JWT **or** session cookie; no principal → same as SPA routes |
+| `/admin/**` (with an `Authorization` header) | Machine (CLI, `connect-peers.sh`) | Bearer token — `HumanAuthFilter` defers to `AuthFilter` for any `/admin` path, not only `/admin/peers` |
 | `/mcp` | Machine | Bearer token from `api_tokens`, **or** an OAuth access token — never a session |
 | `/hooks`, `/sync` (incl. `/sync/ops`) | Machine | Bearer token (`AuthFilter`) |
 | `/vistierie/**` | Machine (webhook) | Controller-level webhook token (constant-time check), not `AuthFilter` |
-| `/login`, `/logout` | Human | Public in legacy mode (rate-limited); `410 Gone` in access mode |
+| `/login`, `/logout` | Human | Public in legacy mode (rate-limited). In access mode `410 Gone`, except `GET /login`, which answers `302 /` with `Cache-Control: no-store` — Access returns the browser to the URL that triggered the challenge, and the SPA re-auths by navigating there because the service worker never serves it from cache |
 | `/oauth/authorize` | Human | Controller resolves its own principal (Access JWT, session, or the OAuth test attribute); in split-host deployments an unauthenticated Access-mode `GET` is `302`'d to `hivemem.oauth.authorize-redirect-base-url` (see [oauth.md](oauth.md#2-split-host-deployments-machine-host--access-protected-human-host)) |
 | `/oauth/token`, `/oauth/register`, `/.well-known/oauth-*` | Machine | PKCE / DCR — public, no `HumanAuthFilter` involvement |
 | `/api/config` | — | Public, unauthenticated; returns `{"authMode":"access"|"legacy"}` so the SPA can pick its re-auth strategy before making its first authenticated call |

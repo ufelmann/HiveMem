@@ -47,6 +47,10 @@ class AgentDefinitionsTest {
         assertThat(queen.get("completion_webhook"))
                 .isEqualTo("http://hivemem:8080/vistierie/runs/done");
         assertThat(queen.get("completion_webhook_token")).isEqualTo("cwt");
+        // Pinned so a regression back to 300 (or any other drift) is caught here rather than
+        // rediscovered in prod — see the field's own comment in AgentDefinitions#queen for the
+        // measured-duration reasoning behind 600.
+        assertThat(queen.get("max_run_seconds")).isEqualTo(600);
 
         List<Map<String, Object>> tools = (List<Map<String, Object>>) queen.get("tools");
         assertThat(tools).extracting(t -> t.get("name"))

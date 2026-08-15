@@ -1,0 +1,60 @@
+[
+  {
+    "name": "search",
+    "description": "Ranked search over committed cells.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "query":   {"type": "string",  "description": "Full-text query"},
+        "limit":   {"type": "integer", "description": "Maximum results"},
+        "profile": {"type": "string",  "description": "Weight preset",
+                    "enum": ["balanced", "semantic", "recent", "important", "keyword"]},
+        "include": {"type": "array", "items": {"type": "string",
+                    "enum": ["realm", "summary", "content", "scores"]}},
+        "where": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "realm":    {"type": "string"},
+            "realm_in": {"type": "array", "items": {"type": "string"}},
+            "tags":     {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "add_cell",
+    "description": "Add a memory cell.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content", "topic"],
+      "properties": {
+        "content":     {"type": "string"},
+        "topic":       {"type": "string"},
+        "importance":  {"type": "integer"},
+        "object_":     {"type": "string", "description": "Trailing-underscore property"},
+        "pending":     {"type": "boolean"}
+      }
+    }
+  },
+  {
+    "name": "status",
+    "description": "Server-side counts. Collides with the fixed status command.",
+    "inputSchema": {"type": "object", "additionalProperties": false, "properties": {}}
+  },
+  {
+    "name": "diagnose",
+    "description": "Fixture-only tool whose schema collides with a reserved global flag.",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "server": {"type": "string", "description": "Collides with the reserved --server global"},
+        "target": {"type": "string", "description": "Non-colliding property"}
+      }
+    }
+  }
+]

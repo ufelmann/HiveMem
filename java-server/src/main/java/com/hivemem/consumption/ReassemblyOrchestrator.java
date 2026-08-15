@@ -103,6 +103,7 @@ public class ReassemblyOrchestrator {
                         byte[] upright = png;
                         if (!pixelBlank) {
                             PageOrienter.PageOrientation o = orienter.orient(props.getRealm(), pageNo, png);
+                            log.debug("Orientation page {}: rotation={}, blank={}", pageNo, o.rotation(), o.blank());
                             if (o.rotation() != 0) {
                                 rotations.put(pageNo, o.rotation());
                                 upright = PageOrienter.rotate180Png(png);

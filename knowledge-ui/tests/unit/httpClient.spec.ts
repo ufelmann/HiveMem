@@ -1,5 +1,14 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { HttpApiClient } from '../../src/api/httpClient'
+import { loadAuthMode, __resetAuthMode } from '../../src/api/authMode'
+import { triggerReauth, clearReauthGuard } from '../../src/api/reauth'
+
+// triggerReauth navigates the real window; stub it so the assertions can look at the mode
+// it was handed instead of at a location assignment happy-dom cannot intercept.
+vi.mock('../../src/api/reauth', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api/reauth')>()
+  return { ...actual, triggerReauth: vi.fn() }
+})
 
 describe('HttpApiClient', () => {
   beforeEach(() => { vi.restoreAllMocks() })
@@ -76,5 +85,81 @@ describe('HttpApiClient', () => {
     await new Promise(r => setTimeout(r, 30))
     unsub()
     expect(events).toContain('status')
+  })
+})
+
+// Re-auth routing per deployment mode — see documentation/auth.md.
+describe('HttpApiClient re-auth handling', () => {
+  beforeEach(() => {
+    vi.mocked(triggerReauth).mockClear()
+    __resetAuthMode()
+    clearReauthGuard()
+    sessionStorage.clear()
+  })
+  afterEach(() => { vi.unstubAllGlobals(); __resetAuthMode() })
+
+  async function primeMode(mode: 'access' | 'legacy') {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ authMode: mode }))))
+    await loadAuthMode()
+  }
+
+  it('issues its fetch with redirect: manual so an Access redirect stays visible', async () => {
+    let seen: RequestInit | undefined
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      seen = init
+      return new Response(JSON.stringify({
+        jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: '{}' }] },
+      }))
+    }))
+    await new HttpApiClient({ endpoint: '/mcp', token: 't' }).call('status')
+    expect(seen?.redirect).toBe('manual')
+  })
+
+  it('re-authenticates on an opaqueredirect in access mode', async () => {
+    await primeMode('access')
+    vi.stubGlobal('fetch', vi.fn(async () => ({ type: 'opaqueredirect', ok: false, status: 0 })))
+    await expect(new HttpApiClient({ endpoint: '/mcp', token: 't' }).call('status'))
+      .rejects.toThrow('re-authenticating')
+    expect(triggerReauth).toHaveBeenCalledWith('access')
+  })
+
+  it('re-authenticates on a 401 in legacy mode', async () => {
+    await primeMode('legacy')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 401 })))
+    await expect(new HttpApiClient({ endpoint: '/mcp', token: 't' }).call('status'))
+      .rejects.toThrow('re-authenticating')
+    expect(triggerReauth).toHaveBeenCalledWith('legacy')
+  })
+
+  // In Access mode a 401 means the edge JWT was accepted but the origin has no api_tokens
+  // row for that identity. Re-auth cannot fix that, so the error must surface (App.vue's
+  // retryable `common.connectError` screen) instead of navigating the user in a circle.
+  it('throws instead of re-authenticating on a 401 in access mode', async () => {
+    await primeMode('access')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 401 })))
+    await expect(new HttpApiClient({ endpoint: '/mcp', token: 't' }).call('status'))
+      .rejects.toThrow('HTTP 401')
+    expect(triggerReauth).not.toHaveBeenCalled()
+  })
+
+  // With redirect: 'manual' an Access interception arrives as an opaqueredirect response,
+  // never as a throw — so the catch branch only sees transport failures and the abort
+  // timeout. Legacy still re-auths there (an expired session behind a proxy can look like
+  // a failed request); Access must not, or an offline blip navigates the user off the SPA
+  // and onto a browser error page instead of the retryable screen.
+  it('re-authenticates on a network failure in legacy mode', async () => {
+    await primeMode('legacy')
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
+    await expect(new HttpApiClient({ endpoint: '/mcp', token: 't' }).call('status'))
+      .rejects.toThrow('re-authenticating')
+    expect(triggerReauth).toHaveBeenCalledWith('legacy')
+  })
+
+  it('rethrows a network failure in access mode instead of re-authenticating', async () => {
+    await primeMode('access')
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
+    await expect(new HttpApiClient({ endpoint: '/mcp', token: 't' }).call('status'))
+      .rejects.toThrow('Failed to fetch')
+    expect(triggerReauth).not.toHaveBeenCalled()
   })
 })

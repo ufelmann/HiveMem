@@ -37,17 +37,44 @@ export class HttpApiClient implements ApiClient {
       res = await fetch(this.config.endpoint, {
         method: 'POST',
         credentials: 'same-origin',
+        // Without 'manual' the browser follows Cloudflare's redirect to the Access login
+        // page and the interception is invisible here — the opaqueredirect check below
+        // was dead code until this line existed.
+        redirect: 'manual',
         headers,
         body,
         signal: AbortSignal.timeout(this.config.timeoutMs ?? 30_000)
       })
-    } catch {
-      // A cross-origin redirect to the Access login page surfaces here as a TypeError.
+    } catch (err) {
+      // An Access interception no longer lands here: with redirect: 'manual' the edge's
+      // cross-origin redirect surfaces as an opaqueredirect *response*, handled below. What
+      // reaches this branch is a genuine transport failure — offline, DNS, TLS, connection
+      // reset — or the AbortSignal timeout above.
+      //
+      // In legacy mode that is still worth a re-auth: a session that expired behind a
+      // reverse proxy can present as a failed request, and /login is served by the origin
+      // the browser just failed to reach only if it is actually up, so the worst case is
+      // the same error one navigation later. In Access mode /login is a full navigation
+      // into the edge, so doing it while the network is down replaces App.vue's retryable
+      // error screen with a browser error page. Rethrow instead and let the SPA retry.
+      if (authMode() === 'legacy') {
+        triggerReauth('legacy')
+        throw new Error('re-authenticating')
+      }
+      throw err
+    }
+    // The edge intercepted the request — re-auth is exactly what is needed, in both modes.
+    if (res.type === 'opaqueredirect') {
       triggerReauth(authMode())
       throw new Error('re-authenticating')
     }
-    if (res.status === 401 || res.type === 'opaqueredirect') {
-      triggerReauth(authMode())
+    // A 401 comes from the origin. In legacy mode that means "no session, go log in". In
+    // Access mode the Access JWT was already accepted and the 401 means HumanPrincipalResolver
+    // found no api_tokens row for that identity — re-authenticating cannot fix it and would
+    // just bounce the user in a circle. Fall through so the error surfaces (App.vue renders
+    // its retryable "connection failed" screen).
+    if (res.status === 401 && authMode() === 'legacy') {
+      triggerReauth('legacy')
       throw new Error('re-authenticating')
     }
     if (!res.ok) {

@@ -1,5 +1,6 @@
 package com.hivemem.consumption;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -117,5 +118,242 @@ class MailingAssemblerTest {
         List<PageMetadataExtractor.PageMetadata> pages = List.of(meta(1, "X", null));
         assertThrows(RestClientException.class, () -> assembler.assemble("documents", pages));
         verify(cc, times(2)).complete(eq("documents"), anyString());
+    }
+
+    private static DocGroup g(String id, double confidence, int... pages) {
+        DocGroup d = new DocGroup(id, id + " descriptor");
+        for (int p : pages) d.pages.add(p);
+        d.minConfidence = confidence;
+        return d;
+    }
+
+    @Test
+    void threeIdenticalDrawsReproduceThatPartition() {
+        List<DocGroup> draw = List.of(g("a", 0.9, 1, 2, 3), g("b", 0.8, 4, 5));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(draw, draw, draw),
+                List.of(1, 2, 3, 4, 5));
+        assertEquals(2, out.size());
+        assertEquals(List.of(1, 2, 3), out.get(0).pages);
+        assertEquals(List.of(4, 5), out.get(1).pages);
+    }
+
+    @Test
+    void aMajorityToSplitBeatsTheSingleDrawThatMerged() {
+        List<DocGroup> merged = List.of(g("m", 0.9, 1, 2, 3, 4));
+        List<DocGroup> split = List.of(g("s1", 0.9, 1, 2), g("s2", 0.9, 3, 4));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(merged, split, split),
+                List.of(1, 2, 3, 4));
+        assertEquals(2, out.size());
+        assertEquals(List.of(1, 2), out.get(0).pages);
+        assertEquals(List.of(3, 4), out.get(1).pages);
+    }
+
+    @Test
+    void aMajorityToMergeBeatsTheSingleDrawThatSplit() {
+        List<DocGroup> merged = List.of(g("m", 0.9, 1, 2, 3, 4));
+        List<DocGroup> split = List.of(g("s1", 0.9, 1, 2), g("s2", 0.9, 3, 4));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(merged, merged, split),
+                List.of(1, 2, 3, 4));
+        assertEquals(1, out.size());
+        assertEquals(List.of(1, 2, 3, 4), out.get(0).pages);
+    }
+
+    @Test
+    void aPairShortOfTheThresholdDoesNotMergeEvenWhenItIsTheMostCommonReading() {
+        // Two draws pair 1~2, two pair 2~3. threshold = 4/2+1 = 3, so neither reaches it and all
+        // three pages stay apart. This is the conservative direction on purpose.
+        List<DocGroup> d1 = List.of(g("x", 0.9, 1, 2), g("y", 0.9, 3));
+        List<DocGroup> d2 = List.of(g("x", 0.9, 2, 3), g("y", 0.9, 1));
+        List<DocGroup> d3 = List.of(g("x", 0.9, 1, 2), g("y", 0.9, 3));
+        List<DocGroup> d4 = List.of(g("x", 0.9, 2, 3), g("y", 0.9, 1));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(d1, d2, d3, d4), List.of(1, 2, 3));
+        assertEquals(3, out.size());
+    }
+
+    @Test
+    void unionFindClosesAChainOfMajorityPairs() {
+        // 1~2 and 2~3 each reach the threshold; page 1 and page 3 must end up together.
+        List<DocGroup> d1 = List.of(g("x", 0.9, 1, 2, 3));
+        List<DocGroup> d2 = List.of(g("x", 0.9, 1, 2, 3));
+        List<DocGroup> d3 = List.of(g("x", 0.9, 1), g("y", 0.9, 2), g("z", 0.9, 3));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(d1, d2, d3), List.of(1, 2, 3));
+        assertEquals(1, out.size());
+        assertEquals(List.of(1, 2, 3), out.get(0).pages);
+    }
+
+    @Test
+    void twoDrawsRequireUnanimityToMerge() {
+        // threshold = 2/2+1 = 2, so a single draw's merge must NOT win.
+        List<DocGroup> merged = List.of(g("m", 0.9, 1, 2));
+        List<DocGroup> split = List.of(g("s1", 0.9, 1), g("s2", 0.9, 2));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(merged, split), List.of(1, 2));
+        assertEquals(2, out.size());
+    }
+
+    @Test
+    void aPageMissingFromEveryDrawBecomesItsOwnGroup() {
+        List<DocGroup> draw = List.of(g("a", 0.9, 1, 2));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(draw, draw, draw),
+                List.of(1, 2, 3));
+        assertEquals(2, out.size());
+        assertEquals(List.of(1, 2), out.get(0).pages);
+        assertEquals(List.of(3), out.get(1).pages);
+    }
+
+    @Test
+    void aPageMissingFromOneDrawStillMergesOnTheMajority() {
+        List<DocGroup> full = List.of(g("a", 0.9, 1, 2));
+        List<DocGroup> partial = List.of(g("a", 0.9, 1));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(full, full, partial),
+                List.of(1, 2));
+        assertEquals(1, out.size());
+        assertEquals(List.of(1, 2), out.get(0).pages);
+    }
+
+    @Test
+    void groupsAreOrderedByTheirLowestPage() {
+        // Group order is still by lowest page; the page order WITHIN a group is a separate concern
+        // (see consensusKeepsTheBestMatchingDrawsReadingOrderWithinAGroup) — here the "early" group
+        // was declared as (3, 1), so that draw order — not ascending — is what survives.
+        List<DocGroup> draw = List.of(g("late", 0.9, 9, 7), g("early", 0.9, 3, 1));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(draw, draw, draw),
+                List.of(1, 3, 7, 9));
+        assertEquals(List.of(3, 1), out.get(0).pages);
+        assertEquals(List.of(9, 7), out.get(1).pages);
+    }
+
+    @Test
+    void consensusKeepsTheBestMatchingDrawsReadingOrderWithinAGroup() {
+        // The prompt asks for reading order (letter, continuation pages, enclosures, blanks last),
+        // and that order survives into the produced sub-PDF — the vote must not silently re-sort it.
+        List<DocGroup> draw = List.of(g("a", 0.9, 4, 2, 3));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(draw, draw, draw), List.of(2, 3, 4));
+        assertEquals(1, out.size());
+        assertEquals(List.of(4, 2, 3), out.get(0).pages);
+    }
+
+    @Test
+    void confidenceEqualsBaseWhenAllDrawsAgree() {
+        List<DocGroup> draw = List.of(g("a", 0.9, 1, 2));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(draw, draw, draw), List.of(1, 2));
+        assertEquals(1, out.size());
+        assertEquals(0.9, out.get(0).minConfidence, 1e-9);
+    }
+
+    @Test
+    void aLowConfidenceDrawThatMergesEverythingDoesNotDragDownAnUnrelatedComponent() {
+        // The low-confidence draw fully overlaps EVERY component (it merged all 6 pages), so it
+        // ties on overlap with each split group — but the split group (size 2) is tighter than the
+        // merged one (size 6), so findBest's size tie-break keeps it as the best match regardless of
+        // draw order, and 0.2 never becomes the base. The merged draw is listed FIRST here
+        // specifically so earliest-draw-wins alone would pick it (wrongly) — only the size
+        // tie-break saves this.
+        List<DocGroup> merged = List.of(g("m", 0.2, 1, 2, 3, 4, 5, 6));
+        List<DocGroup> split = List.of(g("s1", 0.9, 1, 2), g("s2", 0.9, 3, 4), g("s3", 0.9, 5, 6));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(merged, split, split),
+                List.of(1, 2, 3, 4, 5, 6));
+        assertEquals(3, out.size());
+        assertEquals(0.9, out.get(0).minConfidence, 1e-9);
+        assertEquals(0.9, out.get(1).minConfidence, 1e-9);
+        assertEquals(0.9, out.get(2).minConfidence, 1e-9);
+    }
+
+    @Test
+    void partialAgreementLowersConfidenceBelowTheBase() {
+        // threshold = 3/2+1 = 2; two of three draws agree on {1,2}, so it merges, but the vote was
+        // not unanimous — the confidence must reflect that, not just copy the base 0.9.
+        List<DocGroup> merged = List.of(g("m", 0.9, 1, 2));
+        List<DocGroup> split = List.of(g("s1", 0.9, 1), g("s2", 0.9, 2));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(merged, merged, split), List.of(1, 2));
+        assertEquals(1, out.size());
+        assertEquals(0.6, out.get(0).minConfidence, 1e-9); // 0.9 base * (2 of 3 draws agreed)
+    }
+
+    @Test
+    void tiedOverlapPrefersTheTighterGroupOverASuperset() {
+        // "big" (listed FIRST, confidence 0.3) covers all four pages; "small" (listed second,
+        // confidence 0.9) covers exactly the {1,2} component. Both tie on overlap=2 with that
+        // component, so only the size tie-break (small=2 < big=4) can pick the right one. Under the
+        // old earliest-draw-wins tie-break this test would fail: "big" comes first, ties on overlap,
+        // and the old code never looked past the tie to prefer the tighter group — so the {1,2}
+        // component would incorrectly inherit "big"'s 0.3 instead of "small"'s 0.9.
+        List<DocGroup> drawA = List.of(g("big", 0.3, 1, 2, 3, 4));
+        List<DocGroup> drawB = List.of(g("small", 0.9, 1, 2), g("rest", 0.9, 3, 4));
+        List<DocGroup> out = MailingAssembler.consensus(List.of(drawA, drawB), List.of(1, 2, 3, 4));
+        assertEquals(2, out.size());
+        assertEquals(List.of(1, 2), out.get(0).pages);
+        assertEquals(0.9, out.get(0).minConfidence, 1e-9); // "small"'s confidence, not "big"'s 0.3
+    }
+
+    @Test
+    void consensusNeverThrowsOnDegenerateInput() {
+        assertEquals(0, MailingAssembler.consensus(List.of(), List.of()).size());
+        assertEquals(0, MailingAssembler.consensus(List.of(List.of()), List.of()).size());
+        List<DocGroup> out = MailingAssembler.consensus(List.of(List.of()), List.of(1, 2));
+        assertEquals(2, out.size()); // no draw grouped anything -> two singletons
+    }
+
+    @Test
+    void aSingleDrawBehavesExactlyAsBefore() {
+        CompleteClient cc = mock(CompleteClient.class);
+        when(cc.complete(anyString(), anyString())).thenReturn(
+                "[{\"mailing\":\"m\",\"description\":\"d\",\"confidence\":0.9,\"pages\":[1,2]}]");
+        List<DocGroup> out = new MailingAssembler(cc, 1).assemble("documents",
+                List.of(meta(1, "SYNTHETIC ENERGY", "01.01.2000"),
+                        meta(2, "SYNTHETIC ENERGY", "01.01.2000")));
+        verify(cc, times(1)).complete(anyString(), anyString());
+        assertEquals(1, out.size());
+        assertEquals("m", out.get(0).id);
+    }
+
+    @Test
+    void threeDrawsCallTheModelThreeTimesAndVote() {
+        CompleteClient cc = mock(CompleteClient.class);
+        when(cc.complete(anyString(), anyString()))
+                .thenReturn("[{\"mailing\":\"a\",\"description\":\"d\",\"confidence\":0.9,\"pages\":[1,2]}]")
+                .thenReturn("[{\"mailing\":\"b\",\"description\":\"d\",\"confidence\":0.9,\"pages\":[1]},"
+                        + "{\"mailing\":\"c\",\"description\":\"d\",\"confidence\":0.9,\"pages\":[2]}]")
+                .thenReturn("[{\"mailing\":\"d\",\"description\":\"d\",\"confidence\":0.9,\"pages\":[1,2]}]");
+        List<DocGroup> out = new MailingAssembler(cc, 3).assemble("documents",
+                List.of(meta(1, "SYNTHETIC ENERGY", "01.01.2000"),
+                        meta(2, "SYNTHETIC ENERGY", "01.01.2000")));
+        verify(cc, times(3)).complete(anyString(), anyString());
+        assertEquals(1, out.size()); // 2 of 3 draws merged
+        assertEquals(List.of(1, 2), out.get(0).pages);
+    }
+
+    @Test
+    void aFailedDrawIsSkippedAndTheRestStillVote() {
+        CompleteClient cc = mock(CompleteClient.class);
+        when(cc.complete(anyString(), anyString()))
+                .thenReturn("[{\"mailing\":\"a\",\"description\":\"d\",\"confidence\":0.9,\"pages\":[1,2]}]")
+                .thenThrow(new RestClientException("boom"))   // draw 2, attempt 1
+                .thenThrow(new RestClientException("boom"))   // draw 2, attempt 2
+                .thenReturn("[{\"mailing\":\"c\",\"description\":\"d\",\"confidence\":0.9,\"pages\":[1,2]}]");
+        List<DocGroup> out = new MailingAssembler(cc, 3).assemble("documents",
+                List.of(meta(1, "SYNTHETIC ENERGY", "01.01.2000"),
+                        meta(2, "SYNTHETIC ENERGY", "01.01.2000")));
+        assertEquals(1, out.size());
+        assertEquals(List.of(1, 2), out.get(0).pages);
+    }
+
+    @Test
+    void everyDrawFailingStillThrowsSoTheOrchestratorCanDegrade() {
+        CompleteClient cc = mock(CompleteClient.class);
+        when(cc.complete(anyString(), anyString())).thenThrow(new RestClientException("boom"));
+        assertThrows(RuntimeException.class, () -> new MailingAssembler(cc, 3)
+                .assemble("documents", List.of(meta(1, "SYNTHETIC ENERGY", "01.01.2000"))));
+    }
+
+    @Test
+    void promptAllowsSameSenderSameDateWhenReferencesDiffer() {
+        // The old blanket ban is what merged an insurer's annual mailing into one document.
+        assertThat(MailingAssembler.PROMPT)
+                .doesNotContain("It is FORBIDDEN to output two mailings with the same sender and "
+                        + "the same letter date");
+        // The exception must be stated, and it must be tied to the reference number.
+        assertThat(MailingAssembler.PROMPT).contains("clearly different reference numbers");
+        // The enclosure rule must survive: a form ID is not a reference for this purpose.
+        assertThat(MailingAssembler.PROMPT).contains("An enclosure ALWAYS joins the mailing");
     }
 }
