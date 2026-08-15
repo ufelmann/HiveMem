@@ -72,7 +72,9 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          # Must match the ui-build stage in the root Dockerfile — that image is
+          # never built on a PR, so this job is the only test of the Node line.
+          node-version: "24"
           cache: npm
           cache-dependency-path: knowledge-ui/package-lock.json
 
