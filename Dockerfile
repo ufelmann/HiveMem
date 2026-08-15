@@ -1,6 +1,7 @@
-# Pinned to the toolchain versions CI tests against (Node 24 LTS, JDK 26) — keep
-# in sync with .github/workflows/ci.yml when bumping. Node stays on the LTS line;
-# the Current line (25) ships to prod untested because no PR job builds this file.
+# Single source of truth for the Node major version: the frontend job in
+# .github/workflows/ci.yml reads it off the FROM line below, so a Dependabot bump
+# here moves CI with it. Stay on the LTS line (24) — Current (25) builds fine but
+# is not what a prod image should ride on. JDK is 26, matching ci.yml.
 FROM node:24-alpine AS ui-build
 
 WORKDIR /ui

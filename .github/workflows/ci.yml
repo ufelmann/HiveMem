@@ -69,12 +69,25 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The root Dockerfile is the single source of truth for the Node major
+      # version. Reading it here means a Dependabot bump of the FROM line moves
+      # CI too, so the image and its test can never be built on different lines.
+      - name: Read Node version from Dockerfile
+        id: node
+        working-directory: ${{ github.workspace }}
+        run: |
+          version=$(grep -m1 -oP '^FROM node:\K[0-9]+' Dockerfile || true)
+          if [ -z "$version" ]; then
+            echo "::error::Could not read a Node major version from the FROM line in Dockerfile"
+            exit 1
+          fi
+          echo "Node major version from Dockerfile: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
-          # Must match the ui-build stage in the root Dockerfile — that image is
-          # never built on a PR, so this job is the only test of the Node line.
-          node-version: "24"
+          node-version: ${{ steps.node.outputs.version }}
           cache: npm
           cache-dependency-path: knowledge-ui/package-lock.json
 
