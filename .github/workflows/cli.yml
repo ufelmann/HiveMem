@@ -20,7 +20,7 @@ jobs:
       run:
         working-directory: cli
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           # Taken from go.mod so the two can never drift: go.mod requires
@@ -100,7 +100,7 @@ jobs:
       run:
         working-directory: cli
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           # Taken from go.mod so the two can never drift: go.mod requires
