@@ -25,7 +25,11 @@ import tools.jackson.databind.JsonNode;
  *  page numbering were split off as their own mailing in four consecutive runs. The undated-page
  *  rule keeps the different-sender escape explicitly, because a degraded page also arrives with
  *  date=null and {@link MailingNormalizer} can merge but never split. Throws on unparseable output
- *  so the orchestrator's degrade-to-pending path takes over. */
+ *  so the orchestrator's degrade-to-pending path takes over.
+ *  The same-sender/same-date ban was relaxed on 2026-08-13: measured on the 2026-08-08 batch, one
+ *  insurer sending several letters on one day cost 8 of 247 documents, because the blanket ban made
+ *  the correct answer unavailable to the model. The reference number is the discriminator, and
+ *  MailingNormalizer.clearlyDifferent decides when two of them count as different. */
 public class MailingAssembler {
 
     private static final Logger log = LoggerFactory.getLogger(MailingAssembler.class);
@@ -84,8 +88,14 @@ public class MailingAssembler {
             Additional hard rules:
             - Printed page-label continuity: pages of the SAME sender whose printed labels form one
               continuous sequence are ONE document; body dates never split such a sequence.
-            - It is FORBIDDEN to output two mailings with the same sender and the same letter date —
-              merge them into one.
+            - Two mailings with the same sender AND the same letter date are allowed ONLY when they
+              carry clearly different reference numbers (Aktenzeichen, Vertrags-, Service- or
+              Kundennummer). One insurer's annual mailing typically looks exactly like this: several
+              separate letters, one date, one reference number each. If the references are equal, or
+              differ only in characters OCR commonly confuses (O/0, I/1, S/5, B/8), they are the same
+              reference — merge those into one mailing.
+            - An enclosure's own form ID (e.g. "123 456.000 A1") is NOT a reference number for this
+              rule. Enclosures never open a mailing, whatever numbers they carry.
             - Enclosures from an affiliated authority/organization (e.g. a Datenschutz notice of the
               state tax administration inside a Finanzamt mailing) belong to the main mailing.
             - Every page must appear exactly once — re-check your output against the page list before

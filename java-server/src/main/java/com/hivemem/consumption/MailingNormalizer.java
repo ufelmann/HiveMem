@@ -15,9 +15,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Deterministic post-processing of pass 3: enforces in Java what MailingAssembler.PROMPT can only
- *  ask for - mailings that share sender + issue date are merged, and the pages of a single complete
- *  labelled document are ordered by their printed labels. Pure function, never throws: an exception
- *  escaping assemble() would degrade the whole batch to one pending document. */
+ *  ask for - mailings that share sender + issue date are merged unless their reference numbers are
+ *  clearly different, and the pages of a single complete labelled document are ordered by their
+ *  printed labels. Pure function, never throws: an exception escaping assemble() would degrade the
+ *  whole batch to one pending document. */
 public final class MailingNormalizer {
 
     /** Only labels carrying BOTH a number and a printed total count. A total-less number cannot be
@@ -113,10 +114,10 @@ public final class MailingNormalizer {
      *  normalizeDate, so two spellings of one calendar date cannot split a mailing. */
     record AnchorKey(String sender, String date) {}
 
-    /** The merge key of a group, or null when nothing in it can anchor. The anchor is the first
-     *  non-blank page carrying a usable sender AND a usable issue date. `reference` is deliberately
-     *  NOT part of the key: a differently-read Steuernummer is exactly what split the tax batch. */
-    static AnchorKey anchorKey(DocGroup g, Map<Integer, PageMetadata> meta) {
+    /** The page a group anchors on: the first non-blank page carrying a usable sender AND a usable
+     *  issue date. Shared by {@link #anchorKey} and {@link #anchorReference} so both always describe
+     *  the SAME page — a key from one page and a reference from another would compare nonsense. */
+    private static PageMetadata anchorPage(DocGroup g, Map<Integer, PageMetadata> meta) {
         for (Integer p : g.pages) {
             PageMetadata m = meta.get(p);
             if (m == null || m.blank()) continue;
@@ -130,11 +131,27 @@ public final class MailingNormalizer {
             if (date.isEmpty() || date.regionMatches(true, 0, "Stand", 0, 5)) continue;
             // An unreadable letterhead arrives as "" (asString(null) coerces an empty string) and
             // punctuation-only senders normalize to "" - keying on those would merge strangers.
-            String sender = normalizeSender(m.sender());
-            if (sender.isEmpty()) continue;
-            return new AnchorKey(sender, normalizeDate(date));
+            if (normalizeSender(m.sender()).isEmpty()) continue;
+            return m;
         }
         return null;
+    }
+
+    /** The merge key of a group, or null when nothing in it can anchor. `reference` is deliberately
+     *  NOT part of the key: a differently-read Steuernummer is exactly what split the tax batch.
+     *  The reference is consulted separately, and only to REFUSE a merge — see
+     *  {@link #clearlyDifferent}. */
+    static AnchorKey anchorKey(DocGroup g, Map<Integer, PageMetadata> meta) {
+        PageMetadata m = anchorPage(g, meta);
+        if (m == null) return null;
+        return new AnchorKey(normalizeSender(m.sender()), normalizeDate(m.date().trim()));
+    }
+
+    /** The raw reference of the anchor page, or null when the group has no anchor. Raw on purpose:
+     *  normalization belongs to {@link #clearlyDifferent}, which is the only consumer. */
+    static String anchorReference(DocGroup g, Map<Integer, PageMetadata> meta) {
+        PageMetadata m = anchorPage(g, meta);
+        return m == null ? null : m.reference();
     }
 
     static String normalizeSender(String s) {
@@ -142,6 +159,123 @@ public final class MailingNormalizer {
                 .replaceAll("[.,\\-–/]", " ")
                 .replaceAll("\\s+", " ")
                 .trim();
+    }
+
+    /** Map of the character pairs OCR actually confuses on reference numbers, folded onto the digit
+     *  so that "12/345/6789O" and "12/345/67890" compare equal. Folding onto the digit rather than
+     *  the letter is arbitrary but must stay consistent — the comparison only cares that both
+     *  spellings land on the same character. */
+    private static char foldConfusable(char c) {
+        return switch (c) {
+            case 'O' -> '0';
+            case 'I', 'L' -> '1';
+            case 'S' -> '5';
+            case 'B' -> '8';
+            case 'Z' -> '2';
+            case 'G' -> '6';
+            default -> c;
+        };
+    }
+
+    /** A reference number reduced to what a comparison may rely on: upper case, ASCII alphanumerics
+     *  only, OCR confusables folded. Returns "" for null, blank and punctuation-only input — callers
+     *  read "" as "no usable reference" and must not split on it.
+     *
+     *  <p>Note what this does NOT do: it does not strip a label prefix. "Service-Nr." survives as
+     *  "5ERV1CENR" because letters are alphanumeric. Prefix handling belongs to
+     *  {@link #clearlyDifferent}'s containment clause, not here — stripping it would need the
+     *  letter/digit boundary that folding confusables destroys. */
+    static String normalizeReference(String s) {
+        if (s == null) return "";
+        String upper = s.toUpperCase(Locale.ROOT);
+        StringBuilder out = new StringBuilder(upper.length());
+        for (int i = 0; i < upper.length(); i++) {
+            char c = upper.charAt(i);
+            if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) out.append(foldConfusable(c));
+        }
+        return out.toString();
+    }
+
+    /** The digits of a reference, in order, taken from the RAW string.
+     *
+     *  <p>Raw on purpose: {@link #foldConfusable} maps letters onto digits, so digits pulled from a
+     *  normalized reference would include letters of the label prefix ("Service-Nr." contributes
+     *  5, 1 and so on) and the comparison would be against noise. */
+    private static String digitsOf(String s) {
+        if (s == null) return "";
+        StringBuilder out = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c >= '0' && c <= '9') out.append(c);
+        }
+        return out.toString();
+    }
+
+    /** Shortest normalized reference this rule will act on at all. Below it a reference is treated as
+     *  absent: it is not trusted as a substring ("471" occurs inside plenty of unrelated numbers),
+     *  and it is not trusted for a distance comparison either, because the threshold degenerates to 1
+     *  and two differing characters would split two letters apart. */
+    private static final int CONTAINMENT_MIN_LENGTH = 4;
+
+    /** Edit distance, two-row dynamic programming. No dependency and no recursion: reference numbers
+     *  are short, and MailingNormalizer must not throw — a StackOverflowError here would degrade the
+     *  whole batch. */
+    static int levenshtein(String a, String b) {
+        if (a.equals(b)) return 0;
+        int[] prev = new int[b.length() + 1];
+        int[] cur = new int[b.length() + 1];
+        for (int j = 0; j <= b.length(); j++) prev[j] = j;
+        for (int i = 1; i <= a.length(); i++) {
+            cur[0] = i;
+            for (int j = 1; j <= b.length(); j++) {
+                int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+                cur[j] = Math.min(Math.min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+            }
+            int[] swap = prev;
+            prev = cur;
+            cur = swap;
+        }
+        return prev[b.length()];
+    }
+
+    /** Whether two reference numbers are different enough to keep two mailings apart.
+     *
+     *  <p>Deliberately asymmetric in its bias: it answers false whenever it cannot be sure. A wrongly
+     *  merged document is visible when read and repairable; a wrongly split letter scatters its pages
+     *  and tends to go unnoticed. Measured 2026-08-08: forcing the merge cost 8 of 247 documents from
+     *  one insurer that sends several letters on one day.
+     *
+     *  <p>Three gates, in order. A missing reference never splits, and neither does one shorter than
+     *  {@link #CONTAINMENT_MIN_LENGTH} characters after normalization: one or two surviving
+     *  characters are OCR debris rather than an Aktenzeichen, and at that length the threshold
+     *  degenerates to 1, so two differing characters would be enough to tear a letter apart.
+     *  Containment covers the same reference written with and without its label ("Service-Nr.
+     *  1000000.1"), which the edit distance alone would call different because the prefix survives
+     *  normalization. Only then does distance decide, against a threshold that scales with length so
+     *  a long number tolerates more OCR noise than a short one.
+     *
+     *  <p>The digit guard exists because `reference` is not a stable identifier: the extractor re-words
+     *  it per page, so the same number arrives as "Konto-Nr. 6100000" on one page and
+     *  "Kontonummer 6100000" on the next. Two different label words dominate the edit distance and
+     *  would split a letter in two. Comparing the digit runs alone survives the re-wording.
+     *
+     *  <p>Known limitation, accepted in the spec: a long label prefix inflates both strings and
+     *  therefore the threshold, which can suppress a real split. That failure is a missed split — the
+     *  safe direction. */
+    static boolean clearlyDifferent(String a, String b) {
+        String na = normalizeReference(a);
+        String nb = normalizeReference(b);
+        if (na.length() < CONTAINMENT_MIN_LENGTH || nb.length() < CONTAINMENT_MIN_LENGTH) {
+            return false;
+        }
+        if (na.length() >= CONTAINMENT_MIN_LENGTH && nb.contains(na)) return false;
+        if (nb.length() >= CONTAINMENT_MIN_LENGTH && na.contains(nb)) return false;
+        String da = digitsOf(a);
+        String db = digitsOf(b);
+        if (da.length() >= CONTAINMENT_MIN_LENGTH && db.contains(da)) return false;
+        if (db.length() >= CONTAINMENT_MIN_LENGTH && da.contains(db)) return false;
+        int threshold = Math.max(1, (int) Math.ceil(0.25 * Math.max(na.length(), nb.length())));
+        return levenshtein(na, nb) > threshold;
     }
 
     /** German month names as the OCR actually delivers them: with the umlaut, with the umlaut
@@ -220,15 +354,45 @@ public final class MailingNormalizer {
         }
     }
 
-    /** Collapse groups sharing an anchor key into the first one that carried it. */
+    /** A mailing under an anchor key, plus the reference it anchored on WHEN IT ARRIVED.
+     *  Captured rather than recomputed: absorb() inserts pages into the middle of a group, which
+     *  can move anchorPage() onto a different page and change the reference — comparing against a
+     *  reference the group acquired by absorption caused a demonstrated over-split. */
+    private record Candidate(String reference, DocGroup group) {}
+
+    /** Collapse groups sharing an anchor key into the first compatible one that carried it.
+     *
+     *  <p>One key can now hold SEVERAL mailings: one sender may send several letters on one day, and
+     *  their reference numbers are what tells them apart. An incoming group joins the first group
+     *  under its key whose anchor reference is not {@link #clearlyDifferent} from its own, and starts
+     *  its own mailing when none is. With no references anywhere every list holds at most one group,
+     *  which is exactly the behaviour this method had before.
+     *
+     *  <p>{@link #clearlyDifferent} is a similarity test, not an equivalence relation, so non-
+     *  transitive triples exist (A close to B, B close to C, A far from C). First-match-wins over
+     *  such a predicate makes the resulting partition depend on the arrival order of the groups —
+     *  the same three references can end up as one document or two depending on which one is seen
+     *  first. That bias runs towards merging, which is the safe direction for this feature. */
     private static List<DocGroup> merge(List<DocGroup> groups, Map<Integer, PageMetadata> meta) {
         List<DocGroup> out = new ArrayList<>();
-        Map<AnchorKey, DocGroup> byKey = new HashMap<>();
+        Map<AnchorKey, List<Candidate>> byKey = new HashMap<>();
         for (DocGroup g : groups) {
             AnchorKey key = anchorKey(g, meta);
-            DocGroup target = key == null ? null : byKey.get(key);
+            if (key == null) {
+                out.add(g);
+                continue;
+            }
+            List<Candidate> candidates = byKey.computeIfAbsent(key, k -> new ArrayList<>());
+            String reference = anchorReference(g, meta);
+            DocGroup target = null;
+            for (Candidate candidate : candidates) {
+                if (!clearlyDifferent(candidate.reference(), reference)) {
+                    target = candidate.group();
+                    break;
+                }
+            }
             if (target == null) {
-                if (key != null) byKey.put(key, g);
+                candidates.add(new Candidate(reference, g));
                 out.add(g);
             } else {
                 absorb(target, g, meta);

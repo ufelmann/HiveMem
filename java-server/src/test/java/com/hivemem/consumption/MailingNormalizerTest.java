@@ -512,4 +512,249 @@ class MailingNormalizerTest {
         assertThat(out).hasSize(1);
         assertThat(out.get(0).pages).containsExactly(1, 2);
     }
+
+    @Test
+    void normalizesReferencesForComparison() {
+        // Null and blank collapse to the empty string: callers treat "" as "no reference".
+        assertThat(MailingNormalizer.normalizeReference(null)).isEmpty();
+        assertThat(MailingNormalizer.normalizeReference("")).isEmpty();
+        assertThat(MailingNormalizer.normalizeReference("  ")).isEmpty();
+        assertThat(MailingNormalizer.normalizeReference("-/. ")).isEmpty();
+
+        // Separators are dropped, letters upper-cased.
+        assertThat(MailingNormalizer.normalizeReference("12/345/67890")).isEqualTo("1234567890");
+        assertThat(MailingNormalizer.normalizeReference("ab-12 34")).isEqualTo("A81234");
+
+        // Each OCR confusable maps onto its digit.
+        assertThat(MailingNormalizer.normalizeReference("OILSBZG")).isEqualTo("0115826");
+
+        // A label prefix is NOT stripped — letters are alphanumeric. The containment clause in
+        // clearlyDifferent is what handles prefixes; see the spec, section 4.1.
+        assertThat(MailingNormalizer.normalizeReference("Service-Nr. 1000000.1"))
+                .isEqualTo("5ERV1CENR10000001");
+    }
+
+    @Test
+    void measuresEditDistance() {
+        assertThat(MailingNormalizer.levenshtein("", "")).isZero();
+        assertThat(MailingNormalizer.levenshtein("abc", "abc")).isZero();
+        assertThat(MailingNormalizer.levenshtein("", "abc")).isEqualTo(3);
+        assertThat(MailingNormalizer.levenshtein("abc", "")).isEqualTo(3);
+        assertThat(MailingNormalizer.levenshtein("1234567890", "123456780")).isEqualTo(1);
+        assertThat(MailingNormalizer.levenshtein("10000001", "22222222")).isEqualTo(8);
+    }
+
+    @Test
+    void treatsOnlyUnmistakablyDifferentReferencesAsDifferent() {
+        // No usable reference on either side -> never a reason to split.
+        assertThat(MailingNormalizer.clearlyDifferent(null, "1000000.1")).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent("1000000.1", null)).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent("", "1000000.1")).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent("-/.", "1000000.1")).isFalse();
+
+        // The tax batch: the trailing zero read as the letter O. Same number.
+        assertThat(MailingNormalizer.clearlyDifferent("12/345/67890", "12/345/6789O")).isFalse();
+
+        // A dropped digit is OCR noise, not a different number.
+        assertThat(MailingNormalizer.clearlyDifferent("12/345/67890", "12/345/6780")).isFalse();
+
+        // Short references need more than one differing character.
+        assertThat(MailingNormalizer.clearlyDifferent("4711", "4712")).isFalse();
+
+        // Containment: the same reference with and without its label prefix.
+        assertThat(MailingNormalizer.clearlyDifferent("1000000.1", "Service-Nr. 1000000.1"))
+                .isFalse();
+
+        // Below the floor a reference is unusable evidence, so it can never split - superseding the
+        // pre-amendment behaviour where a 3-character reference fell through to the distance gate.
+        assertThat(MailingNormalizer.clearlyDifferent("471", "9999471999")).isFalse();
+
+        // Two genuinely different reference numbers -> split, prefixed or not.
+        assertThat(MailingNormalizer.clearlyDifferent("1000000.1", "2222222.2")).isTrue();
+        assertThat(MailingNormalizer.clearlyDifferent(
+                "Service-Nr. 1000000.1", "Service-Nr. 2222222.2")).isTrue();
+    }
+
+    @Test
+    void treatsAReferenceBelowTheContainmentFloorAsUnusable() {
+        // One or two characters surviving normalization is OCR debris, not an Aktenzeichen.
+        // Splitting two letters on that evidence is the failure direction the design rules out.
+        assertThat(MailingNormalizer.clearlyDifferent("1", "22")).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent("12", "34")).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent("12", "3456")).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent("123", "9999888877")).isFalse();
+
+        // The floor applies to each side independently: a usable reference opposite an unusable one
+        // still cannot split.
+        assertThat(MailingNormalizer.clearlyDifferent("1000000.1", "12")).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent("12", "1000000.1")).isFalse();
+
+        // Exactly at the floor the rule still works: four characters are comparable.
+        assertThat(MailingNormalizer.clearlyDifferent("1111", "2222")).isTrue();
+        // ...and remains tolerant of one differing character at that length.
+        assertThat(MailingNormalizer.clearlyDifferent("4711", "4712")).isFalse();
+    }
+
+    @Test
+    void anchorReferenceComesFromTheAnchorPageNotJustAnyPage() {
+        // Page 1 cannot anchor (enclosure print date), page 2 can. The reference must come from
+        // page 2 — an enclosure routinely carries a foreign number (a form ID, a publisher's
+        // number), and letting that decide would split a letter from its own enclosures.
+        DocGroup g = group("a", 0.9, 1, 2, 3);
+        Map<Integer, PageMetadata> meta = MailingNormalizer.byPage(List.of(
+                new PageMetadata(1, "Kasse", "Stand 01.01.2025", null, "terms",
+                        "FORM-999", "enclosure", false, false),
+                new PageMetadata(2, "Kasse", "05.09.2025", null, "letter",
+                        "1000000.1", "the letter", false, false),
+                new PageMetadata(3, "Kasse", "05.09.2025", null, "letter",
+                        "2222222.2", "later page", false, false)));
+
+        assertThat(MailingNormalizer.anchorReference(g, meta)).isEqualTo("1000000.1");
+    }
+
+    @Test
+    void anchorReferenceIsNullWhenTheGroupHasNoAnchor() {
+        DocGroup g = group("a", 0.9, 1);
+        Map<Integer, PageMetadata> meta = MailingNormalizer.byPage(List.of(
+                new PageMetadata(1, null, null, null, "letter", "1000000.1", "no anchor",
+                        false, false)));
+
+        assertThat(MailingNormalizer.anchorReference(g, meta)).isNull();
+    }
+
+    @Test
+    void keepsSameSenderAndDateApartWhenReferencesAreClearlyDifferent() {
+        // The insurer case: several letters sent on one day, distinguished only by their
+        // reference numbers. Before this rule they were forced into one document.
+        DocGroup a = group("a", 0.9, 1);
+        DocGroup b = group("b", 0.8, 2);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                new PageMetadata(1, "Kasse", "20.02.2024", null, "letter",
+                        "1000000.1", "first letter", false, false),
+                new PageMetadata(2, "Kasse", "20.02.2024", null, "letter",
+                        "2222222.2", "second letter", false, false)));
+
+        assertThat(out).hasSize(2);
+        assertThat(out.get(0).pages).containsExactly(1);
+        assertThat(out.get(1).pages).containsExactly(2);
+    }
+
+    @Test
+    void stillMergesWhenOneSideHasNoReference() {
+        DocGroup a = group("a", 0.9, 1);
+        DocGroup b = group("b", 0.8, 2);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                new PageMetadata(1, "Kasse", "20.02.2024", null, "letter",
+                        "1000000.1", "the letter", false, false),
+                new PageMetadata(2, "Kasse", "20.02.2024", null, "letter",
+                        null, "continuation", false, false)));
+
+        assertThat(out).hasSize(1);
+        assertThat(out.get(0).pages).containsExactly(1, 2);
+    }
+
+    @Test
+    void stillMergesWhenTheReferenceOnlyCarriesALabelPrefix() {
+        DocGroup a = group("a", 0.9, 1);
+        DocGroup b = group("b", 0.8, 2);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b), List.of(
+                new PageMetadata(1, "Kasse", "20.02.2024", null, "letter",
+                        "1000000.1", "the letter", false, false),
+                new PageMetadata(2, "Kasse", "20.02.2024", null, "letter",
+                        "Service-Nr. 1000000.1", "same letter", false, false)));
+
+        assertThat(out).hasSize(1);
+        assertThat(out.get(0).pages).containsExactly(1, 2);
+    }
+
+    @Test
+    void groupsEachIncomingGroupWithItsOwnReference() {
+        // Three groups, two of them the same mailing. The third must not be swallowed by the
+        // first just because it shares sender and date.
+        DocGroup a = group("a", 0.9, 1);
+        DocGroup b = group("b", 0.8, 2);
+        DocGroup c = group("c", 0.7, 3);
+        List<DocGroup> out = new MailingNormalizer().normalize(List.of(a, b, c), List.of(
+                new PageMetadata(1, "Kasse", "20.02.2024", null, "letter",
+                        "1000000.1", "letter one", false, false),
+                new PageMetadata(2, "Kasse", "20.02.2024", null, "letter",
+                        "2222222.2", "letter two", false, false),
+                new PageMetadata(3, "Kasse", "20.02.2024", null, "letter",
+                        "1000000.1", "letter one, continued", false, false)));
+
+        assertThat(out).hasSize(2);
+        assertThat(out.get(0).pages).containsExactly(1, 3);
+        assertThat(out.get(1).pages).containsExactly(2);
+        assertThat(out.get(0).minConfidence).isEqualTo(0.7);   // minimum across the absorbed pair
+    }
+
+    /** {@code clearlyDifferent} is a similarity test, not an equivalence relation: this triple has
+     *  d(A,B)=2, d(B,C)=2, both at the merge threshold, but d(A,C)=4, over it - so A and C are
+     *  clearly different while neither is clearly different from B. First-match-wins over such a
+     *  predicate makes the partition depend on arrival order.
+     *
+     *  <p>The two outcomes below were MEASURED by running all six permutations of A, B, C through
+     *  {@code normalize} after the Candidate-capture fix (see {@code merge}'s javadoc), not derived
+     *  on paper: order B,A,C merges everything into one document, order A,B,C splits C off into its
+     *  own document. Both outcomes are legitimate under the "merge when unsure" bias - this test
+     *  exists only so a future refactor cannot silently change which orders merge and which split. */
+    @Test
+    void tripleWithNonTransitiveDistancesSplitsOrMergesDependingOnArrivalOrder() {
+        String refA = "10000000";
+        String refB = "10000022";
+        String refC = "10002222";
+
+        // Measured: B, A, C -> one document (all three merge).
+        DocGroup b1 = group("b", 0.9, 2);
+        DocGroup a1 = group("a", 0.8, 1);
+        DocGroup c1 = group("c", 0.7, 3);
+        List<DocGroup> merged = new MailingNormalizer().normalize(List.of(b1, a1, c1), List.of(
+                new PageMetadata(2, "Kasse", "20.02.2024", null, "letter", refB, "letter b",
+                        false, false),
+                new PageMetadata(1, "Kasse", "20.02.2024", null, "letter", refA, "letter a",
+                        false, false),
+                new PageMetadata(3, "Kasse", "20.02.2024", null, "letter", refC, "letter c",
+                        false, false)));
+        assertThat(merged).hasSize(1);
+        assertThat(merged.get(0).pages).containsExactlyInAnyOrder(1, 2, 3);
+
+        // Measured: A, B, C -> two documents ({A, B} together, C split off).
+        DocGroup a2 = group("a", 0.9, 1);
+        DocGroup b2 = group("b", 0.8, 2);
+        DocGroup c2 = group("c", 0.7, 3);
+        List<DocGroup> split = new MailingNormalizer().normalize(List.of(a2, b2, c2), List.of(
+                new PageMetadata(1, "Kasse", "20.02.2024", null, "letter", refA, "letter a",
+                        false, false),
+                new PageMetadata(2, "Kasse", "20.02.2024", null, "letter", refB, "letter b",
+                        false, false),
+                new PageMetadata(3, "Kasse", "20.02.2024", null, "letter", refC, "letter c",
+                        false, false)));
+        assertThat(split).hasSize(2);
+        assertThat(split.get(0).pages).containsExactlyInAnyOrder(1, 2);
+        assertThat(split.get(1).pages).containsExactly(3);
+    }
+
+    @Test
+    void mergesWhenTheDigitsMatchThroughDifferentLabelWords() {
+        // The reference field is free-form prose, not a stable identifier: the extractor re-words it
+        // per page. When BOTH sides carry a label and the labels differ, the prefixes dominate the
+        // edit distance and the rule used to split although the number was identical. Shapes below
+        // are synthetic but mirror pairs actually observed in one production corpus.
+        assertThat(MailingNormalizer.clearlyDifferent(
+                "T100000 / Personalnummer 1000",
+                "T100000 (employee ID), 1000 (personnel number)")).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent(
+                "Vertrags-Nr. 1000000.1", "Kunden-Nr. 1000000.1")).isFalse();
+        assertThat(MailingNormalizer.clearlyDifferent(
+                "Konto-Nr. 6100000", "Kontonummer 6100000")).isFalse();
+
+        // The guard needs at least four digits, so a stray digit cannot glue two strangers together.
+        assertThat(MailingNormalizer.clearlyDifferent(
+                "Vorgang 12", "Sammelmappe 9912345678")).isTrue();
+
+        // It must not disarm the feature: genuinely different numbers still split, labelled or not.
+        assertThat(MailingNormalizer.clearlyDifferent("1000000.1", "2222222.2")).isTrue();
+        assertThat(MailingNormalizer.clearlyDifferent(
+                "Service-Nr. 1000000.1", "Service-Nr. 2222222.2")).isTrue();
+    }
 }
