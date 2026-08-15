@@ -101,3 +101,25 @@ jobs:
           path: knowledge-ui/playwright-report/
           retention-days: 7
           if-no-files-found: ignore
+
+  # Builds the shipped image on pull requests without publishing it. docker.yml
+  # only runs on push to main and on tags, so without this job a change to the
+  # Dockerfile would first be built *after* it was merged.
+  image:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
