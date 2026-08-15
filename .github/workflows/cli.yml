@@ -21,7 +21,7 @@ jobs:
         working-directory: cli
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           # Taken from go.mod so the two can never drift: go.mod requires
           # 1.25.0, which a pinned 1.23 toolchain cannot build at all.
@@ -101,7 +101,7 @@ jobs:
         working-directory: cli
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           # Taken from go.mod so the two can never drift: go.mod requires
           # 1.25.0, which a pinned 1.23 toolchain cannot build at all.
