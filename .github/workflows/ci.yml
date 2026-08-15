@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel a superseded run of the same ref instead of letting it race the new
+# one to completion. `mvn verify`, Playwright and the image build are all
+# expensive, so a rebase or follow-up push would otherwise burn a full extra
+# run alongside the new one. Gated to pull_request only so a push to main is
+# never cancelled mid-run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -134,5 +143,14 @@ jobs:
           context: .
           file: Dockerfile
           push: false
+          # cache-from only: GHA cache reads flow down (a PR branch reads the
+          # cache written on main), but writes are scoped to the writing ref.
+          # An export from this PR job would be unusable by docker.yml on
+          # main and by every other PR, yet would still consume the single
+          # repo-wide 10 GB LRU quota. mode=max exports every layer of every
+          # stage (node UI build, full Maven tree, JDK base, apt/tesseract/
+          # postgresql-client runtime layers) — multiple GB per PR ref, and
+          # enough PR refs evict main's entry, sending the publish build on
+          # the critical path to prod cold. This job only needs to be
+          # cache-warm, which cache-from alone provides.
           cache-from: type=gha
-          cache-to: type=gha,mode=max
