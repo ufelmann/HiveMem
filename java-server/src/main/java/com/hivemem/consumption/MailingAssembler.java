@@ -130,6 +130,12 @@ public class MailingAssembler {
                                                     + "printed page label, then enclosures; blank "
                                                     + "pages last"))))));
 
+    /** Batches at or below this size are left alone: a one-group answer is often simply right. */
+    static final int DEGENERATE_MIN_PAGES = 20;
+    /** Share of the batch in ONE group that marks a grouping as collapsed. Observed damage on
+     *  2026-08-15 was 39 of 41 pages (95%) against five correct documents. */
+    static final double DEGENERATE_SHARE = 0.90;
+
     private final CompleteClient client;
     private final int draws;
     private final MailingNormalizer normalizer = new MailingNormalizer();
@@ -186,6 +192,14 @@ public class MailingAssembler {
         List<DocGroup> groups;
         if (drawn.size() == 1) {
             groups = drawn.get(0);
+            // No vote ran, so nothing can overrule this draw. A collapsed grouping here is how a
+            // 41-page scan overwrote five correct documents on 2026-08-15 — refuse it and let the
+            // orchestrator degrade the batch to pending instead.
+            if (isDegenerate(groups, pages.size())) {
+                throw new IllegalStateException(
+                        "Assembly rejected: single unvoted draw put " + largestGroup(groups)
+                        + " of " + pages.size() + " pages in one mailing");
+            }
         } else {
             List<Integer> pageNumbers = new ArrayList<>();
             for (PageMetadataExtractor.PageMetadata m : pages) pageNumbers.add(m.page());
@@ -236,6 +250,23 @@ public class MailingAssembler {
             groups.add(g);
         }
         return groups;
+    }
+
+    /** True when a single group swallows nearly the whole batch. Only consulted for an UNVOTED
+     *  draw — a long contract legitimately fills its batch, and rejecting those unconditionally
+     *  would be a systematic false positive rather than a rare one. */
+    static boolean isDegenerate(List<DocGroup> groups, int pageCount) {
+        if (pageCount <= DEGENERATE_MIN_PAGES) return false;
+        for (DocGroup g : groups) {
+            if (g.pages.size() >= DEGENERATE_SHARE * pageCount) return true;
+        }
+        return false;
+    }
+
+    private static int largestGroup(List<DocGroup> groups) {
+        int max = 0;
+        for (DocGroup g : groups) max = Math.max(max, g.pages.size());
+        return max;
     }
 
     /** Merge N independently drawn partitions of the same page set into one, by pairwise majority.

@@ -408,4 +408,64 @@ class MailingAssemblerTest {
                 "Two mailings with the same sender AND the same letter date are allowed ONLY when they");
         assertThat(MailingAssembler.PROMPT).contains("Every page exactly once across all mailings.");
     }
+
+    private static List<PageMetadataExtractor.PageMetadata> pages(int n) {
+        List<PageMetadataExtractor.PageMetadata> out = new java.util.ArrayList<>();
+        for (int i = 1; i <= n; i++) out.add(meta(i, "SYNTHETIC INSURER", "01.01.2000"));
+        return out;
+    }
+
+    private static String oneGroupJson(int from, int to) {
+        StringBuilder p = new StringBuilder();
+        for (int i = from; i <= to; i++) p.append(i).append(i == to ? "" : ",");
+        return "[{\"mailing\":\"all\",\"description\":\"d\",\"confidence\":0.9,\"pages\":["
+                + p + "]}]";
+    }
+
+    @Test
+    void rejectsADegenerateSingleDraw() {
+        CompleteClient cc = mock(CompleteClient.class);
+        when(cc.completeWithTool(anyString(), anyString(), anyString(), anyString(), anyMap()))
+                .thenReturn(null);
+        when(cc.complete(anyString(), anyString())).thenReturn(oneGroupJson(1, 39));
+
+        MailingAssembler a = new MailingAssembler(cc, 1);
+        assertThrows(IllegalStateException.class, () -> a.assemble("documents", pages(41)));
+    }
+
+    @Test
+    void acceptsAOneGroupDrawBelowThePageFloor() {
+        CompleteClient cc = mock(CompleteClient.class);
+        when(cc.completeWithTool(anyString(), anyString(), anyString(), anyString(), anyMap()))
+                .thenReturn(null);
+        when(cc.complete(anyString(), anyString())).thenReturn(oneGroupJson(1, 12));
+
+        List<DocGroup> groups = new MailingAssembler(cc, 1)
+                .assemble("documents", pages(12));
+        assertEquals(1, groups.size());
+    }
+
+    @Test
+    void doesNotGuardTheVotedPath() {
+        CompleteClient cc = mock(CompleteClient.class);
+        when(cc.completeWithTool(anyString(), anyString(), anyString(), anyString(), anyMap()))
+                .thenReturn(null);
+        when(cc.complete(anyString(), anyString())).thenReturn(oneGroupJson(1, 41));
+
+        // Three agreeing draws: a genuine 41-page single document must survive the vote.
+        List<DocGroup> groups = new MailingAssembler(cc, 3)
+                .assemble("documents", pages(41));
+        assertEquals(1, groups.size());
+    }
+
+    @Test
+    void isDegenerateThresholds() {
+        DocGroup big = new DocGroup("g", "d");
+        for (int i = 1; i <= 39; i++) big.pages.add(i);
+        DocGroup rest = new DocGroup("h", "d");
+        rest.pages.add(40);
+        rest.pages.add(41);
+        assertTrue(MailingAssembler.isDegenerate(List.of(big, rest), 41));   // 39/41 = 95%
+        assertFalse(MailingAssembler.isDegenerate(List.of(big, rest), 20));  // batch too small
+    }
 }

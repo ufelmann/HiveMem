@@ -205,6 +205,22 @@ consumption executor, never throws to the caller):
    (pass 2) are each one vision call per page — three draws cost a small
    fraction more calls than one. Setting `reassembly-draws: 1` restores the
    old single-call behaviour exactly, with no vote.
+   **Degenerate single-draw guard.** When fewer than two draws survive — the
+   unvoted path, whether because `reassembly-draws` is `1` or because enough
+   draws failed that only one remains — `MailingAssembler.isDegenerate` checks
+   the surviving draw before it is accepted: a batch of more than 20 pages
+   where one group holds 90% or more of them is rejected with an
+   `IllegalStateException`, and the batch degrades to `pending` like any other
+   assembly failure. This guard exists because on 2026-08-15 exactly this
+   shape — an unvoted single draw collapsing a 41-page scan into one 39-page
+   mailing — overwrote five correctly separated documents. The guard
+   deliberately does **not** apply once two or more draws survive and go
+   through the pairwise-majority vote: long single documents genuinely exist
+   in this corpus (a 20-page loan contract, a 17-page deed each correctly fill
+   their whole batch), and an unconditional rule would reject those every
+   time. Scoped to the unvoted path, a correct long contract only reaches
+   manual review in the rare case where a batch has already lost two of three
+   draws.
    The grouping is requested as the input of a forced `submit_mailings` tool
    call (`CompleteClient.completeWithTool`), not parsed from free text: a
    model that is free to answer in prose spends part of its output budget on
