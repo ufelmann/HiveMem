@@ -78,11 +78,8 @@ public class MailingAssembler {
             Pages:
             %s
 
-            Group ALL pages into mailings. Reply with STRICT JSON only:
-            [{"mailing":"<short id>","description":"<sender + what it is + letter date>",
-              "confidence":<0.0-1.0>,
-              "pages":[<global page numbers in reading order: letter first, then its
-              continuation pages by printed page label, then enclosures; blank pages last>]}]
+            Group ALL pages into mailings and deliver the result by calling the submit_mailings
+            tool. Do not write the answer as text and do not explain your reasoning first.
             Every page exactly once across all mailings.
 
             Additional hard rules:
@@ -100,6 +97,38 @@ public class MailingAssembler {
               state tax administration inside a Finanzamt mailing) belong to the main mailing.
             - Every page must appear exactly once — re-check your output against the page list before
               answering.""";
+
+    static final String TOOL_NAME = "submit_mailings";
+
+    private static final String TOOL_DESCRIPTION =
+            "Deliver the final grouping of pages into mailings. Call this exactly once. "
+            + "Pass the result as this tool's input — do not write it as text.";
+
+    /** Mirrors the shape the text path parsed, so parseDraw's mapping is identical either way. */
+    static final Map<String, Object> SCHEMA = Map.of(
+            "type", "object",
+            "required", List.of("mailings"),
+            "properties", Map.of(
+                    "mailings", Map.of(
+                            "type", "array",
+                            "items", Map.of(
+                                    "type", "object",
+                                    "required", List.of("mailing", "pages"),
+                                    "properties", Map.of(
+                                            "mailing", Map.of("type", "string",
+                                                    "description", "short id"),
+                                            "description", Map.of("type", "string",
+                                                    "description",
+                                                    "sender + what it is + letter date"),
+                                            "confidence", Map.of("type", "number",
+                                                    "minimum", 0, "maximum", 1),
+                                            "pages", Map.of("type", "array",
+                                                    "items", Map.of("type", "integer"),
+                                                    "description",
+                                                    "global page numbers in reading order: letter "
+                                                    + "first, then its continuation pages by "
+                                                    + "printed page label, then enclosures; blank "
+                                                    + "pages last"))))));
 
     private final CompleteClient client;
     private final int draws;
@@ -172,12 +201,22 @@ public class MailingAssembler {
         return normalizer.normalize(groups, pages);
     }
 
-    /** One grouping draw, with the same two attempts the single-draw path always had. */
+    /** One grouping draw. Prefers the forced tool call; falls back to parsing text so a provider
+     *  that returns no tool_use block degrades to the previous behaviour instead of failing the
+     *  batch. Keeps the same two attempts the single-draw path always had. */
     private List<DocGroup> parseDraw(String realm, String prompt, int draw) {
         JsonNode arr = null;
         RuntimeException lastException = null;
         for (int attempt = 1; attempt <= 2; attempt++) {
             try {
+                JsonNode toolInput =
+                        client.completeWithTool(realm, prompt, TOOL_NAME, TOOL_DESCRIPTION, SCHEMA);
+                if (toolInput != null && toolInput.path("mailings").isArray()) {
+                    arr = toolInput.path("mailings");
+                    break;
+                }
+                log.info("Assembly draw {} attempt {}/2: no tool_use payload, parsing text",
+                        draw, attempt);
                 arr = LlmJson.parseArray(client.complete(realm, prompt));
                 break;
             } catch (RuntimeException e) {

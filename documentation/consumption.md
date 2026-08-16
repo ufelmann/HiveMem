@@ -205,6 +205,17 @@ consumption executor, never throws to the caller):
    (pass 2) are each one vision call per page — three draws cost a small
    fraction more calls than one. Setting `reassembly-draws: 1` restores the
    old single-call behaviour exactly, with no vote.
+   The grouping is requested as the input of a forced `submit_mailings` tool
+   call (`CompleteClient.completeWithTool`), not parsed from free text: a
+   model that is free to answer in prose spends part of its output budget on
+   an analysis before the JSON, which on large batches ran the response
+   budget or the clock out before the JSON was ever reached — measured at
+   8 % of draws. Text parsing (`CompleteClient.complete` +
+   `LlmJson.parseArray`) remains as a fallback for a provider response that
+   carries no matching `tool_use` block, or whose `mailings` field is not an
+   array — the tool call is announced but not enforced end-to-end, so
+   `MailingAssembler.parseDraw` degrades to text parsing instead of failing
+   the draw.
 4. **Normalization, deterministic.** `MailingAssembler.assemble` runs pass 3's
    grouping through `MailingNormalizer` before returning it — this is plain Java,
    no LLM call, and enforces what the prompt can only ask for:

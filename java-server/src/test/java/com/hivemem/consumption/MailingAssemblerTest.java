@@ -356,4 +356,56 @@ class MailingAssemblerTest {
         // The enclosure rule must survive: a form ID is not a reference for this purpose.
         assertThat(MailingAssembler.PROMPT).contains("An enclosure ALWAYS joins the mailing");
     }
+
+    @Test
+    void prefersTheToolInputOverText() throws Exception {
+        CompleteClient cc = mock(CompleteClient.class);
+        when(cc.completeWithTool(eq("documents"), anyString(), eq("submit_mailings"),
+                anyString(), anyMap()))
+                .thenReturn(new tools.jackson.databind.ObjectMapper().readTree("""
+                        {"mailings":[
+                          {"mailing":"a","description":"SYNTHETIC INSURER letter 01.01.2000",
+                           "confidence":0.9,"pages":[1,2]},
+                          {"mailing":"b","description":"SYNTHETIC INSURER letter 02.02.2001",
+                           "confidence":0.8,"pages":[3]}]}"""));
+
+        List<DocGroup> groups = new MailingAssembler(cc)
+                .assemble("documents", List.of(meta(1, "SYNTHETIC INSURER", "01.01.2000"),
+                        meta(2, "SYNTHETIC INSURER", "01.01.2000"),
+                        meta(3, "SYNTHETIC INSURER", "02.02.2001")));
+
+        assertEquals(2, groups.size());
+        assertEquals("a", groups.get(0).id);
+        assertEquals(List.of(1, 2), groups.get(0).pages);
+        assertEquals(List.of(3), groups.get(1).pages);
+        verify(cc, never()).complete(anyString(), anyString());
+    }
+
+    @Test
+    void sendsTheToolSchemaAndFallsBackToTextWhenNoToolInput() {
+        CompleteClient cc = mock(CompleteClient.class);
+        when(cc.completeWithTool(anyString(), anyString(), anyString(), anyString(), anyMap()))
+                .thenReturn(null);
+        when(cc.complete(anyString(), anyString())).thenReturn(
+                "[{\"mailing\":\"m\",\"description\":\"d\",\"confidence\":1.0,\"pages\":[1]}]");
+
+        List<DocGroup> groups = new MailingAssembler(cc)
+                .assemble("documents", List.of(meta(1, "SYNTHETIC INSURER", "01.01.2000")));
+
+        assertEquals(1, groups.size());
+        assertEquals(List.of(1), groups.get(0).pages);
+        verify(cc).complete(anyString(), anyString());
+    }
+
+    @Test
+    void promptTellsTheModelToCallTheToolAndKeepsTheGroupingRules() {
+        assertThat(MailingAssembler.PROMPT).contains("submit_mailings");
+        assertThat(MailingAssembler.PROMPT).doesNotContain("STRICT JSON");
+        // The rules that were measured into their wording must survive verbatim.
+        assertThat(MailingAssembler.PROMPT).contains(
+                "consecutive page pairs form one physical sheet");
+        assertThat(MailingAssembler.PROMPT).contains(
+                "Two mailings with the same sender AND the same letter date are allowed ONLY when they");
+        assertThat(MailingAssembler.PROMPT).contains("Every page exactly once across all mailings.");
+    }
 }
