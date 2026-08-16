@@ -5,11 +5,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.hivemem.write.WriteToolRepository;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 class DocumentDedupRepositoryIT extends ConsumptionITSupport {
 
@@ -582,6 +586,10 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
      * could not be settled onto any live target. This exercises the public path (not the
      * package-private helper with a non-transactional {@code dsl}), which is what
      * {@code DocumentDedupService.discard} actually calls in production.
+     *
+     * <p>Also asserts the WARN log line itself, not just its side effects: a silently reverted
+     * skip-log is exactly the failure mode item 1 (of the round-2 review) exists to prevent, and
+     * without this assertion nothing would catch that regression.
      */
     @Test
     void skipStillWritesTheTunnelAndSoftDeletesTheDuplicate() {
@@ -591,7 +599,22 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
         UUID duplicate = seedCell("policy", VEC_A, "consumption:b", "committed", OffsetDateTime.now());
         seedFact(duplicate, "SYNTHETIC INSURER", "policy_number", "1000000001");
 
-        repo.linkAndSoftDelete(duplicate, deadOriginal, "note", "test");
+        ch.qos.logback.classic.Logger repoLogger =
+                (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(DocumentDedupRepository.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        repoLogger.addAppender(appender);
+        try {
+            repo.linkAndSoftDelete(duplicate, deadOriginal, "note", "test");
+        } finally {
+            repoLogger.detachAppender(appender);
+        }
+
+        assertEquals(1, appender.list.stream()
+                        .filter(e -> e.getLevel() == Level.WARN)
+                        .filter(e -> e.getFormattedMessage().contains(duplicate.toString()))
+                        .count(),
+                "a skip must log exactly one WARN naming the discarded cell, got: " + appender.list);
 
         assertFalse(repo.findTarget(duplicate).isPresent(), "duplicate must still be soft-deleted on a skip");
         assertEquals(1, dsl.fetchOne(

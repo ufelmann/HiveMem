@@ -428,7 +428,11 @@ public class DocumentDedupRepository {
      * {@code OpReplayer} inserts synced cells with whatever {@code parent_id} the peer sent, so two
      * children (one dead, one live) is possible even though the normal revise path only ever
      * produces one. The successor lookup therefore orders so a live, non-rejected child is picked
-     * over a dead or rejected one, rather than taking an arbitrary row.
+     * over a dead or rejected one, rather than taking an arbitrary row. That primary key alone is
+     * not enough to make the pick deterministic, though: with two DEAD children it is still a tie,
+     * and picking the wrong one can walk into a dead-end branch while a live grandchild hangs off
+     * the sibling — so the ordering also breaks ties by {@code created_at DESC, id}, preferring the
+     * newest revision and making the choice reproducible either way.
      */
     private UUID resolveLiveFactTarget(DSLContext tx, UUID originalCellId) {
         if (isLiveInDedupScope(tx, originalCellId)) {
@@ -438,7 +442,8 @@ public class DocumentDedupRepository {
         for (int hop = 0; hop < MAX_SUCCESSOR_HOPS; hop++) {
             Record next = tx.fetchOne(
                     "SELECT id FROM cells WHERE parent_id = ? "
-                    + "ORDER BY (valid_until IS NULL AND status <> 'rejected') DESC LIMIT 1",
+                    + "ORDER BY (valid_until IS NULL AND status <> 'rejected') DESC, "
+                    + "created_at DESC, id LIMIT 1",
                     current);
             if (next == null) {
                 return null;
@@ -464,6 +469,15 @@ public class DocumentDedupRepository {
      * this exact cell between the resolve here and the UPDATE in
      * {@link #reassignOrInvalidateFacts}, landing the facts on a target that is already dead by the
      * time the transaction finishes.
+     *
+     * <p>Residual risk, accepted rather than redesigned: {@link #linkAndSoftDelete} takes its
+     * exclusive {@code UPDATE cells} on the DUPLICATE before this shared lock on the TARGET runs, so
+     * two concurrent discards over an intersecting revision chain (each one's duplicate is the
+     * other's target, or its ancestor) can lock-order against each other and deadlock. Postgres
+     * detects that and aborts one side with a serialization failure; dedup is already best-effort
+     * (see {@code DocumentDedupService}'s try/catch around the whole check), so the aborted side is
+     * simply retried on the next sweep rather than requiring both discards to take their locks in a
+     * fixed global order.
      */
     private boolean isLiveInDedupScope(DSLContext tx, UUID cellId) {
         Record r = tx.fetchOne(
