@@ -570,9 +570,76 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
         DocumentDedupRepository.FactSettlement result =
                 repo.reassignOrInvalidateFacts(dsl, duplicate, deadOriginal);
 
-        assertEquals(DocumentDedupRepository.FactSettlement.SKIPPED, result);
+        assertEquals(DocumentDedupRepository.FactSettlement.Branch.SKIPPED, result.branch());
+        assertEquals(0, result.rowsAffected(), "a skip touches no rows");
         assertTrue(factIsLive(dupFact), "no live target -> the fact must not be touched at all");
         assertEquals(duplicate, factSource(dupFact), "must not be repointed onto a resolved-nothing target");
+    }
+
+    /**
+     * A skip must not silently drop the OTHER two effects of {@code linkAndSoftDelete}: the audit
+     * tunnel and the soft-delete of the duplicate cell still have to happen even when its facts
+     * could not be settled onto any live target. This exercises the public path (not the
+     * package-private helper with a non-transactional {@code dsl}), which is what
+     * {@code DocumentDedupService.discard} actually calls in production.
+     */
+    @Test
+    void skipStillWritesTheTunnelAndSoftDeletesTheDuplicate() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        UUID deadOriginal = seedCell("policy", VEC_A, "consumption:a", "committed", OffsetDateTime.now().minusDays(2));
+        softDelete(deadOriginal);
+        UUID duplicate = seedCell("policy", VEC_A, "consumption:b", "committed", OffsetDateTime.now());
+        seedFact(duplicate, "SYNTHETIC INSURER", "policy_number", "1000000001");
+
+        repo.linkAndSoftDelete(duplicate, deadOriginal, "note", "test");
+
+        assertFalse(repo.findTarget(duplicate).isPresent(), "duplicate must still be soft-deleted on a skip");
+        assertEquals(1, dsl.fetchOne(
+                "SELECT count(*) AS n FROM tunnels WHERE from_cell = ? AND relation = 'duplicate_of'",
+                duplicate).get("n", Long.class).intValue(),
+                "the audit tunnel must still be written on a skip");
+    }
+
+    /**
+     * A live PENDING original must resolve as a fact target, not just a committed one — dedup
+     * itself already treats pending as a valid original (DEDUP_STATUS_FILTER), and a live pending
+     * cell is not the "no live target" case the SKIPPED branch exists for.
+     */
+    @Test
+    void resolvesALivePendingOriginalAsAFactTarget() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        UUID pendingOriginal = seedCell("policy", VEC_A, "consumption:a", "pending", OffsetDateTime.now().minusDays(2));
+        UUID duplicate = seedCell("policy", VEC_A, "consumption:b", "committed", OffsetDateTime.now());
+        UUID dupFact = seedFact(duplicate, "SYNTHETIC INSURER", "policy_number", "1000000001");
+
+        repo.linkAndSoftDelete(duplicate, pendingOriginal, "note", "test");
+
+        assertTrue(factIsLive(dupFact), "a live pending original is a valid fact target");
+        assertEquals(pendingOriginal, factSource(dupFact), "the fact must land on the pending original");
+    }
+
+    /**
+     * The successor walk must follow the chain past a single hop: original -> dead revision ->
+     * live revision. Measured maximum chain depth on production is 1, but the walk itself is not
+     * hardcoded to a single step, so this pins that it actually iterates.
+     */
+    @Test
+    void walksMultipleHopsToReachTheLiveSuccessor() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        UUID deadOriginal = seedCell("policy", VEC_A, "consumption:a", "committed", OffsetDateTime.now().minusDays(4));
+        softDelete(deadOriginal);
+        UUID deadRevision = seedCellWithParent(deadOriginal, "policy", VEC_A, "consumption:c", "committed",
+                OffsetDateTime.now().minusDays(3));
+        softDelete(deadRevision);
+        UUID liveSuccessor = seedCellWithParent(deadRevision, "policy", VEC_A, "consumption:d", "committed",
+                OffsetDateTime.now().minusDays(2));
+        UUID duplicate = seedCell("policy", VEC_A, "consumption:b", "committed", OffsetDateTime.now());
+        UUID dupFact = seedFact(duplicate, "SYNTHETIC INSURER", "policy_number", "1000000001");
+
+        repo.linkAndSoftDelete(duplicate, deadOriginal, "note", "test");
+
+        assertTrue(factIsLive(dupFact), "the fact must survive on the two-hops-away live successor");
+        assertEquals(liveSuccessor, factSource(dupFact));
     }
 
     /**

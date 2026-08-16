@@ -11,10 +11,14 @@ import java.util.UUID;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 import org.jooq.impl.DSL;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class DocumentDedupRepository {
+
+    private static final Logger log = LoggerFactory.getLogger(DocumentDedupRepository.class);
 
     /** Form filter for lexemes usable as a lexical query term: lowercase letters only, long enough
      *  to carry meaning. Excludes numbers, dates and OCR fragments. */
@@ -323,13 +327,28 @@ public class DocumentDedupRepository {
                     + "status = CASE WHEN status = 'pending' THEN 'rejected' ELSE status END "
                     + "WHERE id = ? AND valid_until IS NULL",
                     duplicateCellId);
-            reassignOrInvalidateFacts(tx, duplicateCellId, originalCellId);
+            FactSettlement settlement = reassignOrInvalidateFacts(tx, duplicateCellId, originalCellId);
+            if (settlement.branch() == FactSettlement.Branch.SKIPPED) {
+                // The only place this can be observed on the live path: linkAndSoftDelete is called
+                // directly by DocumentDedupService.discard, which does not itself inspect the
+                // FactSettlement. Without this line a skip is completely silent in production —
+                // exactly the orphan class this method exists to remove, just moved one level down
+                // (an unreachable fact instead of a live one pointing at a dead cell).
+                log.warn("Dedup: no live fact target for discarded cell {} (duplicate_of {} resolved to "
+                        + "no live cell); its facts were left untouched and need manual review",
+                        duplicateCellId, originalCellId);
+            }
         });
     }
 
-    /** How the duplicate's live facts were settled, so a caller (Task 2's backfill) can count and
-     *  log each branch instead of only observing a side effect. */
-    enum FactSettlement { INVALIDATED, REPOINTED, SKIPPED }
+    /**
+     * How the duplicate's live facts were settled, so a caller (Task 2's backfill) can count and
+     * log each branch instead of only observing a side effect. {@code rowsAffected} is the number
+     * of facts the branch's UPDATE actually touched (0 for {@code SKIPPED}, which runs no UPDATE).
+     */
+    record FactSettlement(Branch branch, int rowsAffected) {
+        enum Branch { INVALIDATED, REPOINTED, SKIPPED }
+    }
 
     /** Cap on the {@code parent_id} successor walk in {@link #resolveLiveFactTarget}. Measured
      *  maximum chain depth on production is 1 hop; 10 is ample headroom, not a tuned value. */
@@ -355,29 +374,31 @@ public class DocumentDedupRepository {
      * facts. Of those 22, 16 have a live successor reachable by walking {@code parent_id} forward
      * (a revision supersedes its parent and soft-deletes it), 0 are rejected, and 6 have no live
      * target at all — so the target must be RESOLVED, not assumed to be the original.
-     * {@link #resolveLiveFactTarget} does that: it accepts the original as-is if it is live and
-     * committed, otherwise walks {@code parent_id} forward (capped at {@link #MAX_SUCCESSOR_HOPS}
-     * hops; measured maximum chain depth is 1) looking for a live, committed successor. If none is
-     * found, this method does nothing at all — invalidating or repointing onto a resolved-nothing
-     * target would either destroy the only copy of a fact or manufacture exactly the orphan class
-     * this method exists to remove — and reports {@link FactSettlement#SKIPPED} so the caller can
+     * {@link #resolveLiveFactTarget} does that: it accepts the original as-is if it is live and in
+     * dedup scope ({@code committed} or {@code pending} — the same {@link #DEDUP_STATUS_FILTER}
+     * dedup already treats as a valid original), otherwise walks {@code parent_id} forward (capped
+     * at {@link #MAX_SUCCESSOR_HOPS} hops; measured maximum chain depth is 1) looking for a live
+     * successor in that same scope. If none is found, this method does nothing at all —
+     * invalidating or repointing onto a resolved-nothing target would either destroy the only copy
+     * of a fact or manufacture exactly the orphan class this method exists to remove — and reports
+     * {@link FactSettlement.Branch#SKIPPED} so the caller (see {@link #linkAndSoftDelete}) can
      * surface it for a human to look at instead of silently losing it.
      */
     FactSettlement reassignOrInvalidateFacts(DSLContext tx, UUID duplicateCellId, UUID originalCellId) {
         UUID target = resolveLiveFactTarget(tx, originalCellId);
         if (target == null) {
-            return FactSettlement.SKIPPED;
+            return new FactSettlement(FactSettlement.Branch.SKIPPED, 0);
         }
         boolean targetHasFacts = tx.fetchOne(
                 "SELECT EXISTS (SELECT 1 FROM facts WHERE source_id = ? "
                 + "AND valid_until IS NULL AND status = 'committed') AS e",
                 target).get("e", Boolean.class);
         if (targetHasFacts) {
-            tx.execute(
+            int rows = tx.execute(
                     "UPDATE facts SET valid_until = now() WHERE source_id = ? "
                     + "AND valid_until IS NULL AND status = 'committed'",
                     duplicateCellId);
-            return FactSettlement.INVALIDATED;
+            return new FactSettlement(FactSettlement.Branch.INVALIDATED, rows);
         }
         // subject also needs rewriting: SummarizerService.persistFacts passes cellId.toString() as
         // both subject and source, so 92% of live facts have subject = source_id::text. Moving only
@@ -385,36 +406,45 @@ public class DocumentDedupRepository {
         // discarded one — and active_facts.subject/object is exactly what entity_overview/traverse
         // resolve by (V0010), so a lookup by the surviving document's own id would miss it. A fact
         // whose subject names a real entity (not the cell id) is left untouched.
-        tx.execute(
+        int rows = tx.execute(
                 "UPDATE facts SET source_id = ?, "
                 + "subject = CASE WHEN subject = ?::text THEN ?::text ELSE subject END "
                 + "WHERE source_id = ? AND valid_until IS NULL AND status = 'committed'",
                 target, duplicateCellId, target, duplicateCellId);
-        return FactSettlement.REPOINTED;
+        return new FactSettlement(FactSettlement.Branch.REPOINTED, rows);
     }
 
     /**
-     * The live, committed cell whose facts should receive the duplicate's — or null if none
-     * exists. Returns {@code originalCellId} itself when it is already live and committed;
-     * otherwise walks {@code parent_id} forward (a revision's {@code parent_id} points at the cell
-     * it superseded, so the live successor of a dead cell is found by looking for a row whose
-     * {@code parent_id} equals it) up to {@link #MAX_SUCCESSOR_HOPS} hops, returning the first live
-     * committed cell found along the chain. Bounded rather than recursive so a data bug (an
-     * accidental {@code parent_id} cycle) cannot loop forever.
+     * The live cell (in dedup scope: {@code committed} or {@code pending}, mirroring
+     * {@link #DEDUP_STATUS_FILTER}) whose facts should receive the duplicate's — or null if none
+     * exists. Returns {@code originalCellId} itself when it already qualifies; otherwise walks
+     * {@code parent_id} forward (a revision's {@code parent_id} points at the cell it superseded,
+     * so the live successor of a dead cell is found by looking for a row whose {@code parent_id}
+     * equals it) up to {@link #MAX_SUCCESSOR_HOPS} hops, returning the first qualifying cell found
+     * along the chain. Bounded rather than recursive so a data bug (an accidental {@code parent_id}
+     * cycle) cannot loop forever.
+     *
+     * <p>A cell can in principle have more than one child pointing at it via {@code parent_id} —
+     * {@code OpReplayer} inserts synced cells with whatever {@code parent_id} the peer sent, so two
+     * children (one dead, one live) is possible even though the normal revise path only ever
+     * produces one. The successor lookup therefore orders so a live, non-rejected child is picked
+     * over a dead or rejected one, rather than taking an arbitrary row.
      */
     private UUID resolveLiveFactTarget(DSLContext tx, UUID originalCellId) {
-        if (isLiveCommitted(tx, originalCellId)) {
+        if (isLiveInDedupScope(tx, originalCellId)) {
             return originalCellId;
         }
         UUID current = originalCellId;
         for (int hop = 0; hop < MAX_SUCCESSOR_HOPS; hop++) {
             Record next = tx.fetchOne(
-                    "SELECT id, valid_until, status FROM cells WHERE parent_id = ? LIMIT 1", current);
+                    "SELECT id FROM cells WHERE parent_id = ? "
+                    + "ORDER BY (valid_until IS NULL AND status <> 'rejected') DESC LIMIT 1",
+                    current);
             if (next == null) {
                 return null;
             }
             UUID nextId = next.get("id", UUID.class);
-            if (next.get("valid_until") == null && "committed".equals(next.get("status", String.class))) {
+            if (isLiveInDedupScope(tx, nextId)) {
                 return nextId;
             }
             current = nextId;
@@ -422,9 +452,25 @@ public class DocumentDedupRepository {
         return null;
     }
 
-    private boolean isLiveCommitted(DSLContext tx, UUID cellId) {
-        Record r = tx.fetchOne("SELECT valid_until, status FROM cells WHERE id = ?", cellId);
-        return r != null && r.get("valid_until") == null && "committed".equals(r.get("status", String.class));
+    /**
+     * Whether {@code cellId} is live and in dedup scope ({@code committed} or {@code pending}, the
+     * same statuses {@link #DEDUP_STATUS_FILTER} already treats as a valid dedup original — a live
+     * pending cell must resolve as a fact target too, not just committed ones).
+     *
+     * <p>{@code FOR SHARE}, deliberately: this is the query whose result decides whether a
+     * candidate is the final fact target, so it must hold that row against a concurrent
+     * {@code revise_cell} — which takes {@code SELECT ... FOR UPDATE} on the cell it is
+     * superseding — until this transaction commits. Without the lock, a revise could soft-delete
+     * this exact cell between the resolve here and the UPDATE in
+     * {@link #reassignOrInvalidateFacts}, landing the facts on a target that is already dead by the
+     * time the transaction finishes.
+     */
+    private boolean isLiveInDedupScope(DSLContext tx, UUID cellId) {
+        Record r = tx.fetchOne(
+                "SELECT valid_until, status FROM cells WHERE id = ? FOR SHARE", cellId);
+        return r != null && r.get("valid_until") == null
+                && ("committed".equals(r.get("status", String.class))
+                    || "pending".equals(r.get("status", String.class)));
     }
 
     /** Number of OTHER current cells linked to the attachment (excludes {@code excludingCellId}). */
