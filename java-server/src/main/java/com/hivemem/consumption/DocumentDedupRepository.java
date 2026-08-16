@@ -307,7 +307,9 @@ public class DocumentDedupRepository {
      * <p>Known limit, pre-existing and deliberately out of scope here: this writes raw SQL and
      * bypasses the op log that carries changes to peers (the canonical path is
      * {@code WriteToolService}), so a peer keeps the ghost row. That already holds for
-     * {@code valid_until} and belongs to the sync discussion.
+     * {@code valid_until} and belongs to the sync discussion — and now also holds for facts: an
+     * invalidation normally emits a {@code kg_invalidate} op and a repoint emits none, so a peer
+     * keeps both the live orphan fact and the stale {@code source_id} until that discussion lands.
      */
     public void linkAndSoftDelete(UUID duplicateCellId, UUID originalCellId, String note, String createdBy) {
         dsl.transaction(cfg -> {
@@ -325,6 +327,14 @@ public class DocumentDedupRepository {
         });
     }
 
+    /** How the duplicate's live facts were settled, so a caller (Task 2's backfill) can count and
+     *  log each branch instead of only observing a side effect. */
+    enum FactSettlement { INVALIDATED, REPOINTED, SKIPPED }
+
+    /** Cap on the {@code parent_id} successor walk in {@link #resolveLiveFactTarget}. Measured
+     *  maximum chain depth on production is 1 hop; 10 is ample headroom, not a tuned value. */
+    private static final int MAX_SUCCESSOR_HOPS = 10;
+
     /**
      * Settle the discarded cell's live facts inside the same transaction as the soft-delete.
      *
@@ -336,25 +346,85 @@ public class DocumentDedupRepository {
      * <p>Invalidating them unconditionally would be wrong: measured on production, 23 of 420
      * discarded cells carrying facts had an original with none of its own (originals ingested
      * before extraction existed, or whose extraction failed), and those facts exist nowhere else.
-     * So the branch is on the original: if it already carries the knowledge, drop the duplicate's
-     * copy; if it does not, hand the facts over rather than destroy them.
+     * So the branch is on the RESOLVED target: if it already carries the knowledge, drop the
+     * duplicate's copy; if it does not, hand the facts over rather than destroy them.
+     *
+     * <p>The {@code duplicate_of} original itself is not always a safe repoint target: measured on
+     * production, 214 of 626 live {@code duplicate_of} links (34%) point at an original that is
+     * itself soft-deleted or rejected, and 22 of those discarded originals still carried live
+     * facts. Of those 22, 16 have a live successor reachable by walking {@code parent_id} forward
+     * (a revision supersedes its parent and soft-deletes it), 0 are rejected, and 6 have no live
+     * target at all — so the target must be RESOLVED, not assumed to be the original.
+     * {@link #resolveLiveFactTarget} does that: it accepts the original as-is if it is live and
+     * committed, otherwise walks {@code parent_id} forward (capped at {@link #MAX_SUCCESSOR_HOPS}
+     * hops; measured maximum chain depth is 1) looking for a live, committed successor. If none is
+     * found, this method does nothing at all — invalidating or repointing onto a resolved-nothing
+     * target would either destroy the only copy of a fact or manufacture exactly the orphan class
+     * this method exists to remove — and reports {@link FactSettlement#SKIPPED} so the caller can
+     * surface it for a human to look at instead of silently losing it.
      */
-    private void reassignOrInvalidateFacts(DSLContext tx, UUID duplicateCellId, UUID originalCellId) {
-        boolean originalHasFacts = tx.fetchOne(
+    FactSettlement reassignOrInvalidateFacts(DSLContext tx, UUID duplicateCellId, UUID originalCellId) {
+        UUID target = resolveLiveFactTarget(tx, originalCellId);
+        if (target == null) {
+            return FactSettlement.SKIPPED;
+        }
+        boolean targetHasFacts = tx.fetchOne(
                 "SELECT EXISTS (SELECT 1 FROM facts WHERE source_id = ? "
                 + "AND valid_until IS NULL AND status = 'committed') AS e",
-                originalCellId).get("e", Boolean.class);
-        if (originalHasFacts) {
+                target).get("e", Boolean.class);
+        if (targetHasFacts) {
             tx.execute(
                     "UPDATE facts SET valid_until = now() WHERE source_id = ? "
                     + "AND valid_until IS NULL AND status = 'committed'",
                     duplicateCellId);
-        } else {
-            tx.execute(
-                    "UPDATE facts SET source_id = ? WHERE source_id = ? "
-                    + "AND valid_until IS NULL AND status = 'committed'",
-                    originalCellId, duplicateCellId);
+            return FactSettlement.INVALIDATED;
         }
+        // subject also needs rewriting: SummarizerService.persistFacts passes cellId.toString() as
+        // both subject and source, so 92% of live facts have subject = source_id::text. Moving only
+        // source_id would leave the fact belonging to the surviving cell while still NAMING the
+        // discarded one — and active_facts.subject/object is exactly what entity_overview/traverse
+        // resolve by (V0010), so a lookup by the surviving document's own id would miss it. A fact
+        // whose subject names a real entity (not the cell id) is left untouched.
+        tx.execute(
+                "UPDATE facts SET source_id = ?, "
+                + "subject = CASE WHEN subject = ?::text THEN ?::text ELSE subject END "
+                + "WHERE source_id = ? AND valid_until IS NULL AND status = 'committed'",
+                target, duplicateCellId, target, duplicateCellId);
+        return FactSettlement.REPOINTED;
+    }
+
+    /**
+     * The live, committed cell whose facts should receive the duplicate's — or null if none
+     * exists. Returns {@code originalCellId} itself when it is already live and committed;
+     * otherwise walks {@code parent_id} forward (a revision's {@code parent_id} points at the cell
+     * it superseded, so the live successor of a dead cell is found by looking for a row whose
+     * {@code parent_id} equals it) up to {@link #MAX_SUCCESSOR_HOPS} hops, returning the first live
+     * committed cell found along the chain. Bounded rather than recursive so a data bug (an
+     * accidental {@code parent_id} cycle) cannot loop forever.
+     */
+    private UUID resolveLiveFactTarget(DSLContext tx, UUID originalCellId) {
+        if (isLiveCommitted(tx, originalCellId)) {
+            return originalCellId;
+        }
+        UUID current = originalCellId;
+        for (int hop = 0; hop < MAX_SUCCESSOR_HOPS; hop++) {
+            Record next = tx.fetchOne(
+                    "SELECT id, valid_until, status FROM cells WHERE parent_id = ? LIMIT 1", current);
+            if (next == null) {
+                return null;
+            }
+            UUID nextId = next.get("id", UUID.class);
+            if (next.get("valid_until") == null && "committed".equals(next.get("status", String.class))) {
+                return nextId;
+            }
+            current = nextId;
+        }
+        return null;
+    }
+
+    private boolean isLiveCommitted(DSLContext tx, UUID cellId) {
+        Record r = tx.fetchOne("SELECT valid_until, status FROM cells WHERE id = ?", cellId);
+        return r != null && r.get("valid_until") == null && "committed".equals(r.get("status", String.class));
     }
 
     /** Number of OTHER current cells linked to the attachment (excludes {@code excludingCellId}). */

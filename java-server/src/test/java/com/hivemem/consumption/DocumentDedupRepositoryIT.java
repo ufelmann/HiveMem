@@ -46,6 +46,18 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
         return id;
     }
 
+    /** A revision cell whose {@code parent_id} points at the cell it supersedes — the shape
+     *  {@code resolveLiveFactTarget}'s successor walk follows. */
+    private UUID seedCellWithParent(UUID parentId, String content, String embedding, String source,
+                                    String status, OffsetDateTime createdAt) {
+        UUID id = UUID.randomUUID();
+        dsl.execute(
+                "INSERT INTO cells (id, parent_id, content, embedding, source, status, created_at, valid_from) "
+                + "VALUES (?, ?, ?, ?::vector, ?, ?, ?::timestamptz, now())",
+                id, parentId, content, embedding, source, status, createdAt);
+        return id;
+    }
+
     private void linkAttachment(UUID cellId, UUID attachmentId) {
         dsl.execute(
                 "INSERT INTO cell_attachments (cell_id, attachment_id, extraction_source) "
@@ -69,6 +81,11 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
     private UUID factSource(UUID factId) {
         return dsl.fetchOne("SELECT source_id FROM facts WHERE id = ?", factId)
                 .get("source_id", UUID.class);
+    }
+
+    private String factSubject(UUID factId) {
+        return dsl.fetchOne("SELECT subject FROM facts WHERE id = ?", factId)
+                .get("subject", String.class);
     }
 
     @Test
@@ -514,6 +531,92 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
         assertEquals(1, dsl.fetchOne(
                 "SELECT count(*) AS n FROM tunnels WHERE from_cell = ? AND relation = 'duplicate_of'",
                 duplicate).get("n", Long.class).intValue());
+    }
+
+    /**
+     * The {@code duplicate_of} original is itself dead but a revision superseded it and is still
+     * live: the successor walk over {@code parent_id} must find that successor and land the facts
+     * there, not on the dead original.
+     */
+    @Test
+    void repointsToTheLiveSuccessorWhenTheOriginalIsSoftDeleted() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        UUID deadOriginal = seedCell("policy", VEC_A, "consumption:a", "committed", OffsetDateTime.now().minusDays(3));
+        softDelete(deadOriginal);
+        UUID successor = seedCellWithParent(deadOriginal, "policy", VEC_A, "consumption:c", "committed",
+                OffsetDateTime.now().minusDays(2));
+        UUID duplicate = seedCell("policy", VEC_A, "consumption:b", "committed", OffsetDateTime.now());
+        UUID dupFact = seedFact(duplicate, "SYNTHETIC INSURER", "policy_number", "1000000001");
+
+        repo.linkAndSoftDelete(duplicate, deadOriginal, "note", "test");
+
+        assertTrue(factIsLive(dupFact), "the fact must survive on the live successor");
+        assertEquals(successor, factSource(dupFact), "must land on the successor, not the dead original");
+    }
+
+    /**
+     * The {@code duplicate_of} original is dead and has no live successor to walk to: nothing may
+     * be touched, and the caller must be told the fact was skipped rather than silently destroyed
+     * or wrongly repointed.
+     */
+    @Test
+    void skipsWhenTheOriginalIsSoftDeletedWithNoLiveSuccessor() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        UUID deadOriginal = seedCell("policy", VEC_A, "consumption:a", "committed", OffsetDateTime.now().minusDays(2));
+        softDelete(deadOriginal);
+        UUID duplicate = seedCell("policy", VEC_A, "consumption:b", "committed", OffsetDateTime.now());
+        UUID dupFact = seedFact(duplicate, "SYNTHETIC INSURER", "policy_number", "1000000001");
+
+        DocumentDedupRepository.FactSettlement result =
+                repo.reassignOrInvalidateFacts(dsl, duplicate, deadOriginal);
+
+        assertEquals(DocumentDedupRepository.FactSettlement.SKIPPED, result);
+        assertTrue(factIsLive(dupFact), "no live target -> the fact must not be touched at all");
+        assertEquals(duplicate, factSource(dupFact), "must not be repointed onto a resolved-nothing target");
+    }
+
+    /**
+     * The repoint branch must also rewrite {@code subject} when it equals the discarded cell's own
+     * id (SummarizerService.persistFacts writes {@code subject = cellId.toString()} for most facts),
+     * and must leave a real-entity subject untouched.
+     */
+    @Test
+    void repointRewritesSubjectOnlyWhenItNamesTheDiscardedCell() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        UUID original = seedCell("policy", VEC_A, "consumption:a", "committed", OffsetDateTime.now().minusDays(2));
+        UUID duplicate = seedCell("policy", VEC_A, "consumption:b", "committed", OffsetDateTime.now());
+        UUID selfNamedFact = seedFact(duplicate, duplicate.toString(), "document_type", "policy");
+        UUID entityFact = seedFact(duplicate, "SYNTHETIC INSURER", "policy_number", "1000000001");
+
+        repo.linkAndSoftDelete(duplicate, original, "note", "test");
+
+        assertEquals(original.toString(), factSubject(selfNamedFact),
+                "a subject naming the discarded cell must be rewritten to the surviving cell");
+        assertEquals("SYNTHETIC INSURER", factSubject(entityFact),
+                "a real-entity subject must be left untouched");
+        assertEquals(original, factSource(selfNamedFact));
+        assertEquals(original, factSource(entityFact));
+    }
+
+    /** An already-dead fact of the duplicate must be left alone under the repoint branch too, not
+     *  only under the invalidate branch. */
+    @Test
+    void leavesAlreadyInvalidatedFactsOfTheDuplicateAloneUnderTheRepointBranch() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        UUID original = seedCell("policy", VEC_A, "consumption:a", "committed", OffsetDateTime.now().minusDays(2));
+        UUID duplicate = seedCell("policy", VEC_A, "consumption:b", "committed", OffsetDateTime.now());
+        UUID dead = seedFact(duplicate, "SYNTHETIC INSURER", "premium", "12,34 EUR");
+        dsl.execute("UPDATE facts SET valid_until = now() - interval '1 day' WHERE id = ?", dead);
+        OffsetDateTime before = dsl.fetchOne("SELECT valid_until FROM facts WHERE id = ?", dead)
+                .get("valid_until", OffsetDateTime.class);
+        UUID beforeSource = factSource(dead);
+
+        repo.linkAndSoftDelete(duplicate, original, "note", "test");
+
+        OffsetDateTime after = dsl.fetchOne("SELECT valid_until FROM facts WHERE id = ?", dead)
+                .get("valid_until", OffsetDateTime.class);
+        assertEquals(before, after, "an already-dead fact must not be re-stamped");
+        assertEquals(beforeSource, factSource(dead), "an already-dead fact must not be repointed either");
     }
 
     private String statusOf(UUID id) {
