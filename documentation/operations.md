@@ -344,9 +344,11 @@ selection and will not be found, touched, or counted by it.
 
 The walk is paged and resumable exactly like `/admin/dedup-backfill`: same keyset cursor over
 `(created_at, id)`, both halves required together or neither, `limit` defaulting to 200 and clamped
-to 1…1000 — **URL-encode `after_created_at`**, same caveat as the sibling endpoint. A cell whose
-facts are already settled no longer matches the walk's selection, so re-running a page — or the
-whole backfill — is a no-op.
+to 1…1000 — **URL-encode `after_created_at`**, same caveat as the sibling endpoint. Settled cells
+drop out of the walk's own selection, so simply continuing the loop with each response's cursor
+never re-processes them. A skipped or failed cell is walked past the exact same way a settled one
+is, though, without actually being settled — so continuing the loop does not retry it either; see
+the finish condition below for why that is a problem worth catching.
 
 **Loop on more than `remaining`.** `remaining` only counts orphaned cells still ahead of the cursor;
 a cell that was skipped or failed has already been stepped past and will never show up in a later
@@ -354,9 +356,13 @@ a cell that was skipped or failed has already been stepped past and will never s
 (the original and every successor are dead), or — rarer — the `duplicate_of` tunnel was invalidated
 concurrently between the page being read and the cell being settled, leaving no tunnel to resolve a
 target from. `failed` covers a settlement that threw, e.g. a lock conflict with a concurrent write.
-The backfill is only actually done when a response has `remaining == 0` **and** `skipped == 0`
-**and** `failed == 0`. Any non-zero `skipped` or `failed` across the run means some cells need a
-human to look at them directly, not another call with the same cursor.
+Both are per-page counters, not running totals, so the finish condition spans the whole run, not one
+response: the backfill is done only once the **last** response has `remaining == 0` **and** the
+**sum** of `skipped` and `failed` across **every** response in the run is 0. A run that skips cells
+on an early page and then ends on a clean last page is NOT done — those skipped cells are gone from
+`remaining` for good, and only your own running total across the loop will show they are still
+unsettled. Non-zero `skipped` or `failed` anywhere in the run means some cells need a human to look
+at them directly, not another call with the same cursor.
 
 The endpoint answers **`409 Conflict`** instead of a 200 when `hivemem.consumption.dedup.enabled` is
 `false` — a disabled-dedup response would otherwise report an all-zero, "finished" page
@@ -377,7 +383,8 @@ curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -G \
   --data-urlencode "after_created_at=2026-07-14T09:12:03Z" \
   --data-urlencode "after_id=<uuid>" \
   "https://<host>/admin/backfill-fact-orphans"
-# repeat with each response's cursor until remaining == 0 AND skipped == 0 AND failed == 0
+# repeat with each response's cursor; done once the last remaining is 0 AND
+# skipped+failed summed across every response in the run is 0
 ```
 
 ## Queen + Bees on Vistierie (the LXC host)
