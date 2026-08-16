@@ -77,4 +77,36 @@ class CompleteClientToolTest {
                 """);
         assertThat(call()).isNull();
     }
+
+    @Test
+    void returnsNullWhenContentBlocksIsAStringNotAnArray() {
+        mock.stubCompleteRaw("{\"text\":null,\"content_blocks\":\"oops, not an array\"}");
+        assertThat(call()).isNull();
+    }
+
+    @Test
+    void returnsNullWhenContentBlocksIsAnObjectNotAnArray() {
+        mock.stubCompleteRaw("{\"text\":null,\"content_blocks\":{\"unexpected\":\"shape\"}}");
+        assertThat(call()).isNull();
+    }
+
+    @Test
+    void handsBackMalformedToolInputVerbatimWithoutRepairingIt() {
+        // Real defect (2026-08-15): the gateway announces tool schemas but does not enforce them, so
+        // a model can answer with "mailings" as a JSON STRING instead of an array. completeWithTool
+        // must hand that back unrepaired so the caller can detect the bad shape and fall back.
+        mock.stubCompleteRaw("""
+                {"text":null,"content_blocks":[
+                  {"type":"tool_use","name":"submit_mailings",
+                   "input":{"mailings":"[{\\"mailing\\":\\"m1\\",\\"pages\\":[1,2]}]"}}]}
+                """);
+
+        JsonNode input = call();
+
+        assertThat(input).isNotNull();
+        JsonNode mailings = input.path("mailings");
+        assertThat(mailings.isTextual()).isTrue();
+        assertThat(mailings.isArray()).isFalse();
+        assertThat(mailings.asString()).isEqualTo("[{\"mailing\":\"m1\",\"pages\":[1,2]}]");
+    }
 }
