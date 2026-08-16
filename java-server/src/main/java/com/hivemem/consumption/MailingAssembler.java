@@ -34,7 +34,13 @@ public class MailingAssembler {
 
     private static final Logger log = LoggerFactory.getLogger(MailingAssembler.class);
 
-    static final String PROMPT = """
+    /** Shared grouping rules for both routes: the forced tool call ({@link #PROMPT}) and the text
+     *  fallback ({@link #TEXT_PROMPT}). Ends right after the {@code Pages:} block — the {@code %s}
+     *  placeholder is filled with the page rows by {@link #assemble}. Everything here is shared
+     *  byte-for-byte between the two routes, since it is the wording that was measured against real
+     *  batches (see class javadoc); only the closing output-format instruction (appended by
+     *  {@link #PROMPT} / {@link #TEXT_PROMPT}) differs. */
+    private static final String GROUPING_RULES_HEAD = """
             Below are per-page descriptions of ONE scanned batch (a stack of several
             separate letters was scanned front+back on a duplex scanner).
 
@@ -78,9 +84,12 @@ public class MailingAssembler {
             Pages:
             %s
 
-            Group ALL pages into mailings and deliver the result by calling the submit_mailings
-            tool. Do not write the answer as text and do not explain your reasoning first.
-            Every page exactly once across all mailings.
+            """;
+
+    /** Continuation of the shared grouping rules, resumed right after the closing output-format
+     *  instruction that differs per route (see {@link #GROUPING_RULES_HEAD}). */
+    private static final String GROUPING_RULES_TAIL = """
+
 
             Additional hard rules:
             - Printed page-label continuity: pages of the SAME sender whose printed labels form one
@@ -97,6 +106,27 @@ public class MailingAssembler {
               state tax administration inside a Finanzamt mailing) belong to the main mailing.
             - Every page must appear exactly once — re-check your output against the page list before
               answering.""";
+
+    /** Tool-call route: forces the model to deliver the grouping as the {@code submit_mailings}
+     *  tool call input instead of text. Name kept exactly {@code PROMPT} — {@link
+     *  MailingAssemblerTest#promptAllowsSameSenderSameDateWhenReferencesDiffer} and other tests
+     *  assert on it. */
+    static final String PROMPT = GROUPING_RULES_HEAD + """
+            Group ALL pages into mailings and deliver the result by calling the submit_mailings
+            tool. Do not write the answer as text and do not explain your reasoning first.
+            Every page exactly once across all mailings.""" + GROUPING_RULES_TAIL;
+
+    /** Text-only fallback route, used when the tool call throws or returns an unusable shape. Same
+     *  rules as {@link #PROMPT}, but instructs the model to answer with STRICT JSON in a message —
+     *  there is no tool on this call for the model to invoke. Restored verbatim from before the
+     *  tool call was added (git show 221c876:.../MailingAssembler.java). */
+    static final String TEXT_PROMPT = GROUPING_RULES_HEAD + """
+            Group ALL pages into mailings. Reply with STRICT JSON only:
+            [{"mailing":"<short id>","description":"<sender + what it is + letter date>",
+              "confidence":<0.0-1.0>,
+              "pages":[<global page numbers in reading order: letter first, then its
+              continuation pages by printed page label, then enclosures; blank pages last>]}]
+            Every page exactly once across all mailings.""" + GROUPING_RULES_TAIL;
 
     static final String TOOL_NAME = "submit_mailings";
 
@@ -172,12 +202,14 @@ public class MailingAssembler {
                     .append(" - ").append(pyRepr(m.summary()))
                     .append('\n');
         }
-        String prompt = PROMPT.formatted(rows.toString().strip());
+        String rowsBlock = rows.toString().strip();
+        String toolPrompt = PROMPT.formatted(rowsBlock);
+        String textPrompt = TEXT_PROMPT.formatted(rowsBlock);
         List<List<DocGroup>> drawn = new ArrayList<>();
         RuntimeException lastException = null;
         for (int draw = 1; draw <= draws; draw++) {
             try {
-                drawn.add(parseDraw(realm, prompt, draw));
+                drawn.add(parseDraw(realm, toolPrompt, textPrompt, draw));
             } catch (RuntimeException e) {
                 lastException = e;
             }
@@ -216,22 +248,38 @@ public class MailingAssembler {
     }
 
     /** One grouping draw. Prefers the forced tool call; falls back to parsing text so a provider
-     *  that returns no tool_use block degrades to the previous behaviour instead of failing the
-     *  batch. Keeps the same two attempts the single-draw path always had. */
-    private List<DocGroup> parseDraw(String realm, String prompt, int draw) {
+     *  that returns no usable tool_use payload — or whose call itself throws (gateway 400/5xx,
+     *  timeout) — degrades to the previous behaviour instead of failing the batch. The tool call
+     *  has its own try/catch so a throw there falls through to the text route WITHIN the same
+     *  attempt, rather than the outer catch burning the whole attempt on retrying the tool call
+     *  again: otherwise, with the tool half absent or rolled back, every draw would fail where the
+     *  old text-only code succeeded. Keeps the same two attempts the single-draw path always had. */
+    private List<DocGroup> parseDraw(String realm, String toolPrompt, String textPrompt, int draw) {
         JsonNode arr = null;
         RuntimeException lastException = null;
         for (int attempt = 1; attempt <= 2; attempt++) {
             try {
-                JsonNode toolInput =
-                        client.completeWithTool(realm, prompt, TOOL_NAME, TOOL_DESCRIPTION, SCHEMA);
+                JsonNode toolInput = null;
+                try {
+                    toolInput = client.completeWithTool(
+                            realm, toolPrompt, TOOL_NAME, TOOL_DESCRIPTION, SCHEMA);
+                } catch (RuntimeException e) {
+                    log.warn("Assembly draw {} attempt {}/2: tool call failed, falling back to "
+                            + "text: {}", draw, attempt, e.toString());
+                }
                 if (toolInput != null && toolInput.path("mailings").isArray()) {
                     arr = toolInput.path("mailings");
                     break;
                 }
-                log.info("Assembly draw {} attempt {}/2: no tool_use payload, parsing text",
-                        draw, attempt);
-                arr = LlmJson.parseArray(client.complete(realm, prompt));
+                if (toolInput == null) {
+                    log.info("Assembly draw {} attempt {}/2: no tool_use payload, parsing text",
+                            draw, attempt);
+                } else {
+                    log.info("Assembly draw {} attempt {}/2: tool_use payload had the wrong shape "
+                            + "(mailings={}), parsing text", draw, attempt,
+                            toolInput.path("mailings").getNodeType());
+                }
+                arr = LlmJson.parseArray(client.complete(realm, textPrompt));
                 break;
             } catch (RuntimeException e) {
                 log.warn("Assembly draw {} attempt {}/2 failed: {}", draw, attempt, e.toString());

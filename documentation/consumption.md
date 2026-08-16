@@ -228,10 +228,17 @@ consumption executor, never throws to the caller):
    budget or the clock out before the JSON was ever reached — measured at
    8 % of draws. Text parsing (`CompleteClient.complete` +
    `LlmJson.parseArray`) remains as a fallback for a provider response that
-   carries no matching `tool_use` block, or whose `mailings` field is not an
-   array — the tool call is announced but not enforced end-to-end, so
+   carries no matching `tool_use` block, whose `mailings` field is not an
+   array, or whose tool call itself throws (gateway 400/5xx, timeout) — the
+   tool call is announced but not enforced end-to-end, so
    `MailingAssembler.parseDraw` degrades to text parsing instead of failing
-   the draw.
+   the draw. The two routes share one copy of the grouping rules but end
+   with different instructions: `MailingAssembler.PROMPT` tells the model to
+   deliver the result by calling `submit_mailings` and forbids writing text,
+   while `MailingAssembler.TEXT_PROMPT` — used only for the fallback call,
+   which carries no tool — asks for STRICT JSON in the reply instead; sending
+   the tool-worded prompt on a call with no tool attached would leave the
+   model unable to answer at all.
 4. **Normalization, deterministic.** `MailingAssembler.assemble` runs pass 3's
    grouping through `MailingNormalizer` before returning it — this is plain Java,
    no LLM call, and enforces what the prompt can only ask for:

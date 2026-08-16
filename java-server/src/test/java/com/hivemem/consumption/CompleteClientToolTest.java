@@ -91,6 +91,12 @@ class CompleteClientToolTest {
     }
 
     @Test
+    void returnsNullWhenTheResponseBodyIsEmpty() {
+        mock.stubCompleteEmptyBody();
+        assertThat(call()).isNull();
+    }
+
+    @Test
     void handsBackMalformedToolInputVerbatimWithoutRepairingIt() {
         // Real defect (2026-08-15): the gateway announces tool schemas but does not enforce them, so
         // a model can answer with "mailings" as a JSON STRING instead of an array. completeWithTool

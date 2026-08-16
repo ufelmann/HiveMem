@@ -382,7 +382,7 @@ class MailingAssemblerTest {
     }
 
     @Test
-    void sendsTheToolSchemaAndFallsBackToTextWhenNoToolInput() {
+    void callsCompleteWithToolUsingTheToolSchemaAndFallsBackToTextWhenNoToolInput() {
         CompleteClient cc = mock(CompleteClient.class);
         when(cc.completeWithTool(anyString(), anyString(), anyString(), anyString(), anyMap()))
                 .thenReturn(null);
@@ -394,6 +394,78 @@ class MailingAssemblerTest {
 
         assertEquals(1, groups.size());
         assertEquals(List.of(1), groups.get(0).pages);
+        verify(cc).completeWithTool(anyString(), anyString(), eq("submit_mailings"), anyString(),
+                anyMap());
+        ArgumentCaptor<String> textCallPrompt = ArgumentCaptor.forClass(String.class);
+        verify(cc).complete(anyString(), textCallPrompt.capture());
+        // The text call must carry the JSON-worded fallback prompt, not the tool-worded one — a
+        // model told to call a tool that was never attached to this call, and forbidden from
+        // writing text, cannot answer it.
+        assertThat(textCallPrompt.getValue()).contains("STRICT JSON");
+        assertThat(textCallPrompt.getValue()).doesNotContain("submit_mailings");
+    }
+
+    @Test
+    void textPromptKeepsGroupingRulesButUsesTheJsonInstructionForTheFallback() {
+        // The fallback carries no tool, so it must never say "call the submit_mailings tool" or
+        // forbid text output — that combination is unanswerable for a call with no tools attached.
+        assertThat(MailingAssembler.TEXT_PROMPT).doesNotContain("submit_mailings");
+        assertThat(MailingAssembler.TEXT_PROMPT).contains("STRICT JSON");
+        assertThat(MailingAssembler.TEXT_PROMPT).contains(
+                "\"pages\":[<global page numbers in reading order: letter first, then its");
+        // Same measured wording as the tool route, byte-for-byte.
+        assertThat(MailingAssembler.TEXT_PROMPT).contains(
+                "consecutive page pairs form one physical sheet");
+        assertThat(MailingAssembler.TEXT_PROMPT).contains(
+                "Two mailings with the same sender AND the same letter date are allowed ONLY when they");
+        assertThat(MailingAssembler.TEXT_PROMPT).contains(
+                "Every page must appear exactly once — re-check your output against the page list "
+                        + "before\n  answering.");
+    }
+
+    @Test
+    void toolCallThrowingFallsBackToTextWithinTheSameAttemptInsteadOfRetryingTheToolCall() {
+        // If completeWithTool throws (gateway 400/5xx/timeout), the SAME attempt must still try the
+        // text route rather than burning the attempt on a retry of the tool call — otherwise, with
+        // the tool half rolled back or absent, every draw would fail where the old code succeeded.
+        CompleteClient cc = mock(CompleteClient.class);
+        when(cc.completeWithTool(anyString(), anyString(), anyString(), anyString(), anyMap()))
+                .thenThrow(new RestClientException("gateway 400"));
+        when(cc.complete(anyString(), anyString())).thenReturn(
+                "[{\"mailing\":\"m\",\"description\":\"d\",\"confidence\":1.0,\"pages\":[1]}]");
+
+        List<DocGroup> groups = new MailingAssembler(cc)
+                .assemble("documents", List.of(meta(1, "SYNTHETIC INSURER", "01.01.2000")));
+
+        assertEquals(1, groups.size());
+        // One attempt was enough: the tool call was tried once, failed, and text was tried in the
+        // SAME attempt and succeeded — no second attempt was needed.
+        verify(cc, times(1)).completeWithTool(anyString(), anyString(), anyString(), anyString(),
+                anyMap());
+        verify(cc, times(1)).complete(anyString(), anyString());
+    }
+
+    @Test
+    void aNestedArrayReturnedAsAJsonStringFallsBackToTheTextRoute() throws Exception {
+        // Real defect (2026-08-15): the gateway announces tool schemas but does not enforce them,
+        // so a model can answer with "mailings" as a JSON STRING instead of an array. The assembler
+        // must detect the wrong shape and use the text route instead of accepting it.
+        CompleteClient cc = mock(CompleteClient.class);
+        when(cc.completeWithTool(eq("documents"), anyString(), eq("submit_mailings"), anyString(),
+                anyMap()))
+                .thenReturn(new tools.jackson.databind.ObjectMapper().readTree(
+                        "{\"mailings\":\"[{\\\"mailing\\\":\\\"m1\\\",\\\"pages\\\":[1,2]}]\"}"));
+        when(cc.complete(eq("documents"), anyString())).thenReturn(
+                "[{\"mailing\":\"text-route\",\"description\":\"d\",\"confidence\":0.7,"
+                        + "\"pages\":[1,2]}]");
+
+        List<DocGroup> groups = new MailingAssembler(cc)
+                .assemble("documents", List.of(meta(1, "SYNTHETIC INSURER", "01.01.2000"),
+                        meta(2, "SYNTHETIC INSURER", "01.01.2000")));
+
+        assertEquals(1, groups.size());
+        assertEquals("text-route", groups.get(0).id);
+        assertEquals(List.of(1, 2), groups.get(0).pages);
         verify(cc).complete(anyString(), anyString());
     }
 
@@ -467,5 +539,22 @@ class MailingAssemblerTest {
         rest.pages.add(41);
         assertTrue(MailingAssembler.isDegenerate(List.of(big, rest), 41));   // 39/41 = 95%
         assertFalse(MailingAssembler.isDegenerate(List.of(big, rest), 20));  // batch too small
+
+        // Real boundary at a 21-page batch (threshold = 0.90 * 21 = 18.9): a 19-page group clears
+        // it and must be degenerate, an 18-page group falls short and must not be.
+        DocGroup nineteen = new DocGroup("i", "d");
+        for (int i = 1; i <= 19; i++) nineteen.pages.add(i);
+        DocGroup twoLeft = new DocGroup("j", "d");
+        twoLeft.pages.add(20);
+        twoLeft.pages.add(21);
+        assertTrue(MailingAssembler.isDegenerate(List.of(nineteen, twoLeft), 21));
+
+        DocGroup eighteen = new DocGroup("k", "d");
+        for (int i = 1; i <= 18; i++) eighteen.pages.add(i);
+        DocGroup threeLeft = new DocGroup("l", "d");
+        threeLeft.pages.add(19);
+        threeLeft.pages.add(20);
+        threeLeft.pages.add(21);
+        assertFalse(MailingAssembler.isDegenerate(List.of(eighteen, threeLeft), 21));
     }
 }
