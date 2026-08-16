@@ -328,6 +328,46 @@ curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -G \
 # repeat with each response's cursor until "remaining" is 0
 ```
 
+### Retro-settlement of orphaned facts
+
+Before the fix described under [Re-scanning the same document](#re-scanning-the-same-document), a
+discarded duplicate's extracted facts stayed live and kept answering queries even though the cell
+they came from was gone. `POST /admin/backfill-fact-orphans` walks discarded (soft-deleted or
+rejected) cells that still carry live facts and settles each one the same way the live discard path
+now does: if the surviving original (or its live revision successor) already has facts of its own,
+the duplicate's are invalidated; if it has none, the duplicate's facts are repointed to it instead
+of being lost. A cell whose `duplicate_of` original has no live cell reachable at all is left
+untouched and logged at `WARN` for manual review.
+
+The walk is paged and resumable exactly like `/admin/dedup-backfill`: same keyset cursor over
+`(created_at, id)`, both halves required together or neither, `limit` defaulting to 200 and clamped
+to 1…1000. A cell whose facts are already settled no longer matches the walk's selection, so
+re-running a page — or the whole backfill — is a no-op.
+
+**Loop on more than `remaining`.** `remaining` only counts orphaned cells still ahead of the cursor;
+a cell that was skipped (no live target could be resolved) or failed (e.g. a lock conflict with a
+concurrent write) has already been stepped past and will never show up in a later `remaining` count.
+The backfill is only actually done when a response has `remaining == 0` **and** `skipped == 0`
+**and** `failed == 0`. Any non-zero `skipped` or `failed` across the run means some cells need a
+human to look at them, not another call with the same cursor.
+
+The endpoint answers **`409 Conflict`** instead of a 200 when `hivemem.consumption.dedup.enabled` is
+`false` — a disabled-dedup response would otherwise report an all-zero, "finished" page
+(`checked:0, skipped:0, failed:0, remaining:0`) while every orphan is still live, which is exactly
+the false all-clear this backfill exists to prevent.
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "https://<host>/admin/backfill-fact-orphans"
+# → {"checked":200,"invalidated":41,"repointed":12,"skipped":0,"failed":0,"remaining":97,
+#    "after_created_at":"2026-07-14T09:12:03Z","after_id":"<uuid>"}
+curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -G \
+  --data-urlencode "after_created_at=2026-07-14T09:12:03Z" \
+  --data-urlencode "after_id=<uuid>" \
+  "https://<host>/admin/backfill-fact-orphans"
+# repeat with each response's cursor until remaining == 0 AND skipped == 0 AND failed == 0
+```
+
 ## Queen + Bees on Vistierie (the LXC host)
 
 ### Prerequisites

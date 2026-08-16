@@ -77,6 +77,23 @@ itself eligible for summarization, so a scanned invoice ends up with text,
 summary, key points, and typed facts — all embedded for
 [6-signal search](tools.md#search-signals).
 
+## Content dedup (re-scans)
+
+Once a cell has an embedding, `DocumentDedupService` checks it against older
+`consumption:`-sourced cells for a content match (a physical re-scan of the
+same document). Because dedup needs the embedding, it always runs **after**
+fact extraction — a long document is only embedded once the summarizer has
+produced a summary and extracted its facts, so a duplicate always has its own
+facts already sitting in the knowledge graph by the time dedup discards it.
+That discard happens in one transaction: the duplicate cell is soft-deleted,
+a `duplicate_of` tunnel links it to the original as provenance, and its facts
+are settled — invalidated if the original (or its live successor) already
+has facts of its own, otherwise repointed to it so nothing is lost. See
+[Content dedup (re-scans)](architecture.md#content-dedup-re-scans) for the
+full recall/match mechanics and [Retro-settlement of orphaned
+facts](operations.md#retro-settlement-of-orphaned-facts) for the backfill
+that cleans up cells discarded before this rule existed.
+
 ## Multi-page scans: split before ingest
 
 The consumption folder adds one stage **before** the shared core: a multi-page
