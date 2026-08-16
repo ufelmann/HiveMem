@@ -333,28 +333,40 @@ curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -G \
 Before the fix described under [Re-scanning the same document](#re-scanning-the-same-document), a
 discarded duplicate's extracted facts stayed live and kept answering queries even though the cell
 they came from was gone. `POST /admin/backfill-fact-orphans` walks discarded (soft-deleted or
-rejected) cells that still carry live facts and settles each one the same way the live discard path
-now does: if the surviving original (or its live revision successor) already has facts of its own,
-the duplicate's are invalidated; if it has none, the duplicate's facts are repointed to it instead
-of being lost. A cell whose `duplicate_of` original has no live cell reachable at all is left
-untouched and logged at `WARN` for manual review.
+rejected) cells that still have **both** a live, committed `duplicate_of` tunnel **and** live,
+committed facts of their own — exactly the shape the pre-fix dedup discard left behind — and settles
+each one the same way the live discard path now does: if the surviving live target (the original, or
+its live revision successor) already has facts of its own, the duplicate's are invalidated; if it
+has none, the duplicate's facts are repointed to it (`source_id`, and `subject` wherever that named
+the discarded cell) instead of being lost. **This backfill covers dedup-discard orphans only** — a
+fact left live by a manual rejection or by a revise chain with no `duplicate_of` tunnel is out of its
+selection and will not be found, touched, or counted by it.
 
 The walk is paged and resumable exactly like `/admin/dedup-backfill`: same keyset cursor over
 `(created_at, id)`, both halves required together or neither, `limit` defaulting to 200 and clamped
-to 1…1000. A cell whose facts are already settled no longer matches the walk's selection, so
-re-running a page — or the whole backfill — is a no-op.
+to 1…1000 — **URL-encode `after_created_at`**, same caveat as the sibling endpoint. A cell whose
+facts are already settled no longer matches the walk's selection, so re-running a page — or the
+whole backfill — is a no-op.
 
 **Loop on more than `remaining`.** `remaining` only counts orphaned cells still ahead of the cursor;
-a cell that was skipped (no live target could be resolved) or failed (e.g. a lock conflict with a
-concurrent write) has already been stepped past and will never show up in a later `remaining` count.
+a cell that was skipped or failed has already been stepped past and will never show up in a later
+`remaining` count. `skipped` covers two cases: no live target could be resolved for the cell at all
+(the original and every successor are dead), or — rarer — the `duplicate_of` tunnel was invalidated
+concurrently between the page being read and the cell being settled, leaving no tunnel to resolve a
+target from. `failed` covers a settlement that threw, e.g. a lock conflict with a concurrent write.
 The backfill is only actually done when a response has `remaining == 0` **and** `skipped == 0`
 **and** `failed == 0`. Any non-zero `skipped` or `failed` across the run means some cells need a
-human to look at them, not another call with the same cursor.
+human to look at them directly, not another call with the same cursor.
 
 The endpoint answers **`409 Conflict`** instead of a 200 when `hivemem.consumption.dedup.enabled` is
 `false` — a disabled-dedup response would otherwise report an all-zero, "finished" page
 (`checked:0, skipped:0, failed:0, remaining:0`) while every orphan is still live, which is exactly
 the false all-clear this backfill exists to prevent.
+
+**This is a production write — get explicit authorization before running it.** More so than
+`/admin/dedup-backfill`: the repoint branch rewrites `facts.source_id` and `subject` directly, with
+no audit trail of its own (see the op-log limitation noted in
+[architecture.md](architecture.md#content-dedup-re-scans)).
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \

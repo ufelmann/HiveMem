@@ -81,16 +81,21 @@ summary, key points, and typed facts — all embedded for
 
 Once a cell has an embedding, `DocumentDedupService` checks it against older
 `consumption:`-sourced cells for a content match (a physical re-scan of the
-same document). Because dedup needs the embedding, it always runs **after**
-fact extraction — a long document is only embedded once the summarizer has
-produced a summary and extracted its facts, so a duplicate always has its own
-facts already sitting in the knowledge graph by the time dedup discards it.
-That discard happens in one transaction: the duplicate cell is soft-deleted,
-a `duplicate_of` tunnel links it to the original as provenance, and its facts
-are settled — invalidated if the original (or its live successor) already
-has facts of its own, otherwise repointed to it so nothing is lost. See
-[Content dedup (re-scans)](architecture.md#content-dedup-re-scans) for the
-full recall/match mechanics and [Retro-settlement of orphaned
+same document). Long documents only reach dedup once the summarizer has
+produced a summary and extracted their facts, so a long duplicate always has
+its own facts already sitting in the knowledge graph by the time dedup
+discards it. Short documents (≤500 characters) are deduped immediately at
+OCR time, before summarization, so a short duplicate is typically discarded
+with no facts of its own at all. Either way, the discard happens in one
+transaction: the duplicate cell is soft-deleted, a `duplicate_of` tunnel
+links it to the original as provenance, and any facts the duplicate does
+have are settled — invalidated if the live target (the original, or its
+live successor) already has facts of its own, otherwise repointed to it
+(its `source_id`, and `subject` wherever that named the discarded cell) so
+nothing is lost. If no live target can be resolved, the facts are left in
+place for manual review instead. See [Content dedup
+(re-scans)](architecture.md#content-dedup-re-scans) for the full
+recall/match mechanics and [Retro-settlement of orphaned
 facts](operations.md#retro-settlement-of-orphaned-facts) for the backfill
 that cleans up cells discarded before this rule existed.
 
