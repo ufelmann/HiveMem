@@ -195,6 +195,15 @@ public class AdminController {
      * alone will stop with unsettled orphans left behind them, believing the backfill is done.
      * Non-zero {@code skipped} or {@code failed} across a run means some cells need a human look,
      * not another call with the same cursor.
+     *
+     * <p><strong>Deliberate divergence from {@link #dedupBackfill}: this endpoint answers {@code
+     * 409 Conflict} when dedup is disabled, instead of 200 with an all-zero report.</strong> The
+     * sibling makes no finish-condition promise, so its all-zero disabled-state report is merely
+     * uninteresting; this endpoint's contract is "loop until {@code remaining == 0 AND skipped ==
+     * 0 AND failed == 0}", and the disabled state satisfies that literally — {@code checked:0,
+     * skipped:0, failed:0, remaining:0} — while every orphan is still live. A 200 that reads as
+     * "finished" here is the exact silent-success failure class this backfill exists to remove, so
+     * it is refused up front rather than left for the operator to notice.
      */
     @PostMapping("/backfill-fact-orphans")
     public ResponseEntity<?> backfillFactOrphans(
@@ -207,6 +216,10 @@ public class AdminController {
         if ((afterCreatedAt == null) != (afterId == null)) {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "after_created_at and after_id must be given together"));
+        }
+        if (!dedup.isEnabled()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", "dedup is disabled; nothing was settled"));
         }
         DocumentDedupService.FactOrphanReport report =
                 dedup.factOrphanBackfill(afterCreatedAt, afterId, Math.clamp(limit, 1, MAX_BACKFILL_LIMIT));

@@ -40,6 +40,16 @@ public class DocumentDedupService {
         this.props = props;
     }
 
+    /**
+     * @return whether dedup is switched on. Exposed so callers that make a finish-condition
+     * promise (like {@code AdminController.backfillFactOrphans}) can refuse to answer "done"
+     * while the kill switch is off, rather than let the all-zero disabled-state report read as a
+     * clean, completed walk.
+     */
+    public boolean isEnabled() {
+        return props.isEnabled();
+    }
+
     /** @return the original cell id if {@code cellId} was a duplicate and got discarded, else empty. */
     public Optional<UUID> findAndDiscardDuplicate(UUID cellId) {
         if (!props.isEnabled()) return Optional.empty();
