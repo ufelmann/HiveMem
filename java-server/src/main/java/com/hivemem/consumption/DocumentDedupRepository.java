@@ -293,6 +293,92 @@ public class DocumentDedupRepository {
                 ? new Object[] {limit} : new Object[] {afterCreatedAt, afterId, limit};
     }
 
+    /** Predicate shared by {@link #findDiscardedCellsWithLiveFacts} and
+     *  {@link #countDiscardedCellsWithLiveFactsAfter}: a discarded cell (soft-deleted or rejected)
+     *  that still has a live {@code duplicate_of} tunnel AND at least one live committed fact of
+     *  its own — i.e. exactly the pre-fix orphan shape. Written as two EXISTS subqueries rather
+     *  than a JOIN so a cell with more than one live {@code duplicate_of} tunnel (should not
+     *  happen, but is not schema-enforced) cannot duplicate the row. */
+    private static final String DISCARDED_WITH_LIVE_FACTS_FROM_WHERE =
+            "FROM cells c "
+            + "WHERE (c.valid_until IS NOT NULL OR c.status = 'rejected') "
+            + "AND EXISTS (SELECT 1 FROM tunnels t WHERE t.from_cell = c.id AND t.relation = 'duplicate_of' "
+            + "AND t.valid_until IS NULL AND t.status = 'committed') "
+            + "AND EXISTS (SELECT 1 FROM facts f WHERE f.source_id = c.id "
+            + "AND f.valid_until IS NULL AND f.status = 'committed')";
+
+    /**
+     * One page of discarded cells that still carry live facts, oldest first, keyset-paged.
+     * Selection and effect are aligned: a cell drops out as soon as its facts are settled (the
+     * live fact this predicate requires either gets invalidated or repointed away from {@code
+     * c.id}), so a re-run of the same page is a no-op rather than a second pass over the same
+     * rows. Keyset shape and argument order mirror
+     * {@link #findLiveConsumptionCellIdsOldestFirst} — see its comment for why an OFFSET or a
+     * bare LIMIT would silently fail to advance here too.
+     */
+    public List<LiveCell> findDiscardedCellsWithLiveFacts(
+            OffsetDateTime afterCreatedAt, UUID afterId, int limit) {
+        String sql = "SELECT c.id, c.created_at " + DISCARDED_WITH_LIVE_FACTS_FROM_WHERE
+                + cursorPredicateAliased(afterCreatedAt, afterId, "c")
+                + " ORDER BY c.created_at ASC, c.id ASC LIMIT ?";
+        List<LiveCell> out = new ArrayList<>();
+        for (Record r : dsl.fetch(sql, cursorArgs(afterCreatedAt, afterId, limit))) {
+            out.add(new LiveCell(r.get("id", UUID.class), r.get("created_at", OffsetDateTime.class)));
+        }
+        return out;
+    }
+
+    /** Discarded cells with live facts still ahead of the cursor. */
+    public int countDiscardedCellsWithLiveFactsAfter(OffsetDateTime afterCreatedAt, UUID afterId) {
+        String sql = "SELECT count(*) AS n " + DISCARDED_WITH_LIVE_FACTS_FROM_WHERE
+                + cursorPredicateAliased(afterCreatedAt, afterId, "c");
+        Record r = afterCreatedAt == null || afterId == null
+                ? dsl.fetchOne(sql)
+                : dsl.fetchOne(sql, afterCreatedAt, afterId);
+        return r == null ? 0 : r.get("n", Long.class).intValue();
+    }
+
+    /** The original a discarded cell was linked to, from its live {@code duplicate_of} tunnel —
+     *  or empty if none is live (the tunnel was invalidated, or was never written). */
+    public Optional<UUID> findDuplicateOfOriginal(UUID discardedCellId) {
+        Record r = dsl.fetchOne(
+                "SELECT to_cell FROM tunnels WHERE from_cell = ? AND relation = 'duplicate_of' "
+                + "AND valid_until IS NULL AND status = 'committed' "
+                + "ORDER BY created_at DESC LIMIT 1",
+                discardedCellId);
+        return r == null ? Optional.empty() : Optional.ofNullable(r.get("to_cell", UUID.class));
+    }
+
+    /**
+     * Settles one discarded cell's facts on its own — outside the soft-delete transaction, for the
+     * backfill (Task 2) that revisits cells discarded before this rule existed. Wraps {@link
+     * #reassignOrInvalidateFacts} in its own transaction rather than duplicating its SQL, so the
+     * live discard path ({@link #linkAndSoftDelete}) and the backfill can never drift apart.
+     */
+    public FactSettlement settleDiscardedCellFacts(UUID duplicateCellId, UUID originalCellId) {
+        return dsl.transactionResult(cfg -> {
+            DSLContext tx = DSL.using(cfg);
+            FactSettlement settlement = reassignOrInvalidateFacts(tx, duplicateCellId, originalCellId);
+            if (settlement.branch() == FactSettlement.Branch.SKIPPED) {
+                // Mirrors the WARN in linkAndSoftDelete: the backfill path has no other caller
+                // inspecting the branch, so without this line a skip here would be as silent in
+                // the backfill as an unsettled fact would be on the live path.
+                log.warn("Dedup backfill: no live fact target for discarded cell {} (duplicate_of {} "
+                        + "resolved to no live cell); its facts were left untouched and need manual review",
+                        duplicateCellId, originalCellId);
+            }
+            return settlement;
+        });
+    }
+
+    /** Row comparison for a query aliasing the cells table, or nothing at all when the walk
+     *  starts without a cursor. Same semantics as {@link #cursorPredicate}, just alias-aware for
+     *  a query that joins other tables also carrying {@code created_at}/{@code id} columns. */
+    private static String cursorPredicateAliased(OffsetDateTime afterCreatedAt, UUID afterId, String alias) {
+        return afterCreatedAt == null || afterId == null
+                ? "" : " AND (" + alias + ".created_at, " + alias + ".id) > (?::timestamptz, ?::uuid)";
+    }
+
     /**
      * Atomically write the {@code duplicate_of} audit tunnel, soft-delete the duplicate cell, AND
      * settle its live facts, in a single transaction. This keeps the core dedup invariant: we never

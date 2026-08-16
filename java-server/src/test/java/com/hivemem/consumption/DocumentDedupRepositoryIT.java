@@ -68,25 +68,6 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
                 + "VALUES (?, ?, true)", cellId, attachmentId);
     }
 
-    private UUID seedFact(UUID sourceId, String subject, String predicate, String object) {
-        UUID id = UUID.randomUUID();
-        dsl.execute(
-                "INSERT INTO facts (id, subject, predicate, object, source_id, status) "
-                + "VALUES (?, ?, ?, ?, ?, 'committed')",
-                id, subject, predicate, object, sourceId);
-        return id;
-    }
-
-    private boolean factIsLive(UUID factId) {
-        return dsl.fetchOne("SELECT valid_until FROM facts WHERE id = ?", factId)
-                .get("valid_until") == null;
-    }
-
-    private UUID factSource(UUID factId) {
-        return dsl.fetchOne("SELECT source_id FROM facts WHERE id = ?", factId)
-                .get("source_id", UUID.class);
-    }
-
     private String factSubject(UUID factId) {
         return dsl.fetchOne("SELECT subject FROM facts WHERE id = ?", factId)
                 .get("subject", String.class);

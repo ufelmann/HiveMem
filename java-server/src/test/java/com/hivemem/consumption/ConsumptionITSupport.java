@@ -36,6 +36,7 @@ import tools.jackson.databind.ObjectMapper;
 import javax.sql.DataSource;
 import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 import static org.mockito.Mockito.mock;
@@ -138,6 +139,28 @@ abstract class ConsumptionITSupport {
                 embedding, dsl, noopPublisher, krokiClient, exifExtractor, imageMetaRepo);
 
         jobRepo = new SeparationJobRepository(dsl);
+    }
+
+    /** Seed a live committed fact for a dedup fact-settlement test. */
+    protected UUID seedFact(UUID sourceId, String subject, String predicate, String object) {
+        UUID id = UUID.randomUUID();
+        dsl.execute(
+                "INSERT INTO facts (id, subject, predicate, object, source_id, status) "
+                + "VALUES (?, ?, ?, ?, ?, 'committed')",
+                id, subject, predicate, object, sourceId);
+        return id;
+    }
+
+    /** Whether a fact is still live (not invalidated). */
+    protected boolean factIsLive(UUID factId) {
+        return dsl.fetchOne("SELECT valid_until FROM facts WHERE id = ?", factId)
+                .get("valid_until") == null;
+    }
+
+    /** The current {@code source_id} of a fact. */
+    protected UUID factSource(UUID factId) {
+        return dsl.fetchOne("SELECT source_id FROM facts WHERE id = ?", factId)
+                .get("source_id", UUID.class);
     }
 
     /** Wrap an instance (possibly null) in an ObjectProvider for constructor wiring in tests. */
