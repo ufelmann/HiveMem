@@ -180,6 +180,51 @@ public class AdminController {
         return ResponseEntity.ok(body);
     }
 
+    /**
+     * One-off retro pass: settle facts left behind on discarded cells by the deduplicator's fixed
+     * orphan class (see {@link DocumentDedupService#factOrphanBackfill} for the class it targets
+     * and why each cell is handled best-effort). Same shape as {@link #dedupBackfill}: resumable
+     * keyset paging, both halves of the cursor required together, {@code limit} clamped into
+     * {@code [1, MAX_BACKFILL_LIMIT]}, and a {@code LinkedHashMap} body so the cursor survives with
+     * a null value on an exhausted walk instead of vanishing.
+     *
+     * <p><strong>The finish condition is {@code remaining == 0 AND skipped == 0 AND failed == 0},
+     * not {@code remaining == 0} alone.</strong> {@code remaining} only counts orphans still ahead
+     * of the cursor; a cell this page skipped or failed has already been stepped past and will
+     * never reappear in a later {@code remaining} count. An operator who loops on {@code remaining}
+     * alone will stop with unsettled orphans left behind them, believing the backfill is done.
+     * Non-zero {@code skipped} or {@code failed} across a run means some cells need a human look,
+     * not another call with the same cursor.
+     */
+    @PostMapping("/backfill-fact-orphans")
+    public ResponseEntity<?> backfillFactOrphans(
+            @RequestParam(value = "after_created_at", required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime afterCreatedAt,
+            @RequestParam(value = "after_id", required = false) UUID afterId,
+            @RequestParam(value = "limit", defaultValue = "200") int limit,
+            HttpServletRequest request) {
+        if (!isAdmin(request)) return forbidden();
+        if ((afterCreatedAt == null) != (afterId == null)) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "after_created_at and after_id must be given together"));
+        }
+        DocumentDedupService.FactOrphanReport report =
+                dedup.factOrphanBackfill(afterCreatedAt, afterId, Math.clamp(limit, 1, MAX_BACKFILL_LIMIT));
+        // LinkedHashMap, not Map.of: the cursor is null on an exhausted or empty walk, and the
+        // caller must see the key with a null value rather than a key that silently vanished.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("checked", report.checked());
+        body.put("invalidated", report.invalidated());
+        body.put("repointed", report.repointed());
+        body.put("skipped", report.skipped());
+        body.put("failed", report.failed());
+        body.put("remaining", report.remaining());
+        body.put("after_created_at",
+                report.lastCreatedAt() == null ? null : report.lastCreatedAt().toString());
+        body.put("after_id", report.lastId() == null ? null : report.lastId().toString());
+        return ResponseEntity.ok(body);
+    }
+
     private static boolean isAdmin(HttpServletRequest request) {
         AuthPrincipal principal = (AuthPrincipal) request.getAttribute(AuthFilter.PRINCIPAL_ATTRIBUTE);
         return principal != null && principal.role() == AuthRole.ADMIN;
