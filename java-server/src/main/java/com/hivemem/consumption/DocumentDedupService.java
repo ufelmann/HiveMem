@@ -116,12 +116,17 @@ public class DocumentDedupService {
      * Result of one fact-orphan backfill page. {@code invalidated}/{@code repointed} count only
      * cells whose settlement actually touched a row ({@code rowsAffected > 0}) — a cell resolved
      * to {@code REPOINTED} with nothing actually moved would otherwise overstate the work done.
-     * Cells that had to be skipped (no resolvable live fact target, or no live {@code
-     * duplicate_of} tunnel at all) are counted in {@code checked} but not in either branch; each
-     * is logged at WARN as it happens, since {@code checked - invalidated - repointed} does not
-     * distinguish "skipped" from "already settled by a previous page".
+     * {@code skipped} counts cells where no live fact target could be resolved (or, rarely, whose
+     * {@code duplicate_of} tunnel was invalidated concurrently) — those still have an unsettled
+     * orphan fact and need a human to look at them; {@code remaining} does NOT include them, since
+     * it only counts orphans still ahead of the cursor, so {@code remaining == 0} alone is not the
+     * finish condition — the skipped count must be checked too. {@code failed} counts cells where
+     * settling itself threw (e.g. a concurrent {@code revise_cell} lock conflict); the cursor still
+     * advances past them, so a deterministically-failing row cannot park the walk forever, but
+     * nothing was written for it and it should be retried later. Each skip and failure is also
+     * logged at WARN as it happens.
      */
-    public record FactOrphanReport(int checked, int invalidated, int repointed,
+    public record FactOrphanReport(int checked, int invalidated, int repointed, int skipped, int failed,
                                     OffsetDateTime lastCreatedAt, UUID lastId, int remaining) {}
 
     /**
@@ -129,50 +134,75 @@ public class DocumentDedupService {
      * class {@link DocumentDedupRepository#linkAndSoftDelete} now prevents going forward, but left
      * behind before the fix) and settle each one through {@link
      * DocumentDedupRepository#settleDiscardedCellFacts}, the same rule the live discard path uses.
-     * Mirrors {@link #dedupBackfill}'s shape — same keyset-cursor paging, same idempotency
-     * argument: a cell whose facts are settled no longer matches {@link
-     * DocumentDedupRepository#findDiscardedCellsWithLiveFacts}'s predicate, so it drops out of the
-     * next page on its own.
+     * Mirrors {@link #dedupBackfill}'s shape — same keyset-cursor paging, same {@code
+     * props.isEnabled()} kill switch (the repoint branch rewrites {@code facts.source_id} AND
+     * {@code facts.subject} with no audit trail of its own, so disabling dedup must stop this too),
+     * same idempotency argument for the settled branches: a cell whose facts are settled no longer
+     * matches {@link DocumentDedupRepository#findDiscardedCellsWithLiveFacts}'s predicate, so it
+     * drops out of the next page on its own. Skipped and failed cells are the exception — see
+     * {@link FactOrphanReport}.
+     *
+     * <p>Each cell is handled inside its own try/catch, mirroring {@link #dedupBackfill}'s
+     * per-cell best-effort (there it comes from {@link #findAndDiscardDuplicate}'s own catch).
+     * Without it, one failure (e.g. {@code isLiveInDedupScope}'s {@code FOR SHARE} colliding with a
+     * concurrent {@code revise_cell}'s {@code FOR UPDATE} on the same cell) would throw out of the
+     * whole page: everything already committed in this page would have no report and thus no
+     * cursor, and — because the failing row is still first in cursor order — every retry would
+     * re-read it and throw again, parking the walk at that cursor forever.
      */
     public FactOrphanReport factOrphanBackfill(OffsetDateTime afterCreatedAt, UUID afterId, int limit) {
+        if (!props.isEnabled()) {
+            log.info("Dedup fact backfill skipped: dedup is disabled");
+            return new FactOrphanReport(0, 0, 0, 0, 0, afterCreatedAt, afterId, 0);
+        }
         List<DocumentDedupRepository.LiveCell> page =
                 repo.findDiscardedCellsWithLiveFacts(afterCreatedAt, afterId, limit);
         int invalidated = 0;
         int repointed = 0;
         int skipped = 0;
+        int failed = 0;
         OffsetDateTime lastCreatedAt = afterCreatedAt;
         UUID lastId = afterId;
         for (DocumentDedupRepository.LiveCell cell : page) {
-            Optional<UUID> original = repo.findDuplicateOfOriginal(cell.id());
-            if (original.isEmpty()) {
-                // The page selection already requires a live duplicate_of tunnel; getting here
-                // means it was invalidated concurrently between the page read and this lookup.
-                // Never guess at a target — skip and let a human look at it.
-                log.warn("Dedup fact backfill: no live duplicate_of tunnel for discarded cell {}, skipping",
-                        cell.id());
-                skipped++;
-            } else {
-                DocumentDedupRepository.FactSettlement settlement =
-                        repo.settleDiscardedCellFacts(cell.id(), original.get());
-                if (settlement.rowsAffected() > 0) {
-                    switch (settlement.branch()) {
-                        case INVALIDATED -> invalidated++;
-                        case REPOINTED -> repointed++;
-                        case SKIPPED -> { /* rowsAffected is always 0 for SKIPPED; unreachable here */ }
+            try {
+                Optional<UUID> original = repo.findDuplicateOfOriginal(cell.id());
+                if (original.isEmpty()) {
+                    // The page selection already requires a live duplicate_of tunnel; getting here
+                    // means it was invalidated concurrently between the page read and this lookup.
+                    // Never guess at a target — skip and let a human look at it.
+                    log.warn("Dedup fact backfill: no live duplicate_of tunnel for discarded cell {}, skipping",
+                            cell.id());
+                    skipped++;
+                } else {
+                    DocumentDedupRepository.FactSettlement settlement =
+                            repo.settleDiscardedCellFacts(cell.id(), original.get());
+                    if (settlement.rowsAffected() > 0) {
+                        switch (settlement.branch()) {
+                            case INVALIDATED -> invalidated++;
+                            case REPOINTED -> repointed++;
+                            case SKIPPED -> { /* rowsAffected is always 0 for SKIPPED; unreachable here */ }
+                        }
+                    }
+                    if (settlement.branch() == DocumentDedupRepository.FactSettlement.Branch.SKIPPED) {
+                        skipped++;
                     }
                 }
-                if (settlement.branch() == DocumentDedupRepository.FactSettlement.Branch.SKIPPED) {
-                    skipped++;
-                }
+            } catch (Exception e) {
+                // Best-effort per cell, like dedupBackfill: log, count, and keep the cursor moving
+                // rather than let one failing row abort the whole page (and re-fail forever on retry).
+                log.warn("Dedup fact backfill: settling discarded cell {} failed (leaving it for a "
+                        + "later retry): {}", cell.id(), e.toString());
+                failed++;
             }
             lastCreatedAt = cell.createdAt();
             lastId = cell.id();
         }
         int remaining = repo.countDiscardedCellsWithLiveFactsAfter(lastCreatedAt, lastId);
         log.info("Dedup fact backfill: checked {} discarded cells, invalidated {}, repointed {}, "
-                + "skipped {}, {} remaining",
-                page.size(), invalidated, repointed, skipped, remaining);
-        return new FactOrphanReport(page.size(), invalidated, repointed, lastCreatedAt, lastId, remaining);
+                + "skipped {}, failed {}, {} remaining",
+                page.size(), invalidated, repointed, skipped, failed, remaining);
+        return new FactOrphanReport(
+                page.size(), invalidated, repointed, skipped, failed, lastCreatedAt, lastId, remaining);
     }
 
     private void discard(UUID duplicateCellId, UUID originalCellId) {

@@ -176,17 +176,18 @@ class DocumentDedupBackfillIT extends ConsumptionITSupport {
     void backfillSettlesBothBranchesAndIsIdempotent() {
         DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
         DocumentDedupService service = newService(repo);
+        OffsetDateTime t0 = OffsetDateTime.parse("2026-06-23T10:00:00Z");
 
         // branch A: original already has facts -> the duplicate's fact is invalidated
-        UUID origA = seedCell("a", VEC_A, "consumption:a1", "committed", OffsetDateTime.now().minusDays(3));
-        UUID dupA = seedCell("a", VEC_A, "consumption:a2", "committed", OffsetDateTime.now().minusDays(2));
+        UUID origA = seedCell("a", VEC_A, "consumption:a1", "committed", t0.minusDays(3));
+        UUID dupA = seedCell("a", VEC_A, "consumption:a2", "committed", t0.minusDays(2));
         UUID keptA = seedFact(origA, "SYNTHETIC INSURER", "policy_number", "1000000001");
         UUID dropA = seedFact(dupA, "SYNTHETIC INSURER", "policy_number", "1000000001");
         softDeleteWithTunnel(dupA, origA);
 
         // branch B: original has none -> the duplicate's fact is repointed
-        UUID origB = seedCell("b", VEC_B, "consumption:b1", "committed", OffsetDateTime.now().minusDays(3));
-        UUID dupB = seedCell("b", VEC_B, "consumption:b2", "committed", OffsetDateTime.now().minusDays(1));
+        UUID origB = seedCell("b", VEC_B, "consumption:b1", "committed", t0.minusDays(3));
+        UUID dupB = seedCell("b", VEC_B, "consumption:b2", "committed", t0.minusDays(1));
         UUID moveB = seedFact(dupB, "SYNTHETIC UTILITY", "customer_number", "1000000002");
         softDeleteWithTunnel(dupB, origB);
 
@@ -202,5 +203,91 @@ class DocumentDedupBackfillIT extends ConsumptionITSupport {
 
         var second = service.factOrphanBackfill(null, null, 100);
         assertEquals(0, second.checked(), "a second run must find nothing left to do");
+    }
+
+    /**
+     * A discarded cell whose {@code duplicate_of} original is itself discarded with no {@code
+     * parent_id} successor: {@code resolveLiveFactTarget} resolves nothing, so the fact is left
+     * untouched and the cell is reported {@code skipped}. Unlike the settled branches, a skipped
+     * cell does NOT drop out of the walk's selection predicate — it still has a live fact of its
+     * own — so a second run from a null cursor must see it again, not treat it as done.
+     */
+    @Test
+    void backfillSkipsAndReVisitsACellWithNoLiveFactTarget() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        DocumentDedupService service = newService(repo);
+        OffsetDateTime t0 = OffsetDateTime.parse("2026-06-24T10:00:00Z");
+
+        UUID deadOriginal = seedCell("c", VEC_A, "consumption:c1", "committed", t0.minusDays(3));
+        UUID dup = seedCell("c", VEC_A, "consumption:c2", "committed", t0.minusDays(1));
+        UUID stuckFact = seedFact(dup, "SYNTHETIC INSURER", "policy_number", "1000000003");
+        softDeleteWithTunnel(dup, deadOriginal);
+        // The original itself is discarded, and has no parent_id child to succeed it.
+        dsl.execute("UPDATE cells SET valid_until = now() WHERE id = ?", deadOriginal);
+
+        var first = service.factOrphanBackfill(null, null, 100);
+        assertEquals(1, first.checked());
+        assertEquals(0, first.invalidated());
+        assertEquals(0, first.repointed());
+        assertEquals(1, first.skipped());
+        assertEquals(0, first.failed());
+        assertEquals(dup, first.lastId(), "the walk must advance past the unresolved cell, not loop on it");
+        assertTrue(factIsLive(stuckFact), "no live target -> the fact must not be touched at all");
+
+        var second = service.factOrphanBackfill(null, null, 100);
+        assertEquals(1, second.checked(),
+                "a skipped cell is still an unsettled orphan and must be revisited from a null cursor");
+        assertEquals(1, second.skipped());
+    }
+
+    /**
+     * Cursor-mechanics regression for {@code factOrphanBackfill}, mirroring
+     * {@code backfillCursorAdvancesBeyondTheFirstPageWithoutAnyDeletions} above: with a limit
+     * smaller than the number of orphans, the walk must reach every one of them across successive
+     * calls rather than repeating (or skipping) a page.
+     */
+    @Test
+    void backfillCursorAdvancesAcrossPagesForFactOrphans() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        DocumentDedupService service = newService(repo);
+        OffsetDateTime t0 = OffsetDateTime.parse("2026-06-25T10:00:00Z");
+
+        UUID origA = seedCell("d", VEC_A, "consumption:d1", "committed", t0.minusDays(5));
+        UUID dupA = seedCell("d", VEC_A, "consumption:d2", "committed", t0.minusDays(4));
+        seedFact(origA, "SYNTHETIC INSURER", "policy_number", "1000000004");
+        UUID dropA = seedFact(dupA, "SYNTHETIC INSURER", "policy_number", "1000000004");
+        softDeleteWithTunnel(dupA, origA);
+
+        UUID origB = seedCell("e", VEC_B, "consumption:e1", "committed", t0.minusDays(3));
+        UUID dupB = seedCell("e", VEC_B, "consumption:e2", "committed", t0.minusDays(2));
+        UUID moveB = seedFact(dupB, "SYNTHETIC UTILITY", "customer_number", "1000000005");
+        softDeleteWithTunnel(dupB, origB);
+
+        UUID origC = seedCell("f", VEC_A, "consumption:f1", "committed", t0.minusDays(1));
+        UUID dupC = seedCell("f", VEC_A, "consumption:f2", "committed", t0);
+        UUID moveC = seedFact(dupC, "SYNTHETIC UTILITY", "meter_number", "1000000006");
+        softDeleteWithTunnel(dupC, origC);
+
+        var p1 = service.factOrphanBackfill(null, null, 1);
+        assertEquals(1, p1.checked());
+        assertEquals(dupA, p1.lastId());
+        assertEquals(2, p1.remaining());
+
+        var p2 = service.factOrphanBackfill(p1.lastCreatedAt(), p1.lastId(), 1);
+        assertEquals(dupB, p2.lastId());
+        assertEquals(1, p2.remaining());
+
+        var p3 = service.factOrphanBackfill(p2.lastCreatedAt(), p2.lastId(), 1);
+        assertEquals(dupC, p3.lastId());
+        assertEquals(0, p3.remaining());
+
+        var p4 = service.factOrphanBackfill(p3.lastCreatedAt(), p3.lastId(), 1);
+        assertEquals(0, p4.checked(), "walk is exhausted");
+        assertEquals(0, p4.remaining());
+        assertEquals(dupC, p4.lastId(), "an empty page returns the cursor it was given");
+
+        assertFalse(factIsLive(dropA), "page 1's orphan must have been settled (invalidated)");
+        assertTrue(factIsLive(moveB), "page 2's orphan must have been settled (repointed)");
+        assertTrue(factIsLive(moveC), "page 3's orphan must have been settled (repointed)");
     }
 }

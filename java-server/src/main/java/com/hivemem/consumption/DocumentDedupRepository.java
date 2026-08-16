@@ -355,7 +355,7 @@ public class DocumentDedupRepository {
      * #reassignOrInvalidateFacts} in its own transaction rather than duplicating its SQL, so the
      * live discard path ({@link #linkAndSoftDelete}) and the backfill can never drift apart.
      */
-    public FactSettlement settleDiscardedCellFacts(UUID duplicateCellId, UUID originalCellId) {
+    FactSettlement settleDiscardedCellFacts(UUID duplicateCellId, UUID originalCellId) {
         return dsl.transactionResult(cfg -> {
             DSLContext tx = DSL.using(cfg);
             FactSettlement settlement = reassignOrInvalidateFacts(tx, duplicateCellId, originalCellId);
@@ -363,7 +363,7 @@ public class DocumentDedupRepository {
                 // Mirrors the WARN in linkAndSoftDelete: the backfill path has no other caller
                 // inspecting the branch, so without this line a skip here would be as silent in
                 // the backfill as an unsettled fact would be on the live path.
-                log.warn("Dedup backfill: no live fact target for discarded cell {} (duplicate_of {} "
+                log.warn("Dedup fact backfill: no live fact target for discarded cell {} (duplicate_of {} "
                         + "resolved to no live cell); its facts were left untouched and need manual review",
                         duplicateCellId, originalCellId);
             }
@@ -371,9 +371,13 @@ public class DocumentDedupRepository {
         });
     }
 
-    /** Row comparison for a query aliasing the cells table, or nothing at all when the walk
-     *  starts without a cursor. Same semantics as {@link #cursorPredicate}, just alias-aware for
-     *  a query that joins other tables also carrying {@code created_at}/{@code id} columns. */
+    /** Row comparison for {@link #findDiscardedCellsWithLiveFacts}/{@link
+     *  #countDiscardedCellsWithLiveFactsAfter}, or nothing at all when the walk starts without a
+     *  cursor. Same semantics as {@link #cursorPredicate}, just qualified with the cells alias —
+     *  not because it is required to disambiguate (the outer {@code FROM} is only {@code cells c};
+     *  {@code tunnels}/{@code facts} appear solely inside {@code EXISTS} subqueries, which are
+     *  their own name-resolution scope and never collide with the outer query), but so the
+     *  predicate reads consistently with the {@code c.*}-qualified SELECT/ORDER BY around it. */
     private static String cursorPredicateAliased(OffsetDateTime afterCreatedAt, UUID afterId, String alias) {
         return afterCreatedAt == null || afterId == null
                 ? "" : " AND (" + alias + ".created_at, " + alias + ".id) > (?::timestamptz, ?::uuid)";
