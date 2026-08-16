@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel a superseded run of the same ref instead of letting it race the new
+# one to completion. `mvn verify`, Playwright and the image build are all
+# expensive, so a rebase or follow-up push would otherwise burn a full extra
+# run alongside the new one. Gated to pull_request only so a push to main is
+# never cancelled mid-run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -69,12 +78,25 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The root Dockerfile is the single source of truth for the Node major
+      # version. Reading it here means a Dependabot bump of the FROM line moves
+      # CI too, so the image and its test can never be built on different lines.
+      - name: Read Node version from Dockerfile
+        id: node
+        working-directory: ${{ github.workspace }}
+        run: |
+          version=$(grep -m1 -oP '^FROM node:\K[0-9]+' Dockerfile || true)
+          if [ -z "$version" ]; then
+            echo "::error::Could not read a Node major version from the FROM line in Dockerfile"
+            exit 1
+          fi
+          echo "Node major version from Dockerfile: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
-          # Must match the ui-build stage in the root Dockerfile — that image is
-          # never built on a PR, so this job is the only test of the Node line.
-          node-version: "24"
+          node-version: ${{ steps.node.outputs.version }}
           cache: npm
           cache-dependency-path: knowledge-ui/package-lock.json
 
@@ -101,3 +123,34 @@ jobs:
           path: knowledge-ui/playwright-report/
           retention-days: 7
           if-no-files-found: ignore
+
+  # Builds the shipped image on pull requests without publishing it. docker.yml
+  # only runs on push to main and on tags, so without this job a change to the
+  # Dockerfile would first be built *after* it was merged.
+  image:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          # cache-from only: GHA cache reads flow down (a PR branch reads the
+          # cache written on main), but writes are scoped to the writing ref.
+          # An export from this PR job would be unusable by docker.yml on
+          # main and by every other PR, yet would still consume the single
+          # repo-wide 10 GB LRU quota. mode=max exports every layer of every
+          # stage (node UI build, full Maven tree, JDK base, apt/tesseract/
+          # postgresql-client runtime layers) — multiple GB per PR ref, and
+          # enough PR refs evict main's entry, sending the publish build on
+          # the critical path to prod cold. This job only needs to be
+          # cache-warm, which cache-from alone provides.
+          cache-from: type=gha

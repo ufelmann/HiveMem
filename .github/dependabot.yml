@@ -1,16 +1,33 @@
 version: 2
 updates:
+  # One combined PR per ecosystem per week. Ungrouped, a batch of bumps that
+  # touch the same workflow file serialises behind branch protection and can
+  # leave later PRs with conflicts Dependabot cannot rebase away.
   - package-ecosystem: "maven"
     directory: "/java-server"
     schedule:
       interval: "weekly"
+    groups:
+      maven-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      docker-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
