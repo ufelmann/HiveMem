@@ -118,13 +118,14 @@ public class DocumentDedupService {
      * to {@code REPOINTED} with nothing actually moved would otherwise overstate the work done.
      * {@code skipped} counts cells where no live fact target could be resolved (or, rarely, whose
      * {@code duplicate_of} tunnel was invalidated concurrently) — those still have an unsettled
-     * orphan fact and need a human to look at them; {@code remaining} does NOT include them, since
-     * it only counts orphans still ahead of the cursor, so {@code remaining == 0} alone is not the
-     * finish condition — the skipped count must be checked too. {@code failed} counts cells where
-     * settling itself threw (e.g. a concurrent {@code revise_cell} lock conflict); the cursor still
-     * advances past them, so a deterministically-failing row cannot park the walk forever, but
-     * nothing was written for it and it should be retried later. Each skip and failure is also
-     * logged at WARN as it happens.
+     * orphan fact and need a human to look at them. {@code failed} counts cells where settling
+     * itself threw (e.g. a concurrent {@code revise_cell} lock conflict) — nothing was written for
+     * them either, and they too need a retry. The cursor advances past both, exactly as it does
+     * past a settled cell, so a deterministically-skipping or -failing row cannot park the walk
+     * forever — but for the same reason {@code remaining} (which only counts orphans still ahead of
+     * the cursor) does NOT include either of them. The finish condition is therefore
+     * {@code remaining == 0 AND skipped == 0 AND failed == 0}, not {@code remaining == 0} alone.
+     * Each skip and failure is also logged at WARN as it happens.
      */
     public record FactOrphanReport(int checked, int invalidated, int repointed, int skipped, int failed,
                                     OffsetDateTime lastCreatedAt, UUID lastId, int remaining) {}

@@ -232,6 +232,8 @@ class DocumentDedupBackfillIT extends ConsumptionITSupport {
         assertEquals(1, first.skipped());
         assertEquals(0, first.failed());
         assertEquals(dup, first.lastId(), "the walk must advance past the unresolved cell, not loop on it");
+        assertEquals(0, service.factOrphanBackfill(first.lastCreatedAt(), first.lastId(), 100).checked(),
+                "resuming from the cursor must not re-visit the skipped cell");
         assertTrue(factIsLive(stuckFact), "no live target -> the fact must not be touched at all");
 
         var second = service.factOrphanBackfill(null, null, 100);

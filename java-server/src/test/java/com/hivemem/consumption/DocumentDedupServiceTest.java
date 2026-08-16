@@ -205,4 +205,51 @@ class DocumentDedupServiceTest {
         assertFalse(service.findAndDiscardDuplicate(target).isPresent());
         verify(repo, never()).linkAndSoftDelete(any(), any(), any(), any());
     }
+
+    @Test
+    void factOrphanBackfillDisabledShortCircuits() {
+        props.setEnabled(false);
+        OffsetDateTime afterCreatedAt = OffsetDateTime.parse("2026-06-01T10:00:00Z");
+        UUID afterId = UUID.randomUUID();
+
+        DocumentDedupService.FactOrphanReport report =
+                service.factOrphanBackfill(afterCreatedAt, afterId, 100);
+
+        assertEquals(new DocumentDedupService.FactOrphanReport(
+                0, 0, 0, 0, 0, afterCreatedAt, afterId, 0), report);
+        verify(repo, never()).findDiscardedCellsWithLiveFacts(any(), any(), anyInt());
+    }
+
+    /**
+     * The entire point of the error-containment fix: a cell whose settlement throws must not abort
+     * the page, and the cursor must still land on the LAST cell the page looked at — not on the
+     * failing one — so a retry does not re-read and re-throw on the same row forever.
+     */
+    @Test
+    void factOrphanBackfillContainsAPerCellFailureAndAdvancesTheCursorPastIt() {
+        UUID cell1 = UUID.randomUUID();
+        UUID cell2 = UUID.randomUUID();
+        UUID origin1 = UUID.randomUUID();
+        UUID origin2 = UUID.randomUUID();
+        OffsetDateTime t1 = OffsetDateTime.parse("2026-06-01T10:00:00Z");
+        OffsetDateTime t2 = OffsetDateTime.parse("2026-06-01T10:05:00Z");
+
+        when(repo.findDiscardedCellsWithLiveFacts(any(), any(), anyInt())).thenReturn(List.of(
+                new DocumentDedupRepository.LiveCell(cell1, t1),
+                new DocumentDedupRepository.LiveCell(cell2, t2)));
+        when(repo.findDuplicateOfOriginal(cell1)).thenReturn(Optional.of(origin1));
+        when(repo.settleDiscardedCellFacts(cell1, origin1)).thenThrow(new RuntimeException("lock conflict"));
+        when(repo.findDuplicateOfOriginal(cell2)).thenReturn(Optional.of(origin2));
+        when(repo.settleDiscardedCellFacts(cell2, origin2)).thenReturn(
+                new DocumentDedupRepository.FactSettlement(
+                        DocumentDedupRepository.FactSettlement.Branch.REPOINTED, 1));
+
+        DocumentDedupService.FactOrphanReport report = service.factOrphanBackfill(null, null, 100);
+
+        assertEquals(2, report.checked());
+        assertEquals(1, report.failed());
+        assertEquals(1, report.repointed());
+        assertEquals(0, report.skipped());
+        assertEquals(cell2, report.lastId(), "the cursor must advance past the failing cell");
+    }
 }
