@@ -290,11 +290,12 @@ public class DocumentDedupRepository {
     }
 
     /**
-     * Atomically write the {@code duplicate_of} audit tunnel AND soft-delete the duplicate cell in a
-     * single transaction. This keeps the core dedup invariant: we never soft-delete a cell without
-     * recording why it disappeared, and never leave a {@code duplicate_of} tunnel hanging off a cell
-     * that is still live. Attachment/S3 cleanup is deliberately NOT part of this transaction (it is
-     * external, ref-count-guarded, and an orphaned binary is harmless next to losing the audit link).
+     * Atomically write the {@code duplicate_of} audit tunnel, soft-delete the duplicate cell, AND
+     * settle its live facts, in a single transaction. This keeps the core dedup invariant: we never
+     * soft-delete a cell without recording why it disappeared, and never leave a {@code duplicate_of}
+     * tunnel or a live fact hanging off a cell that is still live. Attachment/S3 cleanup is
+     * deliberately NOT part of this transaction (it is external, ref-count-guarded, and an orphaned
+     * binary is harmless next to losing the audit link).
      *
      * <p>A discarded cell that was {@code pending} additionally becomes {@code rejected}, in the same
      * transaction. The {@code pending_approvals} view selects on {@code status = 'pending'} alone,
@@ -320,7 +321,40 @@ public class DocumentDedupRepository {
                     + "status = CASE WHEN status = 'pending' THEN 'rejected' ELSE status END "
                     + "WHERE id = ? AND valid_until IS NULL",
                     duplicateCellId);
+            reassignOrInvalidateFacts(tx, duplicateCellId, originalCellId);
         });
+    }
+
+    /**
+     * Settle the discarded cell's live facts inside the same transaction as the soft-delete.
+     *
+     * <p>Dedup runs after fact extraction and always will — it needs the cell's embedding, which
+     * only exists once the summary is in place ({@code SummarizerService.summarizeOne}) — so a
+     * discard always leaves facts behind. Left alone they stay live and answer queries, because
+     * {@code active_facts} tests a fact's own liveness and never its source cell.
+     *
+     * <p>Invalidating them unconditionally would be wrong: measured on production, 23 of 420
+     * discarded cells carrying facts had an original with none of its own (originals ingested
+     * before extraction existed, or whose extraction failed), and those facts exist nowhere else.
+     * So the branch is on the original: if it already carries the knowledge, drop the duplicate's
+     * copy; if it does not, hand the facts over rather than destroy them.
+     */
+    private void reassignOrInvalidateFacts(DSLContext tx, UUID duplicateCellId, UUID originalCellId) {
+        boolean originalHasFacts = tx.fetchOne(
+                "SELECT EXISTS (SELECT 1 FROM facts WHERE source_id = ? "
+                + "AND valid_until IS NULL AND status = 'committed') AS e",
+                originalCellId).get("e", Boolean.class);
+        if (originalHasFacts) {
+            tx.execute(
+                    "UPDATE facts SET valid_until = now() WHERE source_id = ? "
+                    + "AND valid_until IS NULL AND status = 'committed'",
+                    duplicateCellId);
+        } else {
+            tx.execute(
+                    "UPDATE facts SET source_id = ? WHERE source_id = ? "
+                    + "AND valid_until IS NULL AND status = 'committed'",
+                    originalCellId, duplicateCellId);
+        }
     }
 
     /** Number of OTHER current cells linked to the attachment (excludes {@code excludingCellId}). */

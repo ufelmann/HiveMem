@@ -52,6 +52,25 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
                 + "VALUES (?, ?, true)", cellId, attachmentId);
     }
 
+    private UUID seedFact(UUID sourceId, String subject, String predicate, String object) {
+        UUID id = UUID.randomUUID();
+        dsl.execute(
+                "INSERT INTO facts (id, subject, predicate, object, source_id, status) "
+                + "VALUES (?, ?, ?, ?, ?, 'committed')",
+                id, subject, predicate, object, sourceId);
+        return id;
+    }
+
+    private boolean factIsLive(UUID factId) {
+        return dsl.fetchOne("SELECT valid_until FROM facts WHERE id = ?", factId)
+                .get("valid_until") == null;
+    }
+
+    private UUID factSource(UUID factId) {
+        return dsl.fetchOne("SELECT source_id FROM facts WHERE id = ?", factId)
+                .get("source_id", UUID.class);
+    }
+
     @Test
     void findsOlderSimilarScanCandidate() {
         DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
@@ -429,6 +448,72 @@ class DocumentDedupRepositoryIT extends ConsumptionITSupport {
 
         assertEquals("committed", statusOf(dup));
         assertFalse(repo.findTarget(dup).isPresent(), "still soft-deleted");
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Facts of a discarded duplicate must not stay live pointing at a dead source.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    void invalidatesTheDuplicatesFactsWhenTheOriginalAlreadyHasSome() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        UUID original = seedCell("policy", VEC_A, "consumption:a", "committed", OffsetDateTime.now().minusDays(2));
+        UUID duplicate = seedCell("policy", VEC_A, "consumption:b", "committed", OffsetDateTime.now());
+        UUID keptFact = seedFact(original, "SYNTHETIC INSURER", "policy_number", "1000000001");
+        UUID dupFact = seedFact(duplicate, "SYNTHETIC INSURER", "policy_number", "1000000001");
+
+        repo.linkAndSoftDelete(duplicate, original, "note", "test");
+
+        assertFalse(factIsLive(dupFact), "the duplicate's fact must not stay live");
+        assertTrue(factIsLive(keptFact), "the original's fact must be untouched");
+        assertEquals(duplicate, factSource(dupFact), "invalidation must not move the fact");
+    }
+
+    @Test
+    void repointsTheDuplicatesFactsWhenTheOriginalHasNone() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        UUID original = seedCell("policy", VEC_A, "consumption:a", "committed", OffsetDateTime.now().minusDays(2));
+        UUID duplicate = seedCell("policy", VEC_A, "consumption:b", "committed", OffsetDateTime.now());
+        UUID dupFact = seedFact(duplicate, "SYNTHETIC INSURER", "policy_number", "1000000001");
+
+        repo.linkAndSoftDelete(duplicate, original, "note", "test");
+
+        assertTrue(factIsLive(dupFact), "the only copy of the fact must survive");
+        assertEquals(original, factSource(dupFact), "it must now belong to the surviving cell");
+    }
+
+    @Test
+    void leavesAlreadyInvalidatedFactsOfTheDuplicateAlone() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        UUID original = seedCell("policy", VEC_A, "consumption:a", "committed", OffsetDateTime.now().minusDays(2));
+        UUID duplicate = seedCell("policy", VEC_A, "consumption:b", "committed", OffsetDateTime.now());
+        seedFact(original, "SYNTHETIC INSURER", "policy_number", "1000000001");
+        UUID dead = seedFact(duplicate, "SYNTHETIC INSURER", "premium", "12,34 EUR");
+        dsl.execute("UPDATE facts SET valid_until = now() - interval '1 day' WHERE id = ?", dead);
+        OffsetDateTime before = dsl.fetchOne("SELECT valid_until FROM facts WHERE id = ?", dead)
+                .get("valid_until", OffsetDateTime.class);
+
+        repo.linkAndSoftDelete(duplicate, original, "note", "test");
+
+        OffsetDateTime after = dsl.fetchOne("SELECT valid_until FROM facts WHERE id = ?", dead)
+                .get("valid_until", OffsetDateTime.class);
+        assertEquals(before, after, "an already-dead fact must not be re-stamped");
+    }
+
+    @Test
+    void stillRejectsAPendingDuplicateAndWritesTheTunnel() {
+        DocumentDedupRepository repo = new DocumentDedupRepository(dsl);
+        UUID original = seedCell("policy", VEC_A, "consumption:a", "committed", OffsetDateTime.now().minusDays(2));
+        UUID duplicate = seedCell("policy", VEC_A, "consumption:b", "pending", OffsetDateTime.now());
+        seedFact(original, "SYNTHETIC INSURER", "policy_number", "1000000001");
+
+        repo.linkAndSoftDelete(duplicate, original, "note", "test");
+
+        assertEquals("rejected",
+                dsl.fetchOne("SELECT status FROM cells WHERE id = ?", duplicate).get("status"));
+        assertEquals(1, dsl.fetchOne(
+                "SELECT count(*) AS n FROM tunnels WHERE from_cell = ? AND relation = 'duplicate_of'",
+                duplicate).get("n", Long.class).intValue());
     }
 
     private String statusOf(UUID id) {
