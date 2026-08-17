@@ -132,7 +132,12 @@ class AccessJwtResolverTest {
     }
 
     @Test
-    void emailWithoutTokenRowLogsTheEmail() throws Exception {
+    void emailWithoutTokenRowLogsAMaskedEmailButNeverTheFullAddress() throws Exception {
+        // Pins the codebase-wide invariant asserted by AuthorizationControllerSplitHostTest
+        // (forbiddenBranchLogsJwtPresentWhenEmailIsUnknownAndNeverLogsTheEmail,
+        // AuthorizationControllerSplitHostTest.java:212): a human's email must never reach the
+        // log in full. This line must still carry the masked shape so an operator can tell
+        // which of several mapped identities was presented.
         when(tokenService.findByEmail("alice@example.com")).thenReturn(Optional.empty());
         var claims = validClaims().claim("email", "alice@example.com").build();
 
@@ -151,9 +156,51 @@ class AccessJwtResolverTest {
         assertThat(result).isEmpty();
         assertThat(appender.list.stream()
                         .filter(e -> e.getLevel() == Level.WARN)
-                        .filter(e -> e.getFormattedMessage().contains("alice@example.com")))
-                .as("an unmapped email must log exactly one WARN naming it, got: " + appender.list)
-                .hasSize(1);
+                        .map(ILoggingEvent::getFormattedMessage))
+                .as("got: " + appender.list)
+                .noneMatch(m -> m.contains("alice@example.com"))
+                .anyMatch(m -> m.contains("a***e@example.com"));
+    }
+
+    @Test
+    void maskEmailKeepsFirstAndLastLocalCharAndTheDomain() {
+        assertThat(AccessJwtResolver.maskEmail("alice@example.com")).isEqualTo("a***e@example.com");
+    }
+
+    @Test
+    void maskEmailShowsAOneCharacterLocalPartOnce() {
+        // b***b would falsely imply two distinct character positions; b*** shows the one
+        // real character exactly once, matching what the full address actually contains.
+        assertThat(AccessJwtResolver.maskEmail("b@example.com")).isEqualTo("b***@example.com");
+    }
+
+    @Test
+    void maskEmailShowsBothCharsOfATwoCharacterLocalPart() {
+        // Fully visible at this length, but not "more" than the full address already shows —
+        // there is no middle character to hide.
+        assertThat(AccessJwtResolver.maskEmail("bo@example.com")).isEqualTo("b***o@example.com");
+    }
+
+    @Test
+    void maskEmailWithNoAtSignMasksTheWholeStringAsALocalPart() {
+        assertThat(AccessJwtResolver.maskEmail("notanemail")).isEqualTo("n***l");
+    }
+
+    @Test
+    void maskEmailEndingInAtSignKeepsTheBareAtSign() {
+        assertThat(AccessJwtResolver.maskEmail("alice@")).isEqualTo("a***e@");
+    }
+
+    @Test
+    void maskEmailWithEmptyLocalPartMasksToAFixedPlaceholder() {
+        assertThat(AccessJwtResolver.maskEmail("@example.com")).isEqualTo("***@example.com");
+    }
+
+    @Test
+    void maskEmailNeverThrowsOnNullOrBlankInput() {
+        assertThat(AccessJwtResolver.maskEmail(null)).isEqualTo("(blank)");
+        assertThat(AccessJwtResolver.maskEmail("")).isEqualTo("(blank)");
+        assertThat(AccessJwtResolver.maskEmail("   ")).isEqualTo("(blank)");
     }
 
     @Test

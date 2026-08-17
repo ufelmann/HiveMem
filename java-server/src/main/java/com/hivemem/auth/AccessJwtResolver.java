@@ -104,18 +104,56 @@ public class AccessJwtResolver implements HumanPrincipalResolver {
             String normalizedEmail = email.toLowerCase(Locale.ROOT);
             Optional<AuthPrincipal> principal = tokenService.findByEmail(normalizedEmail);
             if (principal.isEmpty()) {
-                // Name the identity so an operator can tell "logged in as the wrong identity"
-                // from "mapping missing" — the whole point of this line. It goes to the
-                // operator's own container log, never to the repository.
-                log.warn("Access JWT verified for {} but no live api_tokens row maps it "
+                // Name the (masked) identity so an operator can tell "logged in as the wrong
+                // identity" from "mapping missing" — the whole point of this line — without
+                // putting a full human email address in the log. AuthorizationControllerSplitHostTest
+                // (forbiddenBranchLogsJwtPresentWhenEmailIsUnknownAndNeverLogsTheEmail,
+                // AuthorizationControllerSplitHostTest.java:212) pins a codebase-wide invariant
+                // that a human's email must never reach the log; masking is how this line
+                // keeps its diagnostic value (which of several mapped identities, by domain and
+                // shape) without violating it.
+                String maskedEmail = maskEmail(normalizedEmail);
+                log.warn("Access JWT verified for {} (masked) but no live api_tokens row maps it "
                                 + "(never mapped, revoked, or expired) - denying. "
-                                + "Fix: hivemem-token set-email <name> {}",
-                        normalizedEmail, normalizedEmail);
+                                + "Fix: hivemem-token set-email <name> <the email shown by Access>",
+                        maskedEmail);
             }
             return principal;
         } catch (Exception e) {
             log.warn("Rejected Access JWT: {}", e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /**
+     * Masks an email address for logging: keeps the first and last character of the local
+     * part and the domain (including {@code @}) intact, replaces everything in between with a
+     * fixed-length {@code ***} — never the true length of what's hidden, so the mask itself
+     * gives no length signal. Never throws: a logging helper that can fail would turn a clean
+     * {@code 401}/{@code 403} into a {@code 500}, so every edge case degrades to a safe,
+     * non-identifying string instead.
+     *
+     * <p>Local parts of one or two characters end up fully visible (e.g. {@code bo} ->
+     * {@code b***o}) — that's the same information the full address already carries, not new
+     * exposure: the rule never reveals a character the original address didn't already show at
+     * that position. A one-character local part is shown once, not doubled as first-and-last,
+     * so the mask doesn't imply a length the address doesn't have.
+     *
+     * <p>Package-private (not private) only so the unit test can call it directly without
+     * reflection; still an implementation detail, not part of any public API.
+     */
+    static String maskEmail(String email) {
+        if (email == null || email.isBlank()) return "(blank)";
+        int at = email.indexOf('@');
+        if (at < 0) return maskLocalPart(email);
+        String local = email.substring(0, at);
+        String domainWithAt = email.substring(at);
+        return maskLocalPart(local) + domainWithAt;
+    }
+
+    private static String maskLocalPart(String local) {
+        if (local.isEmpty()) return "***";
+        if (local.length() == 1) return local + "***";
+        return local.charAt(0) + "***" + local.charAt(local.length() - 1);
     }
 }

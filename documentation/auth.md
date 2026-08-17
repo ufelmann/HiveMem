@@ -43,8 +43,12 @@ signature:
 | `Human auth denied: ...` + `Rejected Access JWT: ...` | JWT invalid (signature / `aud` / issuer / expiry) |
 | `Human auth denied: ...` + `Access JWT verified for ... but no live api_tokens row maps it` | JWT valid, identity not mapped |
 
-Only the email and header presence are logged — never the JWT itself, query strings, or other
-headers.
+The identity in the third line is a **masked** email — first and last character of the local
+part and the domain intact, the middle replaced with a fixed `***` — never the full address: a
+codebase-wide invariant (pinned by a test in `com.hivemem.oauth`) forbids a human's email
+reaching the log in full. Masking still lets an operator tell which of several mapped identities
+was presented, by domain and shape (`a***e@example.com`). Nothing else is logged: never the JWT
+itself, query strings, or other headers.
 
 A realm-scoped principal denied outside `/api/tools/call` (see "Which paths use which
 authentication" below) logs its own, differently-worded `Human auth denied: ... (realm-scoped
