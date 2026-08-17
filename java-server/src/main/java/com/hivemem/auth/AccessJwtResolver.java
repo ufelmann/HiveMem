@@ -101,7 +101,18 @@ public class AccessJwtResolver implements HumanPrincipalResolver {
             // Belt-and-suspenders: TokenService#findByEmail already matches case-insensitively
             // in the DB; normalizing here too costs nothing and keeps behavior obvious to a
             // reader who only sees this call site.
-            return tokenService.findByEmail(email.toLowerCase(Locale.ROOT));
+            String normalizedEmail = email.toLowerCase(Locale.ROOT);
+            Optional<AuthPrincipal> principal = tokenService.findByEmail(normalizedEmail);
+            if (principal.isEmpty()) {
+                // Name the identity so an operator can tell "logged in as the wrong identity"
+                // from "mapping missing" — the whole point of this line. It goes to the
+                // operator's own container log, never to the repository.
+                log.warn("Access JWT verified for {} but no live api_tokens row maps it "
+                                + "(never mapped, revoked, or expired) - denying. "
+                                + "Fix: hivemem-token set-email <name> {}",
+                        normalizedEmail, normalizedEmail);
+            }
+            return principal;
         } catch (Exception e) {
             log.warn("Rejected Access JWT: {}", e.getMessage());
             return Optional.empty();

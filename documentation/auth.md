@@ -30,6 +30,22 @@ matching, non-revoked, non-expired row is authenticated but not authorized: `403
 See [Operations](operations.md#enabling-cloudflare-access-human-auth-hardening) for how that
 mapping is created (`hivemem-token set-email`).
 
+### Diagnosing a denied human login from the server log
+
+A denied browser request logs a `WARN` naming the method, path, status and whether the Access
+header was present, before the response is sent — no behavior change, purely diagnostic. Combined
+with `AccessJwtResolver`'s own log lines, the three possible causes each have one distinguishable
+signature:
+
+| Log lines seen | Cause |
+|---|---|
+| `Human auth denied: ... (access-jwt header absent)` only | no Access session reached the origin |
+| `Human auth denied: ...` + `Rejected Access JWT: ...` | JWT invalid (signature / `aud` / issuer / expiry) |
+| `Human auth denied: ...` + `Access JWT verified for ... but no live api_tokens row maps it` | JWT valid, identity not mapped |
+
+Only the email and header presence are logged — never the JWT itself, query strings, or other
+headers.
+
 ## Which paths use which authentication
 
 | Paths | Who | Authentication |

@@ -1,5 +1,9 @@
 package com.hivemem.web;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import com.hivemem.auth.AccessJwtResolver;
 import com.hivemem.auth.AccessProperties;
 import com.hivemem.auth.AuthFilter;
 import com.hivemem.auth.AuthPrincipal;
@@ -10,7 +14,9 @@ import com.hivemem.auth.RateLimiter;
 import com.hivemem.auth.SessionResolver;
 import com.hivemem.auth.TokenService;
 import com.hivemem.auth.support.FixedTokenService;
+import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -18,6 +24,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -195,6 +202,134 @@ class HumanAuthFilterSliceTest {
         UnitTestHelper helper = new UnitTestHelper();
         assertThat(helper.skip("/")).isFalse();
         assertThat(helper.skip("/hive")).isFalse();
+    }
+
+    // Unit tests for the denial-logging change: assert on the captured log output
+    // (never stdout), and that every status/redirect stays exactly as before.
+    private ListAppender<ILoggingEvent> captureLog() {
+        ch.qos.logback.classic.Logger filterLogger =
+                (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(HumanAuthFilter.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        filterLogger.addAppender(appender);
+        return appender;
+    }
+
+    private void doFilter(HumanAuthFilter filter, MockHttpServletRequest request,
+                          MockHttpServletResponse response) throws Exception {
+        // Same package as HumanAuthFilter: its protected doFilterInternal is directly callable.
+        filter.doFilterInternal(request, response, mock(FilterChain.class));
+    }
+
+    @Test
+    void deniedApiRequestWithoutHeaderLogs401AndHeaderAbsent() throws Exception {
+        HumanAuthFilter filter = new HumanAuthFilter(
+                request -> Optional.empty(), new AccessProperties());
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/tools/call");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        ListAppender<ILoggingEvent> appender = captureLog();
+
+        try {
+            doFilter(filter, request, response);
+        } finally {
+            ((ch.qos.logback.classic.Logger) LoggerFactory.getLogger(HumanAuthFilter.class))
+                    .detachAppender(appender);
+        }
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(appender.list.stream()
+                        .filter(e -> e.getLevel() == Level.WARN)
+                        .map(ILoggingEvent::getFormattedMessage))
+                .as("got: " + appender.list)
+                .anyMatch(m -> m.contains("401") && m.contains("/api/tools/call")
+                        && m.contains("absent"));
+    }
+
+    @Test
+    void deniedSpaRouteInAccessModeLogs403() throws Exception {
+        AccessProperties accessProperties = new AccessProperties();
+        accessProperties.setEnabled(true);
+        HumanAuthFilter filter = new HumanAuthFilter(request -> Optional.empty(), accessProperties);
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/graph");
+        request.addHeader(AccessJwtResolver.HEADER, "some-jwt");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        ListAppender<ILoggingEvent> appender = captureLog();
+
+        try {
+            doFilter(filter, request, response);
+        } finally {
+            ((ch.qos.logback.classic.Logger) LoggerFactory.getLogger(HumanAuthFilter.class))
+                    .detachAppender(appender);
+        }
+
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(appender.list.stream()
+                        .filter(e -> e.getLevel() == Level.WARN)
+                        .map(ILoggingEvent::getFormattedMessage))
+                .as("got: " + appender.list)
+                .anyMatch(m -> m.contains("403") && m.contains("/graph") && m.contains("present"));
+    }
+
+    @Test
+    void deniedSpaRouteInLegacyModeLogsRedirect() throws Exception {
+        HumanAuthFilter filter = new HumanAuthFilter(
+                request -> Optional.empty(), new AccessProperties());
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/graph");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        ListAppender<ILoggingEvent> appender = captureLog();
+
+        try {
+            doFilter(filter, request, response);
+        } finally {
+            ((ch.qos.logback.classic.Logger) LoggerFactory.getLogger(HumanAuthFilter.class))
+                    .detachAppender(appender);
+        }
+
+        assertThat(response.getStatus()).isEqualTo(302);
+        assertThat(response.getRedirectedUrl()).isEqualTo("/login");
+        assertThat(appender.list.stream()
+                        .filter(e -> e.getLevel() == Level.WARN)
+                        .map(ILoggingEvent::getFormattedMessage))
+                .as("got: " + appender.list)
+                .anyMatch(m -> m.contains("/graph") && m.contains("absent"));
+    }
+
+    @Test
+    void authenticatedRequestLogsNothing() throws Exception {
+        AuthPrincipal principal = new AuthPrincipal("alice", AuthRole.READER);
+        HumanAuthFilter filter = new HumanAuthFilter(
+                request -> Optional.of(principal), new AccessProperties());
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/graph");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        ListAppender<ILoggingEvent> appender = captureLog();
+
+        try {
+            doFilter(filter, request, response);
+        } finally {
+            ((ch.qos.logback.classic.Logger) LoggerFactory.getLogger(HumanAuthFilter.class))
+                    .detachAppender(appender);
+        }
+
+        assertThat(appender.list).as("got: " + appender.list).isEmpty();
+    }
+
+    @Test
+    void machinePassthroughLogsNothing() throws Exception {
+        HumanAuthFilter filter = new HumanAuthFilter(
+                request -> Optional.empty(), new AccessProperties());
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/mcp");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        ListAppender<ILoggingEvent> appender = captureLog();
+
+        try {
+            doFilter(filter, request, response);
+        } finally {
+            ((ch.qos.logback.classic.Logger) LoggerFactory.getLogger(HumanAuthFilter.class))
+                    .detachAppender(appender);
+        }
+
+        assertThat(appender.list).as("machine passthrough is not a denial, got: " + appender.list)
+                .isEmpty();
     }
 
     @RestController

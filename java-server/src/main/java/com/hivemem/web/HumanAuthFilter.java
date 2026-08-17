@@ -1,5 +1,6 @@
 package com.hivemem.web;
 
+import com.hivemem.auth.AccessJwtResolver;
 import com.hivemem.auth.AccessProperties;
 import com.hivemem.auth.AuthFilter;
 import com.hivemem.auth.AuthPrincipal;
@@ -8,6 +9,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -30,6 +33,8 @@ import java.util.Set;
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class HumanAuthFilter extends OncePerRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(HumanAuthFilter.class);
 
     private final HumanPrincipalResolver humanPrincipalResolver;
     private final AccessProperties accessProperties;
@@ -120,6 +125,7 @@ public class HumanAuthFilter extends OncePerRequestFilter {
             // enforces the ACL. /api/gui/stream and /api/attachments have no realm filter
             // at all, so anything else is denied.
             if (principal.get().isRealmScoped() && !path.equals("/api/tools/call")) {
+                logDenial(request, HttpServletResponse.SC_FORBIDDEN);
                 response.sendError(HttpServletResponse.SC_FORBIDDEN);
                 return;
             }
@@ -129,13 +135,36 @@ public class HumanAuthFilter extends OncePerRequestFilter {
         }
 
         if (isApi) {
+            logDenial(request, HttpServletResponse.SC_UNAUTHORIZED);
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
         } else if (accessProperties.isEnabled()) {
             // No /login exists in Access mode — a redirect would 404 or fall through to
             // the SPA shell. Happens on direct-origin access that bypasses the tunnel.
+            logDenial(request, HttpServletResponse.SC_FORBIDDEN);
             response.sendError(HttpServletResponse.SC_FORBIDDEN);
         } else {
+            logDenial(request, HttpServletResponse.SC_MOVED_TEMPORARILY);
             response.sendRedirect(request.getContextPath() + "/login");
         }
+    }
+
+    /**
+     * One WARN per denial, carrying the discriminator an operator needs to tell the three
+     * causes of a failed human login apart without guessing: whether the Cloudflare Access
+     * header was present at all (an absent header means the request never carried a
+     * credential; combined with the resolver's own log lines for an invalid or unmapped
+     * JWT, each cause now has exactly one distinguishable signature). Every occurrence is a
+     * human being turned away — worth seeing, and its volume is bounded by the failure
+     * itself. Logs only method, path and status, never query strings, headers or bodies —
+     * the path is already attacker-controlled input reaching the log elsewhere in this
+     * codebase.
+     */
+    private void logDenial(HttpServletRequest request, int status) {
+        boolean headerPresent = request.getHeader(AccessJwtResolver.HEADER) != null;
+        log.warn("Human auth denied: {} {} -> {} (access-jwt header {})",
+                request.getMethod(),
+                request.getRequestURI().substring(request.getContextPath().length()),
+                status,
+                headerPresent ? "present" : "absent");
     }
 }

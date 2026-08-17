@@ -8,9 +8,13 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.util.Date;
@@ -125,5 +129,50 @@ class AccessJwtResolverTest {
     void emailIsMatchedCaseInsensitively() throws Exception {
         var claims = validClaims().claim("email", "Mika@Example.com").build();
         assertThat(resolver.resolve(requestWith(sign(claims)))).contains(ADMIN);
+    }
+
+    @Test
+    void emailWithoutTokenRowLogsTheEmail() throws Exception {
+        when(tokenService.findByEmail("alice@example.com")).thenReturn(Optional.empty());
+        var claims = validClaims().claim("email", "alice@example.com").build();
+
+        ch.qos.logback.classic.Logger resolverLogger =
+                (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(AccessJwtResolver.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        resolverLogger.addAppender(appender);
+        Optional<AuthPrincipal> result;
+        try {
+            result = resolver.resolve(requestWith(sign(claims)));
+        } finally {
+            resolverLogger.detachAppender(appender);
+        }
+
+        assertThat(result).isEmpty();
+        assertThat(appender.list.stream()
+                        .filter(e -> e.getLevel() == Level.WARN)
+                        .filter(e -> e.getFormattedMessage().contains("alice@example.com")))
+                .as("an unmapped email must log exactly one WARN naming it, got: " + appender.list)
+                .hasSize(1);
+    }
+
+    @Test
+    void validJwtForMappedEmailLogsNoWarning() throws Exception {
+        ch.qos.logback.classic.Logger resolverLogger =
+                (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(AccessJwtResolver.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        resolverLogger.addAppender(appender);
+        Optional<AuthPrincipal> result;
+        try {
+            result = resolver.resolve(requestWith(sign(validClaims().build())));
+        } finally {
+            resolverLogger.detachAppender(appender);
+        }
+
+        assertThat(result).contains(ADMIN);
+        assertThat(appender.list.stream().filter(e -> e.getLevel() == Level.WARN))
+                .as("resolving a mapped identity must not warn, got: " + appender.list)
+                .isEmpty();
     }
 }
