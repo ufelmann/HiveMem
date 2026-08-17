@@ -46,6 +46,12 @@ signature:
 Only the email and header presence are logged — never the JWT itself, query strings, or other
 headers.
 
+A realm-scoped principal denied outside `/api/tools/call` (see "Which paths use which
+authentication" below) logs its own, differently-worded `Human auth denied: ... (realm-scoped
+principal confined to /api/tools/call)` line with no access-jwt-header discriminator — that
+request authenticated successfully and was denied on authorization, not on any of the three
+causes above, so it is not a fourth row in that table.
+
 ## Which paths use which authentication
 
 | Paths | Who | Authentication |

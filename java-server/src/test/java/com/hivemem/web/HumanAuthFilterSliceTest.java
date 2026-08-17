@@ -291,7 +291,65 @@ class HumanAuthFilterSliceTest {
                         .filter(e -> e.getLevel() == Level.WARN)
                         .map(ILoggingEvent::getFormattedMessage))
                 .as("got: " + appender.list)
-                .anyMatch(m -> m.contains("/graph") && m.contains("absent"));
+                .anyMatch(m -> m.contains("302") && m.contains("/graph") && m.contains("absent"));
+    }
+
+    @Test
+    void deniedApiRequestWithBlankHeaderLogsHeaderAbsent() throws Exception {
+        // A blank header must be treated the same as no header at all: AccessJwtResolver
+        // already does (AccessJwtResolver.java:96), and reporting it as "present" here would
+        // produce a signature the operator-facing table has no row for — a proxy forwarding
+        // an empty `Cf-Access-Jwt-Assertion:` header must not look like a rejected JWT.
+        HumanAuthFilter filter = new HumanAuthFilter(
+                request -> Optional.empty(), new AccessProperties());
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/tools/call");
+        request.addHeader(AccessJwtResolver.HEADER, "");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        ListAppender<ILoggingEvent> appender = captureLog();
+
+        try {
+            doFilter(filter, request, response);
+        } finally {
+            ((ch.qos.logback.classic.Logger) LoggerFactory.getLogger(HumanAuthFilter.class))
+                    .detachAppender(appender);
+        }
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(appender.list.stream()
+                        .filter(e -> e.getLevel() == Level.WARN)
+                        .map(ILoggingEvent::getFormattedMessage))
+                .as("got: " + appender.list)
+                .anyMatch(m -> m.contains("401") && m.contains("absent"));
+    }
+
+    @Test
+    void realmScopedForbiddenLogsItsOwnMessageWithNoHeaderDiscriminator() throws Exception {
+        // The principal here IS authenticated — this is an authorization denial, not any of
+        // the three authentication-failure causes logDenial covers. Reusing that message and
+        // its header discriminator would fabricate a fourth row that documentation/auth.md's
+        // three-signature table doesn't have.
+        AuthPrincipal realmScoped = new AuthPrincipal(
+                "alice", AuthRole.READER, null, List.of("some-realm"), List.of("some-realm"));
+        HumanAuthFilter filter = new HumanAuthFilter(
+                request -> Optional.of(realmScoped), new AccessProperties());
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/gui/stream");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        ListAppender<ILoggingEvent> appender = captureLog();
+
+        try {
+            doFilter(filter, request, response);
+        } finally {
+            ((ch.qos.logback.classic.Logger) LoggerFactory.getLogger(HumanAuthFilter.class))
+                    .detachAppender(appender);
+        }
+
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(appender.list.stream()
+                        .filter(e -> e.getLevel() == Level.WARN)
+                        .map(ILoggingEvent::getFormattedMessage))
+                .as("got: " + appender.list)
+                .anyMatch(m -> m.contains("403") && m.contains("/api/gui/stream")
+                        && m.contains("realm-scoped") && !m.contains("access-jwt header"));
     }
 
     @Test
@@ -315,9 +373,21 @@ class HumanAuthFilterSliceTest {
 
     @Test
     void machinePassthroughLogsNothing() throws Exception {
+        // Spec item 6: none of the five machine passthrough paths is a denial, so none may log.
         HumanAuthFilter filter = new HumanAuthFilter(
                 request -> Optional.empty(), new AccessProperties());
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/mcp");
+
+        assertNoDenialLogged(filter, new MockHttpServletRequest("POST", "/mcp"));
+        assertNoDenialLogged(filter, new MockHttpServletRequest("POST", "/hooks/some-hook"));
+        assertNoDenialLogged(filter, new MockHttpServletRequest("GET", "/sync/ops"));
+        assertNoDenialLogged(filter, new MockHttpServletRequest("GET", "/vistierie/tools/find_isolated_cells"));
+
+        MockHttpServletRequest adminBearerRequest = new MockHttpServletRequest("GET", "/admin/peers");
+        adminBearerRequest.addHeader("Authorization", "Bearer some-token");
+        assertNoDenialLogged(filter, adminBearerRequest);
+    }
+
+    private void assertNoDenialLogged(HumanAuthFilter filter, MockHttpServletRequest request) throws Exception {
         MockHttpServletResponse response = new MockHttpServletResponse();
         ListAppender<ILoggingEvent> appender = captureLog();
 
@@ -328,7 +398,8 @@ class HumanAuthFilterSliceTest {
                     .detachAppender(appender);
         }
 
-        assertThat(appender.list).as("machine passthrough is not a denial, got: " + appender.list)
+        assertThat(appender.list)
+                .as("machine passthrough on %s is not a denial, got: %s", request.getRequestURI(), appender.list)
                 .isEmpty();
     }
 

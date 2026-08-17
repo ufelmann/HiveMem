@@ -125,7 +125,7 @@ public class HumanAuthFilter extends OncePerRequestFilter {
             // enforces the ACL. /api/gui/stream and /api/attachments have no realm filter
             // at all, so anything else is denied.
             if (principal.get().isRealmScoped() && !path.equals("/api/tools/call")) {
-                logDenial(request, HttpServletResponse.SC_FORBIDDEN);
+                logRealmScopeDenial(request);
                 response.sendError(HttpServletResponse.SC_FORBIDDEN);
                 return;
             }
@@ -156,15 +156,38 @@ public class HumanAuthFilter extends OncePerRequestFilter {
      * JWT, each cause now has exactly one distinguishable signature). Every occurrence is a
      * human being turned away — worth seeing, and its volume is bounded by the failure
      * itself. Logs only method, path and status, never query strings, headers or bodies —
-     * the path is already attacker-controlled input reaching the log elsewhere in this
-     * codebase.
+     * McpController already logs raw request metadata (Accept/Content-Type headers, the
+     * JSON-RPC method/id) at this same level, so a path is no more sensitive than that.
      */
     private void logDenial(HttpServletRequest request, int status) {
-        boolean headerPresent = request.getHeader(AccessJwtResolver.HEADER) != null;
+        // A blank header counts as absent everywhere else in this codepath: AccessJwtResolver
+        // treats it as no credential (AccessJwtResolver.java:96), and the OAuth consent-refused
+        // log line (AuthorizationController#accessJwtPresent) applies the same isBlank() check
+        // for the same reason. A proxy that forwards an empty header must not be misreported as
+        // "present" — that's a signature this table doesn't have, and an operator would go
+        // hunting a rejected JWT that never existed.
+        String header = request.getHeader(AccessJwtResolver.HEADER);
+        boolean headerPresent = header != null && !header.isBlank();
         log.warn("Human auth denied: {} {} -> {} (access-jwt header {})",
                 request.getMethod(),
                 request.getRequestURI().substring(request.getContextPath().length()),
                 status,
                 headerPresent ? "present" : "absent");
+    }
+
+    /**
+     * The realm-scoped-forbidden branch is a different failure from the three {@link
+     * #logDenial} covers: the principal WAS authenticated (Access JWT or session both resolved
+     * fine) and is denied purely on authorization — confined to {@code /api/tools/call} and
+     * requesting something else. Reusing {@link #logDenial}'s message and header discriminator
+     * here would fabricate a fourth row that isn't in documentation/auth.md's three-signature
+     * table: an operator would read "header absent" and go chasing a Cloudflare tunnel problem
+     * that does not exist. This gets its own message and carries no header discriminator, since
+     * one is meaningless once the principal is already known.
+     */
+    private void logRealmScopeDenial(HttpServletRequest request) {
+        log.warn("Human auth denied: {} {} -> 403 (realm-scoped principal confined to /api/tools/call)",
+                request.getMethod(),
+                request.getRequestURI().substring(request.getContextPath().length()));
     }
 }
