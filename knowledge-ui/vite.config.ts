@@ -51,7 +51,7 @@ export const workboxOptions = {
   ],
 }
 
-export default defineConfig(async ({ mode }) => {
+export default defineConfig(async ({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_')
   const proxyTarget = env.VITE_PROXY_TARGET ?? 'http://localhost:8421'
   const token = env.VITE_HIVEMEM_TOKEN
@@ -61,8 +61,20 @@ export default defineConfig(async ({ mode }) => {
   // When developing against a REMOTE backend with a token, log in once here to
   // obtain that cookie and inject it into every proxied request, so those views
   // work without a manual visit to /login. No-op for a local target or no token.
+  //
+  // Gated on command === 'serve': this must never fire outside `npm run dev`. Both
+  // `vite build` and, critically, importing this config from a test runner (see
+  // tests/unit/pwaConfig.spec.ts, which invokes configFactory with command: 'build')
+  // resolve the async config function — without this guard that import alone would
+  // POST a real credential from VITE_HIVEMEM_TOKEN to a remote host on every
+  // `npm run test:unit`.
   let sessionCookie: string | null = null
-  if (token && !proxyTarget.includes('localhost') && !proxyTarget.includes('127.0.0.1')) {
+  if (
+    command === 'serve' &&
+    token &&
+    !proxyTarget.includes('localhost') &&
+    !proxyTarget.includes('127.0.0.1')
+  ) {
     try {
       const res = await fetch(`${proxyTarget}/login`, {
         method: 'POST',
