@@ -7,7 +7,7 @@ describe('shell i18n keys', () => {
     'nav.timemachine','nav.queen','nav.settings','nav.upload',
     'tweaks.appearance','tweaks.layout','tweaks.theme','tweaks.language','tweaks.accent','tweaks.density','tweaks.hive',
     'common.comingSoon',
-    'upload.title','pwa.updateReady','pwa.reload',
+    'upload.title',
   ]
   it('resolves all shell keys in de and en (no key fallthrough)', () => {
     for (const locale of ['de','en'] as const) {

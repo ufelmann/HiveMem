@@ -9,7 +9,6 @@ import { usePrefsStore } from './stores/prefs'
 import { loadAuthMode } from './api/authMode'
 import { clearReauthGuard } from './api/reauth'
 import AppShell from './components/shell/AppShell.vue'
-import PwaReloadPrompt from './components/shell/PwaReloadPrompt.vue'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -67,10 +66,6 @@ function onSnackbarReload() {
       </div>
       <div v-else class="splash">{{ t('common.connecting') }}</div>
     </v-main>
-    <!-- Outside the isAuthenticated gate on purpose: a stale service worker serving '/'
-         from its precache is what leaves the user stuck on the splash in the first place,
-         so the prompt that activates the waiting worker must be reachable there too. -->
-    <PwaReloadPrompt />
     <v-snackbar
       v-if="ui.toast"
       :color="ui.toast.kind"

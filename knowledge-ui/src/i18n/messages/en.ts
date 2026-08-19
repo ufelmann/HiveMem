@@ -259,5 +259,4 @@ export default {
     errStorage: 'Attachment storage is disabled', errBad: 'Upload rejected',
     errGeneric: 'Upload failed',
   },
-  pwa: { updateReady: 'A new version is available.', reload: 'Reload' },
 }

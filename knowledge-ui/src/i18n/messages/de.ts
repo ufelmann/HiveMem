@@ -259,5 +259,4 @@ export default {
     errStorage: 'Anhang-Speicher ist deaktiviert', errBad: 'Upload abgelehnt',
     errGeneric: 'Upload fehlgeschlagen',
   },
-  pwa: { updateReady: 'Eine neue Version ist verfügbar.', reload: 'Neu laden' },
 }

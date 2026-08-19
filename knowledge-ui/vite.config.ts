@@ -3,6 +3,12 @@ import vue from '@vitejs/plugin-vue'
 import vuetify from 'vite-plugin-vuetify'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// Exported for the same reason as workboxOptions below: vite-plugin-pwa@1.3.0's plugin
+// instance does not expose `api.options`, so tests/unit/pwaReload.spec.ts asserts on this
+// named export instead. autoUpdate, not 'prompt': a worker that only updates when a toast
+// is clicked can serve a stale shell indefinitely — and would outlive the shell fix below.
+export const registerType = 'autoUpdate' as const
+
 // Exported so tests/unit/pwaConfig.spec.ts can assert on the resolved workbox options
 // directly: vite-plugin-pwa@1.3.0's plugin instance does not expose `api.options`.
 export const workboxOptions = {
@@ -89,7 +95,7 @@ export default defineConfig(async ({ mode }) => {
       }),
       vuetify({ autoImport: true }),
       VitePWA({
-        registerType: 'prompt',
+        registerType,
         // Generates all icons from the existing brand SVG at build time and injects the
         // manifest icon entries + apple-touch-icon <link> into index.html.
         pwaAssets: { preset: 'minimal-2023', image: 'public/favicon.svg' },
