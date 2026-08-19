@@ -7,6 +7,7 @@ import { useUiStore } from './stores/ui'
 import { useCanvasStore } from './stores/canvas'
 import { usePrefsStore } from './stores/prefs'
 import { loadAuthMode } from './api/authMode'
+import { clearReauthGuard } from './api/reauth'
 import AppShell from './components/shell/AppShell.vue'
 import PwaReloadPrompt from './components/shell/PwaReloadPrompt.vue'
 
@@ -25,8 +26,12 @@ watch(() => prefs.theme, (v) => {
 // restart wiping the session) used to be swallowed silently here, leaving the
 // user stuck on the "connecting…" splash forever with no way out (E5).
 const authError = ref(false)
-async function initAuth() {
+async function initAuth(forced = false) {
   authError.value = false
+  // A deliberate retry must not be swallowed by the 5-minute re-auth guard the way
+  // the automatic startup path deliberately is (see api/reauth.ts). Dropping the stamp
+  // is enough: the next triggerReauth from httpClient then navigates for real.
+  if (forced) clearReauthGuard()
   try {
     // Load the auth mode BEFORE auth.init() fires wake_up: a 401 during startup must
     // resolve against a known mode, not a guessed default (see api/authMode.ts).
@@ -34,7 +39,7 @@ async function initAuth() {
     await auth.init()
   } catch { authError.value = true }
 }
-onMounted(initAuth)
+onMounted(() => initAuth())
 
 // canvas.loadTopLevel() can fail the same way any other API call can (network/
 // backend restart); an unhandled rejection here used to just vanish, leaving
@@ -58,7 +63,7 @@ function onSnackbarReload() {
       <AppShell v-if="auth.isAuthenticated" />
       <div v-else-if="authError" class="splash error">
         <span>{{ t('common.connectError') }}</span>
-        <v-btn variant="tonal" @click="initAuth">{{ t('common.retry') }}</v-btn>
+        <v-btn variant="tonal" data-test="auth-retry" @click="initAuth(true)">{{ t('common.retry') }}</v-btn>
       </div>
       <div v-else class="splash">{{ t('common.connecting') }}</div>
     </v-main>
