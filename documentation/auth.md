@@ -23,13 +23,14 @@ Legacy is a fully supported production mode, not a dev fallback — it's what se
 deployments without Cloudflare use. See [Operations → Enabling Cloudflare Access](operations.md#enabling-cloudflare-access-human-auth-hardening)
 for the rollout procedure and env vars.
 
-In Access mode, the SPA shell itself is fetched network-first by the service worker rather
-than served from a precached copy, so opening the app always issues a real navigation
-request to the origin. A browser with an expired Access session is therefore challenged by
-the identity provider right there, on that request, and can recover by completing the
-challenge — instead of dead-ending on a client-side error screen with no request ever having
-left the browser. The automatic re-auth path keeps a cooldown guard against retry loops; a
-deliberate, user-initiated retry bypasses that guard.
+The SPA shell itself is fetched network-first by the service worker rather than served from
+a precached copy, so opening the app always issues a real navigation request to the origin.
+This applies regardless of deployment mode; in Access mode it matters most, since a browser
+with an expired Access session is therefore challenged by the identity provider right there,
+on that request, and can recover by completing the challenge — instead of dead-ending on a
+client-side error screen with no request ever having left the browser. The automatic re-auth
+path keeps a cooldown guard against retry loops; a deliberate, user-initiated retry bypasses
+that guard.
 
 In Access mode, the Access JWT only proves an email address; HiveMem still does its own
 authorization. The email is looked up (case-insensitively) against an `email` column on
