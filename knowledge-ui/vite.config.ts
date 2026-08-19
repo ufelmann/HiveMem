@@ -3,6 +3,44 @@ import vue from '@vitejs/plugin-vue'
 import vuetify from 'vite-plugin-vuetify'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// Exported so tests/unit/pwaConfig.spec.ts can assert on the resolved workbox options
+// directly: vite-plugin-pwa@1.3.0's plugin instance does not expose `api.options`.
+export const workboxOptions = {
+  globPatterns: ['**/*.{js,css,svg,png,woff2}'],
+  // Deliberately no 'html': a precached index.html means opening '/' issues no network
+  // request, so Cloudflare Access never gets to challenge a navigation and an expired
+  // session dead-ends on the app's error screen. Measured on prod 2026-08-19 — a failing
+  // browser sent zero requests to the origin. See the spec for the capture.
+  // Overrides vite-plugin-pwa's "index.html" default (dist/index.js:838); Object.assign
+  // copies undefined values, so this really does disable the precache-bound route.
+  navigateFallback: undefined,
+  runtimeCaching: [
+    {
+      // workbox-build's generateSW serializes this function via `.toString()` and inlines
+      // it verbatim into dist/sw.js — it does NOT capture the closure over ORIGIN_PATHS.
+      // Referencing the module-scope const here would compile to a `ReferenceError` at
+      // runtime in the browser (verified against the actual dist/sw.js output). The pattern
+      // list is therefore duplicated as a literal *inside* the function so serialization
+      // carries it along self-contained.
+      urlPattern: ({ request, url }: { request: Request; url: URL }) => {
+        const originPaths = [
+          /^\/login/, /^\/logout/, /^\/oauth\//, /^\/admin/, /^\/api\//,
+          /^\/mcp/, /^\/hooks/, /^\/sync/, /^\/vistierie/, /^\/\.well-known\//,
+        ]
+        return request.mode === 'navigate' && !originPaths.some((re) => re.test(url.pathname))
+      },
+      handler: 'NetworkFirst' as const,
+      options: {
+        cacheName: 'hivemem-shell',
+        // Bounded so an offline PWA still starts from the runtime cache instead of
+        // hanging; the cost is a up-to-3s wait on a genuinely offline cold start.
+        networkTimeoutSeconds: 3,
+        cacheableResponse: { statuses: [200] },
+      },
+    },
+  ],
+}
+
 export default defineConfig(async ({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_')
   const proxyTarget = env.VITE_PROXY_TARGET ?? 'http://localhost:8421'
@@ -62,15 +100,10 @@ export default defineConfig(async ({ mode }) => {
           start_url: '/',
         },
         workbox: {
-          globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-          // Do NOT serve the SPA index.html for server-rendered routes — otherwise an
-          // expired session can never reach /login or the OAuth consent page.
-          navigateFallbackDenylist: [
-            /^\/login/, /^\/logout/, /^\/oauth\//, /^\/admin/, /^\/api\//,
-            /^\/mcp/, /^\/hooks/, /^\/sync/, /^\/vistierie/, /^\/\.well-known\//,
-          ],
-          // Intentionally NO runtimeCaching for /api: unmatched requests pass through the
-          // SW untouched (network-only, uncached) and keep granular XHR upload progress.
+          ...workboxOptions,
+          // Intentionally the only runtime route is the shell navigation route above;
+          // /api and everything else pass through the SW untouched (network-only,
+          // uncached), which keeps granular XHR upload progress.
         },
       }),
     ],
