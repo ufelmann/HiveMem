@@ -14,9 +14,10 @@ export const registerType = 'autoUpdate' as const
 export const workboxOptions = {
   globPatterns: ['**/*.{js,css,svg,png,woff2}'],
   // Deliberately no 'html': a precached index.html means opening '/' issues no network
-  // request, so Cloudflare Access never gets to challenge a navigation and an expired
-  // session dead-ends on the app's error screen. Measured on prod 2026-08-19 — a failing
-  // browser sent zero requests to the origin. See the spec for the capture.
+  // request at all, since the service worker resolves it straight from the precache. With
+  // no request ever leaving the browser, Cloudflare Access never gets a navigation to
+  // challenge, and an expired session dead-ends on the app's client-side error screen
+  // instead of being redirected to the identity provider. See the spec for the capture.
   // Overrides vite-plugin-pwa's "index.html" default (dist/index.js:838); Object.assign
   // copies undefined values, so this really does disable the precache-bound route.
   navigateFallback: undefined,
