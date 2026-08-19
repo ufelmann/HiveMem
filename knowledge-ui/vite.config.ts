@@ -23,6 +23,10 @@ export const workboxOptions = {
       // list is therefore duplicated as a literal *inside* the function so serialization
       // carries it along self-contained.
       urlPattern: ({ request, url }: { request: Request; url: URL }) => {
+        // Kept in sync by hand with scripts/check-sw.mjs's `requiredOriginPaths`: that
+        // script re-derives this exact list from the built dist/sw.js to catch drift, since
+        // serialization (see comment above) rules out sharing one constant across the
+        // config/worker boundary. Edit both when this list changes.
         const originPaths = [
           /^\/login/, /^\/logout/, /^\/oauth\//, /^\/admin/, /^\/api\//,
           /^\/mcp/, /^\/hooks/, /^\/sync/, /^\/vistierie/, /^\/\.well-known\//,

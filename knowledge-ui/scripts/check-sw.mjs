@@ -29,7 +29,7 @@ for (const src of requiredOriginPaths) {
 if (!sw.includes('NetworkFirst') || !sw.includes('hivemem-shell')) {
   problems.push('sw.js has no NetworkFirst "hivemem-shell" navigation route — a navigation would not reach the network')
 }
-if (!sw.includes('networkTimeoutSeconds:3')) {
+if (!/networkTimeoutSeconds\s*:\s*3/.test(sw)) {
   problems.push('sw.js NetworkFirst shell route is missing networkTimeoutSeconds:3')
 }
 
@@ -45,6 +45,19 @@ for (const strategy of otherStrategies) {
   if (new RegExp(`\\b${strategy}\\b`).test(sw)) {
     problems.push(`sw.js contains an unexpected "${strategy}" runtime caching strategy`)
   }
+}
+
+// A blanket "no other strategy" check is not enough: a SECOND NetworkFirst route (e.g. one
+// someone adds for /api) would pass every check above silently and break granular XHR upload
+// progress — the constraint the plan calls out explicitly. Count occurrences instead of just
+// presence, and verify the one route we do expect is actually navigation-gated, not a route
+// that happens to match everything.
+const networkFirstCount = (sw.match(/NetworkFirst/g) ?? []).length
+if (networkFirstCount !== 1) {
+  problems.push(`sw.js must contain exactly one NetworkFirst route (the shell), found ${networkFirstCount} — a second runtime-caching route would break /api upload progress`)
+}
+if (!sw.includes('"navigate"===')) {
+  problems.push('sw.js shell route predicate is not navigation-gated (expected "navigate"=== in the serialized urlPattern) — it may match non-navigation requests too')
 }
 
 if (problems.length) { console.error('check-sw FAILED:\n- ' + problems.join('\n- ')); process.exit(1) }
