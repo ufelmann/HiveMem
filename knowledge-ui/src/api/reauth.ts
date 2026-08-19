@@ -25,11 +25,13 @@ const defaultNav: Nav = {
  *
  * It has to be /login and it has to be a navigation. In Access mode Cloudflare answers an
  * expired request with a cross-origin redirect that no fetch handler can follow, and a
- * reload of '/' does not help either — the service worker's navigation fallback serves '/'
- * from the precache, so the browser never issues a request and never sees the challenge.
- * '/login' is on the worker's denylist (vite.config.ts) and therefore always reaches the
- * network; in Access mode the origin answers it with a redirect back into the app
- * (GoneController), in legacy mode with the login page.
+ * reload of '/' does not help either — the service worker serves the shell route ('/' and
+ * every other in-app path) NetworkFirst but with index.html never precached (vite.config.ts),
+ * so a genuinely offline or otherwise-stuck worker can still resolve '/' from its runtime
+ * cache without ever reaching the origin. '/login' is excluded from that shell route by the
+ * same file's urlPattern predicate and therefore always reaches the network; in Access mode
+ * the origin answers it with a redirect back into the app (GoneController), in legacy mode
+ * with the login page.
  *
  * The guard stops any repeatedly-failing caller from navigating on every attempt. Today the
  * only caller that can reach it is the startup wake_up in stores/auth.ts, so one navigation
