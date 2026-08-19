@@ -60,5 +60,16 @@ if (!sw.includes('"navigate"===')) {
   problems.push('sw.js shell route predicate is not navigation-gated (expected "navigate"=== in the serialized urlPattern) — it may match non-navigation requests too')
 }
 
+// With navigateFallback disabled and no precached index.html, a route never visited online
+// (e.g. /photos, or any URL with a query string) has no cache entry of its own and fails
+// offline unless the shell route falls back to whatever WAS cached at '/'. Assert the
+// handlerDidError plugin survived serialization self-contained: workbox-build's `.toString()`
+// does NOT capture closures (see vite.config.ts and the urlPattern check above), so a
+// module-scope reference here would compile to a dead `caches` identifier instead of the
+// global. globalThis.caches is the only form that has been verified to survive.
+if (!sw.includes('handlerDidError') || !sw.includes('globalThis.caches.match("/")')) {
+  problems.push('sw.js shell route is missing a self-contained handlerDidError fallback to globalThis.caches.match("/") — an unvisited route would fail offline instead of falling back to the cached shell')
+}
+
 if (problems.length) { console.error('check-sw FAILED:\n- ' + problems.join('\n- ')); process.exit(1) }
 console.log('check-sw OK')

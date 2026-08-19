@@ -50,4 +50,25 @@ describe('PWA workbox config', () => {
     const nav = workboxOptions.runtimeCaching.find((r) => r.handler === 'NetworkFirst')!
     expect(nav.urlPattern({ request: { mode: 'cors' } as Request, url: new URL('https://example.com/api/tools/call') })).toBe(false)
   })
+
+  it('falls back to the cached shell when an unvisited route fails offline', async () => {
+    // Without navigateFallback and with no precached index.html, a route never visited
+    // online (e.g. /photos) has no cache entry of its own. The handlerDidError plugin must
+    // fall back to whatever shell response was cached at '/'. This must reference only
+    // web-platform globals, never a closed-over module variable — workbox-build's
+    // generateSW serializes it via `.toString()` and a closure would compile to a dead
+    // identifier in dist/sw.js (see scripts/check-sw.mjs and vite.config.ts).
+    const nav = workboxOptions.runtimeCaching.find((r) => r.handler === 'NetworkFirst')!
+    const fallbackPlugin = nav.options.plugins?.find((p: any) => typeof p.handlerDidError === 'function')
+    expect(fallbackPlugin, 'a handlerDidError plugin must exist on the shell route').toBeTruthy()
+
+    const shellResponse = new Response('cached shell')
+    const originalCaches = (globalThis as any).caches
+    ;(globalThis as any).caches = { match: async (key: string) => (key === '/' ? shellResponse : undefined) }
+    try {
+      await expect(fallbackPlugin!.handlerDidError()).resolves.toBe(shellResponse)
+    } finally {
+      ;(globalThis as any).caches = originalCaches
+    }
+  })
 })

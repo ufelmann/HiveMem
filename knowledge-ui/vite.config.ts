@@ -47,6 +47,20 @@ export const workboxOptions = {
         // hanging; the cost is a up-to-3s wait on a genuinely offline cold start.
         networkTimeoutSeconds: 3,
         cacheableResponse: { statuses: [200] },
+        plugins: [
+          {
+            // NetworkFirst caches each navigation under its own request URL, so a route
+            // never visited online (e.g. /photos, or any URL carrying a query string —
+            // ignoreSearch is not set) has no cache entry of its own and would otherwise
+            // fail offline with a plain network error. Fall back to whatever shell
+            // response WAS cached at '/', if any. Self-contained on purpose: workbox-build
+            // serializes this via `.toString()` and inlines it into dist/sw.js, exactly
+            // like urlPattern above — it does NOT capture the closure over anything in
+            // this module, so this function must reference only web-platform globals
+            // (`caches`), never an outer variable.
+            handlerDidError: async () => (globalThis as any).caches.match('/'),
+          },
+        ],
       },
     },
   ],
