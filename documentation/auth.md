@@ -40,7 +40,11 @@ static resource handler therefore always send `Cache-Control: no-cache` on the S
 (`/index.html`, root, every deep link) and on `/sw.js`: stored, but revalidated against the
 server on every load (a 304 still short-circuits the body). Content-hashed build output under
 `/assets/` is the opposite case — the filename changes on every content change, so those are
-sent `Cache-Control: public, max-age=31536000, immutable` and cached hard.
+sent `Cache-Control: public, max-age=31536000, immutable` and cached hard. The `public`
+directive is deliberate even though the response itself still sits behind the session gate:
+those files are deterministic, user-independent build output (the same bytes for every
+authenticated user), not per-user data, so caching them outside a private/authenticated
+context is not a data leak.
 
 In Access mode, the Access JWT only proves an email address; HiveMem still does its own
 authorization. The email is looked up (case-insensitively) against an `email` column on

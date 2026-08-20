@@ -32,11 +32,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Regression coverage for the production defect measured 2026-08-20: static resources
- * were served with no {@code Cache-Control} header at all, only {@code Last-Modified}.
- * With no directive, browsers apply heuristic freshness to the SPA shell, so an expired
- * Cloudflare Access session is never revalidated and the app dead-ends on its error
- * screen.
+ * Regression coverage for static resources served with no {@code Cache-Control} header
+ * at all, only {@code Last-Modified}. With no directive, browsers apply heuristic
+ * freshness to the SPA shell, so an expired Cloudflare Access session is never
+ * revalidated and the app dead-ends on its error screen.
  *
  * <p>The SPA shell (root, deep links, {@code /index.html} directly) and {@code /sw.js}
  * must be {@code no-cache} (stored, always revalidated — 304s still work). Content-hashed
