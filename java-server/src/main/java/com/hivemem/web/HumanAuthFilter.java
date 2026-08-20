@@ -19,6 +19,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Authenticates humans — browsers presenting either a Cloudflare Access JWT or a
@@ -58,6 +59,24 @@ public class HumanAuthFilter extends OncePerRequestFilter {
             "/maskable-icon-512x512.png",
             "/apple-touch-icon-180x180.png");
 
+    /**
+     * The workbox runtime chunk that {@code sw.js} loads via {@code importScripts()} at
+     * install time — without it, a sessionless browser can fetch the exempted {@code
+     * /sw.js} but the worker fails to install because the chunk it imports is still
+     * gated. This one entry is a pattern rather than a literal in {@link
+     * #PWA_PUBLIC_ASSETS} because rollup content-hashes the filename
+     * ({@code workbox-<hash>.js}) on every build (workbox-build's {@code bundle.js} sets
+     * {@code outputOptions.hashCharacters = 'hex'} with rollup's default hash size of 8,
+     * i.e. exactly 8 lowercase hex characters — verified against
+     * {@code knowledge-ui/dist/sw.js}'s {@code importScripts(["./workbox-d73a1edf"])} and
+     * rollup's {@code DEFAULT_HASH_SIZE = 8} / {@code hex} hasher), so an exact-match set
+     * entry cannot survive a rebuild. Anchored with {@code ^}/{@code $} against the whole
+     * path — never a prefix/contains check — so a traversal segment, a smuggled suffix
+     * (e.g. {@code .js.map}), or a subdirectory cannot match; {@code getRequestURI()} is
+     * unnormalized, same caveat as {@link #PWA_PUBLIC_ASSETS}.
+     */
+    private static final Pattern WORKBOX_CHUNK_PATTERN = Pattern.compile("^/workbox-[0-9a-f]{8}\\.js$");
+
     public HumanAuthFilter(HumanPrincipalResolver humanPrincipalResolver, AccessProperties accessProperties) {
         this.humanPrincipalResolver = humanPrincipalResolver;
         this.accessProperties = accessProperties;
@@ -81,6 +100,7 @@ public class HumanAuthFilter extends OncePerRequestFilter {
         if (path.startsWith("/.well-known/oauth-")) return true;
         if (path.startsWith("/oauth/")) return true;
         if (PWA_PUBLIC_ASSETS.contains(path)) return true;
+        if (WORKBOX_CHUNK_PATTERN.matcher(path).matches()) return true;
         return false;
     }
 

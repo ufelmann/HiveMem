@@ -191,6 +191,27 @@ class HumanAuthFilterSliceTest {
     }
 
     @Test
+    void workboxChunkBypassesAuthWithoutSession() {
+        UnitTestHelper helper = new UnitTestHelper();
+        // Real filename observed in dist/sw.js.
+        assertThat(helper.skip("/workbox-d73a1edf.js")).isTrue();
+        // A different build produces a different content hash — still matches the pattern.
+        assertThat(helper.skip("/workbox-0123abcd.js")).isTrue();
+    }
+
+    @Test
+    void workboxLookalikesStayFiltered() {
+        UnitTestHelper helper = new UnitTestHelper();
+        assertThat(helper.skip("/workbox-.js")).isFalse();
+        assertThat(helper.skip("/workbox-xyz.js")).isFalse();
+        assertThat(helper.skip("/workbox-abc123.js.map")).isFalse();
+        assertThat(helper.skip("/sub/workbox-abc123.js")).isFalse();
+        assertThat(helper.skip("/workbox-abc123.js/../secret")).isFalse();
+        assertThat(helper.skip("/workbox-abc123.js/..%2f..%2fsecret")).isFalse();
+        assertThat(helper.skip("/../workbox-abc123.js")).isFalse();
+    }
+
+    @Test
     void apiStillFilteredWithoutSession() {
         UnitTestHelper helper = new UnitTestHelper();
         assertThat(helper.skip("/api/attachments")).isFalse();

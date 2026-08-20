@@ -38,7 +38,11 @@ is treated as heuristically fresh, so the browser can serve it straight from cac
 without a network round-trip at all — no service worker involved. `SpaController` and the
 static resource handler therefore always send `Cache-Control: no-cache` on the SPA shell
 (`/index.html`, root, every deep link) and on `/sw.js`: stored, but revalidated against the
-server on every load (a 304 still short-circuits the body). Content-hashed build output under
+server on every load (a 304 still short-circuits the body). `HumanAuthFilter` also lets an
+unauthenticated request through to the workbox runtime chunk that `/sw.js` imports at install
+time (`/workbox-<hash>.js`, matched by an anchored pattern since the hash changes every build) —
+without it, a sessionless browser could fetch the worker script but not install it, because the
+chunk it imports would still be behind the session gate. Content-hashed build output under
 `/assets/` is the opposite case — the filename changes on every content change, so those are
 sent `Cache-Control: public, max-age=31536000, immutable` and cached hard. The `public`
 directive is deliberate even though the response itself still sits behind the session gate:
