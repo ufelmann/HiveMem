@@ -13,6 +13,16 @@ export const registerType = 'autoUpdate' as const
 // directly: vite-plugin-pwa@1.3.0's plugin instance does not expose `api.options`.
 export const workboxOptions = {
   globPatterns: ['**/*.{js,css,svg,png,woff2}'],
+  // The worker must be installable as a single file: Cloudflare Access sits in front of
+  // every other asset, including the content-hashed workbox-*.js chunk that generateSW
+  // would otherwise emit and importScripts() from sw.js. A sessionless browser can fetch
+  // sw.js itself (explicitly bypassed at the edge), but the importScripts() request for
+  // that sibling chunk gets redirected to the Access login page, so the worker fails to
+  // install and a stuck client can never self-heal. Path-based bypass for the hashed
+  // filename isn't expressible cleanly (Access matches path segments, and "workbox-" is
+  // only a filename prefix), so instead we remove the second file entirely by bundling
+  // the workbox runtime into sw.js.
+  inlineWorkboxRuntime: true,
   // Deliberately no 'html': a precached index.html means opening '/' issues no network
   // request at all, since the service worker resolves it straight from the precache. With
   // no request ever leaving the browser, Cloudflare Access never gets a navigation to
@@ -146,7 +156,8 @@ export default defineConfig(async ({ command, mode }) => {
           ...workboxOptions,
           // Intentionally the only runtime route is the shell navigation route above;
           // /api and everything else pass through the SW untouched (network-only,
-          // uncached), which keeps granular XHR upload progress.
+          // uncached), which keeps granular XHR upload progress. See workboxOptions
+          // above for why inlineWorkboxRuntime is set.
         },
       }),
     ],

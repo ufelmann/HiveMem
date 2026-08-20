@@ -10,10 +10,25 @@
 // of the urlPattern function (a closure over the array would NOT survive it — verified: an
 // earlier version of this file referenced a module-scope const and the pattern list came out
 // missing from dist/sw.js entirely).
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 
-const sw = readFileSync(new URL('../dist/sw.js', import.meta.url), 'utf8')
+const distDir = new URL('../dist/', import.meta.url)
+const sw = readFileSync(new URL('sw.js', distDir), 'utf8')
 const problems = []
+
+// The worker must be installable as a single file: Cloudflare Access sits in front of
+// every other asset, so a sessionless browser can fetch sw.js itself (explicitly
+// bypassed at the edge) but any importScripts() sibling it pulls in gets redirected to
+// the Access login page instead — the install fails and a stuck client can never
+// self-heal. inlineWorkboxRuntime: true in vite.config.ts is what prevents this; assert
+// both symptoms it would leave behind.
+if (sw.includes('importScripts(')) {
+  problems.push('sw.js still calls importScripts() — a sessionless browser cannot install the worker, so a stuck client can never heal')
+}
+const workboxSiblings = readdirSync(distDir).filter((f) => /^workbox-.*\.js$/.test(f))
+if (workboxSiblings.length) {
+  problems.push(`dist/ still contains a separate workbox chunk (${workboxSiblings.join(', ')}) — a sessionless browser cannot install the worker, so a stuck client can never heal`)
+}
 
 const requiredOriginPaths = [
   '\\/login', '\\/logout', '\\/oauth\\/', '\\/admin', '\\/api\\/',
@@ -27,8 +42,17 @@ for (const src of requiredOriginPaths) {
 }
 
 // The shell navigation route itself must be present with a bounded timeout.
-if (!sw.includes('NetworkFirst') || !sw.includes('hivemem-shell')) {
-  problems.push('sw.js has no NetworkFirst "hivemem-shell" navigation route — a navigation would not reach the network')
+//
+// With inlineWorkboxRuntime (see vite.config.ts), workbox-build's production bundling
+// step runs terser with `mangle: { toplevel: true }` over the whole file, which renames
+// bare top-level identifiers — including imported strategy classes like `NetworkFirst`.
+// The literal string "NetworkFirst" therefore does NOT survive in dist/sw.js any more
+// (verified against the actual build output). terser's property mangling is scoped to
+// `/(^_|_$)/` though, so plain object-literal keys we pass in our own config — like
+// `networkTimeoutSeconds` and `cacheName` — are left untouched and remain reliable
+// fingerprints of "a NetworkFirst route with our shell config exists".
+if (!sw.includes('hivemem-shell')) {
+  problems.push('sw.js has no "hivemem-shell" navigation route — a navigation would not reach the network')
 }
 if (!/networkTimeoutSeconds\s*:\s*3/.test(sw)) {
   problems.push('sw.js NetworkFirst shell route is missing networkTimeoutSeconds:3')
@@ -39,23 +63,14 @@ if (/url:"index\.html"/.test(sw)) {
   problems.push('sw.js still precaches index.html — Access can never challenge a navigation')
 }
 
-// No OTHER runtime caching strategy is allowed: an /api runtime handler would break granular
-// XHR upload progress. NetworkFirst is expected (the shell route); anything beyond that is not.
-const otherStrategies = ['NetworkOnly', 'StaleWhileRevalidate', 'CacheFirst', 'CacheOnly']
-for (const strategy of otherStrategies) {
-  if (new RegExp(`\\b${strategy}\\b`).test(sw)) {
-    problems.push(`sw.js contains an unexpected "${strategy}" runtime caching strategy`)
-  }
-}
-
-// A blanket "no other strategy" check is not enough: a SECOND NetworkFirst route (e.g. one
-// someone adds for /api) would pass every check above silently and break granular XHR upload
-// progress — the constraint the plan calls out explicitly. Count occurrences instead of just
-// presence, and verify the one route we do expect is actually navigation-gated, not a route
-// that happens to match everything.
-const networkFirstCount = (sw.match(/NetworkFirst/g) ?? []).length
-if (networkFirstCount !== 1) {
-  problems.push(`sw.js must contain exactly one NetworkFirst route (the shell), found ${networkFirstCount} — a second runtime-caching route would break /api upload progress`)
+// No OTHER runtime caching route is allowed: an /api runtime handler would break granular
+// XHR upload progress. Exactly one route (the shell) is expected. Strategy class names are
+// unrecoverable post-mangle (see comment above), so count the one thing every route we
+// write always carries: a quoted, literal `cacheName:"..."` from our own config object —
+// each distinct route we author gets its own cache name string in the built output.
+const cacheNameLiterals = sw.match(/cacheName:"[^"]*"/g) ?? []
+if (cacheNameLiterals.length !== 1) {
+  problems.push(`sw.js must contain exactly one runtime-caching route with a literal cacheName (the shell), found ${cacheNameLiterals.length} (${cacheNameLiterals.join(', ') || 'none'}) — a second runtime-caching route would break /api upload progress`)
 }
 if (!sw.includes('"navigate"===')) {
   problems.push('sw.js shell route predicate is not navigation-gated (expected "navigate"=== in the serialized urlPattern) — it may match non-navigation requests too')

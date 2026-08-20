@@ -22,6 +22,13 @@ describe('PWA workbox config', () => {
     expect(pwa, 'vite-plugin-pwa must be registered').toBeTruthy()
   })
 
+  it('inlines the workbox runtime so sw.js is installable as a single file', () => {
+    // Cloudflare Access sits in front of every asset except sw.js itself, so a second,
+    // content-hashed workbox-*.js chunk pulled in via importScripts() would be
+    // unreachable to a sessionless browser. See vite.config.ts for the full rationale.
+    expect(workboxOptions.inlineWorkboxRuntime).toBe(true)
+  })
+
   it('does not precache html — the shell must reach the network', () => {
     for (const pattern of workboxOptions.globPatterns) {
       expect(pattern).not.toMatch(/\bhtml\b/)
