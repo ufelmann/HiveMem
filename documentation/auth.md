@@ -32,6 +32,16 @@ client-side error screen with no request ever having left the browser. The autom
 path keeps a cooldown guard against retry loops; a deliberate, user-initiated retry bypasses
 that guard.
 
+The same failure class can happen one layer below the service worker, in the browser's plain
+HTTP cache: a static response with a `Last-Modified` header but no explicit `Cache-Control`
+is treated as heuristically fresh, so the browser can serve it straight from cache for hours
+without a network round-trip at all — no service worker involved. `SpaController` and the
+static resource handler therefore always send `Cache-Control: no-cache` on the SPA shell
+(`/index.html`, root, every deep link) and on `/sw.js`: stored, but revalidated against the
+server on every load (a 304 still short-circuits the body). Content-hashed build output under
+`/assets/` is the opposite case — the filename changes on every content change, so those are
+sent `Cache-Control: public, max-age=31536000, immutable` and cached hard.
+
 In Access mode, the Access JWT only proves an email address; HiveMem still does its own
 authorization. The email is looked up (case-insensitively) against an `email` column on
 `api_tokens` — the same row a human's admin token lives on. A valid JWT for an email with no
