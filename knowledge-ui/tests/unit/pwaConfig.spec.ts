@@ -41,7 +41,7 @@ describe('PWA workbox config', () => {
       nav.urlPattern({ request: { mode: 'navigate' } as Request, url: new URL(`https://example.com${pathname}`) })
     expect(navigate('/')).toBe(true)
     expect(navigate('/photos')).toBe(true)
-    for (const p of ['/login', '/logout', '/oauth/x', '/admin', '/api/config', '/mcp', '/hooks', '/sync', '/vistierie', '/.well-known/x']) {
+    for (const p of ['/login', '/logout', '/oauth/x', '/admin', '/api/config', '/mcp', '/hooks', '/sync', '/vistierie', '/.well-known/x', '/cdn-cgi/access/authorized', '/cdn-cgi/access/get-identity']) {
       expect(navigate(p), `${p} must not be handled by the shell route`).toBe(false)
     }
   })

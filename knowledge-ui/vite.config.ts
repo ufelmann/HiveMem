@@ -37,6 +37,12 @@ export const workboxOptions = {
         const originPaths = [
           /^\/login/, /^\/logout/, /^\/oauth\//, /^\/admin/, /^\/api\//,
           /^\/mcp/, /^\/hooks/, /^\/sync/, /^\/vistierie/, /^\/\.well-known\//,
+          // Cloudflare Access runs its login handshake on this app's own origin under
+          // /cdn-cgi/access/...; the post-login callback /cdn-cgi/access/authorized is
+          // the request that sets the CF_Authorization session cookie. Serving it from
+          // the shell cache instead of letting it reach the edge means that cookie is
+          // never set and no Access session can ever be established.
+          /^\/cdn-cgi\//,
         ]
         return request.mode === 'navigate' && !originPaths.some((re) => re.test(url.pathname))
       },

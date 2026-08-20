@@ -18,6 +18,7 @@ const problems = []
 const requiredOriginPaths = [
   '\\/login', '\\/logout', '\\/oauth\\/', '\\/admin', '\\/api\\/',
   '\\/mcp', '\\/hooks', '\\/sync', '\\/vistierie', '\\/\\.well-known\\/',
+  '\\/cdn-cgi\\/',
 ]
 for (const src of requiredOriginPaths) {
   if (!sw.includes(src)) {
