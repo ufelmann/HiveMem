@@ -29,10 +29,8 @@ describe('PWA workbox config', () => {
     expect(workboxOptions.inlineWorkboxRuntime).toBe(true)
   })
 
-  it('does not precache html — the shell must reach the network', () => {
-    for (const pattern of workboxOptions.globPatterns) {
-      expect(pattern).not.toMatch(/\bhtml\b/)
-    }
+  it('precaches nothing — every built asset sits behind Cloudflare Access, so a non-empty install-time manifest would make sw.js un-installable for a sessionless browser', () => {
+    expect(workboxOptions.globPatterns).toEqual([])
   })
 
   it('handles navigations NetworkFirst with a bounded timeout', () => {

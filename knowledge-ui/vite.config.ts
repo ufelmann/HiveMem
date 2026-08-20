@@ -12,7 +12,20 @@ export const registerType = 'autoUpdate' as const
 // Exported so tests/unit/pwaConfig.spec.ts can assert on the resolved workbox options
 // directly: vite-plugin-pwa@1.3.0's plugin instance does not expose `api.options`.
 export const workboxOptions = {
-  globPatterns: ['**/*.{js,css,svg,png,woff2}'],
+  // Empty on purpose, not an oversight: generateSW's install-time precache fetches every
+  // listed entry during the service worker's `install` event, and Cloudflare Access sits
+  // in front of ALL of them (verified live: /assets/index-*.js and /favicon.svg both 302
+  // to the Access login page for a sessionless request). A non-OK response fails the whole
+  // install ('bad-precaching-response'). sw.js itself is edge-bypassed and self-contained,
+  // so a browser with no session can download it — but it could never finish installing
+  // with a non-empty manifest, and a sessionless browser is exactly the one that needs the
+  // new worker installed to stop hijacking the Access login callback (see the shell route
+  // below). An install-time precache requires an authenticated session for every entry, so
+  // behind an access gate it makes the worker un-installable for precisely the client that
+  // needs replacing. Cost, accepted: no offline cold start for anything not already
+  // visited online. Runtime caching (the shell route below) still populates as the user
+  // navigates.
+  globPatterns: [],
   // The worker must be installable as a single file: Cloudflare Access sits in front of
   // every other asset, including the content-hashed workbox-*.js chunk that generateSW
   // would otherwise emit and importScripts() from sw.js. A sessionless browser can fetch

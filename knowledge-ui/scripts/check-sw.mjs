@@ -58,9 +58,38 @@ if (!/networkTimeoutSeconds\s*:\s*3/.test(sw)) {
   problems.push('sw.js NetworkFirst shell route is missing networkTimeoutSeconds:3')
 }
 
-// index.html must never be precached — that is the root cause this whole change fixes.
-if (/url:"index\.html"/.test(sw)) {
-  problems.push('sw.js still precaches index.html — Access can never challenge a navigation')
+// The precache manifest built from globPatterns must be completely empty, not merely
+// missing index.html: every precache entry is fetched during the service worker's
+// `install` event, and Cloudflare Access sits in front of ALL built assets (verified live:
+// /assets/index-*.js and /favicon.svg both 302 to the Access login page for a sessionless
+// request). A single non-OK response fails the whole install ('bad-precaching-response').
+// A sessionless browser is exactly the client that needs the new worker installed in order
+// to stop hijacking the Access login callback — so any non-empty manifest leaves that
+// browser permanently unable to install the worker, and a stuck client can never heal.
+//
+// KNOWN, MEASURED EXCEPTION: vite-plugin-pwa@1.3.0 unconditionally appends one
+// `manifest.webmanifest` entry via `workbox.additionalManifestEntries` whenever the
+// `manifest` option is set (src: configureStaticAssets in vite-plugin-pwa/dist/index.js) —
+// this happens independently of globPatterns and there is no plugin option to suppress it
+// short of disabling the web manifest (and PWA installability) entirely, which is out of
+// scope for this fix. Verified: `globPatterns: []` still yields exactly one
+// `{url:"manifest.webmanifest",...}` entry in dist/sw.js. That single small JSON file is
+// NOT yet confirmed to be Cloudflare-Access-exempt (unlike the JS/CSS/PNG/SVG bundle,
+// which was the measured 99-entry blocker this fix removes) — this codebase already
+// exempts /manifest.webmanifest at the *application* auth layer (see
+// docs/superpowers/specs/2026-07-16-pwa-upload-spec-a-design.md, Fund C2/F1), so an
+// equivalent edge-level Cloudflare Access bypass for this one path is the natural
+// follow-up, not something fixable from this repo's build config.
+const precacheEntries = sw.match(/\{url:"/g) ?? []
+const allowedPrecacheEntries = ['{url:"manifest.webmanifest"']
+const unexpectedEntries = (sw.match(/\{url:"[^"]*"/g) ?? []).filter(
+  (entry) => !allowedPrecacheEntries.includes(entry),
+)
+if (unexpectedEntries.length) {
+  problems.push(`sw.js precache manifest contains unexpected entries (${unexpectedEntries.join(', ')}) — every entry sits behind Cloudflare Access, so a sessionless browser's install fails and a stuck client can never heal; see globPatterns: [] in vite.config.ts`)
+}
+if (precacheEntries.length > allowedPrecacheEntries.length) {
+  problems.push(`sw.js precache manifest has ${precacheEntries.length} entries, more than the ${allowedPrecacheEntries.length} known/accepted one(s) (manifest.webmanifest) — investigate before shipping`)
 }
 
 // No OTHER runtime caching route is allowed: an /api runtime handler would break granular
