@@ -77,13 +77,26 @@ const confirmingAcceptAll = ref(false)
 // just the length, so a same-size swap disarms too.
 watch(() => store.pending.map(p => p.id).join(','), () => { confirmingAcceptAll.value = false })
 
+// True while approve_pending is in flight. Committing 666 proposals is one long request, and
+// acceptAll() disarms the confirmation immediately, so without this guard the arm button is back
+// on screen while the first call is still open: arming and confirming again fires a second
+// approve_pending, which matches nothing (the backend filters on status = 'pending') and reports
+// count = 0 -- a toast that flatly contradicts the successful one still to come.
+const acceptAllBusy = ref(false)
+
 async function acceptAll() {
+  if (acceptAllBusy.value) return
   confirmingAcceptAll.value = false
+  acceptAllBusy.value = true
   try {
     const count = await store.approveAll()
-    ui.pushToast('success', t('queen.acceptAllDone', { count }))
+    // Pluralised on the backend's own count: "1 Vorschläge angenommen." is reachable, since the
+    // button renders from a single pending row upward.
+    ui.pushToast('success', t('queen.acceptAllDone', { count }, count))
   } catch {
     ui.pushToast('error', t('common.actionFailed'))
+  } finally {
+    acceptAllBusy.value = false
   }
 }
 
@@ -168,18 +181,26 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
         <span class="panel-sub">{{ t('queen.queenSub') }}</span>
         <template v-if="store.pending.length">
           <button v-if="!confirmingAcceptAll" data-test="accept-all" class="btn ghost accept-all"
-                  @click="confirmingAcceptAll = true">
+                  :disabled="acceptAllBusy" @click="confirmingAcceptAll = true">
             {{ t('queen.acceptAll', { count: store.pending.length }) }}
           </button>
-          <template v-else>
-            <button data-test="accept-all-confirm" class="btn accept-all" @click="acceptAll">
+          <!-- Invariant: the confirm button must never occupy the spot the arm button just
+               vacated, or the second click of a double-click commits everything irreversibly.
+               The arm button is right-aligned (margin-left:auto), so this wrapper is too, and
+               Cancel is its LAST child -- Cancel is what lands under the pointer. Do not
+               reorder these two buttons, and do not drop the wrapper: giving both buttons
+               margin-left:auto instead splits the free space between them and puts Confirm
+               back on the right edge. Pinned by queenRoute.spec.ts. -->
+          <div v-else class="accept-all-pair">
+            <button data-test="accept-all-confirm" class="btn" :disabled="acceptAllBusy"
+                    @click="acceptAll">
               {{ t('queen.acceptAllConfirm', { count: store.pending.length }) }}
             </button>
-            <button data-test="accept-all-cancel" class="btn ghost accept-all"
+            <button data-test="accept-all-cancel" class="btn ghost" :disabled="acceptAllBusy"
                     @click="confirmingAcceptAll = false">
               {{ t('queen.acceptAllCancel') }}
             </button>
-          </template>
+          </div>
         </template>
       </div>
       <div v-if="store.pending.length === 0" class="card q-noprop">{{ t('queen.noProposals') }}</div>
@@ -365,6 +386,9 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .prop-link { font-family:var(--font-mono); font-size:12px; color:var(--text-2); text-decoration:none; }
 .prop-link:hover { color:var(--honey); }
 .accept-all { margin-left:auto; padding:8px 14px; font-size:13px; }
+.accept-all-pair { margin-left:auto; display:flex; gap:9px; }
+.accept-all-pair .btn { padding:8px 14px; font-size:13px; }
+.btn:disabled { opacity:.55; cursor:not-allowed; }
 .prop-actions { display:flex; gap:9px; }
 .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:11px 16px; border-radius:11px;
   font-size:14px; font-weight:600; background:var(--honey); color:#1a1206; transition:.14s; border:none; cursor:pointer; }

@@ -166,9 +166,11 @@ export default {
     queenSub: 'Awaiting your review',
     noProposals: 'No open proposals',
     acceptAll: 'Accept all ({count})',
-    acceptAllConfirm: 'Really accept all {count}',
+    acceptAllConfirm: 'Really accept all {count}?',
     acceptAllCancel: 'Cancel',
-    acceptAllDone: 'Accepted {count} proposals.',
+    // Pluralised: the last remaining proposal is a reachable case, and
+    // "Accepted 1 proposals." is exactly the toast the user then sees.
+    acceptAllDone: 'Accepted {count} proposal. | Accepted {count} proposals.',
     kpiRuns: 'Runs',
     kpiProposals: 'Proposals',
     kpiCost: 'Cost',

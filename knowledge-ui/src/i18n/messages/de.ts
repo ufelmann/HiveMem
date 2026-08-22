@@ -166,9 +166,11 @@ export default {
     queenSub: 'Warten auf deine Prüfung',
     noProposals: 'Keine offenen Vorschläge',
     acceptAll: 'Alle annehmen ({count})',
-    acceptAllConfirm: 'Wirklich alle {count} annehmen',
+    acceptAllConfirm: 'Wirklich alle {count} annehmen?',
     acceptAllCancel: 'Abbrechen',
-    acceptAllDone: '{count} Vorschläge angenommen.',
+    // Pluralised: the last remaining proposal is a reachable case, and
+    // "1 Vorschläge angenommen." is exactly the toast the user then sees.
+    acceptAllDone: '{count} Vorschlag angenommen. | {count} Vorschläge angenommen.',
     kpiRuns: 'Läufe',
     kpiProposals: 'Vorschläge',
     kpiCost: 'Kosten',

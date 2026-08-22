@@ -7,8 +7,32 @@ import { resetApi } from '../../src/api/useApi'
 import { i18n } from '../../src/i18n'
 import { useQueenStore } from '../../src/stores/queen'
 import { useUiStore } from '../../src/stores/ui'
+import type { PendingApproval } from '../../src/api/types'
 
 const opts = { global: { plugins: [i18n], stubs: { HmIcon: true } } }
+
+/**
+ * Mount with a fixed pending list and no live API underneath.
+ *
+ * The earlier version of these tests mounted, then assigned `store.pending` while the
+ * component's own onMounted refresh() against MockApiClient was still in flight. They passed
+ * only because the mock's `latencyMs: [0, 0]` resolves on a timer (macrotask) while the
+ * assertions await nextTick() (microtask) — the moment that sleep became microtask-based the
+ * mock's rows would overwrite the fixture and these tests would start passing or failing for
+ * reasons unrelated to what they assert. Stubbing the two loading actions before mount removes
+ * the race entirely: nothing but the fixture ever writes to the store.
+ */
+async function mountSeeded(pending: PendingApproval[]) {
+  const store = useQueenStore()
+  vi.spyOn(store, 'refresh').mockResolvedValue(undefined)
+  vi.spyOn(store, 'loadArchivistLog').mockResolvedValue(undefined)
+  const w = mount(QueenRoute, {
+    global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
+  })
+  store.pending = pending
+  await flushPromises()
+  return { w, store }
+}
 
 function dataRows(w: any) {
   return w.findAll('.qtable .qrow').filter((r: any) => !r.classes('qhead'))
@@ -69,21 +93,24 @@ describe('QueenRoute (restyled)', () => {
     expect(ov.text()).toContain('Surveyed')
   })
 
+  const TUNNEL_ROW: PendingApproval = {
+    type: 'tunnel', id: 'p-1',
+    title: 'alpha/yoyo -[related_to]-> beta/yoyo',
+    description: 'Both notes cover the same yoyo migration.',
+    realm: 'alpha', signal: null,
+    from_cell: '00000000-0000-0000-0000-0000000000a1',
+    to_cell: '00000000-0000-0000-0000-0000000000b2',
+    created_by: 'queen', created_at: '2026-06-02T03:00:13Z',
+  }
+  function cellRow(id: string, title: string, createdAt: string): PendingApproval {
+    return {
+      type: 'cell', id, title, description: 's', realm: 'a', signal: null,
+      from_cell: null, to_cell: null, created_by: 'queen', created_at: createdAt,
+    }
+  }
+
   it('renders a proposal title and its rationale as separate fields', async () => {
-    const w = mount(QueenRoute, {
-      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
-    })
-    const store = useQueenStore()
-    store.pending = [{
-      type: 'tunnel', id: 'p-1',
-      title: 'alpha/yoyo -[related_to]-> beta/yoyo',
-      description: 'Both notes cover the same yoyo migration.',
-      realm: 'alpha', signal: null,
-      from_cell: '00000000-0000-0000-0000-0000000000a1',
-      to_cell: '00000000-0000-0000-0000-0000000000b2',
-      created_by: 'queen', created_at: '2026-06-02T03:00:13Z',
-    }]
-    await nextTick()
+    const { w } = await mountSeeded([TUNNEL_ROW])
     const card = w.find('.prop-card')
     expect(card.find('.prop-title').text()).toBe('alpha/yoyo -[related_to]-> beta/yoyo')
     expect(card.find('.prop-detail').text()).toBe('Both notes cover the same yoyo migration.')
@@ -93,54 +120,33 @@ describe('QueenRoute (restyled)', () => {
   })
 
   it('links both endpoint cells of a tunnel proposal', async () => {
-    const w = mount(QueenRoute, {
-      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
-    })
-    const store = useQueenStore()
-    store.pending = [{
-      type: 'tunnel', id: 'p-1', title: 'alpha/yoyo -[related_to]-> beta/yoyo',
-      description: 'Rationale.', realm: 'alpha', signal: null,
-      from_cell: '00000000-0000-0000-0000-0000000000a1',
-      to_cell: '00000000-0000-0000-0000-0000000000b2',
-      created_by: 'queen', created_at: '2026-06-02T03:00:13Z',
-    }]
-    await nextTick()
-    const links = w.findAllComponents(RouterLinkStub)
+    const { w } = await mountSeeded([TUNNEL_ROW])
+    // Scoped to the card's own link row: page-wide this would also collect the archivist log's
+    // cell links, and would then be asserting the size of an unrelated list.
+    const links = w.find('.prop-card .prop-links').findAllComponents(RouterLinkStub)
     expect(links).toHaveLength(2)
     expect(links[0].props('to')).toEqual({ name: 'search', query: { cell: '00000000-0000-0000-0000-0000000000a1' } })
     expect(links[1].props('to')).toEqual({ name: 'search', query: { cell: '00000000-0000-0000-0000-0000000000b2' } })
   })
 
   it('renders no body and no links for a proposal without a description or endpoints', async () => {
-    const w = mount(QueenRoute, {
-      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
-    })
-    const store = useQueenStore()
-    store.pending = [{
+    const { w } = await mountSeeded([{
       type: 'fact', id: 'p-2', title: 'HiveMem -> runs on -> Python',
       description: null, realm: null, signal: null,
       from_cell: null, to_cell: null,
       created_by: 'queen', created_at: '2026-06-02T03:00:14Z',
-    }]
-    await nextTick()
+    }])
     // An empty paragraph leaves a gap that reads like a half-loaded card.
     expect(w.find('.prop-card .prop-detail').exists()).toBe(false)
     expect(w.find('.prop-card .prop-links').exists()).toBe(false)
   })
 
   it('arms the accept-all button before committing, and commits every listed id on confirm', async () => {
-    const w = mount(QueenRoute, {
-      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
-    })
-    const store = useQueenStore()
+    const { w, store } = await mountSeeded([
+      cellRow('p-1', 'a/b', '2026-06-02T03:00:13Z'),
+      cellRow('p-2', 'a/c', '2026-06-02T03:00:14Z'),
+    ])
     const approveAll = vi.spyOn(store, 'approveAll').mockResolvedValue(2)
-    store.pending = [
-      { type: 'cell', id: 'p-1', title: 'a/b', description: 's', realm: 'a', signal: null,
-        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:13Z' },
-      { type: 'cell', id: 'p-2', title: 'a/c', description: 's', realm: 'a', signal: null,
-        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:14Z' },
-    ]
-    await nextTick()
 
     expect(w.find('[data-test="accept-all"]').text()).toContain('2')
     await w.find('[data-test="accept-all"]').trigger('click')
@@ -151,17 +157,25 @@ describe('QueenRoute (restyled)', () => {
     expect(approveAll).toHaveBeenCalledTimes(1)
   })
 
+  it('never places the confirm button where the arm button was', async () => {
+    const { w } = await mountSeeded([cellRow('p-1', 'a/b', '2026-06-02T03:00:13Z')])
+    await w.find('[data-test="accept-all"]').trigger('click')
+
+    // The arm button is right-aligned by `margin-left:auto`, and so is the confirm/cancel
+    // wrapper. The wrapper's LAST child therefore sits exactly where the arm button was — and
+    // it must be Cancel, so the second click of a double-click cancels instead of committing
+    // hundreds of proposals with no undo. This held by accident before: all three buttons had
+    // margin-left:auto, and two auto margins happened to split the free space in Cancel's
+    // favour. A CSS tweak could have silently moved Confirm back under that click.
+    const pair = w.find('.accept-all-pair')
+    expect(pair.exists()).toBe(true)
+    const order = pair.findAll('button').map(b => b.attributes('data-test'))
+    expect(order).toEqual(['accept-all-confirm', 'accept-all-cancel'])
+  })
+
   it('cancelling the accept-all confirmation commits nothing', async () => {
-    const w = mount(QueenRoute, {
-      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
-    })
-    const store = useQueenStore()
+    const { w, store } = await mountSeeded([cellRow('p-1', 'a/b', '2026-06-02T03:00:13Z')])
     const approveAll = vi.spyOn(store, 'approveAll').mockResolvedValue(0)
-    store.pending = [
-      { type: 'cell', id: 'p-1', title: 'a/b', description: 's', realm: 'a', signal: null,
-        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:13Z' },
-    ]
-    await nextTick()
 
     await w.find('[data-test="accept-all"]').trigger('click')
     await w.find('[data-test="accept-all-cancel"]').trigger('click')
@@ -169,17 +183,35 @@ describe('QueenRoute (restyled)', () => {
     expect(w.find('[data-test="accept-all"]').exists()).toBe(true)
   })
 
-  it('disarms the accept-all confirmation when the pending list changes underneath it', async () => {
-    const w = mount(QueenRoute, {
-      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
-    })
-    const store = useQueenStore()
-    const approveAll = vi.spyOn(store, 'approveAll').mockResolvedValue(0)
-    store.pending = [
-      { type: 'cell', id: 'p-1', title: 'a/b', description: 's', realm: 'a', signal: null,
-        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:13Z' },
-    ]
+  it('ignores a second confirm while the first accept-all request is still in flight', async () => {
+    const { w, store } = await mountSeeded([cellRow('p-1', 'a/b', '2026-06-02T03:00:13Z')])
+    let settle: (n: number) => void = () => {}
+    const approveAll = vi.spyOn(store, 'approveAll')
+      .mockReturnValue(new Promise<number>(resolve => { settle = resolve }))
+
+    await w.find('[data-test="accept-all"]').trigger('click')
+    await w.find('[data-test="accept-all-confirm"]').trigger('click')
+    expect(approveAll).toHaveBeenCalledTimes(1)
+
+    // The request has not answered yet. Re-arming and confirming again would fire a second
+    // approve_pending that matches nothing (the backend filters on status = 'pending') and
+    // reports count = 0 — a toast contradicting the successful one still to come.
     await nextTick()
+    expect(w.find('[data-test="accept-all"]').attributes('disabled')).toBeDefined()
+    await w.find('[data-test="accept-all"]').trigger('click')
+    expect(w.find('[data-test="accept-all-confirm"]').exists()).toBe(false)
+    expect(approveAll).toHaveBeenCalledTimes(1)
+
+    settle(1)
+    await flushPromises()
+    expect(approveAll).toHaveBeenCalledTimes(1)
+    // Buttons come back once the request has answered.
+    expect(w.find('[data-test="accept-all"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('disarms the accept-all confirmation when the pending list changes underneath it', async () => {
+    const { w, store } = await mountSeeded([cellRow('p-1', 'a/b', '2026-06-02T03:00:13Z')])
+    const approveAll = vi.spyOn(store, 'approveAll').mockResolvedValue(0)
 
     await w.find('[data-test="accept-all"]').trigger('click')
     expect(w.find('[data-test="accept-all-confirm"]').exists()).toBe(true)
@@ -188,10 +220,7 @@ describe('QueenRoute (restyled)', () => {
     // user's arm click — e.g. the rows were decided elsewhere, or a Queen run cycled them.
     store.pending = []
     await nextTick()
-    store.pending = [
-      { type: 'cell', id: 'p-2', title: 'a/c', description: 's', realm: 'a', signal: null,
-        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:14Z' },
-    ]
+    store.pending = [cellRow('p-2', 'a/c', '2026-06-02T03:00:14Z')]
     await nextTick()
 
     // The re-populated list must render the armed button, not a live confirm/cancel pair —
@@ -202,27 +231,15 @@ describe('QueenRoute (restyled)', () => {
   })
 
   it('disarms the accept-all confirmation when a poll grows the pending list while armed', async () => {
-    const w = mount(QueenRoute, {
-      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
-    })
-    const store = useQueenStore()
+    const { w, store } = await mountSeeded([cellRow('p-1', 'a/b', '2026-06-02T03:00:13Z')])
     const approveAll = vi.spyOn(store, 'approveAll').mockResolvedValue(0)
-    store.pending = [
-      { type: 'cell', id: 'p-1', title: 'a/b', description: 's', realm: 'a', signal: null,
-        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:13Z' },
-    ]
-    await nextTick()
 
     await w.find('[data-test="accept-all"]').trigger('click')
     expect(w.find('[data-test="accept-all-confirm"]').exists()).toBe(true)
 
     // A poll adds a proposal while armed: the confirm button would now commit a different,
     // larger set than the one the user armed against.
-    store.pending = [
-      ...store.pending,
-      { type: 'cell', id: 'p-2', title: 'a/c', description: 's', realm: 'a', signal: null,
-        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:14Z' },
-    ]
+    store.pending = [...store.pending, cellRow('p-2', 'a/c', '2026-06-02T03:00:14Z')]
     await nextTick()
 
     expect(w.find('[data-test="accept-all"]').exists()).toBe(true)
@@ -231,16 +248,8 @@ describe('QueenRoute (restyled)', () => {
   })
 
   it('disarms the accept-all confirmation when a poll swaps the pending set 1-for-1', async () => {
-    const w = mount(QueenRoute, {
-      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
-    })
-    const store = useQueenStore()
+    const { w, store } = await mountSeeded([cellRow('p-1', 'a/b', '2026-06-02T03:00:13Z')])
     const approveAll = vi.spyOn(store, 'approveAll').mockResolvedValue(0)
-    store.pending = [
-      { type: 'cell', id: 'p-1', title: 'a/b', description: 's', realm: 'a', signal: null,
-        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:13Z' },
-    ]
-    await nextTick()
 
     await w.find('[data-test="accept-all"]').trigger('click')
     expect(w.find('[data-test="accept-all-confirm"]').exists()).toBe(true)
@@ -248,10 +257,7 @@ describe('QueenRoute (restyled)', () => {
     // Same count, different ids: a poll that decided p-1 and staged a new p-3 in the same tick
     // would leave a length-only watcher armed, letting the confirm button commit p-3 without
     // the user ever having armed against it.
-    store.pending = [
-      { type: 'cell', id: 'p-3', title: 'a/d', description: 's', realm: 'a', signal: null,
-        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:15Z' },
-    ]
+    store.pending = [cellRow('p-3', 'a/d', '2026-06-02T03:00:15Z')]
     await nextTick()
 
     expect(w.find('[data-test="accept-all"]').exists()).toBe(true)
@@ -260,28 +266,22 @@ describe('QueenRoute (restyled)', () => {
   })
 
   it('reports the store\'s returned count in the toast, not pending.length', async () => {
-    const w = mount(QueenRoute, {
-      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
-    })
-    const store = useQueenStore()
+    const { w, store } = await mountSeeded([
+      cellRow('p-1', 'a/b', '2026-06-02T03:00:13Z'),
+      cellRow('p-2', 'a/c', '2026-06-02T03:00:14Z'),
+    ])
     const ui = useUiStore()
     // Backend committed only 1 of the 2 listed ids (e.g. one was already decided elsewhere) —
     // the toast must honestly report what the backend returned, not the size of the request.
     vi.spyOn(store, 'approveAll').mockResolvedValue(1)
-    store.pending = [
-      { type: 'cell', id: 'p-1', title: 'a/b', description: 's', realm: 'a', signal: null,
-        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:13Z' },
-      { type: 'cell', id: 'p-2', title: 'a/c', description: 's', realm: 'a', signal: null,
-        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:14Z' },
-    ]
-    await nextTick()
 
     await w.find('[data-test="accept-all"]').trigger('click')
     await w.find('[data-test="accept-all-confirm"]').trigger('click')
     await flushPromises()
 
-    expect(ui.toast?.text).toContain('1')
-    expect(ui.toast?.text).not.toContain('2 Vorschläge')
+    // Singular, because exactly one proposal was committed: "1 Vorschläge angenommen." is the
+    // string this pluralisation exists to prevent.
+    expect(ui.toast?.text).toBe('1 Vorschlag angenommen.')
   })
 
   describe('ingest queue section', () => {
