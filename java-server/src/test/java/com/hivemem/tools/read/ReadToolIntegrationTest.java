@@ -31,6 +31,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -1348,6 +1349,51 @@ class ReadToolIntegrationTest {
         assertThat(realmlessRow).isNotNull();
         assertThat(realmlessRow.path("title").asText())
                 .isEqualTo("delta/00000000 -[related_to]-> orphan-topic");
+    }
+
+    @Test
+    void pendingApprovalsHidesTunnelsWhoseEndpointCellIsNotCommitted() throws Exception {
+        seedStatusRows();
+        UUID committedCell = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID pendingCell = UUID.fromString("00000000-0000-0000-0000-000000000003");
+        UUID rejectedCell = UUID.fromString("00000000-0000-0000-0000-000000000006");
+        UUID healthyTunnel = UUID.fromString("00000000-0000-0000-0000-000000000202");
+        UUID tunnelToRejected = UUID.fromString("00000000-0000-0000-0000-000000000205");
+        UUID tunnelFromRejected = UUID.fromString("00000000-0000-0000-0000-000000000206");
+        UUID tunnelToPending = UUID.fromString("00000000-0000-0000-0000-000000000207");
+        insertDrawer(
+                rejectedCell, null, "Rejected cell", "delta", "facts", "discarded", "system", 1,
+                "Rejected summary", null, null, "rejected", "writer",
+                OffsetDateTime.parse("2026-04-07T10:00:00Z"),
+                OffsetDateTime.parse("2026-04-07T10:00:00Z"), null);
+        insertTunnel(
+                tunnelToRejected, committedCell, rejectedCell, "related_to", "To a rejected cell",
+                "pending", "writer",
+                OffsetDateTime.parse("2026-04-07T11:00:00Z"),
+                OffsetDateTime.parse("2026-04-07T11:00:00Z"), null);
+        insertTunnel(
+                tunnelFromRejected, rejectedCell, committedCell, "related_to", "From a rejected cell",
+                "pending", "writer",
+                OffsetDateTime.parse("2026-04-07T11:30:00Z"),
+                OffsetDateTime.parse("2026-04-07T11:30:00Z"), null);
+        // The filter is "both endpoints committed", not "neither endpoint rejected": a tunnel
+        // hanging off a cell that is itself still awaiting a decision is just as undecidable.
+        insertTunnel(
+                tunnelToPending, committedCell, pendingCell, "related_to", "To a pending cell",
+                "pending", "writer",
+                OffsetDateTime.parse("2026-04-07T12:00:00Z"),
+                OffsetDateTime.parse("2026-04-07T12:00:00Z"), null);
+
+        JsonNode content = callToolContent("pending_approvals", Map.of());
+        List<String> ids = new ArrayList<>();
+        for (JsonNode candidate : content) {
+            ids.add(candidate.path("id").asText());
+        }
+        // The one tunnel between two committed cells stays decidable...
+        assertThat(ids).contains(healthyTunnel.toString());
+        // ...while the three whose endpoint is not committed never reach the bulk-accept button.
+        assertThat(ids).doesNotContain(
+                tunnelToRejected.toString(), tunnelFromRejected.toString(), tunnelToPending.toString());
     }
 
     @Test
