@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useQueenStore } from '../stores/queen'
 import { useUiStore } from '../stores/ui'
@@ -68,6 +68,13 @@ async function decide(id: string, approved: boolean) {
 }
 
 const confirmingAcceptAll = ref(false)
+
+// Any change to the pending set invalidates an existing arm: the background poll
+// (refreshSafe, every 10s) reassigns store.pending independently of this button, so an
+// armed confirmation must not survive either the list emptying (which would render a live
+// confirm button that was never armed against the newly repopulated rows) or the list
+// growing (which would let a user who armed on N silently confirm N+k).
+watch(() => store.pending.length, () => { confirmingAcceptAll.value = false })
 
 async function acceptAll() {
   confirmingAcceptAll.value = false

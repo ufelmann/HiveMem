@@ -6,6 +6,7 @@ import QueenRoute from '../../src/pages/QueenRoute.vue'
 import { resetApi } from '../../src/api/useApi'
 import { i18n } from '../../src/i18n'
 import { useQueenStore } from '../../src/stores/queen'
+import { useUiStore } from '../../src/stores/ui'
 
 const opts = { global: { plugins: [i18n], stubs: { HmIcon: true } } }
 
@@ -166,6 +167,92 @@ describe('QueenRoute (restyled)', () => {
     await w.find('[data-test="accept-all-cancel"]').trigger('click')
     expect(approveAll).not.toHaveBeenCalled()
     expect(w.find('[data-test="accept-all"]').exists()).toBe(true)
+  })
+
+  it('disarms the accept-all confirmation when the pending list changes underneath it', async () => {
+    const w = mount(QueenRoute, {
+      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
+    })
+    const store = useQueenStore()
+    const approveAll = vi.spyOn(store, 'approveAll').mockResolvedValue(0)
+    store.pending = [
+      { type: 'cell', id: 'p-1', title: 'a/b', description: 's', realm: 'a', signal: null,
+        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:13Z' },
+    ]
+    await nextTick()
+
+    await w.find('[data-test="accept-all"]').trigger('click')
+    expect(w.find('[data-test="accept-all-confirm"]').exists()).toBe(true)
+
+    // Simulate the background poll (refreshSafe) repopulating the list independently of the
+    // user's arm click — e.g. the rows were decided elsewhere, or a Queen run cycled them.
+    store.pending = []
+    await nextTick()
+    store.pending = [
+      { type: 'cell', id: 'p-2', title: 'a/c', description: 's', realm: 'a', signal: null,
+        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:14Z' },
+    ]
+    await nextTick()
+
+    // The re-populated list must render the armed button, not a live confirm/cancel pair —
+    // otherwise a single click on it would irreversibly commit a set the user never armed.
+    expect(w.find('[data-test="accept-all"]').exists()).toBe(true)
+    expect(w.find('[data-test="accept-all-confirm"]').exists()).toBe(false)
+    expect(approveAll).not.toHaveBeenCalled()
+  })
+
+  it('disarms the accept-all confirmation when a poll grows the pending list while armed', async () => {
+    const w = mount(QueenRoute, {
+      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
+    })
+    const store = useQueenStore()
+    const approveAll = vi.spyOn(store, 'approveAll').mockResolvedValue(0)
+    store.pending = [
+      { type: 'cell', id: 'p-1', title: 'a/b', description: 's', realm: 'a', signal: null,
+        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:13Z' },
+    ]
+    await nextTick()
+
+    await w.find('[data-test="accept-all"]').trigger('click')
+    expect(w.find('[data-test="accept-all-confirm"]').exists()).toBe(true)
+
+    // A poll adds a proposal while armed: the confirm button would now commit a different,
+    // larger set than the one the user armed against.
+    store.pending = [
+      ...store.pending,
+      { type: 'cell', id: 'p-2', title: 'a/c', description: 's', realm: 'a', signal: null,
+        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:14Z' },
+    ]
+    await nextTick()
+
+    expect(w.find('[data-test="accept-all"]').exists()).toBe(true)
+    expect(w.find('[data-test="accept-all-confirm"]').exists()).toBe(false)
+    expect(approveAll).not.toHaveBeenCalled()
+  })
+
+  it('reports the store\'s returned count in the toast, not pending.length', async () => {
+    const w = mount(QueenRoute, {
+      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
+    })
+    const store = useQueenStore()
+    const ui = useUiStore()
+    // Backend committed only 1 of the 2 listed ids (e.g. one was already decided elsewhere) —
+    // the toast must honestly report what the backend returned, not the size of the request.
+    vi.spyOn(store, 'approveAll').mockResolvedValue(1)
+    store.pending = [
+      { type: 'cell', id: 'p-1', title: 'a/b', description: 's', realm: 'a', signal: null,
+        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:13Z' },
+      { type: 'cell', id: 'p-2', title: 'a/c', description: 's', realm: 'a', signal: null,
+        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:14Z' },
+    ]
+    await nextTick()
+
+    await w.find('[data-test="accept-all"]').trigger('click')
+    await w.find('[data-test="accept-all-confirm"]').trigger('click')
+    await flushPromises()
+
+    expect(ui.toast?.text).toContain('1')
+    expect(ui.toast?.text).not.toContain('2 Vorschläge')
   })
 
   describe('ingest queue section', () => {
