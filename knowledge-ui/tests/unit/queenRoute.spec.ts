@@ -230,6 +230,35 @@ describe('QueenRoute (restyled)', () => {
     expect(approveAll).not.toHaveBeenCalled()
   })
 
+  it('disarms the accept-all confirmation when a poll swaps the pending set 1-for-1', async () => {
+    const w = mount(QueenRoute, {
+      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
+    })
+    const store = useQueenStore()
+    const approveAll = vi.spyOn(store, 'approveAll').mockResolvedValue(0)
+    store.pending = [
+      { type: 'cell', id: 'p-1', title: 'a/b', description: 's', realm: 'a', signal: null,
+        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:13Z' },
+    ]
+    await nextTick()
+
+    await w.find('[data-test="accept-all"]').trigger('click')
+    expect(w.find('[data-test="accept-all-confirm"]').exists()).toBe(true)
+
+    // Same count, different ids: a poll that decided p-1 and staged a new p-3 in the same tick
+    // would leave a length-only watcher armed, letting the confirm button commit p-3 without
+    // the user ever having armed against it.
+    store.pending = [
+      { type: 'cell', id: 'p-3', title: 'a/d', description: 's', realm: 'a', signal: null,
+        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:15Z' },
+    ]
+    await nextTick()
+
+    expect(w.find('[data-test="accept-all"]').exists()).toBe(true)
+    expect(w.find('[data-test="accept-all-confirm"]').exists()).toBe(false)
+    expect(approveAll).not.toHaveBeenCalled()
+  })
+
   it('reports the store\'s returned count in the toast, not pending.length', async () => {
     const w = mount(QueenRoute, {
       global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },

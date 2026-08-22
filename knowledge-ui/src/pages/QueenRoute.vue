@@ -71,10 +71,11 @@ const confirmingAcceptAll = ref(false)
 
 // Any change to the pending set invalidates an existing arm: the background poll
 // (refreshSafe, every 10s) reassigns store.pending independently of this button, so an
-// armed confirmation must not survive either the list emptying (which would render a live
-// confirm button that was never armed against the newly repopulated rows) or the list
-// growing (which would let a user who armed on N silently confirm N+k).
-watch(() => store.pending.length, () => { confirmingAcceptAll.value = false })
+// armed confirmation must not survive the list emptying, growing, or being replaced
+// 1-for-1 by a different set of rows (same count, different ids) — all three would let
+// the confirm button commit a set the user never armed against. Keyed on the id list, not
+// just the length, so a same-size swap disarms too.
+watch(() => store.pending.map(p => p.id).join(','), () => { confirmingAcceptAll.value = false })
 
 async function acceptAll() {
   confirmingAcceptAll.value = false
