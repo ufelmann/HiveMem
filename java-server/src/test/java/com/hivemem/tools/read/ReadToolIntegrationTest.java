@@ -1259,12 +1259,70 @@ class ReadToolIntegrationTest {
 
         JsonNode content = callToolContent("pending_approvals", Map.of());
         assertThat(content).hasSize(3);
+
         assertThat(content.get(0).path("type").asText()).isEqualTo("cell");
+        assertThat(content.get(0).path("title").asText()).isEqualTo("gamma/pending-items");
         assertThat(content.get(0).path("description").asText()).isEqualTo("Pending summary");
+        assertThat(content.get(0).path("from_cell").isNull()).isTrue();
+        assertThat(content.get(0).path("to_cell").isNull()).isTrue();
+
         assertThat(content.get(1).path("type").asText()).isEqualTo("fact");
-        assertThat(content.get(1).path("description").asText()).isEqualTo("HiveMem -> runs on -> Python");
+        assertThat(content.get(1).path("title").asText()).isEqualTo("HiveMem -> runs on -> Python");
+        assertThat(content.get(1).path("description").isNull()).isTrue();
+
         assertThat(content.get(2).path("type").asText()).isEqualTo("tunnel");
-        assertThat(content.get(2).path("description").asText()).isEqualTo("00000000-0000-0000-0000-000000000002 -[refines]-> 00000000-0000-0000-0000-000000000001");
+        assertThat(content.get(2).path("title").asText())
+                .isEqualTo("beta/milestones -[refines]-> alpha/milestones");
+        // The Queen's own rationale is the whole point of the card: it must survive the view.
+        assertThat(content.get(2).path("description").asText()).isEqualTo("Pending link");
+        assertThat(content.get(2).path("from_cell").asText())
+                .isEqualTo("00000000-0000-0000-0000-000000000002");
+        assertThat(content.get(2).path("to_cell").asText())
+                .isEqualTo("00000000-0000-0000-0000-000000000001");
+        // The tunnel inherits the from-cell's realm, so the card's realm dot renders.
+        assertThat(content.get(2).path("realm").asText()).isEqualTo("beta");
+    }
+
+    @Test
+    void pendingApprovalsFallsBackToShortIdWhenAnEndpointIsMissingOrHasNoTopic() throws Exception {
+        seedStatusRows();
+        UUID topiclessCell = UUID.fromString("00000000-0000-0000-0000-000000000004");
+        UUID danglingTarget = UUID.fromString("00000000-0000-0000-0000-0000000009ff");
+        UUID fallbackTunnel = UUID.fromString("00000000-0000-0000-0000-000000000203");
+        insertDrawer(
+                topiclessCell, null, "Topicless cell", "delta", "facts", null, "system", 1,
+                "Delta summary", null, null, "committed", "writer",
+                OffsetDateTime.parse("2026-04-06T10:00:00Z"),
+                OffsetDateTime.parse("2026-04-06T10:00:00Z"), null);
+        // tunnels.to_cell is NOT NULL REFERENCES cells(id) with no ON DELETE cascade (V0002:44),
+        // and nothing in the app hard-deletes cells, so a genuinely dangling to_cell cannot be
+        // constructed. A committed cell with realm/topic both NULL exercises the identical SQL
+        // path in the view (the LEFT JOIN yields the same NULL/NULL cell_label() sees for a
+        // missing row) without violating that constraint.
+        insertDrawer(
+                danglingTarget, null, "Cell with no realm or topic", null, "facts", null, "system",
+                1, "Untitled summary", null, null, "committed", "writer",
+                OffsetDateTime.parse("2026-04-06T10:30:00Z"),
+                OffsetDateTime.parse("2026-04-06T10:30:00Z"), null);
+        insertTunnel(
+                fallbackTunnel, topiclessCell, danglingTarget, "related_to", "Fallback link",
+                "pending", "writer",
+                OffsetDateTime.parse("2026-04-06T11:00:00Z"),
+                OffsetDateTime.parse("2026-04-06T11:00:00Z"), null);
+
+        JsonNode content = callToolContent("pending_approvals", Map.of());
+        JsonNode row = null;
+        for (JsonNode candidate : content) {
+            if (fallbackTunnel.toString().equals(candidate.path("id").asText())) {
+                row = candidate;
+            }
+        }
+        // A proposal whose endpoint has no realm/topic (the same shape a missing row would
+        // produce via the LEFT JOIN) must still be listed — one that vanishes silently is worse
+        // than one that reads badly.
+        assertThat(row).isNotNull();
+        assertThat(row.path("title").asText()).isEqualTo("delta/00000000 -[related_to]-> 00000000");
+        assertThat(row.path("description").asText()).isEqualTo("Fallback link");
     }
 
     @Test

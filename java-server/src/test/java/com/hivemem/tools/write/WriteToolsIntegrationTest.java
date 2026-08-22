@@ -245,7 +245,7 @@ class WriteToolsIntegrationTest {
 
         JsonNode pending = callToolContent("writer-token", "pending_approvals", Map.of());
         assertThat(pending.get(0).path("type").asText()).isEqualTo("fact");
-        assertThat(pending.get(0).path("description").asText()).isEqualTo("Agentic fact -> needs review -> yes");
+        assertThat(pending.get(0).path("title").asText()).isEqualTo("Agentic fact -> needs review -> yes");
 
         Record row = dslContext.fetchOne("""
                 SELECT status, created_by

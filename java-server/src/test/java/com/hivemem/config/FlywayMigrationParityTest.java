@@ -38,8 +38,8 @@ class FlywayMigrationParityTest {
         try (SchemaHarness harness = migrateFreshSchema()) {
             assertThat(harness.flyway().info().pending()).isEmpty();
             assertThat(harness.dsl().fetchCount(DSL.table("migration_baseline"))).isEqualTo(1);
-            // V0057 (cell_chunks table part of the document-chunking design) added; bump 52 -> 53.
-            assertThat(harness.dsl().fetchCount(DSL.table("flyway_schema_history"))).isEqualTo(53);
+            // V0058 (pending_approvals view gains title/from_cell/to_cell) added; bump 53 -> 54.
+            assertThat(harness.dsl().fetchCount(DSL.table("flyway_schema_history"))).isEqualTo(54);
         }
     }
 
@@ -47,7 +47,7 @@ class FlywayMigrationParityTest {
     void migrationsAreIdempotentOnSecondRun() throws SQLException {
         try (SchemaHarness harness = migrateFreshSchema()) {
             assertThat(harness.flyway().migrate().migrationsExecuted).isZero();
-            assertThat(harness.dsl().fetchCount(DSL.table("flyway_schema_history"))).isEqualTo(53);
+            assertThat(harness.dsl().fetchCount(DSL.table("flyway_schema_history"))).isEqualTo(54);
         }
     }
 

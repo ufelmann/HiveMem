@@ -371,16 +371,22 @@ public class CellReadRepository {
     public List<Map<String, Object>> pendingApprovals() {
         List<Map<String, Object>> results = new ArrayList<>();
         for (Record row : dslContext.fetch("""
-                SELECT type, id, description, realm, signal, created_by, created_at
+                SELECT type, id, title, description, realm, signal, from_cell, to_cell,
+                       created_by, created_at
                 FROM pending_approvals
                 ORDER BY created_at ASC
                 """)) {
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("type", row.get("type", String.class));
             result.put("id", uuidValue(row, "id"));
+            result.put("title", row.get("title", String.class));
             result.put("description", row.get("description", String.class));
             result.put("realm", row.get("realm", String.class));
             result.put("signal", row.get("signal", String.class));
+            // Only tunnels have endpoints; null for cells and facts. The UI links both cells so
+            // the user can read the two sides before deciding.
+            result.put("from_cell", uuidValue(row, "from_cell"));
+            result.put("to_cell", uuidValue(row, "to_cell"));
             result.put("created_by", row.get("created_by", String.class));
             result.put("created_at", timestampValue(row, "created_at"));
             results.add(result);
