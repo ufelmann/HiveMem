@@ -40,12 +40,6 @@ function kindIcon(type: string | null): string {
     default: return 'sparkle'
   }
 }
-function propTitle(desc: string | null): string {
-  if (!desc) return '—'
-  const i = desc.indexOf(':')
-  return i > 0 ? desc.slice(0, i) : desc
-}
-
 const sumCost = computed(() =>
   store.costAvailable ? store.runs.reduce((s, r) => s + (r.costMicros ?? 0), 0) : null)
 const detailRun = computed(() => store.selectedRun?.run as Record<string, any> | undefined)
@@ -159,13 +153,24 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
           <div class="prop-top">
             <span class="prop-bee"><HmIcon :name="kindIcon(p.type)" :size="15" /></span>
             <div class="prop-head-text">
-              <div class="prop-title">{{ propTitle(p.description) }}</div>
+              <div class="prop-title">{{ p.title }}</div>
               <div class="prop-bee-name">{{ p.type || 'queen' }}</div>
             </div>
             <span class="prop-pending">{{ t('queen.pending') }}</span>
           </div>
           <div v-if="p.realm" class="prop-cell"><span class="rdot" :style="{ background: realmColorFor(p.realm) }" /> {{ p.realm }}</div>
-          <p class="prop-detail">{{ p.description }}</p>
+          <p v-if="p.description" class="prop-detail">{{ p.description }}</p>
+          <!-- Both endpoints, not just one: when a tunnel joins two cells of the same
+               realm/topic (the common case in this data), the title alone cannot tell
+               them apart, and the user has to be able to read each side before deciding. -->
+          <div v-if="p.from_cell && p.to_cell" class="prop-links">
+            <RouterLink :to="{ name: 'search', query: { cell: p.from_cell } }" class="prop-link">
+              {{ t('queen.linkFrom') }} {{ p.from_cell.slice(0, 8) }}
+            </RouterLink>
+            <RouterLink :to="{ name: 'search', query: { cell: p.to_cell } }" class="prop-link">
+              {{ t('queen.linkTo') }} {{ p.to_cell.slice(0, 8) }}
+            </RouterLink>
+          </div>
           <div class="prop-actions">
             <button class="btn" style="flex:1" @click="decide(p.id, true)"><HmIcon name="check" :size="15" /> {{ t('queen.accept') }}</button>
             <button class="btn ghost" style="flex:1" @click="decide(p.id, false)"><HmIcon name="close" :size="15" /> {{ t('queen.reject') }}</button>
@@ -321,6 +326,9 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .prop-cell { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-1); margin:14px 0 8px; }
 .rdot { width:9px; height:9px; border-radius:50%; flex:none; }
 .prop-detail { font-size:13.5px; line-height:1.55; color:var(--text-1); margin:0 0 16px; }
+.prop-links { display:flex; gap:14px; margin:0 0 16px; }
+.prop-link { font-family:var(--font-mono); font-size:12px; color:var(--text-2); text-decoration:none; }
+.prop-link:hover { color:var(--honey); }
 .prop-actions { display:flex; gap:9px; }
 .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:11px 16px; border-radius:11px;
   font-size:14px; font-weight:600; background:var(--honey); color:#1a1206; transition:.14s; border:none; cursor:pointer; }

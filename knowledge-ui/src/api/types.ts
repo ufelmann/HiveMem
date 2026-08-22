@@ -138,9 +138,15 @@ export interface QueenRunDetail {
 export interface PendingApproval {
   type: string
   id: string
+  /** Short human label built by the pending_approvals view — never null. */
+  title: string
+  /** The proposing agent's rationale: a cell summary or a tunnel note. Null for facts. */
   description: string | null
   realm: string | null
   signal: string | null
+  /** Endpoint cell ids — tunnels only, null for cells and facts. */
+  from_cell: string | null
+  to_cell: string | null
   created_by: string | null
   created_at: string
 }

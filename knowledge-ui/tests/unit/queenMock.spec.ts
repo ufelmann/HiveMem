@@ -19,10 +19,15 @@ describe('MockApiClient queen tools', () => {
     expect(detail.run).toBeTruthy()
   })
 
-  it('returns pending queen proposals', async () => {
+  it('returns pending queen proposals with a title, a rationale and endpoint ids', async () => {
     const api = new MockApiClient({ latencyMs: [0, 0] })
     const pending = await api.call<PendingApproval[]>('pending_approvals')
     expect(pending.some(p => p.created_by === 'queen')).toBe(true)
+    const tunnel = pending.find(p => p.type === 'tunnel')!
+    expect(tunnel.title).toBeTruthy()
+    expect(tunnel.description).toBeTruthy()
+    expect(tunnel.from_cell).toBeTruthy()
+    expect(tunnel.to_cell).toBeTruthy()
   })
 
   it('returns an ingest queue with the real reconciliation field names', async () => {

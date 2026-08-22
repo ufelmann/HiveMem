@@ -173,6 +173,8 @@ export default {
     filed: 'Filed',
     skipped: 'Skipped',
     reason: 'Reason',
+    linkFrom: 'from',
+    linkTo: 'to',
     ingest: {
       title: 'Scan review',
       unavailable: 'Consumption pipeline disabled — the scan queue is unavailable.',

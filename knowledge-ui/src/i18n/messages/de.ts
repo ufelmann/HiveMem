@@ -173,6 +173,8 @@ export default {
     filed: 'Einsortiert',
     skipped: 'Übersprungen',
     reason: 'Begründung',
+    linkFrom: 'von',
+    linkTo: 'nach',
     ingest: {
       title: 'Scan-Nachkontrolle',
       unavailable: 'Consumption-Pipeline deaktiviert — die Scan-Warteschlange ist nicht verfügbar.',

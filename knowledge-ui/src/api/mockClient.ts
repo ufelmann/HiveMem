@@ -525,10 +525,18 @@ export class MockApiClient implements ApiClient {
 
   private queenPending() {
     return [
-      { type: 'tunnel', id: 'p-1', description: 'c-42 → c-7 (related_to): both cover yoyo migrations',
-        realm: 'engineering', signal: null, created_by: 'queen', created_at: '2026-06-02T03:00:13Z' },
-      { type: 'tunnel', id: 'p-2', description: 'c-99 → c-13 (refines): supersedes the older rename note',
-        realm: 'hivemem', signal: null, created_by: 'queen', created_at: '2026-06-02T03:00:14Z' },
+      { type: 'tunnel', id: 'p-1', title: 'engineering/yoyo -[related_to]-> engineering/rollout',
+        description: 'Both notes cover the same yoyo migration.',
+        realm: 'engineering', signal: null,
+        from_cell: '00000000-0000-0000-0000-0000000000a1',
+        to_cell: '00000000-0000-0000-0000-0000000000b2',
+        created_by: 'queen', created_at: '2026-06-02T03:00:13Z' },
+      { type: 'tunnel', id: 'p-2', title: 'hivemem/naming -[refines]-> hivemem/naming',
+        description: 'Supersedes the older rename note.',
+        realm: 'hivemem', signal: null,
+        from_cell: '00000000-0000-0000-0000-0000000000c3',
+        to_cell: '00000000-0000-0000-0000-0000000000d4',
+        created_by: 'queen', created_at: '2026-06-02T03:00:14Z' },
     ]
   }
 

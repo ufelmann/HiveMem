@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { nextTick } from 'vue'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import QueenRoute from '../../src/pages/QueenRoute.vue'
 import { resetApi } from '../../src/api/useApi'
@@ -66,6 +66,65 @@ describe('QueenRoute (restyled)', () => {
     const ov = w.find('.q-detail')
     expect(ov.exists()).toBe(true)
     expect(ov.text()).toContain('Surveyed')
+  })
+
+  it('renders a proposal title and its rationale as separate fields', async () => {
+    const w = mount(QueenRoute, {
+      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
+    })
+    const store = useQueenStore()
+    store.pending = [{
+      type: 'tunnel', id: 'p-1',
+      title: 'alpha/yoyo -[related_to]-> beta/yoyo',
+      description: 'Both notes cover the same yoyo migration.',
+      realm: 'alpha', signal: null,
+      from_cell: '00000000-0000-0000-0000-0000000000a1',
+      to_cell: '00000000-0000-0000-0000-0000000000b2',
+      created_by: 'queen', created_at: '2026-06-02T03:00:13Z',
+    }]
+    await nextTick()
+    const card = w.find('.prop-card')
+    expect(card.find('.prop-title').text()).toBe('alpha/yoyo -[related_to]-> beta/yoyo')
+    expect(card.find('.prop-detail').text()).toBe('Both notes cover the same yoyo migration.')
+    // The old propTitle() heuristic sliced the description at the first colon; a title that is
+    // now its own field must survive a colon in the text.
+    expect(card.find('.prop-title').text()).not.toContain('Both notes')
+  })
+
+  it('links both endpoint cells of a tunnel proposal', async () => {
+    const w = mount(QueenRoute, {
+      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
+    })
+    const store = useQueenStore()
+    store.pending = [{
+      type: 'tunnel', id: 'p-1', title: 'alpha/yoyo -[related_to]-> beta/yoyo',
+      description: 'Rationale.', realm: 'alpha', signal: null,
+      from_cell: '00000000-0000-0000-0000-0000000000a1',
+      to_cell: '00000000-0000-0000-0000-0000000000b2',
+      created_by: 'queen', created_at: '2026-06-02T03:00:13Z',
+    }]
+    await nextTick()
+    const links = w.findAllComponents(RouterLinkStub)
+    expect(links).toHaveLength(2)
+    expect(links[0].props('to')).toEqual({ name: 'search', query: { cell: '00000000-0000-0000-0000-0000000000a1' } })
+    expect(links[1].props('to')).toEqual({ name: 'search', query: { cell: '00000000-0000-0000-0000-0000000000b2' } })
+  })
+
+  it('renders no body and no links for a proposal without a description or endpoints', async () => {
+    const w = mount(QueenRoute, {
+      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
+    })
+    const store = useQueenStore()
+    store.pending = [{
+      type: 'fact', id: 'p-2', title: 'HiveMem -> runs on -> Python',
+      description: null, realm: null, signal: null,
+      from_cell: null, to_cell: null,
+      created_by: 'queen', created_at: '2026-06-02T03:00:14Z',
+    }]
+    await nextTick()
+    // An empty paragraph leaves a gap that reads like a half-loaded card.
+    expect(w.find('.prop-card .prop-detail').exists()).toBe(false)
+    expect(w.find('.prop-card .prop-links').exists()).toBe(false)
   })
 
   describe('ingest queue section', () => {
