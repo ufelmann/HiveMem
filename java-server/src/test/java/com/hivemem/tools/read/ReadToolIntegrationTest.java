@@ -1289,6 +1289,8 @@ class ReadToolIntegrationTest {
         UUID topiclessCell = UUID.fromString("00000000-0000-0000-0000-000000000004");
         UUID danglingTarget = UUID.fromString("00000000-0000-0000-0000-0000000009ff");
         UUID fallbackTunnel = UUID.fromString("00000000-0000-0000-0000-000000000203");
+        UUID realmlessCell = UUID.fromString("00000000-0000-0000-0000-000000000005");
+        UUID realmlessTunnel = UUID.fromString("00000000-0000-0000-0000-000000000204");
         insertDrawer(
                 topiclessCell, null, "Topicless cell", "delta", "facts", null, "system", 1,
                 "Delta summary", null, null, "committed", "writer",
@@ -1310,6 +1312,19 @@ class ReadToolIntegrationTest {
                 OffsetDateTime.parse("2026-04-06T11:00:00Z"),
                 OffsetDateTime.parse("2026-04-06T11:00:00Z"), null);
 
+        // realm IS NULL but topic IS NOT NULL: cell_label() returns the bare topic, no id prefix
+        // and no leading slash. 2 production cells are in this shape, and the branch had no test.
+        insertDrawer(
+                realmlessCell, null, "Cell with a topic but no realm", null, "facts",
+                "orphan-topic", "system", 1, "Orphan summary", null, null, "committed", "writer",
+                OffsetDateTime.parse("2026-04-06T10:45:00Z"),
+                OffsetDateTime.parse("2026-04-06T10:45:00Z"), null);
+        insertTunnel(
+                realmlessTunnel, topiclessCell, realmlessCell, "related_to", "Realmless link",
+                "pending", "writer",
+                OffsetDateTime.parse("2026-04-06T11:30:00Z"),
+                OffsetDateTime.parse("2026-04-06T11:30:00Z"), null);
+
         JsonNode content = callToolContent("pending_approvals", Map.of());
         JsonNode row = null;
         for (JsonNode candidate : content) {
@@ -1323,6 +1338,16 @@ class ReadToolIntegrationTest {
         assertThat(row).isNotNull();
         assertThat(row.path("title").asText()).isEqualTo("delta/00000000 -[related_to]-> 00000000");
         assertThat(row.path("description").asText()).isEqualTo("Fallback link");
+
+        JsonNode realmlessRow = null;
+        for (JsonNode candidate : content) {
+            if (realmlessTunnel.toString().equals(candidate.path("id").asText())) {
+                realmlessRow = candidate;
+            }
+        }
+        assertThat(realmlessRow).isNotNull();
+        assertThat(realmlessRow.path("title").asText())
+                .isEqualTo("delta/00000000 -[related_to]-> orphan-topic");
     }
 
     @Test
