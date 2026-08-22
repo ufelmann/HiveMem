@@ -93,6 +93,26 @@ export const useQueenStore = defineStore('queen', {
       await useApi().call('approve_pending', { ids: [id], decision: approved ? 'committed' : 'rejected' })
       this.pending = this.pending.filter(p => p.id !== id)
     },
+    /**
+     * Commit every proposal currently in `pending` — which is exactly what the user sees,
+     * since refresh() filters the list to Queen-authored rows. A button that also committed
+     * rows off-screen would be lying about its own count.
+     *
+     * One approve_pending call, not one per id: the backend applies the whole list in a
+     * single transaction (WriteToolRepository.approvePending), so a partial failure cannot
+     * leave half the proposals committed. On failure the exception propagates and `pending`
+     * stays as it was — nothing may disappear from the list that was not committed.
+     */
+    async approveAll(): Promise<number> {
+      const ids = this.pending.map(p => p.id)
+      if (ids.length === 0) return 0
+      const res = await useApi().call<{ decision: string; count: number }>(
+        'approve_pending', { ids, decision: 'committed' })
+      // The commit succeeded; a refresh that fails afterwards must not be reported as a
+      // failed commit, so its rejection is swallowed (same reasoning as retryIngest).
+      await this.refresh().catch(() => {})
+      return res.count
+    },
     // Returns the full result (not just the boolean) so the caller can surface *why* a retry
     // did not work — consumption_retry answers `restaged: false` with an error for an unknown
     // hash, a file that no longer exists, or a disabled pipeline, and a retry button that looks

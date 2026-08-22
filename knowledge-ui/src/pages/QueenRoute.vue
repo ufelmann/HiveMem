@@ -67,6 +67,18 @@ async function decide(id: string, approved: boolean) {
   }
 }
 
+const confirmingAcceptAll = ref(false)
+
+async function acceptAll() {
+  confirmingAcceptAll.value = false
+  try {
+    const count = await store.approveAll()
+    ui.pushToast('success', t('queen.acceptAllDone', { count }))
+  } catch {
+    ui.pushToast('error', t('common.actionFailed'))
+  }
+}
+
 async function onRetry(sha256: string) {
   try {
     const res = await store.retryIngest(sha256)
@@ -146,6 +158,21 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
       <div class="q-prop-head">
         <h2 class="h-display" style="font-size:22px;margin:0">{{ t('queen.openProposals') }}</h2>
         <span class="panel-sub">{{ t('queen.queenSub') }}</span>
+        <template v-if="store.pending.length">
+          <button v-if="!confirmingAcceptAll" data-test="accept-all" class="btn ghost accept-all"
+                  @click="confirmingAcceptAll = true">
+            {{ t('queen.acceptAll', { count: store.pending.length }) }}
+          </button>
+          <template v-else>
+            <button data-test="accept-all-confirm" class="btn accept-all" @click="acceptAll">
+              {{ t('queen.acceptAllConfirm', { count: store.pending.length }) }}
+            </button>
+            <button data-test="accept-all-cancel" class="btn ghost accept-all"
+                    @click="confirmingAcceptAll = false">
+              {{ t('queen.acceptAllCancel') }}
+            </button>
+          </template>
+        </template>
       </div>
       <div v-if="store.pending.length === 0" class="card q-noprop">{{ t('queen.noProposals') }}</div>
       <div v-else class="prop-grid">
@@ -329,6 +356,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .prop-links { display:flex; gap:14px; margin:0 0 16px; }
 .prop-link { font-family:var(--font-mono); font-size:12px; color:var(--text-2); text-decoration:none; }
 .prop-link:hover { color:var(--honey); }
+.accept-all { margin-left:auto; padding:8px 14px; font-size:13px; }
 .prop-actions { display:flex; gap:9px; }
 .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:11px 16px; border-radius:11px;
   font-size:14px; font-weight:600; background:var(--honey); color:#1a1206; transition:.14s; border:none; cursor:pointer; }

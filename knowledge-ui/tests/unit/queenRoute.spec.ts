@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { mount, flushPromises, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -125,6 +125,47 @@ describe('QueenRoute (restyled)', () => {
     // An empty paragraph leaves a gap that reads like a half-loaded card.
     expect(w.find('.prop-card .prop-detail').exists()).toBe(false)
     expect(w.find('.prop-card .prop-links').exists()).toBe(false)
+  })
+
+  it('arms the accept-all button before committing, and commits every listed id on confirm', async () => {
+    const w = mount(QueenRoute, {
+      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
+    })
+    const store = useQueenStore()
+    const approveAll = vi.spyOn(store, 'approveAll').mockResolvedValue(2)
+    store.pending = [
+      { type: 'cell', id: 'p-1', title: 'a/b', description: 's', realm: 'a', signal: null,
+        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:13Z' },
+      { type: 'cell', id: 'p-2', title: 'a/c', description: 's', realm: 'a', signal: null,
+        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:14Z' },
+    ]
+    await nextTick()
+
+    expect(w.find('[data-test="accept-all"]').text()).toContain('2')
+    await w.find('[data-test="accept-all"]').trigger('click')
+    // One click must not commit: this is not undoable from the UI.
+    expect(approveAll).not.toHaveBeenCalled()
+
+    await w.find('[data-test="accept-all-confirm"]').trigger('click')
+    expect(approveAll).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancelling the accept-all confirmation commits nothing', async () => {
+    const w = mount(QueenRoute, {
+      global: { plugins: [i18n], stubs: { HmIcon: true, RouterLink: RouterLinkStub } },
+    })
+    const store = useQueenStore()
+    const approveAll = vi.spyOn(store, 'approveAll').mockResolvedValue(0)
+    store.pending = [
+      { type: 'cell', id: 'p-1', title: 'a/b', description: 's', realm: 'a', signal: null,
+        from_cell: null, to_cell: null, created_by: 'queen', created_at: '2026-06-02T03:00:13Z' },
+    ]
+    await nextTick()
+
+    await w.find('[data-test="accept-all"]').trigger('click')
+    await w.find('[data-test="accept-all-cancel"]').trigger('click')
+    expect(approveAll).not.toHaveBeenCalled()
+    expect(w.find('[data-test="accept-all"]').exists()).toBe(true)
   })
 
   describe('ingest queue section', () => {
