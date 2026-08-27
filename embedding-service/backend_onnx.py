@@ -106,6 +106,11 @@ def resolve_intra_op_threads():
 
     OMP_NUM_THREADS is deliberately not consulted: current ORT builds use
     their own thread pool, not OpenMP, and setting it changes nothing.
+
+    In the production sidecar container, /sys/fs/cgroup/cpu.max reads
+    "200000 100000" (a 2-core quota) while os.cpu_count() reports 12 -- the
+    cgroup branch below is the one that actually fires there, and the
+    os.cpu_count() fallback would be wrong by 6x if it were used instead.
     """
     raw = os.environ.get("ORT_INTRA_OP_THREADS", "").strip()
     if raw:

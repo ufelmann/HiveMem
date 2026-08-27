@@ -44,8 +44,13 @@ def stub_modules():
             return None
 
     fake_tokenizers = types.SimpleNamespace(Tokenizer=DummyTokenizer)
+    # Records the SessionOptions it was constructed with (instead of discarding
+    # them) so tests can assert bootstrap() actually wires the resolved thread
+    # count through to ONNX Runtime, not just that resolve_intra_op_threads()
+    # computes a number nobody consumes.
     fake_onnxruntime = types.SimpleNamespace(
-        InferenceSession=lambda path, options=None: object(),
+        InferenceSession=lambda path, options=None: types.SimpleNamespace(
+            options=options, get_inputs=lambda: []),
         SessionOptions=lambda: types.SimpleNamespace(
             intra_op_num_threads=0, inter_op_num_threads=0),
     )
@@ -144,6 +149,19 @@ class AppOnnxConfigTest(unittest.TestCase):
         self.assertEqual(info["max_chars"], 8000)
         self.assertTrue(info["model"].endswith("/c8000/contentfirst"))
 
+    def test_build_info_reports_resolved_intra_op_threads(self):
+        # intra_op_threads is the only operator-visible signal for this fix:
+        # CPU utilisation looks identical (~597%) whether the pool is sized
+        # correctly or oversubscribed, so /info has to carry the real number.
+        with mock.patch.dict(_ENV, {"EMBEDDING_SKIP_BOOTSTRAP": "1"}, clear=True):
+            module = load_module()
+        module.INPUT_NAMES = {"attention_mask", "input_ids"}
+        module.INTRA_OP_THREADS = 4
+        info = module.build_info(
+            "demo-model", 384, "manual", "/tmp/m", "/tmp/m/model.onnx", "/tmp/m/tokenizer.json")
+        self.assertIn("intra_op_threads", info)
+        self.assertEqual(info["intra_op_threads"], 4)
+
 
 class OnnxThreadSizingTest(unittest.TestCase):
     def setUp(self):
@@ -193,6 +211,33 @@ class OnnxThreadSizingTest(unittest.TestCase):
             with mock.patch.object(self.module, "_cgroup_cpu_quota", return_value=None):
                 with mock.patch.object(self.module.os, "cpu_count", return_value=None):
                     self.assertEqual(self.module.resolve_intra_op_threads(), 1)
+
+    def test_bootstrap_passes_resolved_thread_count_to_session_options(self):
+        # The regression this guards against: reverting to a bare
+        # ort.InferenceSession(onnx_path), or assigning the resolved thread
+        # count to a misspelled SessionOptions attribute, would leave
+        # resolve_intra_op_threads() computing a number nobody consumes.
+        # SimpleNamespace accepts any attribute name silently, so only an
+        # end-to-end check through bootstrap() catches that.
+        with tempfile.TemporaryDirectory() as model_dir:
+            Path(model_dir, "model.onnx").write_text("x")
+            Path(model_dir, "tokenizer.json").write_text("{}")
+            with mock.patch.dict(
+                _ENV,
+                {"EMBEDDING_SKIP_BOOTSTRAP": "1", "MODEL_PATH": model_dir},
+                clear=True,
+            ):
+                module = load_module()
+            with mock.patch.dict(_ENV, {"ORT_INTRA_OP_THREADS": ""}, clear=False), \
+                    mock.patch.object(module, "_cgroup_cpu_quota", return_value=None), \
+                    mock.patch.object(module.os, "cpu_count", return_value=4), \
+                    mock.patch.object(module, "embed", return_value=[0.0]):
+                module.bootstrap()
+                expected_threads = module.resolve_intra_op_threads()
+        self.assertEqual(expected_threads, 4)
+        self.assertEqual(module.INTRA_OP_THREADS, 4)
+        self.assertEqual(module.session.options.intra_op_num_threads, 4)
+        self.assertEqual(module.session.options.inter_op_num_threads, 1)
 
 
 if __name__ == "__main__":
