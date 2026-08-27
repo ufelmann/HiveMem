@@ -189,6 +189,50 @@ def find_tokenizer(model_dir):
     raise FileNotFoundError(f"No tokenizer.json found in {model_dir}")
 
 
+# ORT reports input types as strings; only the ones a KV cache can plausibly
+# use are mapped, everything else falls back to float32. getattr() guards
+# against the lightweight numpy stubs used by other test modules, which
+# expose only the handful of attributes their own tests exercise.
+_ONNX_TO_NUMPY = {
+    "tensor(float)": np.float32,
+    "tensor(float16)": getattr(np, "float16", np.float32),
+    "tensor(double)": getattr(np, "float64", np.float32),
+    "tensor(int64)": np.int64,
+    "tensor(int32)": getattr(np, "int32", np.int64),
+}
+
+
+def onnx_dtype_to_numpy(type_name):
+    return _ONNX_TO_NUMPY.get(type_name, np.float32)
+
+
+def build_feed(input_ids, attention_mask, input_specs):
+    """Assemble the input feed for one sequence from the graph's declared inputs.
+
+    Encoder graphs need input_ids/attention_mask and sometimes token_type_ids.
+    Decoder graphs (Qwen3-Embedding) additionally declare position_ids and a
+    past_key_values.* pair per layer; a single forward pass supplies them as
+    zero-length tensors. Shapes come from the graph, so no per-model constants
+    are needed -- symbolic dimensions become 1, batch becomes 1 and the
+    past-sequence axis (second from the right) becomes 0.
+    """
+    length = input_ids.shape[1]
+    feed = {"input_ids": input_ids, "attention_mask": attention_mask}
+    for spec in input_specs:
+        name = spec.name
+        if name in ("input_ids", "attention_mask"):
+            continue
+        if name == "token_type_ids":
+            feed[name] = np.zeros_like(input_ids)
+        elif name == "position_ids":
+            feed[name] = np.arange(length, dtype=np.int64)[None, :]
+        elif name.startswith("past_key_values"):
+            shape = [d if isinstance(d, int) else 1 for d in spec.shape]
+            shape[0], shape[-2] = 1, 0
+            feed[name] = np.zeros(shape, dtype=onnx_dtype_to_numpy(spec.type))
+    return feed
+
+
 def mean_pooling(token_embeddings, attention_mask):
     mask_expanded = np.expand_dims(attention_mask, axis=-1)
     summed = np.sum(token_embeddings * mask_expanded, axis=1)
@@ -212,9 +256,7 @@ def embed(text, mode="document"):
     encoded = tokenizer.encode(text)
     input_ids = np.array([encoded.ids], dtype=np.int64)
     attention_mask = np.array([encoded.attention_mask], dtype=np.int64)
-    inputs = {"input_ids": input_ids, "attention_mask": attention_mask}
-    if "token_type_ids" in INPUT_NAMES:
-        inputs["token_type_ids"] = np.zeros_like(input_ids)
+    inputs = build_feed(input_ids, attention_mask, session.get_inputs())
 
     outputs = session.run(None, inputs)
     if POOLING == "cls":

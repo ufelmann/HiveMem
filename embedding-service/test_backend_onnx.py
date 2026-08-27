@@ -8,6 +8,8 @@ from os import environ as _ENV
 from pathlib import Path
 from unittest import mock
 
+import numpy as np
+
 
 MODULE_PATH = Path(__file__).with_name("backend_onnx.py")
 
@@ -18,6 +20,29 @@ def load_module():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+class FakeInput:
+    """Stands in for an onnxruntime NodeArg from session.get_inputs()."""
+
+    def __init__(self, name, shape, type_name="tensor(float)"):
+        self.name = name
+        self.shape = shape
+        self.type = type_name
+
+
+def load_module_with_real_numpy():
+    """Load the backend with real numpy but a stubbed onnxruntime/tokenizers.
+
+    The numeric functions (pooling, feed construction) cannot be exercised
+    against the SimpleNamespace numpy stub used by the config tests.
+    """
+    stubs = stub_modules()
+    del stubs["numpy"]
+    with mock.patch.dict(_ENV, {"EMBEDDING_SKIP_BOOTSTRAP": "1"}, clear=False):
+        with mock.patch.dict(sys.modules, stubs):
+            sys.modules.pop("embedding_service_backend_onnx", None)
+            return load_module()
 
 
 def stub_modules():
@@ -59,6 +84,62 @@ def stub_modules():
         "onnxruntime": fake_onnxruntime,
         "tokenizers": fake_tokenizers,
     }
+
+
+class OnnxFeedTest(unittest.TestCase):
+    def setUp(self):
+        self.module = load_module_with_real_numpy()
+        self.ids = np.array([[1, 2, 3]], dtype=np.int64)
+        self.mask = np.array([[1, 1, 1]], dtype=np.int64)
+
+    def tearDown(self):
+        sys.modules.pop("embedding_service_backend_onnx", None)
+
+    def test_encoder_feed_unchanged(self):
+        specs = [FakeInput("input_ids", [1, 3], "tensor(int64)"),
+                 FakeInput("attention_mask", [1, 3], "tensor(int64)")]
+        feed = self.module.build_feed(self.ids, self.mask, specs)
+        self.assertEqual(sorted(feed), ["attention_mask", "input_ids"])
+
+    def test_token_type_ids_added_when_declared(self):
+        specs = [FakeInput("input_ids", [1, 3], "tensor(int64)"),
+                 FakeInput("attention_mask", [1, 3], "tensor(int64)"),
+                 FakeInput("token_type_ids", [1, 3], "tensor(int64)")]
+        feed = self.module.build_feed(self.ids, self.mask, specs)
+        np.testing.assert_array_equal(feed["token_type_ids"], np.zeros_like(self.ids))
+
+    def test_position_ids_added_when_declared(self):
+        specs = [FakeInput("input_ids", [1, 3], "tensor(int64)"),
+                 FakeInput("attention_mask", [1, 3], "tensor(int64)"),
+                 FakeInput("position_ids", [1, 3], "tensor(int64)")]
+        feed = self.module.build_feed(self.ids, self.mask, specs)
+        np.testing.assert_array_equal(feed["position_ids"], np.array([[0, 1, 2]]))
+        self.assertEqual(feed["position_ids"].dtype, np.int64)
+
+    def test_past_key_values_are_empty_with_batch_one(self):
+        specs = [
+            FakeInput("input_ids", [1, 3], "tensor(int64)"),
+            FakeInput("attention_mask", [1, 3], "tensor(int64)"),
+            FakeInput("past_key_values.0.key",
+                      ["batch_size", 8, "past_seq_len", 128], "tensor(float)"),
+        ]
+        feed = self.module.build_feed(self.ids, self.mask, specs)
+        past = feed["past_key_values.0.key"]
+        self.assertEqual(past.shape, (1, 8, 0, 128))
+        self.assertEqual(past.dtype, np.float32)
+
+    def test_past_key_values_honour_declared_dtype(self):
+        specs = [
+            FakeInput("input_ids", [1, 3], "tensor(int64)"),
+            FakeInput("attention_mask", [1, 3], "tensor(int64)"),
+            FakeInput("past_key_values.0.value",
+                      ["batch_size", 8, "past_seq_len", 128], "tensor(float16)"),
+        ]
+        feed = self.module.build_feed(self.ids, self.mask, specs)
+        self.assertEqual(feed["past_key_values.0.value"].dtype, np.float16)
+
+    def test_unknown_dtype_falls_back_to_float32(self):
+        self.assertEqual(self.module.onnx_dtype_to_numpy("tensor(weird)"), np.float32)
 
 
 class AppOnnxConfigTest(unittest.TestCase):
