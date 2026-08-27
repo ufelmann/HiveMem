@@ -24,9 +24,19 @@ Key environment variables:
 - `MODEL_PATH` — mounted directory with local model files; preferred for manual installs
 - `MODEL_REPO` — HF repo used when `MODEL_PATH` is unset
 - `MODEL_NAME` — model identifier reported by `/info`
-- `ONNX_FILE` / `TOKENIZER_FILE` — optional explicit filenames inside the model directory
-- `POOLING` — `mean` or `cls`
+- `ONNX_FILE` / `TOKENIZER_FILE` — optional explicit filenames inside the model directory;
+  setting `ONNX_FILE` also narrows the Hugging Face download to that file (plus its
+  `.onnx_data` sibling and the tokenizer/config files) instead of the broad default set
+- `POOLING` — `mean`, `cls`, or `last_token` (last-token pooling needs `eos_token_id` in the
+  model directory's `config.json`; the service refuses to start without it)
 - `MAX_LENGTH` — tokenizer truncation/padding length
+- `EMBEDDING_MAX_CHARS` — character cap advertised via `/info` (default `8000`; same
+  variable and default as the Ollama backend, see below)
+- `ORT_INTRA_OP_THREADS` — onnxruntime intra-op thread count. Defaults to the cgroup CPU
+  quota (`/sys/fs/cgroup/cpu.max`) when unset, falling back to `os.cpu_count()` only if the
+  cgroup quota can't be read either; set this explicitly in constrained containers where the
+  cgroup quota is unavailable or wrong. The resolved value is reported in `/info` as
+  `intra_op_threads`
 - `QUERY_PREFIX` / `DOCUMENT_PREFIX` — optional retrieval prefixes
 
 To build the embedding service:
@@ -41,10 +51,12 @@ docker build -t hivemem-embeddings .
 The bundled embedding sidecar (`embedding-service/`) ships two backends, selected via
 `EMBEDDING_BACKEND`:
 
-- `onnx` (default) — CPU inference (onnxruntime), embeds up to ~500 characters per cell.
-  Runs on any host, no GPU required — this is what a plain `docker compose up -d` uses.
+- `onnx` (default) — CPU inference (onnxruntime), embeds up to `EMBEDDING_MAX_CHARS`
+  characters per cell (default `8000`). Runs on any host, no GPU required — this is what a
+  plain `docker compose up -d` uses.
 - `ollama` — talks to a local Ollama server running a larger embedding model (the default
-  is Qwen3-Embedding-8B), embedding up to ~8000 characters per cell. The integration is
+  is Qwen3-Embedding-8B), embedding up to `EMBEDDING_MAX_CHARS` characters per cell (default
+  `8000`, same variable as the ONNX backend). The integration is
   provider-neutral: it only depends on Ollama's HTTP API, so a CUDA-based Ollama image
   works the same way as the ROCm one — swap the image tag in your compose override to
   match your GPU vendor.

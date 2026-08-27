@@ -241,8 +241,8 @@ The `saved_searches` table persists named filter presets for the Scans explorer 
 ### Embedding dependency for OCR'd documents
 
 OCR'd scan documents are typically long. `EmbeddingClient.encodeForCell` embeds a cell's
-content directly whenever it fits within the active embedding backend's `maxChars()` (500
-characters on the default ONNX backend, up to 8000 on the optional Ollama backend — see
+content directly whenever it fits within the active embedding backend's `maxChars()`
+(`EMBEDDING_MAX_CHARS`, default 8000 on both the ONNX and the optional Ollama backend — see
 [GPU embedding backend](#gpu-embedding-backend-optional)), and only returns `null` — no
 embedding at ingest/OCR time — for content beyond that cap with no summary yet available. In
 that case `WriteToolService.reviseCell` tags the cell `needs_summary`, and the scheduled
@@ -256,9 +256,10 @@ Content-based dedup runs **after** the cell's embedding exists, so it can rely o
 - **Long documents:** dedup runs in `SummarizerService.summarizeOne`, once the summary has been generated and the cell re-embedded.
 - **Short documents (≤500 chars):** dedup runs immediately at OCR time in `OcrService`. This
   gate uses the fixed `NeedsSummaryDecider` threshold (500 characters), not the active
-  embedding backend's `maxChars()` — so on the Ollama backend, a document between 501 and
-  8000 characters already has an embedding at OCR time but is still deferred to the
-  summarizer's dedup pass, the same as a document that has no embedding yet at all.
+  embedding backend's `maxChars()` — so at either backend's default `EMBEDDING_MAX_CHARS`
+  (8000), a document between 501 and 8000 characters already has an embedding at OCR time
+  but is still deferred to the summarizer's dedup pass, the same as a document that has no
+  embedding yet at all.
 
 `DocumentDedupService.findAndDiscardDuplicate` runs a two-stage check against current `committed`/`pending` scan cells, and only ever discards cells whose `source` starts with `consumption:`: candidate recall, then a normalized character-4-gram Jaccard gate (`text-threshold`) that confirms or rejects each candidate. A confirmed re-scan (matching a strictly older cell) is soft-deleted, its attachment binary is removed if no other live cell references it, and a `duplicate_of` tunnel links it to the original as provenance; if the discarded cell was still `pending`, it is also flipped to `rejected` so it drops out of the approval queue instead of becoming an approvable ghost. `rejected` cells are never targets or candidates. The check is best-effort: any error keeps the document. Note: byte-identical re-uploads are already deduped earlier by SHA-256 in `AttachmentService.ingest` — since the dedup fix, a re-upload also seeds the new cell with the existing extraction cell's already-enriched content (OCR/vision output, incl. `subtype_*` tags) instead of re-running the OCR/vision pipeline; this step covers same-content/different-bytes re-scans.
 
@@ -370,20 +371,58 @@ The embedding sidecar (`embedding-service/`) supports two runtime backends behin
 `/embeddings` + `/info` HTTP contract, selected by the sidecar's own `EMBEDDING_BACKEND` env
 var:
 
-- `onnx` (default) — CPU inference via onnxruntime. Advertises `max_chars: 500` via `/info`.
-  This is what a plain `docker compose up -d` (no profile) runs; a clone without a GPU is
-  unaffected by the backend that follows.
+- `onnx` (default) — CPU inference via onnxruntime. Advertises `max_chars` via `/info`, taken
+  from `EMBEDDING_MAX_CHARS` (default `8000` — the same variable and default the Ollama
+  backend below uses). This is what a plain `docker compose up -d` (no profile) runs; a
+  clone without a GPU is unaffected by the backend that follows.
 - `ollama` — proxies to a local Ollama server running a larger embedding model (default
-  Qwen3-Embedding-8B). Advertises `max_chars: 8000`. Brought up with the compose `gpu`
-  profile: `docker compose --profile gpu up -d`. Without that profile the `hivemem-ollama`
-  service does not exist, so the sidecar's health check never turns green and `hivemem`
-  (which `depends_on: condition: service_healthy` for the sidecar) never starts.
+  Qwen3-Embedding-8B). Advertises `max_chars: 8000` via the same `EMBEDDING_MAX_CHARS`
+  variable. Brought up with the compose `gpu` profile: `docker compose --profile gpu up -d`.
+  Without that profile the `hivemem-ollama` service does not exist, so the sidecar's health
+  check never turns green and `hivemem` (which `depends_on: condition: service_healthy` for
+  the sidecar) never starts.
 
 `HttpEmbeddingClient.maxChars()` reads the backend's advertised `max_chars` from `/info` and
 caches it; `EmbeddingClient.encodeForCell` uses that value (not a hardcoded constant) to
 decide whether a cell's content fits, falling back to the summary only when it doesn't. This
 is why the backend choice changes summarizer load in practice, not just embedding quality —
 see [summarizer.md](summarizer.md#why-summaries-still-matter).
+
+### ONNX backend configuration
+
+Beyond `MODEL_PATH`/`MODEL_REPO`/`MODEL_NAME`/`ONNX_FILE`/`TOKENIZER_FILE` (see
+[getting-started.md](getting-started.md)), the ONNX backend (`embedding-service/backend_onnx.py`)
+reads:
+
+- `ORT_INTRA_OP_THREADS` — explicit onnxruntime intra-op thread count for the session. When
+  unset, the backend falls back to the CPU quota read from the cgroup at
+  `/sys/fs/cgroup/cpu.max`, and only falls back further to `os.cpu_count()` when neither is
+  set or readable. This matters in a cgroup-limited container: onnxruntime otherwise sizes
+  its thread pool from the *host* CPU count, oversubscribing the container's actual quota
+  (the production sidecar's cgroup quota is 2 cores while `os.cpu_count()` reports 12 there).
+  The resolved value is reported in `/info` as `intra_op_threads`.
+- `POOLING` — `mean` (default), `cls`, or `last_token`. `last_token` pools the last
+  non-masked token's embedding, needed for decoder-style models such as Qwen3-Embedding; it
+  requires `eos_token_id` to be present in the model directory's `config.json` and the
+  backend refuses to start if it is missing. `/info` reports the resolved pooling mode as
+  `pooling` and whether an EOS token was appended before pooling as `append_eos`.
+- `ONNX_FILE` — as well as selecting the file to load, when set it also narrows the Hugging
+  Face download (when `MODEL_PATH` is not used) to that file, its `.onnx_data` sibling if
+  present, and the tokenizer/config files — instead of the broad default pattern list used
+  for auto-detection. Auto-detection itself (`ONNX_CANDIDATES`) also recognizes
+  `model_int8.onnx`, alongside the existing `model_quantized.onnx`/`model.onnx`/`model_fp16.onnx`
+  variants.
+
+The backend also supports decoder-style ONNX graphs, not just encoders: `build_feed` inspects
+the graph's own declared inputs and supplies `position_ids` and empty `past_key_values.*`
+tensors when the graph declares them, so no per-model constants are needed to run a decoder
+model through the same code path as an encoder.
+
+The ONNX backend's `/info` `model` field — the identity string `EmbeddingMigrationService`
+uses to detect a re-encode-worthy change — is
+`{model_name}/mrl0/t{MAX_LENGTH}/c{MAX_CHARS}/{POOLING}/contentfirst`. The pooling component
+is part of the identity because changing `POOLING` (e.g. `mean` to `last_token`) changes the
+vectors even when the model name and dimension stay the same.
 
 The Ollama integration is provider-neutral: it only depends on Ollama's standard HTTP API
 (`/api/embed`, `/api/tags`), so a CUDA-based Ollama image is a drop-in replacement for the
