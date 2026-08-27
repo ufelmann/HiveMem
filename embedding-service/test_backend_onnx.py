@@ -44,7 +44,11 @@ def stub_modules():
             return None
 
     fake_tokenizers = types.SimpleNamespace(Tokenizer=DummyTokenizer)
-    fake_onnxruntime = types.SimpleNamespace(InferenceSession=lambda path: object())
+    fake_onnxruntime = types.SimpleNamespace(
+        InferenceSession=lambda path, options=None: object(),
+        SessionOptions=lambda: types.SimpleNamespace(
+            intra_op_num_threads=0, inter_op_num_threads=0),
+    )
     return {
         "numpy": fake_numpy,
         "onnxruntime": fake_onnxruntime,
@@ -139,6 +143,56 @@ class AppOnnxConfigTest(unittest.TestCase):
             "demo-model", 384, "manual", "/tmp/m", "/tmp/m/model.onnx", "/tmp/m/tokenizer.json")
         self.assertEqual(info["max_chars"], 8000)
         self.assertTrue(info["model"].endswith("/c8000/contentfirst"))
+
+
+class OnnxThreadSizingTest(unittest.TestCase):
+    def setUp(self):
+        self.module_name = "embedding_service_backend_onnx"
+        self.env_patch = mock.patch.dict(_ENV, {"EMBEDDING_SKIP_BOOTSTRAP": "1"}, clear=False)
+        self.env_patch.start()
+        self.modules = mock.patch.dict(sys.modules, stub_modules())
+        self.modules.start()
+        sys.modules.pop(self.module_name, None)
+        self.module = load_module()
+
+    def tearDown(self):
+        sys.modules.pop(self.module_name, None)
+        self.modules.stop()
+        self.env_patch.stop()
+
+    def _quota_file(self, text):
+        path = Path(tempfile.mkdtemp(), "cpu.max")
+        path.write_text(text)
+        return str(path)
+
+    def test_cgroup_quota_rounds_up(self):
+        # 600000/100000 == 6 cores; 650000 is 6.5 and must round up to 7.
+        self.assertEqual(self.module._cgroup_cpu_quota(self._quota_file("600000 100000")), 6)
+        self.assertEqual(self.module._cgroup_cpu_quota(self._quota_file("650000 100000")), 7)
+
+    def test_cgroup_quota_none_when_unlimited_or_unreadable(self):
+        self.assertIsNone(self.module._cgroup_cpu_quota(self._quota_file("max 100000")))
+        self.assertIsNone(self.module._cgroup_cpu_quota("/nonexistent/cpu.max"))
+        self.assertIsNone(self.module._cgroup_cpu_quota(self._quota_file("garbage")))
+
+    def test_env_override_wins_over_cgroup(self):
+        with mock.patch.dict(_ENV, {"ORT_INTRA_OP_THREADS": "3"}, clear=False):
+            with mock.patch.object(self.module, "_cgroup_cpu_quota", return_value=6):
+                self.assertEqual(self.module.resolve_intra_op_threads(), 3)
+
+    def test_falls_back_to_cgroup_then_cpu_count(self):
+        with mock.patch.dict(_ENV, {"ORT_INTRA_OP_THREADS": ""}, clear=False):
+            with mock.patch.object(self.module, "_cgroup_cpu_quota", return_value=6):
+                self.assertEqual(self.module.resolve_intra_op_threads(), 6)
+            with mock.patch.object(self.module, "_cgroup_cpu_quota", return_value=None):
+                with mock.patch.object(self.module.os, "cpu_count", return_value=4):
+                    self.assertEqual(self.module.resolve_intra_op_threads(), 4)
+
+    def test_never_returns_less_than_one(self):
+        with mock.patch.dict(_ENV, {"ORT_INTRA_OP_THREADS": "0"}, clear=False):
+            with mock.patch.object(self.module, "_cgroup_cpu_quota", return_value=None):
+                with mock.patch.object(self.module.os, "cpu_count", return_value=None):
+                    self.assertEqual(self.module.resolve_intra_op_threads(), 1)
 
 
 if __name__ == "__main__":

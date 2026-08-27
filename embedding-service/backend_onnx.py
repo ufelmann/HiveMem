@@ -69,7 +69,56 @@ tokenizer = None
 session = None
 INPUT_NAMES = set()
 MODEL_DIMENSION = 0
+INTRA_OP_THREADS = 0
 INFO = {"model": MODEL_NAME or "", "dimension": 0}
+
+
+def _cgroup_cpu_quota(path="/sys/fs/cgroup/cpu.max"):
+    """Cores available to this cgroup, or None if unlimited/unreadable.
+
+    cpu.max holds "<quota> <period>" in microseconds, or "max <period>" when
+    uncapped. Rounds up: a 6.5-core quota should use 7 threads, not 6.
+    """
+    try:
+        with open(path) as handle:
+            parts = handle.read().split()
+    except OSError:
+        return None
+    if len(parts) != 2 or parts[0] == "max":
+        return None
+    try:
+        quota, period = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    if quota <= 0 or period <= 0:
+        return None
+    return max(1, -(-quota // period))
+
+
+def resolve_intra_op_threads():
+    """Threads for ONNX Runtime's intra-op pool.
+
+    Without this ORT sizes the pool from the *host* CPU count, which
+    oversubscribes inside a cgroup-limited container: 26 threads on 6 cores
+    measured 3538 ms per average cell against 1484 ms when sized correctly.
+    CPU utilisation looks healthy either way (597%), so this cannot be
+    diagnosed from load alone -- the resolved value is reported in /info.
+
+    OMP_NUM_THREADS is deliberately not consulted: current ORT builds use
+    their own thread pool, not OpenMP, and setting it changes nothing.
+    """
+    raw = os.environ.get("ORT_INTRA_OP_THREADS", "").strip()
+    if raw:
+        try:
+            explicit = int(raw)
+        except ValueError:
+            explicit = 0
+        if explicit > 0:
+            return explicit
+    quota = _cgroup_cpu_quota()
+    if quota:
+        return quota
+    return max(1, os.cpu_count() or 1)
 
 
 def download_from_hf(repo, dest):
@@ -185,6 +234,7 @@ def build_info(model_name, dimension, source, model_dir, onnx_path, tokenizer_pa
         "tokenizer_file": os.path.relpath(tokenizer_path, model_dir),
         "pooling": POOLING,
         "max_length": MAX_LENGTH,
+        "intra_op_threads": INTRA_OP_THREADS,
         "query_prefix": QUERY_PREFIX,
         "document_prefix": DOCUMENT_PREFIX,
         "inputs": sorted(INPUT_NAMES),
@@ -195,7 +245,7 @@ def build_info(model_name, dimension, source, model_dir, onnx_path, tokenizer_pa
 
 
 def bootstrap():
-    global tokenizer, session, INPUT_NAMES, MODEL_NAME, MODEL_DIMENSION, INFO
+    global tokenizer, session, INPUT_NAMES, MODEL_NAME, MODEL_DIMENSION, INFO, INTRA_OP_THREADS
 
     model_dir, source = resolve_model_dir()
     onnx_path = find_onnx(model_dir)
@@ -215,7 +265,11 @@ def bootstrap():
     tokenizer.no_padding()
     tokenizer.enable_truncation(max_length=MAX_LENGTH)
 
-    session = ort.InferenceSession(onnx_path)
+    INTRA_OP_THREADS = resolve_intra_op_threads()
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = INTRA_OP_THREADS
+    options.inter_op_num_threads = 1
+    session = ort.InferenceSession(onnx_path, options)
     INPUT_NAMES = {inp.name for inp in session.get_inputs()}
     MODEL_DIMENSION = len(embed("test"))
     INFO = build_info(MODEL_NAME, MODEL_DIMENSION, source, model_dir, onnx_path, tokenizer_path)
