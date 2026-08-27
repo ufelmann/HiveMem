@@ -228,9 +228,10 @@ class AppOnnxConfigTest(unittest.TestCase):
         self.assertEqual(info["query_prefix"], "Q: ")
         self.assertEqual(info["document_prefix"], "D: ")
         self.assertEqual(info["inputs"], ["attention_mask", "input_ids"])
-        # Identity encodes slicing strategy, token cap, char cap and embed-source
-        # strategy so EmbeddingMigrationService re-encodes when any of them changes.
-        self.assertEqual(info["model"], "demo-model/mrl0/t512/c50000/contentfirst")
+        # Identity encodes slicing strategy, token cap, char cap, pooling mode and
+        # embed-source strategy so EmbeddingMigrationService re-encodes when any of
+        # them changes.
+        self.assertEqual(info["model"], "demo-model/mrl0/t512/c50000/cls/contentfirst")
         self.assertEqual(info["max_chars"], 50000)
 
     def test_max_chars_defaults_when_env_absent(self):
@@ -240,7 +241,7 @@ class AppOnnxConfigTest(unittest.TestCase):
         info = module.build_info(
             "demo-model", 384, "manual", "/tmp/m", "/tmp/m/model.onnx", "/tmp/m/tokenizer.json")
         self.assertEqual(info["max_chars"], 8000)
-        self.assertTrue(info["model"].endswith("/c8000/contentfirst"))
+        self.assertTrue(info["model"].endswith("/c8000/mean/contentfirst"))
 
     def test_build_info_reports_resolved_intra_op_threads(self):
         # intra_op_threads is the only operator-visible signal for this fix:
@@ -371,6 +372,39 @@ class OnnxPoolingTest(unittest.TestCase):
         np.testing.assert_array_equal(
             self.module.cls_pooling(embeddings), np.array([[7.0, 7.0]]))
 
+    def test_embed_appends_eos_and_truncates_to_make_room(self):
+        # In production APPEND_EOS resolves to False (the tokenizer's own
+        # post-processor already appends EOS), so this branch never runs
+        # against the real model -- exactly the kind of code that rots
+        # unnoticed without a direct test.
+        module = self.module
+        module.MAX_LENGTH = 4
+        module.APPEND_EOS = True
+        module.EOS_ID = 7
+
+        module.tokenizer = types.SimpleNamespace(
+            encode=lambda text: types.SimpleNamespace(
+                ids=[1, 2, 3, 4, 5], attention_mask=[1, 1, 1, 1, 1]))
+
+        captured = {}
+
+        def fake_run(output_names, inputs):
+            captured["inputs"] = inputs
+            seq_len = inputs["input_ids"].shape[1]
+            return [np.zeros((1, seq_len, 2))]
+
+        module.session = types.SimpleNamespace(get_inputs=lambda: [], run=fake_run)
+
+        module.embed("hello")
+
+        fed_ids = captured["inputs"]["input_ids"]
+        fed_mask = captured["inputs"]["attention_mask"]
+        # Truncated to MAX_LENGTH - 1 == 3 original tokens, then EOS appended.
+        np.testing.assert_array_equal(fed_ids, np.array([[1, 2, 3, 7]]))
+        np.testing.assert_array_equal(fed_mask, np.array([[1, 1, 1, 1]]))
+        self.assertLessEqual(fed_ids.shape[1], module.MAX_LENGTH)
+        self.assertEqual(fed_ids[0, -1], module.EOS_ID)
+
 
 class OnnxEosTest(unittest.TestCase):
     def tearDown(self):
@@ -398,6 +432,29 @@ class OnnxEosTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as model_dir:
             Path(model_dir, "config.json").write_text('{"eos_token_id": [151643, 151645]}')
             self.assertEqual(module.resolve_eos_id(model_dir), 151643)
+
+    def test_bootstrap_raises_loudly_when_config_names_no_eos_id(self):
+        # The regression this guards against: silently falling back (e.g. to
+        # mean pooling, or to EOS_ID=None) would leave last_token pooling
+        # running against the wrong final position with no visible signal --
+        # the suite must fail if the raise is ever weakened to a warning.
+        with tempfile.TemporaryDirectory() as model_dir:
+            Path(model_dir, "model.onnx").write_text("x")
+            Path(model_dir, "tokenizer.json").write_text("{}")
+            # No config.json at all: resolve_eos_id() must return None.
+            with mock.patch.dict(
+                _ENV,
+                {
+                    "EMBEDDING_SKIP_BOOTSTRAP": "1",
+                    "MODEL_PATH": model_dir,
+                    "POOLING": "last_token",
+                },
+                clear=True,
+            ):
+                module = load_module_with_real_numpy()
+            with self.assertRaises(RuntimeError) as ctx:
+                module.bootstrap()
+            self.assertIn(model_dir, str(ctx.exception))
 
 
 if __name__ == "__main__":

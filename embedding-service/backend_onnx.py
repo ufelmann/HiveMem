@@ -330,7 +330,10 @@ def build_info(model_name, dimension, source, model_dir, onnx_path, tokenizer_pa
     info = {
         # Identity encodes everything that changes the vectors, because
         # EmbeddingMigrationService re-encodes on a model-name or dimension change only.
-        "model": f"{model_name}/mrl0/t{MAX_LENGTH}/c{MAX_CHARS}/contentfirst",
+        # Pooling mode is part of that: mean vs. last_token on an unchanged model
+        # name and dimension would otherwise look identical while every stored
+        # vector is stale.
+        "model": f"{model_name}/mrl0/t{MAX_LENGTH}/c{MAX_CHARS}/{POOLING}/contentfirst",
         "dimension": dimension,
         "max_chars": MAX_CHARS,
         "source": source,
