@@ -198,6 +198,18 @@ class AppOnnxConfigTest(unittest.TestCase):
             module = load_module()
             self.assertEqual(module.find_onnx(model_dir), str(nested / "model_int8.onnx"))
 
+    def test_find_onnx_prefers_int8_over_fp16(self):
+        # Ordering is the property the candidate list earns its keep with: the
+        # os.walk fallback sorts filenames, so without an int8 candidate entry
+        # it would pick model_fp16.onnx alphabetically -- exactly the wrong one.
+        with tempfile.TemporaryDirectory() as model_dir:
+            nested = Path(model_dir, "onnx")
+            nested.mkdir()
+            Path(nested, "model_fp16.onnx").write_text("x")
+            Path(nested, "model_int8.onnx").write_text("x")
+            module = load_module()
+            self.assertEqual(module.find_onnx(model_dir), str(nested / "model_int8.onnx"))
+
     def test_download_patterns_narrow_to_the_selected_onnx_file(self):
         with mock.patch.dict(
             _ENV,
