@@ -141,6 +141,18 @@ class OnnxFeedTest(unittest.TestCase):
     def test_unknown_dtype_falls_back_to_float32(self):
         self.assertEqual(self.module.onnx_dtype_to_numpy("tensor(weird)"), np.float32)
 
+    def test_past_key_values_reject_rank_below_three(self):
+        # A rank-2 shape has no distinct batch and past-sequence axes, so
+        # shape[0] and shape[-2] alias the same element; silently mangling
+        # that into a batch-0 tensor would be worse than failing loudly.
+        specs = [
+            FakeInput("input_ids", [1, 3], "tensor(int64)"),
+            FakeInput("attention_mask", [1, 3], "tensor(int64)"),
+            FakeInput("past_key_values.0.key", [8, 128], "tensor(float)"),
+        ]
+        with self.assertRaises(ValueError):
+            self.module.build_feed(self.ids, self.mask, specs)
+
 
 class AppOnnxConfigTest(unittest.TestCase):
     def setUp(self):

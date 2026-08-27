@@ -190,20 +190,23 @@ def find_tokenizer(model_dir):
 
 
 # ORT reports input types as strings; only the ones a KV cache can plausibly
-# use are mapped, everything else falls back to float32. getattr() guards
-# against the lightweight numpy stubs used by other test modules, which
-# expose only the handful of attributes their own tests exercise.
+# use are mapped, everything else falls back to float32. The map holds numpy
+# *attribute names*, not the dtypes themselves, and onnx_dtype_to_numpy()
+# resolves them via getattr() at call time rather than at import time -- that
+# way an unsupported dtype fails loudly (AttributeError) when it is actually
+# requested, instead of the module silently substituting float32 for every
+# dtype the moment it is imported.
 _ONNX_TO_NUMPY = {
-    "tensor(float)": np.float32,
-    "tensor(float16)": getattr(np, "float16", np.float32),
-    "tensor(double)": getattr(np, "float64", np.float32),
-    "tensor(int64)": np.int64,
-    "tensor(int32)": getattr(np, "int32", np.int64),
+    "tensor(float)": "float32",
+    "tensor(float16)": "float16",
+    "tensor(double)": "float64",
+    "tensor(int64)": "int64",
+    "tensor(int32)": "int32",
 }
 
 
 def onnx_dtype_to_numpy(type_name):
-    return _ONNX_TO_NUMPY.get(type_name, np.float32)
+    return getattr(np, _ONNX_TO_NUMPY[type_name]) if type_name in _ONNX_TO_NUMPY else np.float32
 
 
 def build_feed(input_ids, attention_mask, input_specs):
@@ -227,6 +230,18 @@ def build_feed(input_ids, attention_mask, input_specs):
         elif name == "position_ids":
             feed[name] = np.arange(length, dtype=np.int64)[None, :]
         elif name.startswith("past_key_values"):
+            # A KV-cache tensor needs a batch axis and a past-sequence axis as
+            # distinct dimensions, so rank must be at least 3 (typically 4:
+            # batch, heads, past_seq_len, head_dim). Below that, shape[0] and
+            # shape[-2] refer to the same element (rank 2) or don't exist at
+            # all (rank < 2); silently mangling that would produce a batch-0
+            # tensor instead of an error, so fail loudly instead.
+            if len(spec.shape) < 3:
+                raise ValueError(
+                    f"Unsupported past_key_values shape for input {name!r}: "
+                    f"{spec.shape!r} (need rank >= 3 for a batch axis and a "
+                    "past-sequence axis)"
+                )
             shape = [d if isinstance(d, int) else 1 for d in spec.shape]
             shape[0], shape[-2] = 1, 0
             feed[name] = np.zeros(shape, dtype=onnx_dtype_to_numpy(spec.type))
