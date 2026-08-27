@@ -333,5 +333,72 @@ class OnnxThreadSizingTest(unittest.TestCase):
         self.assertEqual(module.session.options.inter_op_num_threads, 1)
 
 
+class OnnxPoolingTest(unittest.TestCase):
+    def setUp(self):
+        self.module = load_module_with_real_numpy()
+
+    def tearDown(self):
+        sys.modules.pop("embedding_service_backend_onnx", None)
+
+    def test_last_token_uses_final_unmasked_position(self):
+        # Three positions, only the first two are real. The pooled vector must
+        # be position 1, not position 2 -- a [:, -1, :] slice would be wrong.
+        embeddings = np.array([[[1.0, 1.0], [2.0, 2.0], [9.0, 9.0]]])
+        mask = np.array([[1, 1, 0]])
+        np.testing.assert_array_equal(
+            self.module.last_token_pooling(embeddings, mask), np.array([[2.0, 2.0]]))
+
+    def test_last_token_with_no_padding(self):
+        embeddings = np.array([[[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]]])
+        mask = np.array([[1, 1, 1]])
+        np.testing.assert_array_equal(
+            self.module.last_token_pooling(embeddings, mask), np.array([[3.0, 3.0]]))
+
+    def test_last_token_clamps_an_all_zero_mask(self):
+        embeddings = np.array([[[1.0, 1.0], [2.0, 2.0]]])
+        mask = np.array([[0, 0]])
+        np.testing.assert_array_equal(
+            self.module.last_token_pooling(embeddings, mask), np.array([[1.0, 1.0]]))
+
+    def test_mean_pooling_still_ignores_masked_positions(self):
+        embeddings = np.array([[[1.0, 1.0], [3.0, 3.0], [99.0, 99.0]]])
+        mask = np.array([[1.0, 1.0, 0.0]])
+        np.testing.assert_allclose(
+            self.module.mean_pooling(embeddings, mask), np.array([[2.0, 2.0]]))
+
+    def test_cls_pooling_still_takes_position_zero(self):
+        embeddings = np.array([[[7.0, 7.0], [1.0, 1.0]]])
+        np.testing.assert_array_equal(
+            self.module.cls_pooling(embeddings), np.array([[7.0, 7.0]]))
+
+
+class OnnxEosTest(unittest.TestCase):
+    def tearDown(self):
+        sys.modules.pop("embedding_service_backend_onnx", None)
+
+    def _module_with_pooling(self, pooling):
+        with mock.patch.dict(_ENV, {"POOLING": pooling}, clear=False):
+            return load_module_with_real_numpy()
+
+    def test_eos_id_read_from_config(self):
+        module = self._module_with_pooling("last_token")
+        with tempfile.TemporaryDirectory() as model_dir:
+            Path(model_dir, "config.json").write_text('{"eos_token_id": 151643}')
+            self.assertEqual(module.resolve_eos_id(model_dir), 151643)
+
+    def test_eos_id_none_when_config_absent_or_silent(self):
+        module = self._module_with_pooling("last_token")
+        with tempfile.TemporaryDirectory() as model_dir:
+            self.assertIsNone(module.resolve_eos_id(model_dir))
+            Path(model_dir, "config.json").write_text('{"hidden_size": 1024}')
+            self.assertIsNone(module.resolve_eos_id(model_dir))
+
+    def test_eos_id_takes_first_when_config_lists_several(self):
+        module = self._module_with_pooling("last_token")
+        with tempfile.TemporaryDirectory() as model_dir:
+            Path(model_dir, "config.json").write_text('{"eos_token_id": [151643, 151645]}')
+            self.assertEqual(module.resolve_eos_id(model_dir), 151643)
+
+
 if __name__ == "__main__":
     unittest.main()

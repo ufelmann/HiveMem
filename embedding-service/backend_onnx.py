@@ -1,3 +1,4 @@
+import json
 import os
 
 import numpy as np
@@ -70,6 +71,8 @@ session = None
 INPUT_NAMES = set()
 MODEL_DIMENSION = 0
 INTRA_OP_THREADS = 0
+EOS_ID = None
+APPEND_EOS = False
 INFO = {"model": MODEL_NAME or "", "dimension": 0}
 
 
@@ -189,6 +192,25 @@ def find_tokenizer(model_dir):
     raise FileNotFoundError(f"No tokenizer.json found in {model_dir}")
 
 
+def resolve_eos_id(model_dir):
+    """The model's EOS token id from config.json, or None if it does not say.
+
+    Only needed for last-token pooling: Qwen3-Embedding's reference
+    implementation appends EOS before embedding, and pooling the wrong final
+    position yields plausible-looking but wrong vectors.
+    """
+    path = os.path.join(model_dir, "config.json")
+    try:
+        with open(path) as handle:
+            config = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    value = config.get("eos_token_id")
+    if isinstance(value, list):
+        value = value[0] if value else None
+    return value if isinstance(value, int) else None
+
+
 # ORT reports input types as strings; only the ones a KV cache can plausibly
 # use are mapped, everything else falls back to float32. The map holds numpy
 # *attribute names*, not the dtypes themselves, and onnx_dtype_to_numpy()
@@ -259,6 +281,18 @@ def cls_pooling(token_embeddings):
     return token_embeddings[:, 0, :]
 
 
+def last_token_pooling(token_embeddings, attention_mask):
+    """Embedding of the last non-masked token.
+
+    Qwen3-Embedding pools over its final (EOS) token rather than the mean or a
+    CLS position. Written index-based rather than as [:, -1, :] so it stays
+    correct if padding is ever re-enabled.
+    """
+    lengths = np.sum(attention_mask, axis=1).astype(np.int64)
+    idx = np.clip(lengths - 1, 0, token_embeddings.shape[1] - 1)
+    return token_embeddings[np.arange(token_embeddings.shape[0]), idx, :]
+
+
 def embed(text, mode="document"):
     if tokenizer is None or session is None:
         raise RuntimeError("Embedding runtime not initialized")
@@ -269,13 +303,22 @@ def embed(text, mode="document"):
         text = DOCUMENT_PREFIX + text
 
     encoded = tokenizer.encode(text)
-    input_ids = np.array([encoded.ids], dtype=np.int64)
-    attention_mask = np.array([encoded.attention_mask], dtype=np.int64)
+    ids = encoded.ids
+    mask = encoded.attention_mask
+    if APPEND_EOS:
+        # Truncation already bounded ids at MAX_LENGTH; make room for EOS so the
+        # appended token cannot push the sequence past the model's limit.
+        ids = list(ids[: MAX_LENGTH - 1]) + [EOS_ID]
+        mask = list(mask[: MAX_LENGTH - 1]) + [1]
+    input_ids = np.array([ids], dtype=np.int64)
+    attention_mask = np.array([mask], dtype=np.int64)
     inputs = build_feed(input_ids, attention_mask, session.get_inputs())
 
     outputs = session.run(None, inputs)
     if POOLING == "cls":
         embedding = cls_pooling(outputs[0])
+    elif POOLING == "last_token":
+        embedding = last_token_pooling(outputs[0], attention_mask)
     else:
         embedding = mean_pooling(outputs[0], attention_mask.astype(np.float32))
 
@@ -295,6 +338,7 @@ def build_info(model_name, dimension, source, model_dir, onnx_path, tokenizer_pa
         "onnx_file": os.path.relpath(onnx_path, model_dir),
         "tokenizer_file": os.path.relpath(tokenizer_path, model_dir),
         "pooling": POOLING,
+        "append_eos": APPEND_EOS,
         "max_length": MAX_LENGTH,
         "intra_op_threads": INTRA_OP_THREADS,
         "query_prefix": QUERY_PREFIX,
@@ -308,6 +352,7 @@ def build_info(model_name, dimension, source, model_dir, onnx_path, tokenizer_pa
 
 def bootstrap():
     global tokenizer, session, INPUT_NAMES, MODEL_NAME, MODEL_DIMENSION, INFO, INTRA_OP_THREADS
+    global EOS_ID, APPEND_EOS
 
     model_dir, source = resolve_model_dir()
     onnx_path = find_onnx(model_dir)
@@ -326,6 +371,16 @@ def bootstrap():
     # Truncation still bounds the sequence length.
     tokenizer.no_padding()
     tokenizer.enable_truncation(max_length=MAX_LENGTH)
+
+    if POOLING == "last_token":
+        EOS_ID = resolve_eos_id(model_dir)
+        if EOS_ID is None:
+            raise RuntimeError(
+                "POOLING=last_token needs an eos_token_id in config.json; "
+                f"none found in {model_dir}")
+        APPEND_EOS = tokenizer.encode("test").ids[-1] != EOS_ID
+        print(f"[bootstrap] last_token pooling, eos_id={EOS_ID}, "
+              f"append_eos={APPEND_EOS}", flush=True)
 
     INTRA_OP_THREADS = resolve_intra_op_threads()
     options = ort.SessionOptions()
