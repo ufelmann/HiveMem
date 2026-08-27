@@ -23,6 +23,10 @@ QUERY_PREFIX = os.environ.get("QUERY_PREFIX", "")
 DOCUMENT_PREFIX = os.environ.get("DOCUMENT_PREFIX", "")
 POOLING = os.environ.get("POOLING", "mean").lower()
 MAX_LENGTH = int(os.environ.get("MAX_LENGTH", "128"))
+# Character cap the Java client applies before sending text. Same variable and
+# default as backend_ollama.py so the two backends are configured alike; it is
+# part of the identity because truncating at a different width changes vectors.
+MAX_CHARS = int(os.environ.get("EMBEDDING_MAX_CHARS", "8000"))
 CACHE_DIR = os.environ.get("MODEL_CACHE", "/app/models")
 SKIP_BOOTSTRAP = os.environ.get("EMBEDDING_SKIP_BOOTSTRAP") == "1"
 
@@ -172,10 +176,9 @@ def build_info(model_name, dimension, source, model_dir, onnx_path, tokenizer_pa
     info = {
         # Identity encodes everything that changes the vectors, because
         # EmbeddingMigrationService re-encodes on a model-name or dimension change only.
-        "model": f"{model_name}/mrl0/t{MAX_LENGTH}/c500/contentfirst",
+        "model": f"{model_name}/mrl0/t{MAX_LENGTH}/c{MAX_CHARS}/contentfirst",
         "dimension": dimension,
-        # Calibrated ONNX value; deliberately a literal, not derived from MAX_LENGTH.
-        "max_chars": 500,
+        "max_chars": MAX_CHARS,
         "source": source,
         "model_path": model_dir,
         "onnx_file": os.path.relpath(onnx_path, model_dir),

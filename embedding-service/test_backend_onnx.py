@@ -106,6 +106,7 @@ class AppOnnxConfigTest(unittest.TestCase):
                 "MAX_LENGTH": "512",
                 "QUERY_PREFIX": "Q: ",
                 "DOCUMENT_PREFIX": "D: ",
+                "EMBEDDING_MAX_CHARS": "50000",
             },
             clear=True,
         ):
@@ -127,9 +128,17 @@ class AppOnnxConfigTest(unittest.TestCase):
         self.assertEqual(info["inputs"], ["attention_mask", "input_ids"])
         # Identity encodes slicing strategy, token cap, char cap and embed-source
         # strategy so EmbeddingMigrationService re-encodes when any of them changes.
-        self.assertEqual(info["model"], "demo-model/mrl0/t512/c500/contentfirst")
-        # Calibrated ONNX value; must stay a literal, not derived from MAX_LENGTH.
-        self.assertEqual(info["max_chars"], 500)
+        self.assertEqual(info["model"], "demo-model/mrl0/t512/c50000/contentfirst")
+        self.assertEqual(info["max_chars"], 50000)
+
+    def test_max_chars_defaults_when_env_absent(self):
+        with mock.patch.dict(_ENV, {"EMBEDDING_SKIP_BOOTSTRAP": "1"}, clear=True):
+            module = load_module()
+        module.INPUT_NAMES = {"attention_mask", "input_ids"}
+        info = module.build_info(
+            "demo-model", 384, "manual", "/tmp/m", "/tmp/m/model.onnx", "/tmp/m/tokenizer.json")
+        self.assertEqual(info["max_chars"], 8000)
+        self.assertTrue(info["model"].endswith("/c8000/contentfirst"))
 
 
 if __name__ == "__main__":
