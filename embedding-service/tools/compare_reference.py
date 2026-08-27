@@ -17,7 +17,8 @@ Reference vectors come from a separate fp32 sentence-transformers run:
 
 Usage:
     python3 compare_reference.py --texts texts.json --reference ref.json \\
-        --url http://127.0.0.1:8099/embeddings [--threshold 0.98]
+        --url http://127.0.0.1:8099/embeddings [--threshold 0.98] \\
+        [--expect-model Qwen/Qwen3-Embedding-0.6B]
 """
 
 import argparse
@@ -37,7 +38,7 @@ def embed(url, text, timeout=300):
     started = time.monotonic()
     with urllib.request.urlopen(req, timeout=timeout) as response:
         body = json.loads(response.read())
-    return body["vector"], (time.monotonic() - started) * 1000
+    return body, (time.monotonic() - started) * 1000
 
 
 def cosine(a, b):
@@ -53,18 +54,40 @@ def main():
     parser.add_argument("--reference", required=True)
     parser.add_argument("--url", required=True)
     parser.add_argument("--threshold", type=float, default=0.98)
+    parser.add_argument(
+        "--expect-model",
+        help="fail unless the service reports exactly this model name",
+    )
     args = parser.parse_args()
 
     texts = json.load(open(args.texts))
     reference = json.load(open(args.reference))
+    if not texts:
+        sys.exit("FAIL: texts file is empty -- nothing to compare")
     if len(texts) != len(reference):
         sys.exit(f"texts={len(texts)} but reference={len(reference)}")
 
     worst = 1.0
     latencies = []
+    model = dimension = None
     for i, (text, ref) in enumerate(zip(texts, reference)):
-        vector, ms = embed(args.url, text)
-        similarity = cosine(vector, ref)
+        body, ms = embed(args.url, text)
+        if i == 0:
+            model, dimension = body.get("model"), body.get("dimension")
+            print(f"service model : {model}")
+            print(f"dimension     : {dimension}")
+            if args.expect_model is not None and model != args.expect_model:
+                sys.exit(
+                    f"FAIL: service reports model {model!r}, "
+                    f"expected {args.expect_model!r} -- wrong service?"
+                )
+        elif (body.get("model"), body.get("dimension")) != (model, dimension):
+            sys.exit(
+                f"FAIL: service identity changed mid-run at request {i}: "
+                f'was {model!r}/dim={dimension}, '
+                f'now {body.get("model")!r}/dim={body.get("dimension")}'
+            )
+        similarity = cosine(body["vector"], ref)
         latencies.append(ms)
         worst = min(worst, similarity)
         print(f"[{i:3d}] chars={len(text):7d} cos={similarity:.5f} {ms:8.1f} ms")
