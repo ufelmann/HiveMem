@@ -37,6 +37,8 @@ ONNX_CANDIDATES = [
     "model.onnx",
     "onnx/model_quantized.onnx",
     "onnx/model.onnx",
+    "model_int8.onnx",
+    "onnx/model_int8.onnx",
     "onnx/model_fp16.onnx",
 ]
 TOKENIZER_CANDIDATES = ["tokenizer.json", "onnx/tokenizer.json"]
@@ -59,12 +61,31 @@ _DEFAULT_HF_PATTERNS = [
     "sentencepiece.bpe.model",
     "vocab.txt",
 ]
+_TOKENIZER_PATTERNS = [
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "config.json",
+    "sentencepiece.bpe.model",
+    "vocab.txt",
+]
 _patterns_env = os.environ.get("HF_DOWNLOAD_PATTERNS", "").strip()
-HF_ALLOW_PATTERNS = (
-    [p.strip() for p in _patterns_env.split(",") if p.strip()]
-    if _patterns_env
-    else _DEFAULT_HF_PATTERNS
-)
+
+
+def hf_allow_patterns():
+    """Files to pull from HF.
+
+    HF_DOWNLOAD_PATTERNS wins. Otherwise, when ONNX_FILE names the variant to
+    use, fetch only that file and its external-weights sibling: the default
+    list contains model.onnx/model.onnx_data, which pulled 2.27 GB of unused
+    fp32 weights alongside the 570 MB actually needed. With no ONNX_FILE the
+    auto-detection needs the broad list, so it is left alone.
+    """
+    if _patterns_env:
+        return [p.strip() for p in _patterns_env.split(",") if p.strip()]
+    if ONNX_FILE:
+        return [ONNX_FILE, ONNX_FILE + "_data"] + _TOKENIZER_PATTERNS
+    return _DEFAULT_HF_PATTERNS
 
 tokenizer = None
 session = None
@@ -137,7 +158,7 @@ def download_from_hf(repo, dest):
     snapshot_download(
         repo_id=repo,
         local_dir=dest,
-        allow_patterns=HF_ALLOW_PATTERNS,
+        allow_patterns=hf_allow_patterns(),
     )
     open(os.path.join(dest, ".ready"), "w").close()
     print("[bootstrap] Download complete", flush=True)

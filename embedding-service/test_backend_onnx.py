@@ -190,6 +190,45 @@ class AppOnnxConfigTest(unittest.TestCase):
                 module = load_module()
             self.assertEqual(module.find_onnx(model_dir), os.path.join(model_dir, "custom.onnx"))
 
+    def test_find_onnx_discovers_int8_variant(self):
+        with tempfile.TemporaryDirectory() as model_dir:
+            nested = Path(model_dir, "onnx")
+            nested.mkdir()
+            Path(nested, "model_int8.onnx").write_text("x")
+            module = load_module()
+            self.assertEqual(module.find_onnx(model_dir), str(nested / "model_int8.onnx"))
+
+    def test_download_patterns_narrow_to_the_selected_onnx_file(self):
+        with mock.patch.dict(
+            _ENV,
+            {"EMBEDDING_SKIP_BOOTSTRAP": "1", "ONNX_FILE": "onnx/model_int8.onnx"},
+            clear=True,
+        ):
+            module = load_module()
+        patterns = module.hf_allow_patterns()
+        self.assertIn("onnx/model_int8.onnx", patterns)
+        self.assertIn("onnx/model_int8.onnx_data", patterns)
+        self.assertIn("tokenizer.json", patterns)
+        # The fp32 siblings are what pulled 2.27 GB of unused weights.
+        self.assertNotIn("model.onnx", patterns)
+        self.assertNotIn("onnx/model.onnx", patterns)
+
+    def test_download_patterns_unchanged_without_onnx_file(self):
+        with mock.patch.dict(_ENV, {"EMBEDDING_SKIP_BOOTSTRAP": "1"}, clear=True):
+            module = load_module()
+        self.assertEqual(module.hf_allow_patterns(), module._DEFAULT_HF_PATTERNS)
+
+    def test_explicit_download_patterns_win(self):
+        with mock.patch.dict(
+            _ENV,
+            {"EMBEDDING_SKIP_BOOTSTRAP": "1",
+             "ONNX_FILE": "onnx/model_int8.onnx",
+             "HF_DOWNLOAD_PATTERNS": "a.onnx, tokenizer.json"},
+            clear=True,
+        ):
+            module = load_module()
+        self.assertEqual(module.hf_allow_patterns(), ["a.onnx", "tokenizer.json"])
+
     def test_find_tokenizer_falls_back_to_nested_file(self):
         with tempfile.TemporaryDirectory() as model_dir:
             nested = Path(model_dir, "onnx")
