@@ -8,6 +8,8 @@ from os import environ as _ENV
 from pathlib import Path
 from unittest import mock
 
+import numpy as np
+
 
 MODULE_PATH = Path(__file__).with_name("backend_onnx.py")
 
@@ -18,6 +20,29 @@ def load_module():
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+class FakeInput:
+    """Stands in for an onnxruntime NodeArg from session.get_inputs()."""
+
+    def __init__(self, name, shape, type_name="tensor(float)"):
+        self.name = name
+        self.shape = shape
+        self.type = type_name
+
+
+def load_module_with_real_numpy():
+    """Load the backend with real numpy but a stubbed onnxruntime/tokenizers.
+
+    The numeric functions (pooling, feed construction) cannot be exercised
+    against the SimpleNamespace numpy stub used by the config tests.
+    """
+    stubs = stub_modules()
+    del stubs["numpy"]
+    with mock.patch.dict(_ENV, {"EMBEDDING_SKIP_BOOTSTRAP": "1"}, clear=False):
+        with mock.patch.dict(sys.modules, stubs):
+            sys.modules.pop("embedding_service_backend_onnx", None)
+            return load_module()
 
 
 def stub_modules():
@@ -44,12 +69,89 @@ def stub_modules():
             return None
 
     fake_tokenizers = types.SimpleNamespace(Tokenizer=DummyTokenizer)
-    fake_onnxruntime = types.SimpleNamespace(InferenceSession=lambda path: object())
+    # Records the SessionOptions it was constructed with (instead of discarding
+    # them) so tests can assert bootstrap() actually wires the resolved thread
+    # count through to ONNX Runtime, not just that resolve_intra_op_threads()
+    # computes a number nobody consumes.
+    fake_onnxruntime = types.SimpleNamespace(
+        InferenceSession=lambda path, options=None: types.SimpleNamespace(
+            options=options, get_inputs=lambda: []),
+        SessionOptions=lambda: types.SimpleNamespace(
+            intra_op_num_threads=0, inter_op_num_threads=0),
+    )
     return {
         "numpy": fake_numpy,
         "onnxruntime": fake_onnxruntime,
         "tokenizers": fake_tokenizers,
     }
+
+
+class OnnxFeedTest(unittest.TestCase):
+    def setUp(self):
+        self.module = load_module_with_real_numpy()
+        self.ids = np.array([[1, 2, 3]], dtype=np.int64)
+        self.mask = np.array([[1, 1, 1]], dtype=np.int64)
+
+    def tearDown(self):
+        sys.modules.pop("embedding_service_backend_onnx", None)
+
+    def test_encoder_feed_unchanged(self):
+        specs = [FakeInput("input_ids", [1, 3], "tensor(int64)"),
+                 FakeInput("attention_mask", [1, 3], "tensor(int64)")]
+        feed = self.module.build_feed(self.ids, self.mask, specs)
+        self.assertEqual(sorted(feed), ["attention_mask", "input_ids"])
+
+    def test_token_type_ids_added_when_declared(self):
+        specs = [FakeInput("input_ids", [1, 3], "tensor(int64)"),
+                 FakeInput("attention_mask", [1, 3], "tensor(int64)"),
+                 FakeInput("token_type_ids", [1, 3], "tensor(int64)")]
+        feed = self.module.build_feed(self.ids, self.mask, specs)
+        np.testing.assert_array_equal(feed["token_type_ids"], np.zeros_like(self.ids))
+
+    def test_position_ids_added_when_declared(self):
+        specs = [FakeInput("input_ids", [1, 3], "tensor(int64)"),
+                 FakeInput("attention_mask", [1, 3], "tensor(int64)"),
+                 FakeInput("position_ids", [1, 3], "tensor(int64)")]
+        feed = self.module.build_feed(self.ids, self.mask, specs)
+        np.testing.assert_array_equal(feed["position_ids"], np.array([[0, 1, 2]]))
+        self.assertEqual(feed["position_ids"].dtype, np.int64)
+
+    def test_past_key_values_are_empty_with_batch_one(self):
+        specs = [
+            FakeInput("input_ids", [1, 3], "tensor(int64)"),
+            FakeInput("attention_mask", [1, 3], "tensor(int64)"),
+            FakeInput("past_key_values.0.key",
+                      ["batch_size", 8, "past_seq_len", 128], "tensor(float)"),
+        ]
+        feed = self.module.build_feed(self.ids, self.mask, specs)
+        past = feed["past_key_values.0.key"]
+        self.assertEqual(past.shape, (1, 8, 0, 128))
+        self.assertEqual(past.dtype, np.float32)
+
+    def test_past_key_values_honour_declared_dtype(self):
+        specs = [
+            FakeInput("input_ids", [1, 3], "tensor(int64)"),
+            FakeInput("attention_mask", [1, 3], "tensor(int64)"),
+            FakeInput("past_key_values.0.value",
+                      ["batch_size", 8, "past_seq_len", 128], "tensor(float16)"),
+        ]
+        feed = self.module.build_feed(self.ids, self.mask, specs)
+        self.assertEqual(feed["past_key_values.0.value"].dtype, np.float16)
+
+    def test_unknown_dtype_falls_back_to_float32(self):
+        self.assertEqual(self.module.onnx_dtype_to_numpy("tensor(weird)"), np.float32)
+
+    def test_past_key_values_reject_rank_below_three(self):
+        # A rank-2 shape has no distinct batch and past-sequence axes, so
+        # shape[0] and shape[-2] alias the same element; silently mangling
+        # that into a batch-0 tensor would be worse than failing loudly.
+        specs = [
+            FakeInput("input_ids", [1, 3], "tensor(int64)"),
+            FakeInput("attention_mask", [1, 3], "tensor(int64)"),
+            FakeInput("past_key_values.0.key", [8, 128], "tensor(float)"),
+        ]
+        with self.assertRaises(ValueError):
+            self.module.build_feed(self.ids, self.mask, specs)
 
 
 class AppOnnxConfigTest(unittest.TestCase):
@@ -88,6 +190,57 @@ class AppOnnxConfigTest(unittest.TestCase):
                 module = load_module()
             self.assertEqual(module.find_onnx(model_dir), os.path.join(model_dir, "custom.onnx"))
 
+    def test_find_onnx_discovers_int8_variant(self):
+        with tempfile.TemporaryDirectory() as model_dir:
+            nested = Path(model_dir, "onnx")
+            nested.mkdir()
+            Path(nested, "model_int8.onnx").write_text("x")
+            module = load_module()
+            self.assertEqual(module.find_onnx(model_dir), str(nested / "model_int8.onnx"))
+
+    def test_find_onnx_prefers_int8_over_fp16(self):
+        # Ordering is the property the candidate list earns its keep with: the
+        # os.walk fallback sorts filenames, so without an int8 candidate entry
+        # it would pick model_fp16.onnx alphabetically -- exactly the wrong one.
+        with tempfile.TemporaryDirectory() as model_dir:
+            nested = Path(model_dir, "onnx")
+            nested.mkdir()
+            Path(nested, "model_fp16.onnx").write_text("x")
+            Path(nested, "model_int8.onnx").write_text("x")
+            module = load_module()
+            self.assertEqual(module.find_onnx(model_dir), str(nested / "model_int8.onnx"))
+
+    def test_download_patterns_narrow_to_the_selected_onnx_file(self):
+        with mock.patch.dict(
+            _ENV,
+            {"EMBEDDING_SKIP_BOOTSTRAP": "1", "ONNX_FILE": "onnx/model_int8.onnx"},
+            clear=True,
+        ):
+            module = load_module()
+        patterns = module.hf_allow_patterns()
+        self.assertIn("onnx/model_int8.onnx", patterns)
+        self.assertIn("onnx/model_int8.onnx_data", patterns)
+        self.assertIn("tokenizer.json", patterns)
+        # The fp32 siblings are what pulled 2.27 GB of unused weights.
+        self.assertNotIn("model.onnx", patterns)
+        self.assertNotIn("onnx/model.onnx", patterns)
+
+    def test_download_patterns_unchanged_without_onnx_file(self):
+        with mock.patch.dict(_ENV, {"EMBEDDING_SKIP_BOOTSTRAP": "1"}, clear=True):
+            module = load_module()
+        self.assertEqual(module.hf_allow_patterns(), module._DEFAULT_HF_PATTERNS)
+
+    def test_explicit_download_patterns_win(self):
+        with mock.patch.dict(
+            _ENV,
+            {"EMBEDDING_SKIP_BOOTSTRAP": "1",
+             "ONNX_FILE": "onnx/model_int8.onnx",
+             "HF_DOWNLOAD_PATTERNS": "a.onnx, tokenizer.json"},
+            clear=True,
+        ):
+            module = load_module()
+        self.assertEqual(module.hf_allow_patterns(), ["a.onnx", "tokenizer.json"])
+
     def test_find_tokenizer_falls_back_to_nested_file(self):
         with tempfile.TemporaryDirectory() as model_dir:
             nested = Path(model_dir, "onnx")
@@ -106,6 +259,7 @@ class AppOnnxConfigTest(unittest.TestCase):
                 "MAX_LENGTH": "512",
                 "QUERY_PREFIX": "Q: ",
                 "DOCUMENT_PREFIX": "D: ",
+                "EMBEDDING_MAX_CHARS": "50000",
             },
             clear=True,
         ):
@@ -125,11 +279,383 @@ class AppOnnxConfigTest(unittest.TestCase):
         self.assertEqual(info["query_prefix"], "Q: ")
         self.assertEqual(info["document_prefix"], "D: ")
         self.assertEqual(info["inputs"], ["attention_mask", "input_ids"])
-        # Identity encodes slicing strategy, token cap, char cap and embed-source
-        # strategy so EmbeddingMigrationService re-encodes when any of them changes.
-        self.assertEqual(info["model"], "demo-model/mrl0/t512/c500/contentfirst")
-        # Calibrated ONNX value; must stay a literal, not derived from MAX_LENGTH.
-        self.assertEqual(info["max_chars"], 500)
+        # Identity encodes slicing strategy, token cap, char cap, pooling mode,
+        # the resolved ONNX variant, a DOCUMENT_PREFIX digest, and embed-source
+        # strategy so EmbeddingMigrationService re-encodes when any of them
+        # changes.
+        expected_onnx_token = module.onnx_variant_token("onnx/model.onnx")
+        expected_prefix_token = module.document_prefix_token("D: ")
+        self.assertEqual(
+            info["model"],
+            f"demo-model/mrl0/t512/c50000/cls/{expected_onnx_token}/"
+            f"{expected_prefix_token}/contentfirst",
+        )
+        self.assertEqual(info["max_chars"], 50000)
+
+    def test_max_chars_defaults_when_env_absent(self):
+        with mock.patch.dict(_ENV, {"EMBEDDING_SKIP_BOOTSTRAP": "1"}, clear=True):
+            module = load_module()
+        module.INPUT_NAMES = {"attention_mask", "input_ids"}
+        info = module.build_info(
+            "demo-model", 384, "manual", "/tmp/m", "/tmp/m/model.onnx", "/tmp/m/tokenizer.json")
+        self.assertEqual(info["max_chars"], 8000)
+        expected_onnx_token = module.onnx_variant_token("model.onnx")
+        # DOCUMENT_PREFIX defaults to "" -- the identity must carry an explicit
+        # "noprefix" marker for it, not an empty/absent component.
+        self.assertTrue(
+            info["model"].endswith(f"/c8000/mean/{expected_onnx_token}/noprefix/contentfirst"))
+
+    def test_onnx_variant_token_is_stable_and_collision_free(self):
+        module = load_module_with_real_numpy()
+        # Deterministic across calls / restarts.
+        self.assertEqual(
+            module.onnx_variant_token("onnx/model_int8.onnx"),
+            module.onnx_variant_token("onnx/model_int8.onnx"),
+        )
+        # No slashes -- the token is a component of a slash-delimited identity.
+        self.assertNotIn("/", module.onnx_variant_token("onnx/model_int8.onnx"))
+        # Two files with the same basename at different paths (a real scenario:
+        # ONNX_CANDIDATES lists both "model_int8.onnx" and "onnx/model_int8.onnx")
+        # must not collide into the same token, or a variant swap between them
+        # would produce an identical identity with different weights.
+        self.assertNotEqual(
+            module.onnx_variant_token("model_int8.onnx"),
+            module.onnx_variant_token("onnx/model_int8.onnx"),
+        )
+        # Different quantisations must not collide either.
+        self.assertNotEqual(
+            module.onnx_variant_token("onnx/model_int8.onnx"),
+            module.onnx_variant_token("onnx/model_quantized.onnx"),
+        )
+
+    def test_document_prefix_token_marks_empty_case_explicitly(self):
+        module = load_module_with_real_numpy()
+        self.assertEqual(module.document_prefix_token(""), "noprefix")
+        # A real prefix gets a short digest, not the raw (possibly long,
+        # possibly slash-containing) text embedded in the identity.
+        token = module.document_prefix_token("Represent this document: ")
+        self.assertNotEqual(token, "noprefix")
+        self.assertNotIn("/", token)
+        self.assertLess(len(token), len("Represent this document: "))
+        # Deterministic and distinct across different prefixes.
+        self.assertEqual(token, module.document_prefix_token("Represent this document: "))
+        self.assertNotEqual(token, module.document_prefix_token("Represent this query: "))
+
+    def test_build_info_reencode_trigger_changes_with_onnx_variant(self):
+        # The regression this guards against: swapping which ONNX file is
+        # loaded (a different quantisation, different weights) must change
+        # the identity string, or EmbeddingMigrationService never re-encodes.
+        module = load_module_with_real_numpy()
+        module.INPUT_NAMES = {"attention_mask", "input_ids"}
+        info_a = module.build_info(
+            "demo-model", 384, "manual", "/tmp/m",
+            "/tmp/m/onnx/model_int8.onnx", "/tmp/m/tokenizer.json")
+        info_b = module.build_info(
+            "demo-model", 384, "manual", "/tmp/m",
+            "/tmp/m/onnx/model_quantized.onnx", "/tmp/m/tokenizer.json")
+        self.assertNotEqual(info_a["model"], info_b["model"])
+
+    def test_build_info_reencode_trigger_changes_with_document_prefix(self):
+        # The regression this guards against: adding/changing DOCUMENT_PREFIX
+        # changes every stored vector (see embed()) but previously left the
+        # identity untouched.
+        with mock.patch.dict(_ENV, {"EMBEDDING_SKIP_BOOTSTRAP": "1"}, clear=True):
+            module = load_module()
+        module.INPUT_NAMES = {"attention_mask", "input_ids"}
+        info_empty = module.build_info(
+            "demo-model", 384, "manual", "/tmp/m", "/tmp/m/model.onnx", "/tmp/m/tokenizer.json")
+        module.DOCUMENT_PREFIX = "Represent this document: "
+        info_with_prefix = module.build_info(
+            "demo-model", 384, "manual", "/tmp/m", "/tmp/m/model.onnx", "/tmp/m/tokenizer.json")
+        self.assertNotEqual(info_empty["model"], info_with_prefix["model"])
+
+    def test_build_info_reports_resolved_intra_op_threads(self):
+        # intra_op_threads is the only operator-visible signal for this fix:
+        # CPU utilisation looks identical (~597%) whether the pool is sized
+        # correctly or oversubscribed, so /info has to carry the real number.
+        with mock.patch.dict(_ENV, {"EMBEDDING_SKIP_BOOTSTRAP": "1"}, clear=True):
+            module = load_module()
+        module.INPUT_NAMES = {"attention_mask", "input_ids"}
+        module.INTRA_OP_THREADS = 4
+        info = module.build_info(
+            "demo-model", 384, "manual", "/tmp/m", "/tmp/m/model.onnx", "/tmp/m/tokenizer.json")
+        self.assertIn("intra_op_threads", info)
+        self.assertEqual(info["intra_op_threads"], 4)
+
+
+class OnnxThreadSizingTest(unittest.TestCase):
+    def setUp(self):
+        self.module_name = "embedding_service_backend_onnx"
+        self.env_patch = mock.patch.dict(_ENV, {"EMBEDDING_SKIP_BOOTSTRAP": "1"}, clear=False)
+        self.env_patch.start()
+        self.modules = mock.patch.dict(sys.modules, stub_modules())
+        self.modules.start()
+        sys.modules.pop(self.module_name, None)
+        self.module = load_module()
+
+    def tearDown(self):
+        sys.modules.pop(self.module_name, None)
+        self.modules.stop()
+        self.env_patch.stop()
+
+    def _quota_file(self, text):
+        path = Path(tempfile.mkdtemp(), "cpu.max")
+        path.write_text(text)
+        return str(path)
+
+    def test_cgroup_quota_rounds_up(self):
+        # 600000/100000 == 6 cores; 650000 is 6.5 and must round up to 7.
+        self.assertEqual(self.module._cgroup_cpu_quota(self._quota_file("600000 100000")), 6)
+        self.assertEqual(self.module._cgroup_cpu_quota(self._quota_file("650000 100000")), 7)
+
+    def test_cgroup_quota_none_when_unlimited_or_unreadable(self):
+        self.assertIsNone(self.module._cgroup_cpu_quota(self._quota_file("max 100000")))
+        self.assertIsNone(self.module._cgroup_cpu_quota("/nonexistent/cpu.max"))
+        self.assertIsNone(self.module._cgroup_cpu_quota(self._quota_file("garbage")))
+
+    def test_env_override_wins_over_cgroup(self):
+        with mock.patch.dict(_ENV, {"ORT_INTRA_OP_THREADS": "3"}, clear=False):
+            with mock.patch.object(self.module, "_cgroup_cpu_quota", return_value=6):
+                self.assertEqual(self.module.resolve_intra_op_threads(), 3)
+
+    def test_falls_back_to_cgroup_then_cpu_count(self):
+        with mock.patch.dict(_ENV, {"ORT_INTRA_OP_THREADS": ""}, clear=False):
+            with mock.patch.object(self.module, "_cgroup_cpu_quota", return_value=6):
+                self.assertEqual(self.module.resolve_intra_op_threads(), 6)
+            with mock.patch.object(self.module, "_cgroup_cpu_quota", return_value=None):
+                with mock.patch.object(self.module.os, "cpu_count", return_value=4):
+                    self.assertEqual(self.module.resolve_intra_op_threads(), 4)
+
+    def test_never_returns_less_than_one(self):
+        with mock.patch.dict(_ENV, {"ORT_INTRA_OP_THREADS": "0"}, clear=False):
+            with mock.patch.object(self.module, "_cgroup_cpu_quota", return_value=None):
+                with mock.patch.object(self.module.os, "cpu_count", return_value=None):
+                    self.assertEqual(self.module.resolve_intra_op_threads(), 1)
+
+    def test_bootstrap_passes_resolved_thread_count_to_session_options(self):
+        # The regression this guards against: reverting to a bare
+        # ort.InferenceSession(onnx_path), or assigning the resolved thread
+        # count to a misspelled SessionOptions attribute, would leave
+        # resolve_intra_op_threads() computing a number nobody consumes.
+        # SimpleNamespace accepts any attribute name silently, so only an
+        # end-to-end check through bootstrap() catches that.
+        with tempfile.TemporaryDirectory() as model_dir:
+            Path(model_dir, "model.onnx").write_text("x")
+            Path(model_dir, "tokenizer.json").write_text("{}")
+            with mock.patch.dict(
+                _ENV,
+                {"EMBEDDING_SKIP_BOOTSTRAP": "1", "MODEL_PATH": model_dir},
+                clear=True,
+            ):
+                module = load_module()
+            with mock.patch.dict(_ENV, {"ORT_INTRA_OP_THREADS": ""}, clear=False), \
+                    mock.patch.object(module, "_cgroup_cpu_quota", return_value=None), \
+                    mock.patch.object(module.os, "cpu_count", return_value=4), \
+                    mock.patch.object(module, "embed", return_value=[0.0]):
+                module.bootstrap()
+                expected_threads = module.resolve_intra_op_threads()
+        self.assertEqual(expected_threads, 4)
+        self.assertEqual(module.INTRA_OP_THREADS, 4)
+        self.assertEqual(module.session.options.intra_op_num_threads, 4)
+        self.assertEqual(module.session.options.inter_op_num_threads, 1)
+
+
+class OnnxPoolingTest(unittest.TestCase):
+    def setUp(self):
+        self.module = load_module_with_real_numpy()
+
+    def tearDown(self):
+        sys.modules.pop("embedding_service_backend_onnx", None)
+
+    def test_last_token_uses_final_unmasked_position(self):
+        # Three positions, only the first two are real. The pooled vector must
+        # be position 1, not position 2 -- a [:, -1, :] slice would be wrong.
+        embeddings = np.array([[[1.0, 1.0], [2.0, 2.0], [9.0, 9.0]]])
+        mask = np.array([[1, 1, 0]])
+        np.testing.assert_array_equal(
+            self.module.last_token_pooling(embeddings, mask), np.array([[2.0, 2.0]]))
+
+    def test_last_token_with_no_padding(self):
+        embeddings = np.array([[[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]]])
+        mask = np.array([[1, 1, 1]])
+        np.testing.assert_array_equal(
+            self.module.last_token_pooling(embeddings, mask), np.array([[3.0, 3.0]]))
+
+    def test_last_token_clamps_an_all_zero_mask(self):
+        embeddings = np.array([[[1.0, 1.0], [2.0, 2.0]]])
+        mask = np.array([[0, 0]])
+        np.testing.assert_array_equal(
+            self.module.last_token_pooling(embeddings, mask), np.array([[1.0, 1.0]]))
+
+    def test_mean_pooling_still_ignores_masked_positions(self):
+        embeddings = np.array([[[1.0, 1.0], [3.0, 3.0], [99.0, 99.0]]])
+        mask = np.array([[1.0, 1.0, 0.0]])
+        np.testing.assert_allclose(
+            self.module.mean_pooling(embeddings, mask), np.array([[2.0, 2.0]]))
+
+    def test_cls_pooling_still_takes_position_zero(self):
+        embeddings = np.array([[[7.0, 7.0], [1.0, 1.0]]])
+        np.testing.assert_array_equal(
+            self.module.cls_pooling(embeddings), np.array([[7.0, 7.0]]))
+
+    def test_embed_appends_eos_and_truncates_to_make_room(self):
+        # In production APPEND_EOS resolves to False (the tokenizer's own
+        # post-processor already appends EOS), so this branch never runs
+        # against the real model -- exactly the kind of code that rots
+        # unnoticed without a direct test.
+        module = self.module
+        module.MAX_LENGTH = 4
+        module.APPEND_EOS = True
+        module.EOS_ID = 7
+
+        module.tokenizer = types.SimpleNamespace(
+            encode=lambda text: types.SimpleNamespace(
+                ids=[1, 2, 3, 4, 5], attention_mask=[1, 1, 1, 1, 1]))
+
+        captured = {}
+
+        def fake_run(output_names, inputs):
+            captured["inputs"] = inputs
+            seq_len = inputs["input_ids"].shape[1]
+            return [np.zeros((1, seq_len, 2))]
+
+        module.session = types.SimpleNamespace(get_inputs=lambda: [], run=fake_run)
+
+        module.embed("hello")
+
+        fed_ids = captured["inputs"]["input_ids"]
+        fed_mask = captured["inputs"]["attention_mask"]
+        # Truncated to MAX_LENGTH - 1 == 3 original tokens, then EOS appended.
+        np.testing.assert_array_equal(fed_ids, np.array([[1, 2, 3, 7]]))
+        np.testing.assert_array_equal(fed_mask, np.array([[1, 1, 1, 1]]))
+        self.assertLessEqual(fed_ids.shape[1], module.MAX_LENGTH)
+        self.assertEqual(fed_ids[0, -1], module.EOS_ID)
+
+
+class OnnxEosTest(unittest.TestCase):
+    def tearDown(self):
+        sys.modules.pop("embedding_service_backend_onnx", None)
+
+    def _module_with_pooling(self, pooling):
+        with mock.patch.dict(_ENV, {"POOLING": pooling}, clear=False):
+            return load_module_with_real_numpy()
+
+    def test_eos_id_read_from_config(self):
+        module = self._module_with_pooling("last_token")
+        with tempfile.TemporaryDirectory() as model_dir:
+            Path(model_dir, "config.json").write_text('{"eos_token_id": 151643}')
+            self.assertEqual(module.resolve_eos_id(model_dir), 151643)
+
+    def test_eos_id_none_when_config_absent_or_silent(self):
+        module = self._module_with_pooling("last_token")
+        with tempfile.TemporaryDirectory() as model_dir:
+            self.assertIsNone(module.resolve_eos_id(model_dir))
+            Path(model_dir, "config.json").write_text('{"hidden_size": 1024}')
+            self.assertIsNone(module.resolve_eos_id(model_dir))
+
+    def test_eos_id_takes_first_when_config_lists_several(self):
+        module = self._module_with_pooling("last_token")
+        with tempfile.TemporaryDirectory() as model_dir:
+            Path(model_dir, "config.json").write_text('{"eos_token_id": [151643, 151645]}')
+            self.assertEqual(module.resolve_eos_id(model_dir), 151643)
+
+    def test_eos_id_rejects_bool_value(self):
+        # bool is a subclass of int in Python, so an unguarded
+        # isinstance(value, int) would accept "eos_token_id": true, setting
+        # EOS_ID = True -- which then compares equal to token id 1 (True == 1)
+        # and gets appended to every sequence instead of the real EOS token.
+        module = self._module_with_pooling("last_token")
+        with tempfile.TemporaryDirectory() as model_dir:
+            Path(model_dir, "config.json").write_text('{"eos_token_id": true}')
+            self.assertIsNone(module.resolve_eos_id(model_dir))
+
+    def test_bootstrap_raises_loudly_when_config_names_no_eos_id(self):
+        # The regression this guards against: silently falling back (e.g. to
+        # mean pooling, or to EOS_ID=None) would leave last_token pooling
+        # running against the wrong final position with no visible signal --
+        # the suite must fail if the raise is ever weakened to a warning.
+        with tempfile.TemporaryDirectory() as model_dir:
+            Path(model_dir, "model.onnx").write_text("x")
+            Path(model_dir, "tokenizer.json").write_text("{}")
+            # No config.json at all: resolve_eos_id() must return None.
+            with mock.patch.dict(
+                _ENV,
+                {
+                    "EMBEDDING_SKIP_BOOTSTRAP": "1",
+                    "MODEL_PATH": model_dir,
+                    "POOLING": "last_token",
+                },
+                clear=True,
+            ):
+                module = load_module_with_real_numpy()
+            with self.assertRaises(RuntimeError) as ctx:
+                module.bootstrap()
+            self.assertIn(model_dir, str(ctx.exception))
+
+
+class OnnxMaxCharsRatioTest(unittest.TestCase):
+    def setUp(self):
+        self.module = load_module_with_real_numpy()
+
+    def tearDown(self):
+        sys.modules.pop("embedding_service_backend_onnx", None)
+
+    def test_flags_the_public_image_default_combination(self):
+        # MAX_LENGTH=128 next to EMBEDDING_MAX_CHARS=8000 is exactly the
+        # combination that silently truncates: a 6000-char cell is embedded
+        # directly (fits under max_chars) but truncated at 128 tokens (~500
+        # chars) with no error anywhere.
+        self.assertTrue(self.module.max_chars_exceeds_token_budget(8000, 128))
+
+    def test_does_not_flag_a_consistent_pairing(self):
+        # Production's pairing: MAX_LENGTH large enough for MAX_CHARS at the
+        # documented ~4 chars/token ceiling must not warn.
+        self.assertFalse(self.module.max_chars_exceeds_token_budget(8000, 2000))
+
+    def test_boundary_is_inclusive_of_the_ceiling(self):
+        # Exactly max_length * ceiling chars is representable; only strictly
+        # more should trip the warning.
+        self.assertFalse(self.module.max_chars_exceeds_token_budget(512, 128))
+        self.assertTrue(self.module.max_chars_exceeds_token_budget(513, 128))
+
+    def test_warn_prints_and_returns_true_when_mismatched(self):
+        with mock.patch("builtins.print") as fake_print:
+            triggered = self.module.warn_if_max_chars_exceeds_token_budget(8000, 128)
+        self.assertTrue(triggered)
+        fake_print.assert_called_once()
+        message = fake_print.call_args[0][0]
+        self.assertIn("EMBEDDING_MAX_CHARS=8000", message)
+        self.assertIn("MAX_LENGTH=128", message)
+
+    def test_warn_is_silent_when_consistent(self):
+        with mock.patch("builtins.print") as fake_print:
+            triggered = self.module.warn_if_max_chars_exceeds_token_budget(8000, 2000)
+        self.assertFalse(triggered)
+        fake_print.assert_not_called()
+
+    def test_bootstrap_warns_on_the_public_image_default_combination(self):
+        # End-to-end: the regression this guards against is the check
+        # existing as a function nobody calls from bootstrap().
+        with tempfile.TemporaryDirectory() as model_dir:
+            Path(model_dir, "model.onnx").write_text("x")
+            Path(model_dir, "tokenizer.json").write_text("{}")
+            with mock.patch.dict(
+                _ENV,
+                {
+                    "EMBEDDING_SKIP_BOOTSTRAP": "1",
+                    "MODEL_PATH": model_dir,
+                    "MAX_LENGTH": "128",
+                    "EMBEDDING_MAX_CHARS": "8000",
+                },
+                clear=True,
+            ):
+                module = load_module_with_real_numpy()
+            with mock.patch.object(module, "embed", return_value=[0.0]), \
+                    mock.patch("builtins.print") as fake_print:
+                module.bootstrap()
+        messages = "\n".join(str(call.args[0]) for call in fake_print.call_args_list if call.args)
+        self.assertIn("WARNING", messages)
+        self.assertIn("EMBEDDING_MAX_CHARS=8000", messages)
 
 
 if __name__ == "__main__":

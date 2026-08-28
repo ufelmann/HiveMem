@@ -1,4 +1,7 @@
+import hashlib
+import json
 import os
+import re
 
 import numpy as np
 import onnxruntime as ort
@@ -23,8 +26,17 @@ QUERY_PREFIX = os.environ.get("QUERY_PREFIX", "")
 DOCUMENT_PREFIX = os.environ.get("DOCUMENT_PREFIX", "")
 POOLING = os.environ.get("POOLING", "mean").lower()
 MAX_LENGTH = int(os.environ.get("MAX_LENGTH", "128"))
+# Character cap the Java client applies before sending text. Same variable and
+# default as backend_ollama.py so the two backends are configured alike; it is
+# part of the identity because truncating at a different width changes vectors.
+MAX_CHARS = int(os.environ.get("EMBEDDING_MAX_CHARS", "8000"))
 CACHE_DIR = os.environ.get("MODEL_CACHE", "/app/models")
 SKIP_BOOTSTRAP = os.environ.get("EMBEDDING_SKIP_BOOTSTRAP") == "1"
+
+# Multilingual text runs roughly 3-4 characters per token; nothing beyond
+# MAX_LENGTH * this ceiling can be honoured by the tokenizer no matter what
+# MAX_CHARS advertises. Used only to size the bootstrap warning below.
+CHARS_PER_TOKEN_CEILING = 4
 
 # File auto-detection order inside the model directory
 ONNX_CANDIDATES = [
@@ -32,6 +44,8 @@ ONNX_CANDIDATES = [
     "model.onnx",
     "onnx/model_quantized.onnx",
     "onnx/model.onnx",
+    "model_int8.onnx",
+    "onnx/model_int8.onnx",
     "onnx/model_fp16.onnx",
 ]
 TOKENIZER_CANDIDATES = ["tokenizer.json", "onnx/tokenizer.json"]
@@ -54,18 +68,93 @@ _DEFAULT_HF_PATTERNS = [
     "sentencepiece.bpe.model",
     "vocab.txt",
 ]
+_TOKENIZER_PATTERNS = [
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "config.json",
+    "sentencepiece.bpe.model",
+    "vocab.txt",
+]
 _patterns_env = os.environ.get("HF_DOWNLOAD_PATTERNS", "").strip()
-HF_ALLOW_PATTERNS = (
-    [p.strip() for p in _patterns_env.split(",") if p.strip()]
-    if _patterns_env
-    else _DEFAULT_HF_PATTERNS
-)
+
+
+def hf_allow_patterns():
+    """Files to pull from HF.
+
+    HF_DOWNLOAD_PATTERNS wins. Otherwise, when ONNX_FILE names the variant to
+    use, fetch only that file and its external-weights sibling: the default
+    list contains model.onnx/model.onnx_data, which pulled 2.27 GB of unused
+    fp32 weights alongside the 570 MB actually needed. With no ONNX_FILE the
+    auto-detection needs the broad list, so it is left alone.
+    """
+    if _patterns_env:
+        return [p.strip() for p in _patterns_env.split(",") if p.strip()]
+    if ONNX_FILE:
+        return [ONNX_FILE, ONNX_FILE + "_data"] + _TOKENIZER_PATTERNS
+    return _DEFAULT_HF_PATTERNS
 
 tokenizer = None
 session = None
 INPUT_NAMES = set()
 MODEL_DIMENSION = 0
+INTRA_OP_THREADS = 0
+EOS_ID = None
+APPEND_EOS = False
 INFO = {"model": MODEL_NAME or "", "dimension": 0}
+
+
+def _cgroup_cpu_quota(path="/sys/fs/cgroup/cpu.max"):
+    """Cores available to this cgroup, or None if unlimited/unreadable.
+
+    cpu.max holds "<quota> <period>" in microseconds, or "max <period>" when
+    uncapped. Rounds up: a 6.5-core quota should use 7 threads, not 6.
+    """
+    try:
+        with open(path) as handle:
+            parts = handle.read().split()
+    except OSError:
+        return None
+    if len(parts) != 2 or parts[0] == "max":
+        return None
+    try:
+        quota, period = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    if quota <= 0 or period <= 0:
+        return None
+    return max(1, -(-quota // period))
+
+
+def resolve_intra_op_threads():
+    """Threads for ONNX Runtime's intra-op pool.
+
+    Without this ORT sizes the pool from the *host* CPU count, which
+    oversubscribes inside a cgroup-limited container: 26 threads on 6 cores
+    measured 3538 ms per average cell against 1484 ms when sized correctly.
+    CPU utilisation looks healthy either way (597%), so this cannot be
+    diagnosed from load alone -- the resolved value is reported in /info.
+
+    OMP_NUM_THREADS is deliberately not consulted: current ORT builds use
+    their own thread pool, not OpenMP, and setting it changes nothing.
+
+    In the production sidecar container, /sys/fs/cgroup/cpu.max reads
+    "200000 100000" (a 2-core quota) while os.cpu_count() reports 12 -- the
+    cgroup branch below is the one that actually fires there, and the
+    os.cpu_count() fallback would be wrong by 6x if it were used instead.
+    """
+    raw = os.environ.get("ORT_INTRA_OP_THREADS", "").strip()
+    if raw:
+        try:
+            explicit = int(raw)
+        except ValueError:
+            explicit = 0
+        if explicit > 0:
+            return explicit
+    quota = _cgroup_cpu_quota()
+    if quota:
+        return quota
+    return max(1, os.cpu_count() or 1)
 
 
 def download_from_hf(repo, dest):
@@ -76,7 +165,7 @@ def download_from_hf(repo, dest):
     snapshot_download(
         repo_id=repo,
         local_dir=dest,
-        allow_patterns=HF_ALLOW_PATTERNS,
+        allow_patterns=hf_allow_patterns(),
     )
     open(os.path.join(dest, ".ready"), "w").close()
     print("[bootstrap] Download complete", flush=True)
@@ -131,6 +220,88 @@ def find_tokenizer(model_dir):
     raise FileNotFoundError(f"No tokenizer.json found in {model_dir}")
 
 
+def resolve_eos_id(model_dir):
+    """The model's EOS token id from config.json, or None if it does not say.
+
+    Only needed for last-token pooling: Qwen3-Embedding's reference
+    implementation appends EOS before embedding, and pooling the wrong final
+    position yields plausible-looking but wrong vectors.
+    """
+    path = os.path.join(model_dir, "config.json")
+    try:
+        with open(path) as handle:
+            config = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    value = config.get("eos_token_id")
+    if isinstance(value, list):
+        value = value[0] if value else None
+    # bool is a subclass of int in Python, so an unguarded isinstance(value,
+    # int) would accept a config.json with "eos_token_id": true. That sets
+    # EOS_ID = True, which compares equal to token id 1 (True == 1), passes
+    # the bootstrap guard below, and gets appended to every embedded sequence.
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+# ORT reports input types as strings; only the ones a KV cache can plausibly
+# use are mapped, everything else falls back to float32. The map holds numpy
+# *attribute names*, not the dtypes themselves, and onnx_dtype_to_numpy()
+# resolves them via getattr() at call time rather than at import time -- that
+# way an unsupported dtype fails loudly (AttributeError) when it is actually
+# requested, instead of the module silently substituting float32 for every
+# dtype the moment it is imported.
+_ONNX_TO_NUMPY = {
+    "tensor(float)": "float32",
+    "tensor(float16)": "float16",
+    "tensor(double)": "float64",
+    "tensor(int64)": "int64",
+    "tensor(int32)": "int32",
+}
+
+
+def onnx_dtype_to_numpy(type_name):
+    return getattr(np, _ONNX_TO_NUMPY[type_name]) if type_name in _ONNX_TO_NUMPY else np.float32
+
+
+def build_feed(input_ids, attention_mask, input_specs):
+    """Assemble the input feed for one sequence from the graph's declared inputs.
+
+    Encoder graphs need input_ids/attention_mask and sometimes token_type_ids.
+    Decoder graphs (Qwen3-Embedding) additionally declare position_ids and a
+    past_key_values.* pair per layer; a single forward pass supplies them as
+    zero-length tensors. Shapes come from the graph, so no per-model constants
+    are needed -- symbolic dimensions become 1, batch becomes 1 and the
+    past-sequence axis (second from the right) becomes 0.
+    """
+    length = input_ids.shape[1]
+    feed = {"input_ids": input_ids, "attention_mask": attention_mask}
+    for spec in input_specs:
+        name = spec.name
+        if name in ("input_ids", "attention_mask"):
+            continue
+        if name == "token_type_ids":
+            feed[name] = np.zeros_like(input_ids)
+        elif name == "position_ids":
+            feed[name] = np.arange(length, dtype=np.int64)[None, :]
+        elif name.startswith("past_key_values"):
+            # A KV-cache tensor needs a batch axis and a past-sequence axis as
+            # distinct dimensions, so rank must be at least 3 (typically 4:
+            # batch, heads, past_seq_len, head_dim). Below that, shape[0] and
+            # shape[-2] refer to the same element (rank 2) or don't exist at
+            # all (rank < 2); silently mangling that would produce a batch-0
+            # tensor instead of an error, so fail loudly instead.
+            if len(spec.shape) < 3:
+                raise ValueError(
+                    f"Unsupported past_key_values shape for input {name!r}: "
+                    f"{spec.shape!r} (need rank >= 3 for a batch axis and a "
+                    "past-sequence axis)"
+                )
+            shape = [d if isinstance(d, int) else 1 for d in spec.shape]
+            shape[0], shape[-2] = 1, 0
+            feed[name] = np.zeros(shape, dtype=onnx_dtype_to_numpy(spec.type))
+    return feed
+
+
 def mean_pooling(token_embeddings, attention_mask):
     mask_expanded = np.expand_dims(attention_mask, axis=-1)
     summed = np.sum(token_embeddings * mask_expanded, axis=1)
@@ -140,6 +311,18 @@ def mean_pooling(token_embeddings, attention_mask):
 
 def cls_pooling(token_embeddings):
     return token_embeddings[:, 0, :]
+
+
+def last_token_pooling(token_embeddings, attention_mask):
+    """Embedding of the last non-masked token.
+
+    Qwen3-Embedding pools over its final (EOS) token rather than the mean or a
+    CLS position. Written index-based rather than as [:, -1, :] so it stays
+    correct if padding is ever re-enabled.
+    """
+    lengths = np.sum(attention_mask, axis=1).astype(np.int64)
+    idx = np.clip(lengths - 1, 0, token_embeddings.shape[1] - 1)
+    return token_embeddings[np.arange(token_embeddings.shape[0]), idx, :]
 
 
 def embed(text, mode="document"):
@@ -152,15 +335,22 @@ def embed(text, mode="document"):
         text = DOCUMENT_PREFIX + text
 
     encoded = tokenizer.encode(text)
-    input_ids = np.array([encoded.ids], dtype=np.int64)
-    attention_mask = np.array([encoded.attention_mask], dtype=np.int64)
-    inputs = {"input_ids": input_ids, "attention_mask": attention_mask}
-    if "token_type_ids" in INPUT_NAMES:
-        inputs["token_type_ids"] = np.zeros_like(input_ids)
+    ids = encoded.ids
+    mask = encoded.attention_mask
+    if APPEND_EOS:
+        # Truncation already bounded ids at MAX_LENGTH; make room for EOS so the
+        # appended token cannot push the sequence past the model's limit.
+        ids = list(ids[: MAX_LENGTH - 1]) + [EOS_ID]
+        mask = list(mask[: MAX_LENGTH - 1]) + [1]
+    input_ids = np.array([ids], dtype=np.int64)
+    attention_mask = np.array([mask], dtype=np.int64)
+    inputs = build_feed(input_ids, attention_mask, session.get_inputs())
 
     outputs = session.run(None, inputs)
     if POOLING == "cls":
         embedding = cls_pooling(outputs[0])
+    elif POOLING == "last_token":
+        embedding = last_token_pooling(outputs[0], attention_mask)
     else:
         embedding = mean_pooling(outputs[0], attention_mask.astype(np.float32))
 
@@ -168,20 +358,69 @@ def embed(text, mode="document"):
     return (embedding / np.clip(norm, a_min=1e-9, a_max=None))[0].tolist()
 
 
+def _short_hash(text, length=8):
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:length]
+
+
+def onnx_variant_token(onnx_relpath):
+    """Compact, collision-safe identity component for the resolved ONNX file.
+
+    ONNX_CANDIDATES lists several quantisations (fp32, int8, fp16, ...), and
+    with ONNX_FILE unset, auto-detection or an upstream repo reshuffle can
+    silently pick a different one across restarts -- different weights,
+    different vectors, same model name. The full relative path is not used
+    directly because it contains slashes, which would break the slash-
+    delimited identity format; a bare basename risks two different variants
+    (e.g. "model_int8.onnx" at the repo root vs. under "onnx/") colliding on
+    the same stem. Combining a readable stem with a hash of the *full*
+    relative path rules that collision out while keeping the token short.
+    """
+    stem = os.path.splitext(os.path.basename(onnx_relpath))[0]
+    stem = re.sub(r"[^A-Za-z0-9_-]", "-", stem) or "onnx"
+    return f"{stem}-{_short_hash(onnx_relpath, 6)}"
+
+
+def document_prefix_token(document_prefix):
+    """Compact identity component for DOCUMENT_PREFIX.
+
+    embed() prepends this to every document before encoding, so it changes
+    every stored vector and must be part of the identity -- today it is
+    empty, but an instruction prefix added later would otherwise silently
+    invalidate the whole corpus with no re-encode trigger. The raw text is
+    not embedded directly because it can be long and may itself contain
+    slashes; a short digest keeps the identity stable and compact. The empty
+    case gets its own explicit marker rather than an empty-string digest so
+    today's identity string stays exactly as readable as before this fix.
+    """
+    if not document_prefix:
+        return "noprefix"
+    return "p" + _short_hash(document_prefix, 8)
+
+
 def build_info(model_name, dimension, source, model_dir, onnx_path, tokenizer_path):
+    onnx_relpath = os.path.relpath(onnx_path, model_dir)
     info = {
         # Identity encodes everything that changes the vectors, because
         # EmbeddingMigrationService re-encodes on a model-name or dimension change only.
-        "model": f"{model_name}/mrl0/t{MAX_LENGTH}/c500/contentfirst",
+        # Pooling mode is part of that: mean vs. last_token on an unchanged model
+        # name and dimension would otherwise look identical while every stored
+        # vector is stale. The onnx-variant and document-prefix components exist
+        # for the same reason -- see onnx_variant_token()/document_prefix_token().
+        "model": (
+            f"{model_name}/mrl0/t{MAX_LENGTH}/c{MAX_CHARS}/{POOLING}/"
+            f"{onnx_variant_token(onnx_relpath)}/{document_prefix_token(DOCUMENT_PREFIX)}/"
+            "contentfirst"
+        ),
         "dimension": dimension,
-        # Calibrated ONNX value; deliberately a literal, not derived from MAX_LENGTH.
-        "max_chars": 500,
+        "max_chars": MAX_CHARS,
         "source": source,
         "model_path": model_dir,
-        "onnx_file": os.path.relpath(onnx_path, model_dir),
+        "onnx_file": onnx_relpath,
         "tokenizer_file": os.path.relpath(tokenizer_path, model_dir),
         "pooling": POOLING,
+        "append_eos": APPEND_EOS,
         "max_length": MAX_LENGTH,
+        "intra_op_threads": INTRA_OP_THREADS,
         "query_prefix": QUERY_PREFIX,
         "document_prefix": DOCUMENT_PREFIX,
         "inputs": sorted(INPUT_NAMES),
@@ -191,8 +430,44 @@ def build_info(model_name, dimension, source, model_dir, onnx_path, tokenizer_pa
     return info
 
 
+def max_chars_exceeds_token_budget(max_chars, max_length, ceiling=CHARS_PER_TOKEN_CEILING):
+    return max_chars > max_length * ceiling
+
+
+def warn_if_max_chars_exceeds_token_budget(max_chars, max_length):
+    """Warn loudly when EMBEDDING_MAX_CHARS promises more than MAX_LENGTH tokens hold.
+
+    A warning, not a hard failure: production sets both consistently, but the
+    public Docker image ships MAX_LENGTH=128 next to EMBEDDING_MAX_CHARS=8000
+    -- refusing to start would break every install that only followed the
+    documented defaults, for a mismatch that is otherwise silent rather than
+    broken. The consequence is real, though: the Java client sees
+    max_chars=8000 and embeds a content up to that width directly instead of
+    falling back to its summary, the tokenizer then truncates at MAX_LENGTH
+    tokens, and a vector is still returned -- so nothing downstream ever
+    notices or repairs the cell embedding roughly its first 500 characters.
+    """
+    if not max_chars_exceeds_token_budget(max_chars, max_length):
+        return False
+    ceiling_chars = max_length * CHARS_PER_TOKEN_CEILING
+    print(
+        f"[bootstrap] WARNING: EMBEDDING_MAX_CHARS={max_chars} advertises more "
+        f"content than MAX_LENGTH={max_length} tokens can represent (~"
+        f"{ceiling_chars} chars at {CHARS_PER_TOKEN_CEILING} chars/token). "
+        "Content beyond the token budget is silently truncated during "
+        "encoding, not rejected, and the truncated result is still a "
+        "well-formed vector -- nothing downstream will notice or repair it. "
+        "Lower EMBEDDING_MAX_CHARS or raise MAX_LENGTH so they agree.",
+        flush=True,
+    )
+    return True
+
+
 def bootstrap():
-    global tokenizer, session, INPUT_NAMES, MODEL_NAME, MODEL_DIMENSION, INFO
+    global tokenizer, session, INPUT_NAMES, MODEL_NAME, MODEL_DIMENSION, INFO, INTRA_OP_THREADS
+    global EOS_ID, APPEND_EOS
+
+    warn_if_max_chars_exceeds_token_budget(MAX_CHARS, MAX_LENGTH)
 
     model_dir, source = resolve_model_dir()
     onnx_path = find_onnx(model_dir)
@@ -212,7 +487,21 @@ def bootstrap():
     tokenizer.no_padding()
     tokenizer.enable_truncation(max_length=MAX_LENGTH)
 
-    session = ort.InferenceSession(onnx_path)
+    if POOLING == "last_token":
+        EOS_ID = resolve_eos_id(model_dir)
+        if EOS_ID is None:
+            raise RuntimeError(
+                "POOLING=last_token needs an eos_token_id in config.json; "
+                f"none found in {model_dir}")
+        APPEND_EOS = tokenizer.encode("test").ids[-1] != EOS_ID
+        print(f"[bootstrap] last_token pooling, eos_id={EOS_ID}, "
+              f"append_eos={APPEND_EOS}", flush=True)
+
+    INTRA_OP_THREADS = resolve_intra_op_threads()
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = INTRA_OP_THREADS
+    options.inter_op_num_threads = 1
+    session = ort.InferenceSession(onnx_path, options)
     INPUT_NAMES = {inp.name for inp in session.get_inputs()}
     MODEL_DIMENSION = len(embed("test"))
     INFO = build_info(MODEL_NAME, MODEL_DIMENSION, source, model_dir, onnx_path, tokenizer_path)
