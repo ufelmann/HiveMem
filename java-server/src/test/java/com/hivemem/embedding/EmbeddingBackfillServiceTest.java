@@ -26,6 +26,7 @@ class EmbeddingBackfillServiceTest {
         when(client.encodeForCell("text", null)).thenReturn(List.of(0.1f, 0.2f));
 
         EmbeddingBackfillService service = new EmbeddingBackfillService(repo, client, migrationService, 50);
+        service.run(null); // marks startup complete, mirroring the ordering guarantee it relies on
         service.backfill();
 
         verify(repo).setEmbedding(eq(id), any(Float[].class));
@@ -45,6 +46,7 @@ class EmbeddingBackfillServiceTest {
         when(client.encodeForCell(any(), any())).thenThrow(new EmbeddingUnavailableException("down", null));
 
         EmbeddingBackfillService service = new EmbeddingBackfillService(repo, client, migrationService, 50);
+        service.run(null);
         service.backfill(); // must not throw
 
         verify(repo, never()).setEmbedding(any(), any());
@@ -58,6 +60,22 @@ class EmbeddingBackfillServiceTest {
 
         when(migrationService.isReencodingActive()).thenReturn(true);
 
+        EmbeddingBackfillService service = new EmbeddingBackfillService(repo, client, migrationService, 50);
+        service.run(null); // startup complete, but the reencode gate must still block it
+        service.backfill();
+
+        verifyNoInteractions(repo, client);
+    }
+
+    @Test
+    void skipsEntirelyBeforeStartupIsComplete() {
+        EmbeddingBackfillRepository repo = mock(EmbeddingBackfillRepository.class);
+        EmbeddingClient client = mock(EmbeddingClient.class);
+        EmbeddingMigrationService migrationService = mock(EmbeddingMigrationService.class);
+
+        // isReencodingActive() is deliberately left unstubbed (defaults to false for a Mockito
+        // mock): even when the migration service would say "not reencoding", the sweep's first
+        // tick can race ApplicationRunner ordering and must not act before run() has fired.
         EmbeddingBackfillService service = new EmbeddingBackfillService(repo, client, migrationService, 50);
         service.backfill();
 

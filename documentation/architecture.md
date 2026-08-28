@@ -653,6 +653,27 @@ The consumption pipeline is designed to tolerate transient failures without data
 
 **Embedding client resilience.** `EmbeddingClient` uses a configurable timeout (default 30 s) and retry-with-exponential-backoff (default 3 retries, 500 ms base). If all retries are exhausted the client throws, and the ingest path commits the cell **without an embedding**, tagging it `embedding_pending`. Embeddings are therefore nullable — their absence never blocks ingestion.
 
+**Migration window: raise the timeout and disable retries together.** A model/dimension
+change makes `EmbeddingMigrationService` re-encode the whole corpus serially at startup (see
+[Facts embedding & semantic `search_kg`](#facts-embedding--semantic-search_kg) and the
+`ranked_search` section above for what that touches). `HIVEMEM_EMBEDDING_TIMEOUT` and
+`HIVEMEM_EMBEDDING_MAX_RETRIES` are a pairing for that window, not two independent knobs:
+measured at 26–43 s per cell at the 50,000-character content cap on 6 CPU cores, a slow cell
+that hits the client's timeout gets retried — and because the sidecar is a
+`ThreadingHTTPServer` with no client-disconnect detection or cancellation, the abandoned
+inference keeps running and consuming cores while the retry starts a new one on top of it.
+One slow cell can stack up to `max-retries + 1` concurrent long inferences competing for the
+same CPU budget, each slower than the one before it; when they all eventually fail, the
+migration runner rethrows, the container restarts, and — because progress state is only
+persisted on a clean pass — the whole backup-plus-re-encode starts over from the first record
+with the HNSW index dropped throughout. Raising the timeout without lowering retries just
+delays that outcome; lowering retries without raising the timeout turns the first slow cell
+into an immediate hard failure instead. For the duration of a re-encode, set both together:
+raise `HIVEMEM_EMBEDDING_TIMEOUT` above the slowest single cell you expect (the measured
+26–43 s at the current character cap is the floor to plan around, not a ceiling) and set
+`HIVEMEM_EMBEDDING_MAX_RETRIES=0` so a slow call fails once and lets the migration runner's
+own bookkeeping handle it, instead of multiplying it into a crash loop.
+
 **Embedding backfill sweep.** `EmbeddingBackfillService` runs on a fixed schedule (default every 5 min) and finds all committed cells tagged `embedding_pending`. Once the embedding service is healthy again it backfills them in configurable batches (default 50 per cycle) and removes the tag. Semantic search is restored automatically — no operator action needed.
 
 **Exactly-once file staging via the `consumption_file` ledger.** Every file the watcher picks up is recorded in the `consumption_file` table with its SHA-256 content hash, in state `staged`, **before** the file is moved out of the watch root — this closes the window where a crash between the move and the (previously later) ledger write could strand a file that no recovery path could ever find again. State transitions: `staged` (registered, not yet picked up by a worker) → `processing` (a worker has started reading it) → `done` (committed) or `failed` (ingest error). Two edges are easy to miss: `staged → failed` when the recovery sweep finds a stale `staged` row with no physical file anywhere (retry budget exhausted at the same time, since retrying cannot help), and `done → failed` when a separation batch was marked `done` at dispatch and its later `apply` fails — the row is flipped back so the bounded retry owns it instead of leaving a terminal dead end. The `attempts` counter increments only when a row transitions into `processing`; staging (including re-staging an existing row) never counts as an attempt. Content-based dedup (`DocumentDedupService`) means re-queuing an already-committed file is safe — the second ingest is discarded as a duplicate.

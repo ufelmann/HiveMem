@@ -91,6 +91,13 @@ services:
       HIVEMEM_DB_USER: hivemem
       HIVEMEM_DB_PASSWORD: ${HIVEMEM_DB_PASSWORD:?set HIVEMEM_DB_PASSWORD in .env}
       HIVEMEM_EMBEDDING_URL: http://hivemem-embeddings:80
+      # Pairing, not two independent knobs: during a model-change re-encode, raise the timeout
+      # above the slowest single cell and disable retries for the window, or a retry just
+      # multiplies an already-slow call into concurrent inferences the sidecar can't cancel.
+      # See the "Embedding re-encode migration window" section in documentation/architecture.md.
+      HIVEMEM_EMBEDDING_TIMEOUT: ${HIVEMEM_EMBEDDING_TIMEOUT:-PT30S}
+      HIVEMEM_EMBEDDING_MAX_RETRIES: ${HIVEMEM_EMBEDDING_MAX_RETRIES:-3}
+      HIVEMEM_EMBEDDING_RETRY_BACKOFF_MS: ${HIVEMEM_EMBEDDING_RETRY_BACKOFF_MS:-500}
       HIVEMEM_ATTACHMENT_ENABLED: "true"
       SEAWEEDFS_S3_ENDPOINT: http://seaweedfs:8333
       SEAWEEDFS_S3_BUCKET: hivemem-attachments
