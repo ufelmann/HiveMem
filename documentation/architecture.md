@@ -241,9 +241,12 @@ The `saved_searches` table persists named filter presets for the Scans explorer 
 ### Embedding dependency for OCR'd documents
 
 OCR'd scan documents are typically long. `EmbeddingClient.encodeForCell` embeds a cell's
-content directly whenever it fits within the active embedding backend's `maxChars()`
-(`EMBEDDING_MAX_CHARS`, default 8000 on both the ONNX and the optional Ollama backend — see
-[GPU embedding backend](#gpu-embedding-backend-optional)), and only returns `null` — no
+content directly whenever it fits within the active embedding backend's advertised
+`maxChars()` (`EMBEDDING_MAX_CHARS`, default 8000 on both the ONNX and the optional Ollama
+backend — see [GPU embedding backend](#gpu-embedding-backend-optional)); this cap is only
+honoured if it agrees with the backend's own token truncation limit (`MAX_LENGTH` for ONNX),
+which the ONNX sidecar checks at startup and warns loudly about if it does not — see
+[ONNX backend configuration](#onnx-backend-configuration). It only returns `null` — no
 embedding at ingest/OCR time — for content beyond that cap with no summary yet available. In
 that case `WriteToolService.reviseCell` tags the cell `needs_summary`, and the scheduled
 summarizer backfill (every 5 min) generates the summary and only then re-embeds the cell.
@@ -420,9 +423,16 @@ model through the same code path as an encoder.
 
 The ONNX backend's `/info` `model` field — the identity string `EmbeddingMigrationService`
 uses to detect a re-encode-worthy change — is
-`{model_name}/mrl0/t{MAX_LENGTH}/c{MAX_CHARS}/{POOLING}/contentfirst`. The pooling component
-is part of the identity because changing `POOLING` (e.g. `mean` to `last_token`) changes the
-vectors even when the model name and dimension stay the same.
+`{model_name}/mrl0/t{MAX_LENGTH}/c{MAX_CHARS}/{POOLING}/{onnx_variant}/{document_prefix}/contentfirst`.
+The pooling component is part of the identity because changing `POOLING` (e.g. `mean` to
+`last_token`) changes the vectors even when the model name and dimension stay the same.
+`{onnx_variant}` is a short, collision-safe token derived from the resolved ONNX file (as
+reported in `/info`'s `onnx_file`, not the raw `ONNX_FILE` env var, which may be unset while
+auto-detection picks a variant) — `ONNX_CANDIDATES` lists several quantisations, and swapping
+between them changes the weights, and therefore every stored vector, with the model name
+unchanged. `{document_prefix}` is a short digest of `DOCUMENT_PREFIX` (`noprefix` when it is
+empty, as it is today) — `embed()` prepends it to every document before encoding, so it
+changes every stored vector too.
 
 The Ollama integration is provider-neutral: it only depends on Ollama's standard HTTP API
 (`/api/embed`, `/api/tags`), so a CUDA-based Ollama image is a drop-in replacement for the

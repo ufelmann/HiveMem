@@ -48,6 +48,25 @@ def cosine(a, b):
     return dot / (na * nb)
 
 
+def check_vector_length(service_vector, reference_vector):
+    """Reject a length mismatch before it reaches cosine().
+
+    zip() in cosine() silently truncates to the shorter of the two vectors,
+    so a service returning a shorter MRL slice of the same model (this
+    codebase has a backend that does exactly that) would score cosine ~=1.0
+    over the common prefix and PASS this gate -- the sole check standing in
+    front of the re-encode. Returns an error string naming both lengths, or
+    None when they agree.
+    """
+    if len(service_vector) != len(reference_vector):
+        return (
+            f"vector length mismatch: service returned {len(service_vector)} "
+            f"dims, reference has {len(reference_vector)} dims -- different "
+            "embedding dimension, comparison invalid"
+        )
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--texts", required=True)
@@ -87,6 +106,9 @@ def main():
                 f'was {model!r}/dim={dimension}, '
                 f'now {body.get("model")!r}/dim={body.get("dimension")}'
             )
+        length_error = check_vector_length(body["vector"], ref)
+        if length_error is not None:
+            sys.exit(f"FAIL: at request {i}: {length_error}")
         similarity = cosine(body["vector"], ref)
         latencies.append(ms)
         worst = min(worst, similarity)

@@ -1,5 +1,7 @@
+import hashlib
 import json
 import os
+import re
 
 import numpy as np
 import onnxruntime as ort
@@ -30,6 +32,11 @@ MAX_LENGTH = int(os.environ.get("MAX_LENGTH", "128"))
 MAX_CHARS = int(os.environ.get("EMBEDDING_MAX_CHARS", "8000"))
 CACHE_DIR = os.environ.get("MODEL_CACHE", "/app/models")
 SKIP_BOOTSTRAP = os.environ.get("EMBEDDING_SKIP_BOOTSTRAP") == "1"
+
+# Multilingual text runs roughly 3-4 characters per token; nothing beyond
+# MAX_LENGTH * this ceiling can be honoured by the tokenizer no matter what
+# MAX_CHARS advertises. Used only to size the bootstrap warning below.
+CHARS_PER_TOKEN_CEILING = 4
 
 # File auto-detection order inside the model directory
 ONNX_CANDIDATES = [
@@ -229,7 +236,11 @@ def resolve_eos_id(model_dir):
     value = config.get("eos_token_id")
     if isinstance(value, list):
         value = value[0] if value else None
-    return value if isinstance(value, int) else None
+    # bool is a subclass of int in Python, so an unguarded isinstance(value,
+    # int) would accept a config.json with "eos_token_id": true. That sets
+    # EOS_ID = True, which compares equal to token id 1 (True == 1), passes
+    # the bootstrap guard below, and gets appended to every embedded sequence.
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 # ORT reports input types as strings; only the ones a KV cache can plausibly
@@ -347,19 +358,64 @@ def embed(text, mode="document"):
     return (embedding / np.clip(norm, a_min=1e-9, a_max=None))[0].tolist()
 
 
+def _short_hash(text, length=8):
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:length]
+
+
+def onnx_variant_token(onnx_relpath):
+    """Compact, collision-safe identity component for the resolved ONNX file.
+
+    ONNX_CANDIDATES lists several quantisations (fp32, int8, fp16, ...), and
+    with ONNX_FILE unset, auto-detection or an upstream repo reshuffle can
+    silently pick a different one across restarts -- different weights,
+    different vectors, same model name. The full relative path is not used
+    directly because it contains slashes, which would break the slash-
+    delimited identity format; a bare basename risks two different variants
+    (e.g. "model_int8.onnx" at the repo root vs. under "onnx/") colliding on
+    the same stem. Combining a readable stem with a hash of the *full*
+    relative path rules that collision out while keeping the token short.
+    """
+    stem = os.path.splitext(os.path.basename(onnx_relpath))[0]
+    stem = re.sub(r"[^A-Za-z0-9_-]", "-", stem) or "onnx"
+    return f"{stem}-{_short_hash(onnx_relpath, 6)}"
+
+
+def document_prefix_token(document_prefix):
+    """Compact identity component for DOCUMENT_PREFIX.
+
+    embed() prepends this to every document before encoding, so it changes
+    every stored vector and must be part of the identity -- today it is
+    empty, but an instruction prefix added later would otherwise silently
+    invalidate the whole corpus with no re-encode trigger. The raw text is
+    not embedded directly because it can be long and may itself contain
+    slashes; a short digest keeps the identity stable and compact. The empty
+    case gets its own explicit marker rather than an empty-string digest so
+    today's identity string stays exactly as readable as before this fix.
+    """
+    if not document_prefix:
+        return "noprefix"
+    return "p" + _short_hash(document_prefix, 8)
+
+
 def build_info(model_name, dimension, source, model_dir, onnx_path, tokenizer_path):
+    onnx_relpath = os.path.relpath(onnx_path, model_dir)
     info = {
         # Identity encodes everything that changes the vectors, because
         # EmbeddingMigrationService re-encodes on a model-name or dimension change only.
         # Pooling mode is part of that: mean vs. last_token on an unchanged model
         # name and dimension would otherwise look identical while every stored
-        # vector is stale.
-        "model": f"{model_name}/mrl0/t{MAX_LENGTH}/c{MAX_CHARS}/{POOLING}/contentfirst",
+        # vector is stale. The onnx-variant and document-prefix components exist
+        # for the same reason -- see onnx_variant_token()/document_prefix_token().
+        "model": (
+            f"{model_name}/mrl0/t{MAX_LENGTH}/c{MAX_CHARS}/{POOLING}/"
+            f"{onnx_variant_token(onnx_relpath)}/{document_prefix_token(DOCUMENT_PREFIX)}/"
+            "contentfirst"
+        ),
         "dimension": dimension,
         "max_chars": MAX_CHARS,
         "source": source,
         "model_path": model_dir,
-        "onnx_file": os.path.relpath(onnx_path, model_dir),
+        "onnx_file": onnx_relpath,
         "tokenizer_file": os.path.relpath(tokenizer_path, model_dir),
         "pooling": POOLING,
         "append_eos": APPEND_EOS,
@@ -374,9 +430,44 @@ def build_info(model_name, dimension, source, model_dir, onnx_path, tokenizer_pa
     return info
 
 
+def max_chars_exceeds_token_budget(max_chars, max_length, ceiling=CHARS_PER_TOKEN_CEILING):
+    return max_chars > max_length * ceiling
+
+
+def warn_if_max_chars_exceeds_token_budget(max_chars, max_length):
+    """Warn loudly when EMBEDDING_MAX_CHARS promises more than MAX_LENGTH tokens hold.
+
+    A warning, not a hard failure: production sets both consistently, but the
+    public Docker image ships MAX_LENGTH=128 next to EMBEDDING_MAX_CHARS=8000
+    -- refusing to start would break every install that only followed the
+    documented defaults, for a mismatch that is otherwise silent rather than
+    broken. The consequence is real, though: the Java client sees
+    max_chars=8000 and embeds a content up to that width directly instead of
+    falling back to its summary, the tokenizer then truncates at MAX_LENGTH
+    tokens, and a vector is still returned -- so nothing downstream ever
+    notices or repairs the cell embedding roughly its first 500 characters.
+    """
+    if not max_chars_exceeds_token_budget(max_chars, max_length):
+        return False
+    ceiling_chars = max_length * CHARS_PER_TOKEN_CEILING
+    print(
+        f"[bootstrap] WARNING: EMBEDDING_MAX_CHARS={max_chars} advertises more "
+        f"content than MAX_LENGTH={max_length} tokens can represent (~"
+        f"{ceiling_chars} chars at {CHARS_PER_TOKEN_CEILING} chars/token). "
+        "Content beyond the token budget is silently truncated during "
+        "encoding, not rejected, and the truncated result is still a "
+        "well-formed vector -- nothing downstream will notice or repair it. "
+        "Lower EMBEDDING_MAX_CHARS or raise MAX_LENGTH so they agree.",
+        flush=True,
+    )
+    return True
+
+
 def bootstrap():
     global tokenizer, session, INPUT_NAMES, MODEL_NAME, MODEL_DIMENSION, INFO, INTRA_OP_THREADS
     global EOS_ID, APPEND_EOS
+
+    warn_if_max_chars_exceeds_token_budget(MAX_CHARS, MAX_LENGTH)
 
     model_dir, source = resolve_model_dir()
     onnx_path = find_onnx(model_dir)
