@@ -22,17 +22,27 @@ public class EmbeddingBackfillService {
 
     private final EmbeddingBackfillRepository repo;
     private final EmbeddingClient client;
+    private final EmbeddingMigrationService migrationService;
     private final int batchSize;
 
     public EmbeddingBackfillService(EmbeddingBackfillRepository repo, EmbeddingClient client,
+            EmbeddingMigrationService migrationService,
             @Value("${hivemem.embedding.backfill-batch-size:50}") int batchSize) {
         this.repo = repo;
         this.client = client;
+        this.migrationService = migrationService;
         this.batchSize = batchSize;
     }
 
     @Scheduled(fixedRateString = "${hivemem.embedding.backfill-interval-ms:300000}")
     public void backfill() {
+        // A corpus reencode already saturates the embedding service's CPU budget; running the
+        // sweep on top of it (every few minutes, for a pass that can take hours) would only add
+        // competing embed calls that make each in-flight inference slower. See task-8-brief.md.
+        if (migrationService.isReencodingActive()) {
+            log.info("Skipping backfill sweep: embedding reencode is in progress.");
+            return;
+        }
         backfillCells();
         backfillFacts();
     }

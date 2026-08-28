@@ -52,6 +52,8 @@ hivemem:
   embedding:
     base-url: ${HIVEMEM_EMBEDDING_URL:http://localhost:8081}
     timeout: ${HIVEMEM_EMBEDDING_TIMEOUT:PT5S}
+    max-retries: ${HIVEMEM_EMBEDDING_MAX_RETRIES:3}
+    retry-backoff-ms: ${HIVEMEM_EMBEDDING_RETRY_BACKOFF_MS:500}
     cache-max-entries: ${HIVEMEM_EMBEDDING_CACHE_MAX_ENTRIES:500}
     cache-ttl: ${HIVEMEM_EMBEDDING_CACHE_TTL:PT10M}
   popularity:
