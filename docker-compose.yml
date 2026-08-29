@@ -39,6 +39,43 @@ services:
       EMBEDDING_MAX_TOKENS: "2560"
       EMBEDDING_KEEP_ALIVE: "5m"
       EMBEDDING_MAX_CHARS: "8000"
+    # --- LARGE ONNX/CPU MODEL (e.g. Snowflake/snowflake-arctic-embed-l-v2.0) ---
+    # Uncomment to run a large model on CPU instead of the small built-in default
+    # (paraphrase-multilingual-MiniLM-L12-v2, 128 tokens, fits mem_limit: 2g below).
+    # A large model needs a MUCH bigger memory budget — see mem_limit note below,
+    # this is not optional headroom, the container gets OOM-killed without it.
+    #
+    #   MODEL_REPO: Snowflake/snowflake-arctic-embed-l-v2.0
+    #   ONNX_FILE: onnx/model_quantized.onnx
+    #   POOLING: cls
+    #   # arctic-embed v2.0 is trained asymmetrically: queries carry a prefix,
+    #   # documents do not (see the model card). Omitting it measurably degrades
+    #   # retrieval. This affects only the query side, so it is NOT part of the
+    #   # embedding identity string and can be changed later without a re-encode
+    #   # — unlike DOCUMENT_PREFIX, which is part of the identity.
+    #   QUERY_PREFIX: "query: "
+    #   MAX_LENGTH: "8192"
+    #   EMBEDDING_MAX_CHARS: "50000"
+    #   # Set this explicitly to the container's actual cpus: below. Left unset,
+    #   # onnxruntime falls back to the cgroup CPU quota and, failing that, to
+    #   # os.cpu_count() — which reads the *host's* core count and can be wildly
+    #   # wrong inside a limited container (measured 12 vs. an actual 2-core
+    #   # quota on one host: a 6x oversubscription).
+    #   ORT_INTRA_OP_THREADS: "6"
+    #
+    # REQUIRED with the above: mem_limit/cpus sized for the model, not the
+    # defaults below. onnxruntime's arena allocator grows to fit the longest
+    # sequence it has processed and never releases the memory — it is a
+    # high-water mark, not a working set. A single-request benchmark will not
+    # reveal this: latency and peak memory look fine one request at a time and
+    # only climb under a sustained sequence of long inputs. Measured with
+    # arctic-embed-l-v2.0 at MAX_LENGTH=8192: a sustained run of 40 real cells
+    # climbed 8.675 -> 9.975 -> 10.000 GiB and then sat pinned at a 10g limit,
+    # so the next allocation OOM-killed the container (which took the
+    # depending `hivemem` service down with it and restarted an in-progress
+    # corpus re-encode from scratch). With headroom the same workload
+    # plateaus at 10.79 GiB. Budget accordingly — e.g. mem_limit: 14g, cpus: 6.
+    # --- END LARGE ONNX/CPU MODEL ---
     volumes:
       - hivemem-embeddings-models:/app/models
     networks:
@@ -50,6 +87,9 @@ services:
       retries: 5
       # First boot downloads the model from Hugging Face — allow plenty of time.
       start_period: 300s
+    # Sized for the small built-in default model (paraphrase-multilingual-MiniLM-L12-v2,
+    # 128 tokens). A large model (see the commented block above) needs far more —
+    # do not raise MAX_LENGTH/swap MODEL_REPO without also raising mem_limit/cpus.
     mem_limit: 2g
     cpus: 2
     restart: unless-stopped

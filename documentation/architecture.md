@@ -448,6 +448,42 @@ re-normalization would make pgvector's cosine distance silently wrong. Ollama it
 the input truncation (`truncate: true` + `options.num_ctx`), so the sidecar needs no
 tokenizer of its own for this backend.
 
+### Running a large model on CPU
+
+The `onnx` backend is not limited to the small built-in default — it can also run a large,
+higher-quality model such as `Snowflake/snowflake-arctic-embed-l-v2.0` entirely on CPU (no
+GPU, no Ollama). `docker-compose.yml` has a commented block in the `hivemem-embeddings`
+service showing the configuration; it is deliberately not the default (see
+[docker-compose.yml](../docker-compose.yml) — the default `mem_limit: 2g` / `cpus: 2` only
+fits the small model). Three things about running a large model this way are easy to get
+wrong because a quick check does not expose them:
+
+- **Memory is a high-water mark, not a working set.** onnxruntime's arena allocator grows to
+  fit the longest sequence it has processed so far and never releases that memory back to the
+  OS. A single-request benchmark hides this completely — latency and peak RSS look fine one
+  request at a time. It only shows up under a sustained sequence of real inputs: measured with
+  arctic-embed-l-v2.0 at `MAX_LENGTH=8192`, a run of 40 real cells climbed 8.675 → 9.975 →
+  10.000 GiB and then sat pinned at a `mem_limit: 10g` ceiling, so the next allocation
+  OOM-killed the sidecar — which took the depending `hivemem` service down with it and
+  restarted an in-progress corpus re-encode from the beginning (re-encodes are strictly
+  serial, so there is no partial-progress checkpoint to resume from). With enough headroom the
+  same workload plateaus at 10.79 GiB. Budget `mem_limit` from a measured plateau at your
+  `MAX_LENGTH`, not from the model's on-disk size — production runs `mem_limit: 14g` for this
+  reason.
+- **arctic-embed v2.0 is trained asymmetrically.** Its model card: "For optimal retrieval
+  quality, use the CLS token to embed each text portion and use the query prefix below (just
+  on the query)", with `query_prefix = 'query: '`. That means `POOLING: cls` and
+  `QUERY_PREFIX: "query: "`. Omitting the prefix does not error — it just measurably degrades
+  retrieval quality. Because `QUERY_PREFIX` only affects the query side of a search, it is
+  deliberately **not** part of the `/info` identity string (unlike `DOCUMENT_PREFIX`, which
+  is): changing it takes effect immediately and does not trigger a re-encode of the corpus.
+- **Set `ORT_INTRA_OP_THREADS` explicitly rather than trusting the fallback.** The automatic
+  fallback (cgroup quota, then `os.cpu_count()`) is usually right, but `os.cpu_count()` reads
+  the *host's* core count, not the container's — on the production host it reported 12 while
+  the container's actual `/sys/fs/cgroup/cpu.max` quota was 2 cores, a 6x oversubscription
+  that the fallback chain would have used if the cgroup read had failed. Set it to match
+  `cpus:` in the compose file.
+
 ## Security & Compliance
 
 - **Privacy First:** HiveMem is 100% self-hosted. Your data never leaves your infrastructure.

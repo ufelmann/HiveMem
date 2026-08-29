@@ -45,6 +45,13 @@ Key environment variables:
   `intra_op_threads`
 - `QUERY_PREFIX` / `DOCUMENT_PREFIX` — optional retrieval prefixes
 
+These defaults (`MODEL_NAME` unset → the image's small built-in model, `MAX_LENGTH=128`) are
+sized for `docker-compose.yml`'s default `mem_limit: 2g`. Swapping in a large model (bigger
+`MODEL_REPO`, higher `MAX_LENGTH`) needs a much larger `mem_limit` and its own
+`ORT_INTRA_OP_THREADS`/prefix settings — see [Running a large model on
+CPU](architecture.md#running-a-large-model-on-cpu) in architecture.md before doing this in
+production.
+
 To build the embedding service:
 
 ```bash
